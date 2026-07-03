@@ -48,3 +48,15 @@ export function closeProjectDb(db: DatabaseType): void {
     // ignore close errors
   }
 }
+
+// Ensure a project's SQLite database exists with the current schema, then close
+// the connection immediately. Use this for one-shot initialization (e.g. project
+// binding) so we never leak a better-sqlite3 handle by forgetting to close it.
+export function initializeProjectDb(projectPath: string): void {
+  const db = openProjectDb(projectPath);
+  try {
+    // Schema and WAL are applied inside openProjectDb; nothing else to do here.
+  } finally {
+    closeProjectDb(db);
+  }
+}

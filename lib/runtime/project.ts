@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { stat, access } from "node:fs/promises";
 import path from "node:path";
 import { logEvent, type EventPayload } from "./events";
-import { openProjectDb } from "./db";
+import { initializeProjectDb } from "./db";
 import {
   getArtifactsDir,
   getExportDir,
@@ -122,8 +122,9 @@ export async function bindProjectFolder(folderPath: string): Promise<BindRespons
 
   writeFileSync(getProjectConfigPath(resolved), JSON.stringify(config, null, 2), "utf-8");
 
-  // Initialize SQLite schema for this project.
-  openProjectDb(resolved);
+  // Initialize SQLite schema for this project (open + ensure schema + close,
+  // so no better-sqlite3 handle is left open after binding).
+  initializeProjectDb(resolved);
 
   // Record semantic events.
   const payload: EventPayload = { path: resolved, name: config.name };

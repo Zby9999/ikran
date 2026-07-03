@@ -11,3 +11,6 @@ test-results
 Research
 recursive-design-method
 /*.png
+
+# 技术教学笔记：仅给项目负责人阅读，不进版本库
+teach/

@@ -8,6 +8,7 @@ const PORT = 3000;
 const RUNTIME_STATE_FILE = path.join(homedir(), ".ikran", "runtime-state.json");
 let originalRuntimeState: string | null = null;
 let testFolder = "";
+let otherFolder = "";
 
 function rawPost(
   route: string,
@@ -83,6 +84,10 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     if (testFolder) {
       rmSync(testFolder, { recursive: true, force: true });
       testFolder = "";
+    }
+    if (otherFolder) {
+      rmSync(otherFolder, { recursive: true, force: true });
+      otherFolder = "";
     }
   });
 
@@ -193,6 +198,7 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     );
     await expect(startButton).toBeEnabled();
 
+    otherFolder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-other-"));
     await page.route("**/api/project/select-folder", async (route) => {
       await route.fulfill({
         contentType: "application/json",
@@ -215,6 +221,29 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
       "true"
     );
     await expect(startButton).toBeEnabled();
+
+    await page.unroute("**/api/project/select-folder");
+    await page.route("**/api/project/select-folder", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          path: otherFolder,
+          project: {
+            path: otherFolder,
+            name: path.basename(otherFolder)
+          }
+        })
+      });
+    });
+    await page.getByTestId("select-folder-button").click();
+    await expect(page.getByTestId("folder-helper")).toContainText(
+      `Complete! ${otherFolder}`
+    );
+    await expect(page.getByRole("button", { name: "Codex" })).not.toHaveClass(
+      /agent-option--selected/
+    );
+    await expect(startButton).toBeDisabled();
   });
 
   test("rejects invalid project folders", async ({ page }) => {

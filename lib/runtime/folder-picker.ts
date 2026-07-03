@@ -3,7 +3,7 @@
 // The Browser UI cannot (and should not) open the system file dialog directly.
 // The Runtime owns the dialog and returns the selected absolute path. This
 // module provides best-effort platform support:
-// - macOS: AppKit `NSOpenPanel`, with AppleScript `choose folder` as fallback
+// - macOS: AppleScript `choose folder`, with AppKit `NSOpenPanel` as fallback
 // - Linux: zenity
 // - Windows: PowerShell FolderBrowserDialog
 // If no native dialog is available, it returns a structured unavailable result
@@ -27,13 +27,18 @@ export function selectFolder(): Promise<FolderPickerResult> {
 }
 
 async function selectMacOS(): Promise<FolderPickerResult> {
+  const script = `POSIX path of (choose folder with prompt "Select an Ikran project folder")`;
+  const appleScript = await runAppleScript(script);
+  if (appleScript.ok || appleScript.reason === "cancelled") {
+    return appleScript;
+  }
+
   const appKit = await selectMacOSAppKit();
   if (appKit.ok || appKit.reason === "cancelled") {
     return appKit;
   }
 
-  const script = `POSIX path of (choose folder with prompt "Select an Ikran project folder")`;
-  return runAppleScript(script);
+  return appleScript;
 }
 
 function selectMacOSAppKit(): Promise<FolderPickerResult> {
@@ -51,7 +56,12 @@ panel.message = "Select an Ikran project folder";
 panel.prompt = "Select";
 const result = panel.runModal;
 if (result === $.NSModalResponseOK) {
-  console.log(ObjC.unwrap(panel.URL.path));
+  const urls = panel.URLs;
+  if (urls.count > 0) {
+    console.log(ObjC.unwrap(urls.objectAtIndex(0).path));
+  } else {
+    console.log(ObjC.unwrap(panel.URL.path));
+  }
 } else {
   console.log("${CANCELLED}");
 }

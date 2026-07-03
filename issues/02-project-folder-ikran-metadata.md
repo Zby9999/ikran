@@ -28,6 +28,10 @@
 
 已完成。实现包括 `lib/runtime/project.ts`、SQLite/JSONL 事件日志、系统原生 folder picker（macOS/Linux/Windows）、手动路径回退、`/api/project/*` Runtime API，以及 UI 绑定流程。`npm run check` 通过，使用 `~/Desktop/ikran-test` 手动验证 `.ikran/` 元数据、SQLite 表结构、JSONL 事件和 Runtime 全局 active project 指针均正常工作。
 
+### P2 fix — SQLite 初始化连接句柄泄漏
+
+`bindProjectFolder` 原先调用 `openProjectDb(resolved)` 只为建 schema，但返回的 `better-sqlite3` 连接没有 `closeProjectDb`，句柄只能等 GC 回收，长时间运行或反复绑定会累积未关闭句柄，也可能占用文件锁影响后续删除/重置项目目录。已在 `lib/runtime/db.ts` 新增专门的 `initializeProjectDb()`（`openProjectDb` + `try/finally` + `closeProjectDb`），并把 `lib/runtime/project.ts` 的调用点改为使用它。语义不变，只是不再泄漏句柄。`tsc --noEmit` 与 `tests/project-folder-binding.spec.ts`（2 tests）均通过。
+
 ## Blocked by
 
 - `01-ikran-local-workbench-runtime-health.md`
