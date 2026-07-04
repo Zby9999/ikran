@@ -53,6 +53,7 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
   const [heartbeat, setHeartbeat] = useState<HeartbeatEvent | null>(null);
   const [project, setProject] = useState<ProjectState>({ status: "idle" });
   const [selectedAgent, setSelectedAgent] = useState<AgentId | null>(null);
+  const [cwdManualCandidate, setCwdManualCandidate] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,10 +105,13 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
     return () => events.close();
   }, [bootstrap.session]);
 
-  // Recover active project after refresh.
+  // Recover project state after refresh, and auto-bind the folder Ikran was
+  // launched from (forwarded as `IKRAN_CWD`) when the Runtime says it is safe.
+  // An auto-bindable cwd (resume / init) takes priority over the stored active
+  // project pointer: the designer deliberately launched from this folder.
   useEffect(() => {
     let cancelled = false;
-    async function loadActiveProject() {
+    async function loadProjectState() {
       try {
         const response = await fetch("/api/project", {
           cache: "no-store",
@@ -118,20 +122,42 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
         }
         const data = (await response.json()) as {
           ok: boolean;
-          project?: { path: string; name: string };
+          project?: { path: string; name: string } | null;
+          cwd_candidate?:
+            | { path: string; kind: "resume" | "init" | "manual" }
+            | null;
         };
-        if (!cancelled && data.ok && data.project) {
+        if (cancelled) return;
+
+        const candidate = data.cwd_candidate ?? null;
+
+        // Auto-bind (no confirm) when cwd is an existing project (resume) or an
+        // effectively empty folder (init).
+        if (candidate && (candidate.kind === "resume" || candidate.kind === "init")) {
+          await bindFolder(candidate.path);
+          return;
+        }
+
+        // Recover an already-bound active project.
+        if (data.ok && data.project) {
           setProject({
             status: "bound",
             path: data.project.path,
             name: data.project.name
           });
+          return;
+        }
+
+        // No active project and cwd is a valid but non-empty/non-project folder:
+        // surface it as a one-click "use current folder" confirm (no auto-bind).
+        if (candidate && candidate.kind === "manual") {
+          setCwdManualCandidate(candidate.path);
         }
       } catch {
         // ignore; UI stays in idle/selecting state
       }
     }
-    loadActiveProject();
+    loadProjectState();
     return () => {
       cancelled = true;
     };
@@ -329,6 +355,33 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
             onClick={handleSelectFolder}
             disabled={!folderReady || project.status === "selecting" || project.status === "binding"}
           />
+          {cwdManualCandidate && project.status !== "bound" && (
+            <SetupStepButton
+              icon={
+                <IconBox tone={folderReady ? "blue" : "gray"}>
+                  <FolderSimpleIcon
+                    color={folderReady ? activeIconGradients.folder : "white"}
+                    size={14}
+                    weight="fill"
+                  />
+                </IconBox>
+              }
+              label="Use Current Folder"
+              helper={
+                <>
+                  Bind <strong>{cwdManualCandidate}</strong> as this
+                  project&apos;s folder
+                </>
+              }
+              helperTone="default"
+              helperTestId="cwd-folder-helper"
+              rowTestId="use-cwd-folder-button"
+              onClick={() => {
+                if (cwdManualCandidate) bindFolder(cwdManualCandidate);
+              }}
+              disabled={!folderReady || project.status === "selecting" || project.status === "binding"}
+            />
+          )}
           <AgentConnectorCard
             active={agentReady}
             selectedAgent={selectedAgent}

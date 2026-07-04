@@ -35,3 +35,53 @@
 ## Blocked by
 
 - `01-ikran-local-workbench-runtime-health.md`
+
+---
+
+## 补充：启动时 cwd 自动绑定
+
+### 背景
+
+PRD 故事 76（npm/npx 启动）的目标用户里有一类“懂一点代码”的设计师：他们在 IDE 终端里 `cd` 进一个项目文件夹，然后 `npx ikran`。此时他们的意图已经是“绑这个文件夹”，应当自动匹配，而不是再弹一次系统文件夹选择器。本补充项在不新建 issue 的前提下扩展 Issue 2 的文件夹绑定流程，覆盖这条快路。
+
+本补充项同时修复一个前置工程问题：当前 `bin/ikran.mjs` 启动 `next dev` 时未指定 app 目录，Next.js 以 `process.cwd()` 作 app 根，导致 `npx ikran` 只能在本仓库根目录启动。需要把“app 目录”（package 相对、固定）与“用户项目文件夹”（cwd 或 `--folder`，可变）分开。
+
+### 范围
+
+两层：
+
+1. **Launcher 层**：`bin/ikran.mjs` 解析 app 目录（package 相对），以 `next dev <appDir>` 启动；把用户项目文件夹以 `IKRAN_CWD` 环境变量传入 Next 进程；新增 `ikran --folder <path>` CLI flag（将 `IKRAN_CWD` 设为该值）。
+2. **Runtime + UI 层**：Runtime 读 `IKRAN_CWD` 作 cwd 候选（不读 `process.cwd()`），过安全门后通过 `GET /api/project` 暴露；UI 在无 active project 且候选可 auto-bind 时，调用现有 `/api/project/bind` 完成绑定。
+
+### 决策
+
+- **Auto-bind 范围（安全门）**：
+  - cwd 已有 `.ikran/config.json` → resume，直接 auto-bind，免确认。
+  - cwd 为空文件夹（允许 `.DS_Store` 等系统噪声）→ init，直接 auto-bind，免确认。
+  - cwd 有内容且非 ikran 项目 → 不 auto-bind；UI 显示“使用当前文件夹：xxx”一键确认按钮，与“Select a Folder”并列。
+- **CLI flag**：现在加 `ikran --folder <path>`。
+- **子目录启动**：MVP 不做 git 式向上查找；记为已知限制，文档说明需在项目根目录启动。
+- **优先级**：cwd 候选（若可 auto-bind）优先于已存 `~/.ikran/runtime-state.json` active 指针；冲突时以 cwd 为准并更新指针。
+- **事件**：auto-bind 仍走 `bindProjectFolder`，复用现有 `project_created` / `folder_selected` 事件；resume 时 `project_created` 重复记的降噪留作后续可选打磨。
+
+### 补充验收项
+
+- [x] `npx ikran` 可在任意 cwd 启动；app 目录由 launcher 解析，不依赖 cwd。
+- [x] launcher 将用户项目文件夹以 `IKRAN_CWD` 传入 Runtime；Runtime 用 `IKRAN_CWD`、不用 `process.cwd()` 作候选。
+- [x] `ikran --folder <path>` 可显式指定项目文件夹，等价于在该文件夹内启动。
+- [x] cwd 为空 或 已有 `.ikran/` 时，UI 启动后自动完成绑定，无需手动选文件夹；`project_created` / `folder_selected` 事件正常记录。
+- [x] cwd 有内容且非 ikran 项目时，不静默绑定；UI 提供“使用当前文件夹”一键确认。
+- [x] cwd 候选优先于已存 active 指针；两者冲突时以 cwd 为准并更新指针。
+- [x] 已知限制写入文档：在项目子目录内启动不会自动恢复到项目根。
+- [x] `npm run check` 通过；新增 e2e：在临时空文件夹 cwd 启动，验证自动绑到该文件夹并生成 `.ikran/`。
+
+### Status
+
+补充项已实现并通过验证（`npm run check` 11 tests 全绿）。
+
+- launcher（`bin/ikran.mjs`）：解析 app 目录并以 `cwd=appDir` 启动 Next；用户项目文件夹经 `IKRAN_CWD` 传入；新增 `--folder <path>`，且 `--folder` 严格解析——缺值或下一个 token 是 flag 时打印 usage 并退出（`ikran --folder` / `ikran --folder --no-open` 已验证 fail-fast）。从仓库外目录 smoke 启动验证 OK。
+- Runtime（`lib/runtime/cwd-candidate.ts`）：`getCwdCandidate()` 读 `IKRAN_CWD`，按 `.ikran/config.json` 存在 / 文件夹为空 / 有内容分出 `resume` / `init` / `manual` 三态；`GET /api/project` 扩展返回 `cwd_candidate`。
+- UI（`ProjectSetupCard`）：加载时按候选 kind 自动绑定（`resume`/`init`）或显示 “Use Current Folder” 一键确认（`manual`），无候选时走原 picker；cwd 候选优先于已存 active 指针。
+- 测试（`tests/cwd-auto-bind.spec.ts`）：`getCwdCandidate` 四态单元 + UI auto-bind / 手动确认 + 真实 `/api/project` 字段。
+
+已知限制（如决策所定）：在项目子目录内启动不会自动向上找项目根，需在项目根目录启动。

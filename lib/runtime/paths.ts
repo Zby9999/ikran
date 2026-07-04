@@ -12,7 +12,18 @@ import path from "node:path";
 
 const HOME = homedir();
 
-export const RUNTIME_STATE_DIR = path.join(HOME, ".ikran");
+// Runtime-global state dir. Defaults to `~/.ikran` so the active-project
+// pointer survives a Runtime restart and lives outside any one project.
+// Overridable via `IKRAN_STATE_DIR` so parallel e2e workers can each get an
+// isolated active-project pointer: the pointer is a process-global singleton
+// (PRD's single-project-single-flow design), so test isolation is achieved by
+// giving each worker its OWN runtime process + state dir, not by changing the
+// production model. Production leaves this unset → `~/.ikran`.
+const STATE_DIR_OVERRIDE = process.env.IKRAN_STATE_DIR;
+
+export const RUNTIME_STATE_DIR = STATE_DIR_OVERRIDE
+  ? path.resolve(STATE_DIR_OVERRIDE)
+  : path.join(HOME, ".ikran");
 export const RUNTIME_STATE_FILE = path.join(RUNTIME_STATE_DIR, "runtime-state.json");
 
 export function getIkranDir(projectPath: string): string {

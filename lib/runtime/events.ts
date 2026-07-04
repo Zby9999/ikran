@@ -17,6 +17,8 @@ export type EventType =
   | "project_created"
   | "folder_selected"
   | "agent_task_started"
+  | "agent_task_completed"
+  | "agent_task_failed"
   | "figma_evidence_package_returned"
   | "annotation_created"
   | "question_card_created"

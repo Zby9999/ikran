@@ -1,7 +1,8 @@
 import http from "node:http";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
-const PORT = 3000;
+let port = 3000;
+let baseURL = "http://localhost:3000";
 
 // Low-level GET with full header control (Node http). This lets us spoof
 // Host / Origin to prove the Runtime's same-origin + session enforcement
@@ -13,7 +14,7 @@ function rawGet(
     const req = http.request(
       {
         hostname: "127.0.0.1",
-        port: PORT,
+        port,
         path: "/api/health",
         method: "GET",
         headers
@@ -32,6 +33,11 @@ function rawGet(
 }
 
 test.describe("Ikran Issue 01 — local workbench runtime health", () => {
+  test.beforeEach(async ({ runtime }) => {
+    port = runtime.port;
+    baseURL = runtime.baseURL;
+  });
+
   test("renders the existing project setup screen and reaches the same-origin Runtime", async ({
     page
   }) => {
@@ -46,7 +52,7 @@ test.describe("Ikran Issue 01 — local workbench runtime health", () => {
       await route.continue();
     });
 
-    await page.goto("/");
+    await page.goto(baseURL + "/");
 
     // The designer's existing (Figma-owned) project setup screen.
     await expect(page.getByText("Project set up...")).toBeVisible();
@@ -71,24 +77,24 @@ test.describe("Ikran Issue 01 — local workbench runtime health", () => {
 
     // Valid token + same-origin localhost -> 200 (proves the happy path at the
     // API boundary, not just through the browser).
-    const ok = await rawGet({ host: "localhost:3000", "x-ikran-session": token });
+    const ok = await rawGet({ host: `localhost:${port}`, "x-ikran-session": token });
     expect(ok.status).toBe(200);
     expect(ok.body).toContain("ikran-runtime");
 
     // No session token -> 403 (fail-closed).
-    const noToken = await rawGet({ host: "localhost:3000" });
+    const noToken = await rawGet({ host: `localhost:${port}` });
     expect(noToken.status).toBe(403);
 
     // Bad session token -> 403.
     const badToken = await rawGet({
-      host: "localhost:3000",
+      host: `localhost:${port}`,
       "x-ikran-session": "not-the-real-token"
     });
     expect(badToken.status).toBe(403);
 
     // Valid token but cross-origin Origin -> 403 (isolates the origin check).
     const crossOrigin = await rawGet({
-      host: "localhost:3000",
+      host: `localhost:${port}`,
       origin: "https://evil.example",
       "x-ikran-session": token
     });

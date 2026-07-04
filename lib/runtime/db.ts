@@ -27,8 +27,23 @@ CREATE TABLE IF NOT EXISTS projects (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS tasks (
+  id            TEXT PRIMARY KEY,          -- UUID (randomUUID)
+  family        TEXT NOT NULL,             -- TaskFamily whitelist value
+  payload_json  TEXT NOT NULL,             -- JSON.stringified TaskPayload
+  status        TEXT NOT NULL,             -- 'running' | 'done' | 'failed'
+  result_json   TEXT,                      -- JSON.stringified validated output (done only)
+  error_code    TEXT,                      -- 'timeout' | 'invalid_output' | 'abandoned' | 'adapter_error' (failed only)
+  error_message TEXT,
+  created_at    TEXT NOT NULL,             -- ISO 8601
+  updated_at    TEXT NOT NULL              -- ISO 8601
+);
+
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_family ON tasks(family);
+CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
 `;
 
 export function openProjectDb(projectPath: string): DatabaseType {

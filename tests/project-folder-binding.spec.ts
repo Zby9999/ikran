@@ -1,12 +1,11 @@
 import http from "node:http";
-import { expect, test } from "@playwright/test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir, homedir } from "node:os";
+import { expect, test } from "./fixtures";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
-const PORT = 3000;
-const RUNTIME_STATE_FILE = path.join(homedir(), ".ikran", "runtime-state.json");
-let originalRuntimeState: string | null = null;
+let port = 3000;
+let baseURL = "http://localhost:3000";
 let testFolder = "";
 let otherFolder = "";
 
@@ -20,7 +19,7 @@ function rawPost(
     const req = http.request(
       {
         hostname: "127.0.0.1",
-        port: PORT,
+        port,
         path: route,
         method: "POST",
         headers: {
@@ -51,7 +50,7 @@ function rawGet(
     const req = http.request(
       {
         hostname: "127.0.0.1",
-        port: PORT,
+        port,
         path: route,
         method: "GET",
         headers
@@ -70,13 +69,9 @@ function rawGet(
 }
 
 test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", () => {
-  test.beforeAll(() => {
-    originalRuntimeState = existsSync(RUNTIME_STATE_FILE)
-      ? readFileSync(RUNTIME_STATE_FILE, "utf-8")
-      : null;
-  });
-
-  test.beforeEach(() => {
+  test.beforeEach(async ({ runtime }) => {
+    port = runtime.port;
+    baseURL = runtime.baseURL;
     testFolder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-"));
   });
 
@@ -91,16 +86,6 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     }
   });
 
-  test.afterAll(() => {
-    if (originalRuntimeState === null) {
-      rmSync(RUNTIME_STATE_FILE, { force: true });
-      return;
-    }
-
-    mkdirSync(path.dirname(RUNTIME_STATE_FILE), { recursive: true });
-    writeFileSync(RUNTIME_STATE_FILE, originalRuntimeState, "utf-8");
-  });
-
   test("binds a folder through the Runtime API and creates .ikran metadata", async ({ page }) => {
     let sessionToken: string | null = null;
     await page.route("**/api/**", async (route) => {
@@ -111,7 +96,7 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
       await route.continue();
     });
 
-    await page.goto("/");
+    await page.goto(baseURL + "/");
     await expect(page.getByTestId("runtime-helper")).toContainText(
       "Local runtime connected"
     );
@@ -125,7 +110,7 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     const bindResult = await rawPost(
       "/api/project/bind",
       { path: testFolder },
-      { host: "localhost:3000", "x-ikran-session": token }
+      { host: `localhost:${port}`, "x-ikran-session": token }
     );
     expect(bindResult.status).toBe(200);
     const bindBody = JSON.parse(bindResult.body);
@@ -168,7 +153,7 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
 
     // Active project endpoint should recover the binding after refresh.
     const activeResult = await rawGet("/api/project", {
-      host: "localhost:3000",
+      host: `localhost:${port}`,
       "x-ikran-session": token
     });
     expect(activeResult.status).toBe(200);
@@ -256,7 +241,7 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
       await route.continue();
     });
 
-    await page.goto("/");
+    await page.goto(baseURL + "/");
     await expect(page.getByTestId("runtime-helper")).toContainText(
       "Local runtime connected"
     );
@@ -269,7 +254,7 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     const badResult = await rawPost(
       "/api/project/bind",
       { path: "/path/that/does/not/exist" },
-      { host: "localhost:3000", "x-ikran-session": token }
+      { host: `localhost:${port}`, "x-ikran-session": token }
     );
     expect(badResult.status).toBe(400);
     const badBody = JSON.parse(badResult.body);
