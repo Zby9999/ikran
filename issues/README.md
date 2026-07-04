@@ -29,3 +29,9 @@
 - 每个 slice 都应保持 PRD 中的边界：Browser UI 只通过同源 API 和 Ikran Runtime 通信。
 - Figma MCP 不进入 Ikran Runtime；真实 Figma ingestion 属于外部 Agent 环境。
 - source-of-truth design-system 文件始终保存在用户选择的本地项目文件夹中。
+
+## UI / 设计原则
+
+- **以 Figma 设计稿为 UI 实现依据。** 有 Figma 时按参考实现；**无 Figma 时先问设计师**，不要自主做设计更改。
+- `Design issue/`（含 D01–D10）仅供与设计师沟通，**不是**实现要求或编码参考。
+- `issues/` 描述能力与 API 边界；**具体界面以 Figma 为准**，issue 文中的 UI 描述不构成实现要求。

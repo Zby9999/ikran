@@ -16,7 +16,7 @@
 
 ## Acceptance criteria
 
-- [x] Browser UI 提供简单的项目文件夹绑定流程，并通过 Ikran Runtime API 触发系统原生 folder picker。
+- [x] Browser UI 提供文件夹绑定流程（具体交互以 Figma 为准），通过 Runtime API 触发 picker / bind。
 - [x] Runtime 返回用户选择的真实本地路径；如果原生 picker 不可用，可以回退到手动输入路径并进行校验。
 - [x] Runtime 校验该文件夹是否适合作为新的单流程 Ikran 项目；不适合时返回可理解的错误。
 - [x] 成功后，Runtime 创建项目本地 `.ikran/` 元数据，包括 config、SQLite state 和 event log 位置。
@@ -85,3 +85,19 @@ PRD 故事 76（npm/npx 启动）的目标用户里有一类“懂一点代码�
 - 测试（`tests/cwd-auto-bind.spec.ts`）：`getCwdCandidate` 四态单元 + UI auto-bind / 手动确认 + 真实 `/api/project` 字段。
 
 已知限制（如决策所定）：在项目子目录内启动不会自动向上找项目根，需在项目根目录启动。
+
+### Frontend decisions (Setup)
+
+- 绑定成功：helper 显示文件夹路径即可；**不**额外提示「元数据已创建」，**不**单独展示 `project.name`。
+- 绑定失败：语义化错误文案（`folder-error-message.ts`），不暴露 error code。
+- `cwd_candidate` manual：Figma **Inside folder** 变体（`Select a Folder` 行 + `Choose a local folder` + `Use this folder directly` 子按钮）；子按钮调用 `/api/project/bind`。
+- Runtime Step 1 断连：helper 红色语义化文案含「Try again」纯文本；重试靠点击 Step 1 行。
+- `Start Building` 在无限画布未就绪前为**无 handler 的占位按钮**；三步完成后仅亮起，属预期行为。
+- `Design issue/` 仅供设计师沟通，不作为编码参考。
+
+### Frontend implementation (Setup UI, 2026-07)
+
+- 抽出 `FolderSelectStep`：`inactive` / `default` / `inside-folder` / `complete` 四变体；`inside-folder` 由 `GET /api/project` 的 `cwd_candidate.kind === "manual"` 驱动。
+- Inside folder 底栏：`folder-step-footer` 高 16px、左 padding 6px、**右 padding 0**（子按钮右缘与大行对齐）；子按钮 `10px` / `padding 4px 8px` / `letter-spacing -0.3px`。
+- 绑定失败：`folder-error-message.ts` → 红色 helper；inside-folder 错误时 footer `is-expanded` 允许换行。
+- 过程态 helper：`Opening folder picker…` / `Binding {path}…`；成功为绿色 `Complete! {path}`。

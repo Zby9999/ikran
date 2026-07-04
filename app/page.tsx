@@ -14,7 +14,7 @@ import { getSessionToken } from "../lib/runtime/session";
 
 export const dynamic = "force-dynamic";
 
-export default function Page() {
+export default async function Page() {
   const session = getSessionToken();
   return <ProjectSetupCard bootstrap={{ session, service: SERVICE }} />;
 }

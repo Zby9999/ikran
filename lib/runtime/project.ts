@@ -8,6 +8,8 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { stat, access } from "node:fs/promises";
 import path from "node:path";
+import type { AgentId } from "./agent-types";
+import { isAgentId } from "./agent-connect";
 import { logEvent, type EventPayload } from "./events";
 import { initializeProjectDb } from "./db";
 import {
@@ -24,6 +26,7 @@ export interface ProjectConfig {
   name: string;
   created_at: string;
   updated_at: string;
+  connected_agent?: AgentId;
 }
 
 export interface RuntimeState {
@@ -97,6 +100,7 @@ export async function bindProjectFolder(folderPath: string): Promise<BindRespons
 
   const resolved = path.resolve(folderPath);
   const now = new Date().toISOString();
+  const existing = loadProjectConfig(resolved);
 
   // Initialize project-local metadata.
   mkdirSync(getIkranDir(resolved), { recursive: true });
@@ -106,18 +110,13 @@ export async function bindProjectFolder(folderPath: string): Promise<BindRespons
   const config: ProjectConfig = {
     path: resolved,
     name: path.basename(resolved),
-    created_at: now,
+    created_at: existing?.created_at ?? now,
     updated_at: now
   };
 
-  // If the folder was already a project, preserve the original creation time.
-  if (existsSync(getProjectConfigPath(resolved))) {
-    try {
-      const existing = JSON.parse(readFileSync(getProjectConfigPath(resolved), "utf-8")) as ProjectConfig;
-      config.created_at = existing.created_at;
-    } catch {
-      // ignore parse errors; use new config
-    }
+  // Re-binding the same project folder keeps a valid persisted agent connection.
+  if (existing?.connected_agent && isAgentId(existing.connected_agent)) {
+    config.connected_agent = existing.connected_agent;
   }
 
   writeFileSync(getProjectConfigPath(resolved), JSON.stringify(config, null, 2), "utf-8");
@@ -190,4 +189,37 @@ export function getActiveProjectState(): { ok: true; project: ProjectConfig } | 
     return { ok: false, reason: "missing_config" };
   }
   return { ok: true, project: config };
+}
+
+export function projectPathsMatch(left: string, right: string): boolean {
+  return path.resolve(left) === path.resolve(right);
+}
+
+export function getProjectConnectedAgent(folderPath: string): AgentId | null {
+  const config = loadProjectConfig(folderPath);
+  const agent = config?.connected_agent;
+  return agent && isAgentId(agent) ? agent : null;
+}
+
+export function setProjectConnectedAgent(
+  folderPath: string,
+  agent: AgentId
+): void {
+  const resolved = path.resolve(folderPath);
+  const config = loadProjectConfig(resolved);
+  if (!config) {
+    return;
+  }
+
+  const updated: ProjectConfig = {
+    ...config,
+    path: resolved,
+    connected_agent: agent,
+    updated_at: new Date().toISOString()
+  };
+  writeFileSync(
+    getProjectConfigPath(resolved),
+    JSON.stringify(updated, null, 2),
+    "utf-8"
+  );
 }

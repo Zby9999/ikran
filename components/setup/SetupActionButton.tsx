@@ -1,7 +1,5 @@
 "use client";
 
-import { useSquircle } from "./useSquircle";
-
 export function SetupActionButton({
   label,
   disabled = false
@@ -9,10 +7,13 @@ export function SetupActionButton({
   label: string;
   disabled?: boolean;
 }) {
-  const ref = useSquircle<HTMLButtonElement>(12);
-
   return (
-    <button className="action" disabled={disabled} type="button" ref={ref}>
+    <button
+      className="action"
+      data-testid="start-building-button"
+      disabled={disabled}
+      type="button"
+    >
       <span>{label}</span>
     </button>
   );

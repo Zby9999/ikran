@@ -2,7 +2,7 @@
 
 状态：ready-for-agent
 目标：一个月内可用的研究原型
-日期：2026-06-29
+日期：2026-07-04
 
 ## 问题陈述
 
@@ -29,8 +29,9 @@ MVP 必须在一个月内成为完整闭环的研究原型。它必须支持：
 
 浏览器 UI 提供：
 
-- 由 tldraw 驱动的无限画布，
-- 作为视觉工作面的 Figma 种子截图或原型预览，
+- 由 React Flow 驱动的研究工作流画布，
+- 作为 Evidence Surface 的 Figma 种子证据表面或实时 prototype iframe surface，
+- Evidence Surface 内部的区域标注 overlay，
 - 顶部阶段标签页用于对齐，
 - 左侧项目流程和问题列表，
 - 右侧 Agent 侧栏用于回答和细化当前问题，
@@ -152,7 +153,7 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
 
 - 产品正式名称是 Ikran。
 - MVP 必须在一个月内成为完整闭环的研究原型，而不是只覆盖种子提取的局部工具。
-- MVP 是单项目、单流程。它不支持多项目、协作或分支。
+- MVP 是单项目、单流程。它不支持多项目、多人协作或分支。
 - 工作流有两个生命周期阶段：
   - 通过种子提取完成一次性的设计系统启动，
   - 启动后重复执行新原型创建和规则递归循环。
@@ -186,7 +187,10 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
 ### 浏览器 UI
 
 - 使用 Next.js 构建浏览器 UI。
-- 使用 tldraw 作为无限画布基础。
+- 使用 React Flow 作为研究工作流画布基础。
+- React Flow 用于承载 Evidence Surface、prototype run、artifact 和 question 等高层工作流节点。
+- React Flow 的 nodes/edges/viewport 是 UI layout state，不是研究数据的事实源。
+- 区域标注不进入 React Flow nodes；它们作为独立 workflow records 存在，并由所属 Evidence Surface 的 overlay 实时渲染。
 - UI 遵循用户的 Figma 交互草图：
   - 顶部区域用于阶段标签页，
   - 左侧区域用于项目流程和问题列表，
@@ -299,13 +303,44 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
 - 原型浏览应使用实时预览，而不是截图历史。
 - 当 Agent 修改本地项目时，iframe 预览应更新。
 - 浏览器 UI 应提供 focus mode，用于打开本地预览 URL 以进行完整交互。
+- Prototype 区域标注以 iframe 的可视区域选择为入口。
+- Runtime 应尽量对同源 iframe 做非侵入式 DOM inspection，补充 selector、id、data 属性、候选 component id、候选元素 bounding box 和 overlap ratio。
+- DOM inspection 失败时，prototype 区域标注仍然有效。
+- Runtime 可以生成完整 viewport screenshot 和 selected crop 作为 Agent 上下文 artifact，但这些截图不应替代实时 iframe 浏览。
 - Sandpack 保留给未来的组件库预览。
 - WebContainers 保留给未来的在线统一平台。
+
+### React Flow 工作区与区域标注模型
+
+- React Flow 是研究工作流的空间化投影，不是通用白板工具。
+- MVP 的核心画布对象是 Evidence Surface：
+  - Figma Evidence Surface：首次 seed extraction 时承载 Figma structured evidence 的可视表面。
+  - Prototype Evidence Surface：seed reconstruction 和后续新原型的实时 iframe surface。
+- Region Annotation 是一等持久记录，但必须依附于明确的 Evidence Surface。
+- 没有 `surfaceArtifactId` 或 `surfaceNodeId` 的 Region Annotation 无效。
+- Region Annotation 由 Ikran Runtime 统一校验、补全 ID、落盘并广播给 UI。
+- Browser UI 和 Agent 都只能提交 Region Annotation intent。
+- Region Annotation overlay 必须支持：
+  - 区域框，
+  - 编号或短标题，
+  - 选中 callout，
+  - 与右侧 question / feedback panel 联动。
+- Figma 阶段和 prototype 阶段使用两套 anchor schema：
+  - `figma-region` anchor 连接 Figma structured evidence、Figma node/component/bounds 和可视 surface 坐标。
+  - `prototype-region` anchor 连接 prototype run、iframe viewport 坐标、selected crop 和可用 DOM candidates。
+- Figma structured evidence 是 Agent 抽取设计系统和重建 seed prototype 的依据。
+- Figma visual surface、完整截图和 selected crop 只用于人类可视化、标注定位、视觉核对和研究回放，不应成为 screenshot-to-code 的主输入。
+- 用户在 Figma visual surface 上创建区域标注时，系统应尝试匹配 Figma structured evidence candidates；匹配结果是候选，不是强制唯一绑定。
+- Agent 创建 Figma 标注时必须提供 region rect；当标注语义是 single-node 时，必须提供 primary Figma node 或高置信候选。
+- Prototype 区域标注必须包含 bounding box 和 normalized rect；DOM selector、component id 和元素 candidates 是可选增强。
+- Agent 处理 region annotation 时应收到 region context packet，而不是孤立坐标：
+  - Figma region packet 包含局部区域、完整 surface 视觉上下文、Figma candidates 和 structured evidence slice。
+  - Prototype region packet 包含局部区域、完整 viewport screenshot、selected crop、prototype run id 和可用 DOM candidates。
 
 ### 种子提取 UI
 
 - Agent 是主要的标注和问题发起者。
-- 设计师标注是次要的，只在回答意图问题需要额外解释时使用。
+- 设计师也必须能够创建区域标注，用于回答意图问题或指出 Agent 没有覆盖的局部区域。
 - 种子对齐使用五个阶段标签页：
   - Layout，
   - Component Extraction，
@@ -329,6 +364,7 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
   - 局部区域，
   - Figma 节点，
   - 或整个 frame。
+- 证据锚点必须引用 Region Annotation 或 whole-frame anchor，不能只使用“这里”等模糊描述。
 - 标注类型可包括：
   - question，
   - assumption，
@@ -336,6 +372,9 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
   - generalization risk。
 - 标注类型只是视觉辅助，不影响完成状态。
 - 选择问题时，应将画布平移/缩放到对应的证据锚点。
+- 初步设计系统抽取完成后，Figma annotations 默认隐藏。
+- 用户选择 Figma Evidence Surface，或从 question / answer / research event 回到 Figma evidence context 时，相关 Figma annotations 重新显示。
+- 种子提取完成后，主工作区默认切换到根据原 Figma 设计重建完成的 seed prototype iframe surface。
 
 ### 设计系统文件
 
@@ -419,6 +458,8 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
 - 视觉参考输入是可选的。
 - Agent 在本地项目中创建原型设计和实现。
 - 原型应通过实时 iframe 预览展示。
+- 每个生成结果应在 React Flow 工作区中表现为 Prototype Evidence Surface。
+- 设计师和 Agent 可以对整个 prototype surface 或局部 prototype region 提供反馈。
 - 新原型创建应消费设计系统，而不是只依赖 prompt memory。
 
 ### 规则递归
@@ -448,6 +489,7 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
   - Agent task started，
   - Figma evidence package returned，
   - annotation created，
+  - region selected，
   - question card created，
   - designer answer submitted，
   - seed extraction stage completed，
@@ -456,12 +498,14 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
   - seed reconstruction started，
   - preview started，
   - new prototype run created，
+  - prototype region feedback submitted，
   - rule-update proposal created，
   - rule-update confirmed，
   - rule-update canceled，
   - export generated。
 - 不要将每次画布平移、缩放、hover 或文本击键记录为研究事件。
 - 原型运行应链接到影响它们的回答和设计系统版本。
+- Prototype feedback 应同时链接 prototype run、prototype surface，以及可选 region annotation。
 - 规则更新应链接到触发它们的反馈或页面上下文。
 
 ### 研究导出
@@ -518,6 +562,8 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
   - 问题卡渲染，
   - 所有卡片要求最终回答，
   - 选中的问题聚焦证据锚点，
+  - React Flow surface 渲染，
+  - Region Annotation overlay 渲染和选中 callout，
   - 完成门禁只在所有卡片回答后打开。
 - Ikran Runtime API：
   - 项目文件夹校验，
@@ -543,7 +589,8 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
 - 预览生命周期：
   - 开发服务器 readiness 反映在 UI 中，
   - iframe 接收预览 URL，
-  - focus mode 打开预览 URL。
+  - focus mode 打开预览 URL，
+  - prototype region selection 可以产出 bounding box、normalized rect、selected crop 和可用 DOM candidates。
 - 规则更新：
   - 提案被生成，
   - Confirm 通过 mocked Agent flow 应用变更，
@@ -558,6 +605,7 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
 - 真实 Figma MCP 摄取应使用已配置的外部 Agent 环境手动测试。
 - 真实 Codex、Claude Code 和 Cursor CLI adapter 可以逐个 smoke-test。
 - 应使用真实种子页面验证 Figma 视觉证据和结构化证据能够产出卡片锚点。
+- 应使用真实种子页面验证 Agent 的设计系统抽取和 seed prototype 重建依赖 Figma structured evidence，而不是截图转代码。
 - 应使用真实空项目文件夹验证 Next.js/TypeScript/Tailwind/npm 初始化和预览启动。
 - 视觉和交互验收应验证种子重建原型可以通过实时预览使用。
 
@@ -565,6 +613,7 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
 
 - 多项目工作空间管理。
 - 多用户协作。
+- 通用 tldraw / Miro 式自由白板。
 - 云托管 runner。
 - 云端 Web App 加本地 companion Runtime 的产品形态。
 - 完整 ACP 实现。
@@ -579,6 +628,7 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
 - 种子提取重跑或种子替换。
 - 从新种子/参考混合设计语言。
 - 基于截图的原型浏览。
+- 基于截图生成 seed prototype。
 - 完整可视化分析/报告 dashboard。
 - 完整确定性 token-to-Tailwind 生成脚本。
 - Recursive Design Method 工作流以外的通用 App 生成。
@@ -607,11 +657,13 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
    - 基础任务/结果 schema。
 
 2. 第 2 周：种子提取工作台
-   - tldraw 画布 shell。
+   - React Flow 研究工作流画布 shell。
+   - Figma Evidence Surface。
+   - Region Annotation overlay。
    - 顶部五个阶段标签页。
    - 左侧问题列表。
    - 右侧回答面板。
-   - 证据锚点模型。
+   - Figma region anchor 模型。
    - mocked Figma evidence package。
    - 生成对齐问题，每个阶段二到五张卡。
    - 回答完成门禁。
@@ -624,6 +676,8 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
    - design-system-view.json 生成。
    - 带 Foundations 和 Components 的设计系统浏览器。
    - 来自本地开发服务器的实时 iframe 预览。
+   - Prototype Evidence Surface。
+   - Prototype region anchor 与非侵入式 DOM candidates。
    - 使用 mocked 或 real Agent 的种子重建流程。
 
 4. 第 4 周：新原型和规则递归

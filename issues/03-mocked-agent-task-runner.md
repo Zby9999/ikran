@@ -13,12 +13,14 @@
 
 ## Acceptance criteria
 
-- [ ] Ikran Runtime 至少为一个 MVP task family 定义 task creation API，并在 active project 中持久化 task state。
-- [ ] Mocked AgentAdapter 能接收 task payload，并返回 deterministic JSON output。
-- [ ] task lifecycle events 通过 SSE 传给 Browser UI：started、progress（如有）、completed、failed。
-- [ ] Browser UI 在 Agent/sidebar 区域展示当前 task status，但默认不暴露 raw adapter internals。
-- [ ] adapter boundary 的形状允许之后加入 headless CLI adapter，而不需要重写 Browser UI。
-- [ ] 测试验证 Browser UI -> Ikran Runtime -> mocked AgentAdapter -> SSE result 的完整路径。
+- [x] Ikran Runtime 至少为一个 MVP task family 定义 task creation API，并在 active project 中持久化 task state。
+- [x] Mocked AgentAdapter 能接收 task payload，并返回 deterministic JSON output。
+- [x] task lifecycle events 通过 SSE 传给 Browser UI：started、progress（如有）、completed、failed。
+- [x] Setup 屏通过 `POST /api/agent/connect` 完成 Agent 连接；失败时卡片下方语义化提示 + 重试（Figma 连接态为准）。
+- [ ] Browser UI 在**无限画布** Agent 工作区展示 task status（Setup 屏不做）。
+- [x] adapter boundary 的形状允许之后加入 headless CLI adapter，而不需要重写 Browser UI。
+- [x] 测试验证 Browser UI -> Ikran Runtime -> mocked AgentAdapter -> SSE result 的完整路径。
+  > API 级 e2e 已覆盖；Setup UI 不断言 task 生命周期。
 
 ## Blocked by
 
@@ -49,7 +51,22 @@
 
 8 条硬约束（C1–C8）+ 4 条专门验证（V1–V4）全部 PASS，逐条证据（file:line + 命令输出）见 `.plans/issue3/AUDIT.md`。`npm run check` 绿。
 
-验收项状态：task creation API + 持久化、mocked adapter 返回确定性 JSON、SSE lifecycle（started/progress/completed/failed）、adapter 边界可演进到 headless CLI、完整路径测试——均满足；**“Browser UI sidebar 展示 task status” 这一条 DEFERRED 给 Figma 驱动的 UI issue**。
+验收项状态：task creation API + 持久化、mocked adapter 返回确定性 JSON、SSE lifecycle（started/progress/completed/failed）、adapter 边界可演进到 headless CLI、完整路径测试——均满足。
+
+### Frontend decisions (Setup)
+
+- Setup 屏为最终 UI，无左右侧栏。
+- Agent 步骤：`POST /api/agent/connect` + Figma [`Connect Your Agent`](https://www.figma.com/design/FSgnAj1yrNlgDCt4V4wTfa/recursive-design-agent?node-id=23-1123)；失败时红色 helper 显示语义化文案（无独立可点 Try again）。
+- `Start Building` 是进入无限画布的入口；正常流程无额外提示，三步完成即亮起。进入失败时：保持 **disabled** 灰样式，按钮内替换为简短语义化文案（无句号、无 Try again）；主页面尚未接线。
+- Task API/SSE 不在 Setup 消费；无限画布阶段再处理 task status。
+
+### Frontend implementation (Setup UI, 2026-07)
+
+- `AgentConnectorCard` 接 `POST /api/agent/connect`；`agent-error-message.ts` 映射失败文案。
+- 连接态：选中 Agent 白底 + 绿勾，helper 绿色「{Agent} connected」；文件夹已绑未选 Agent 时 Step 3 头图/序号紫色。
+- `connecting` / `error` helper 分别为进行中与红色错误文案；重试靠再次点击 Agent 按钮。
+- `SetupActionButton`（Figma `29:1521`）：`border-radius 12px`、高 32px；禁用浅灰渐变 + 外圈 `#9a9a9a`，启用深灰渐变 + 外圈 `#424242`；无 squircle clip。
+- `Start Building`：`buildingReady`（文件夹已绑 + Agent 已连接）时亮起；**暂无 `onClick`**；画布入口失败态待无限画布接线。
 
 ### e2e 并行底层修复（去掉 `workers:1` 的掩盖）
 

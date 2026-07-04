@@ -200,15 +200,17 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
 
       await page.goto(runtime.baseURL + "/");
 
-      // No silent bind: the one-click confirm button is shown and no bind has
-      // been requested yet.
-      await expect(page.getByTestId("use-cwd-folder-button")).toBeVisible();
+      // No silent bind: the inside-folder variant is shown and bind has not run.
+      await expect(page.getByTestId("use-folder-directly-button")).toBeVisible();
+      await expect(page.getByTestId("folder-helper")).toContainText(
+        "Choose a local folder"
+      );
       await expect(page.getByTestId("project-path")).toHaveText("");
       expect(existsSync(path.join(dir, ".ikran", "config.json"))).toBe(false);
       expect(bind.paths()).not.toContain(dir);
 
-      // One click confirms and binds.
-      await page.getByTestId("use-cwd-folder-button").click();
+      // One click on the sub-button confirms and binds.
+      await page.getByTestId("use-folder-directly-button").click();
       await expect.poll(() => bind.paths()).toContainEqual(dir);
       await expect(page.getByTestId("project-path")).toHaveText(dir);
     } finally {

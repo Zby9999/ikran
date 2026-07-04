@@ -11,7 +11,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authorize } from "../../../lib/runtime/session";
-import { getActiveProjectState } from "../../../lib/runtime/project";
+import {
+  getActiveProjectState,
+  getProjectConnectedAgent
+} from "../../../lib/runtime/project";
 import { getCwdCandidate } from "../../../lib/runtime/cwd-candidate";
 
 export const runtime = "nodejs";
@@ -30,10 +33,14 @@ export async function GET(request: NextRequest) {
 
   const state = getActiveProjectState();
   const project = state.ok ? state.project : null;
+  const connected_agent = project
+    ? getProjectConnectedAgent(project.path)
+    : null;
 
   return NextResponse.json({
     ok: true,
     project,
+    connected_agent,
     cwd_candidate: cwdCandidate
   });
 }

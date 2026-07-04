@@ -2,20 +2,22 @@
 
 // Project setup card — the designer's existing (Figma-owned) web design.
 //
-// Visually identical to the previous `app/page.tsx` screen. The only change
-// versus that design is the data source: it calls the same-origin Ikran
-// Runtime (`/api/health`, `/api/events`) with the startup session token
-// injected by the server page, instead of a separate bridge. Copy and
-// identifiers use "Runtime" to align with the current architecture.
-//
-// Do not alter layout, copy, icons, or styling here without a Figma source.
+// Data flows through the same-origin Ikran Runtime (`/api/health`,
+// `/api/events`, `/api/project`, `/api/agent/connect`). Do not alter layout,
+// copy, icons, or styling here without a Figma source.
 
 import {
-  DownloadIcon as PhosphorDownloadIcon,
-  FolderSimpleIcon
+  DownloadIcon as PhosphorDownloadIcon
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useState } from "react";
-import { type AgentId, AgentConnectorCard } from "./AgentConnectorCard";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { agentErrorMessage } from "../../lib/runtime/agent-error-message";
+import type { AgentId } from "../../lib/runtime/agent-types";
+import { folderErrorMessage } from "../../lib/runtime/folder-error-message";
+import {
+  type AgentConnectionState,
+  AgentConnectorCard
+} from "./AgentConnectorCard";
+import { FolderSelectStep, type FolderSelectVariant } from "./FolderSelectStep";
 import { activeIconGradients, IconGradients } from "./IconGradients";
 import { CompleteCheckIcon, IconBox } from "./IconBox";
 import { SetupActionButton } from "./SetupActionButton";
@@ -47,46 +49,56 @@ type ProjectState =
   | { status: "bound"; path: string; name: string }
   | { status: "error"; message: string };
 
-export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
+export function ProjectSetupCard({
+  bootstrap
+}: {
+  bootstrap: Bootstrap;
+}) {
   const [runtimeState, setRuntimeState] = useState<RuntimeState>("loading");
   const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [heartbeat, setHeartbeat] = useState<HeartbeatEvent | null>(null);
+  const [eventsGeneration, setEventsGeneration] = useState(0);
+  // Heartbeat events keep the SSE connection alive; not shown in UI (Issue 01).
+  const [, setHeartbeat] = useState<HeartbeatEvent | null>(null);
   const [project, setProject] = useState<ProjectState>({ status: "idle" });
-  const [selectedAgent, setSelectedAgent] = useState<AgentId | null>(null);
+  const [agentConnection, setAgentConnection] = useState<AgentConnectionState>({
+    status: "idle"
+  });
   const [cwdManualCandidate, setCwdManualCandidate] = useState<string | null>(null);
+  const projectRef = useRef(project);
+  projectRef.current = project;
+
+  function isStillBoundTo(boundPath: string): boolean {
+    const current = projectRef.current;
+    return current.status === "bound" && current.path === boundPath;
+  }
+
+  const checkHealth = useCallback(async () => {
+    setRuntimeState("loading");
+    try {
+      const response = await fetch("/api/health", {
+        cache: "no-store",
+        headers: { "x-ikran-session": bootstrap.session }
+      });
+      if (!response.ok) {
+        throw new Error(`Runtime health failed: ${response.status}`);
+      }
+      const data = (await response.json()) as HealthResponse;
+      setHealth(data);
+      setRuntimeState(data.ok ? "connected" : "disconnected");
+    } catch {
+      setHealth(null);
+      setRuntimeState("disconnected");
+    }
+  }, [bootstrap.session]);
+
+  const reconnectRuntime = useCallback(() => {
+    void checkHealth();
+    setEventsGeneration((generation) => generation + 1);
+  }, [checkHealth]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function checkHealth() {
-      setRuntimeState("loading");
-      try {
-        const response = await fetch("/api/health", {
-          cache: "no-store",
-          headers: { "x-ikran-session": bootstrap.session }
-        });
-        if (!response.ok) {
-          throw new Error(`Runtime health failed: ${response.status}`);
-        }
-        const data = (await response.json()) as HealthResponse;
-        if (!cancelled) {
-          setHealth(data);
-          setRuntimeState(data.ok ? "connected" : "disconnected");
-        }
-      } catch {
-        if (!cancelled) {
-          setHealth(null);
-          setRuntimeState("disconnected");
-        }
-      }
-    }
-
-    checkHealth();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bootstrap.session]);
+    void checkHealth();
+  }, [checkHealth]);
 
   useEffect(() => {
     const events = new EventSource(
@@ -103,12 +115,50 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
     };
 
     return () => events.close();
-  }, [bootstrap.session]);
+  }, [bootstrap.session, eventsGeneration]);
 
-  // Recover project state after refresh, and auto-bind the folder Ikran was
-  // launched from (forwarded as `IKRAN_CWD`) when the Runtime says it is safe.
-  // An auto-bindable cwd (resume / init) takes priority over the stored active
-  // project pointer: the designer deliberately launched from this folder.
+  const bindFolder = useCallback(
+    async (folderPath: string) => {
+      setProject({ status: "binding", path: folderPath });
+      try {
+        const response = await fetch("/api/project/bind", {
+          method: "POST",
+          headers: {
+            "x-ikran-session": bootstrap.session,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ path: folderPath })
+        });
+        const data = (await response.json()) as {
+          ok: boolean;
+          project?: { path: string; name: string };
+          error?: string;
+        };
+        if (!response.ok || !data.ok || !data.project) {
+          setProject({
+            status: "error",
+            message: folderErrorMessage(data.error)
+          });
+          return;
+        }
+        setCwdManualCandidate(null);
+        setProject({
+          status: "bound",
+          path: data.project.path,
+          name: data.project.name
+        });
+        setAgentConnection({ status: "idle" });
+      } catch {
+        setProject({
+          status: "error",
+          message: folderErrorMessage("binding_failed")
+        });
+      }
+    },
+    [bootstrap.session]
+  );
+
+  // Recover project state after refresh, and auto-bind cwd when safe.
   useEffect(() => {
     let cancelled = false;
     async function loadProjectState() {
@@ -123,6 +173,7 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
         const data = (await response.json()) as {
           ok: boolean;
           project?: { path: string; name: string } | null;
+          connected_agent?: AgentId | null;
           cwd_candidate?:
             | { path: string; kind: "resume" | "init" | "manual" }
             | null;
@@ -131,25 +182,28 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
 
         const candidate = data.cwd_candidate ?? null;
 
-        // Auto-bind (no confirm) when cwd is an existing project (resume) or an
-        // effectively empty folder (init).
         if (candidate && (candidate.kind === "resume" || candidate.kind === "init")) {
           await bindFolder(candidate.path);
           return;
         }
 
-        // Recover an already-bound active project.
         if (data.ok && data.project) {
           setProject({
             status: "bound",
             path: data.project.path,
             name: data.project.name
           });
+          if (data.connected_agent) {
+            setAgentConnection({
+              status: "connected",
+              agent: data.connected_agent
+            });
+          } else {
+            setAgentConnection({ status: "idle" });
+          }
           return;
         }
 
-        // No active project and cwd is a valid but non-empty/non-project folder:
-        // surface it as a one-click "use current folder" confirm (no auto-bind).
         if (candidate && candidate.kind === "manual") {
           setCwdManualCandidate(candidate.path);
         }
@@ -157,20 +211,75 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
         // ignore; UI stays in idle/selecting state
       }
     }
-    loadProjectState();
+    void loadProjectState();
     return () => {
       cancelled = true;
     };
-  }, [bootstrap.session]);
+  }, [bootstrap.session, bindFolder]);
+
+  const connectAgent = useCallback(
+    async (agent: AgentId) => {
+      if (project.status !== "bound") {
+        return;
+      }
+
+      const boundPath = project.path;
+      setAgentConnection({ status: "connecting", agent });
+      try {
+        const response = await fetch("/api/agent/connect", {
+          method: "POST",
+          headers: {
+            "x-ikran-session": bootstrap.session,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ agent, projectPath: boundPath })
+        });
+        const data = (await response.json()) as {
+          ok: boolean;
+          agent?: AgentId;
+          error?: string;
+        };
+        if (!isStillBoundTo(boundPath)) {
+          return;
+        }
+        if (!response.ok || !data.ok || !data.agent) {
+          setAgentConnection({
+            status: "error",
+            agent,
+            message: agentErrorMessage(data.error)
+          });
+          return;
+        }
+        setAgentConnection({ status: "connected", agent: data.agent });
+      } catch {
+        if (!isStillBoundTo(boundPath)) {
+          return;
+        }
+        setAgentConnection({
+          status: "error",
+          agent,
+          message: agentErrorMessage("connection_failed")
+        });
+      }
+    },
+    [bootstrap.session, project]
+  );
+
+  async function handleUseCurrentFolder() {
+    if (!cwdManualCandidate) {
+      return;
+    }
+    await bindFolder(cwdManualCandidate);
+  }
 
   async function handleSelectFolder() {
     if (runtimeState !== "connected") return;
 
     const previousProject = project;
-    const previousAgent = selectedAgent;
+    const previousAgent = agentConnection;
     const restorePreviousProject = () => {
       setProject(previousProject);
-      setSelectedAgent(previousAgent);
+      setAgentConnection(previousAgent);
     };
     const applyBoundProject = (nextProject: { path: string; name: string }) => {
       setProject({
@@ -178,14 +287,15 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
         path: nextProject.path,
         name: nextProject.name
       });
-      setSelectedAgent(
-        previousProject.status === "bound" && previousProject.path === nextProject.path
+      setAgentConnection(
+        previousProject.status === "bound" &&
+          previousProject.path === nextProject.path
           ? previousAgent
-          : null
+          : { status: "idle" }
       );
     };
 
-    setSelectedAgent(null);
+    setAgentConnection({ status: "idle" });
     setProject({ status: "selecting" });
     try {
       const response = await fetch("/api/project/select-folder", {
@@ -207,7 +317,6 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
         }
 
         const fallback = data.error || "native_picker_unavailable";
-        // Fall back to a manual path prompt when the native picker is unavailable.
         const manualPath = window.prompt(
           `Native folder picker could not open (${fallback}${data.detail ? `: ${data.detail}` : ""}). Enter the full project folder path:`
         );
@@ -234,56 +343,41 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
         restorePreviousProject();
         return;
       }
-      setProject({ status: "error", message: "Could not open folder picker" });
-    }
-  }
-
-  async function bindFolder(folderPath: string) {
-    setProject({ status: "binding", path: folderPath });
-    try {
-      const response = await fetch("/api/project/bind", {
-        method: "POST",
-        headers: {
-          "x-ikran-session": bootstrap.session,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ path: folderPath })
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        project?: { path: string; name: string };
-        error?: string;
-      };
-      if (!response.ok || !data.ok || !data.project) {
-        setProject({
-          status: "error",
-          message: data.error || "binding_failed"
-        });
-        return;
-      }
       setProject({
-        status: "bound",
-        path: data.project.path,
-        name: data.project.name
+        status: "error",
+        message: folderErrorMessage("native_picker_unavailable")
       });
-    } catch {
-      setProject({ status: "error", message: "binding_failed" });
     }
   }
 
-  const helper = useMemo(() => {
+  const runtimeHelper = useMemo(() => {
     if (runtimeState === "connected") {
       return "Local runtime connected";
     }
     if (runtimeState === "loading") {
       return "Checking local runtime connection";
     }
-    return "Local runtime disconnected";
-  }, [runtimeState]);
+    return <>Local runtime disconnected. Try again</>;
+  }, [runtimeState, reconnectRuntime]);
 
   const folderReady = runtimeState === "connected";
   const agentReady = project.status === "bound";
-  const buildingReady = agentReady && selectedAgent !== null;
+  const buildingReady =
+    agentReady && agentConnection.status === "connected";
+
+  const folderVariant: FolderSelectVariant =
+    project.status === "bound"
+      ? "complete"
+      : cwdManualCandidate
+        ? "inside-folder"
+        : folderReady
+          ? "default"
+          : "inactive";
+
+  const folderBusy =
+    project.status === "selecting" ||
+    project.status === "binding" ||
+    agentConnection.status === "connecting";
 
   return (
     <main className="page">
@@ -314,7 +408,7 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
             stepNumber={runtimeState === "connected" ? undefined : 1}
             stepNumberActive
             stepNumberTone="pink"
-            helper={renderRuntimeHelper(runtimeState, helper)}
+            helper={renderRuntimeHelper(runtimeState, runtimeHelper)}
             helperTone={
               runtimeState === "connected"
                 ? "success"
@@ -323,26 +417,14 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
                   : "default"
             }
             helperTestId="runtime-helper"
-          />
-          <SetupStepButton
-            icon={
-              project.status === "bound" ? (
-                <CompleteCheckIcon />
-              ) : (
-                <IconBox tone={folderReady ? "blue" : "gray"}>
-                  <FolderSimpleIcon
-                    color={folderReady ? activeIconGradients.folder : "white"}
-                    size={14}
-                    weight="fill"
-                  />
-                </IconBox>
-              )
+            onClick={
+              runtimeState === "disconnected" ? reconnectRuntime : undefined
             }
-            label="Select a Folder"
-            stepNumber={project.status === "bound" ? undefined : 2}
-            stepNumberTone={folderReady ? "blue" : "gray"}
-            labelComplete={project.status === "bound"}
-            helper={renderFolderHelper(project)}
+            disabled={runtimeState === "loading"}
+          />
+          <FolderSelectStep
+            variant={folderVariant}
+            helper={renderFolderHelper(project, folderVariant)}
             helperTone={
               project.status === "bound"
                 ? "success"
@@ -350,42 +432,16 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
                   ? "error"
                   : "default"
             }
-            helperTestId="folder-helper"
             rowTestId="select-folder-button"
-            onClick={handleSelectFolder}
-            disabled={!folderReady || project.status === "selecting" || project.status === "binding"}
+            onSelectFolder={handleSelectFolder}
+            onUseFolderDirectly={() => void handleUseCurrentFolder()}
+            folderActionDisabled={!folderReady || folderBusy}
+            useFolderDirectlyDisabled={!folderReady || folderBusy}
           />
-          {cwdManualCandidate && project.status !== "bound" && (
-            <SetupStepButton
-              icon={
-                <IconBox tone={folderReady ? "blue" : "gray"}>
-                  <FolderSimpleIcon
-                    color={folderReady ? activeIconGradients.folder : "white"}
-                    size={14}
-                    weight="fill"
-                  />
-                </IconBox>
-              }
-              label="Use Current Folder"
-              helper={
-                <>
-                  Bind <strong>{cwdManualCandidate}</strong> as this
-                  project&apos;s folder
-                </>
-              }
-              helperTone="default"
-              helperTestId="cwd-folder-helper"
-              rowTestId="use-cwd-folder-button"
-              onClick={() => {
-                if (cwdManualCandidate) bindFolder(cwdManualCandidate);
-              }}
-              disabled={!folderReady || project.status === "selecting" || project.status === "binding"}
-            />
-          )}
           <AgentConnectorCard
             active={agentReady}
-            selectedAgent={selectedAgent}
-            onSelectAgent={setSelectedAgent}
+            connection={agentConnection}
+            onSelectAgent={(agent) => void connectAgent(agent)}
           />
         </div>
 
@@ -402,7 +458,10 @@ export function ProjectSetupCard({ bootstrap }: { bootstrap: Bootstrap }) {
   );
 }
 
-function renderFolderHelper(project: ProjectState) {
+function renderFolderHelper(
+  project: ProjectState,
+  variant: FolderSelectVariant
+) {
   switch (project.status) {
     case "bound":
       return <>Complete! {project.path}</>;
@@ -413,6 +472,9 @@ function renderFolderHelper(project: ProjectState) {
     case "error":
       return <>{project.message}</>;
     default:
+      if (variant === "inside-folder") {
+        return <>Choose a local folder</>;
+      }
       return (
         <>
           Choose a local folder for <strong>files storage</strong> of this
@@ -422,15 +484,8 @@ function renderFolderHelper(project: ProjectState) {
   }
 }
 
-function renderRuntimeHelper(
-  state: RuntimeState,
-  helper: string
-) {
-  if (state === "connected") {
-    return helper;
-  }
-
-  if (state === "disconnected") {
+function renderRuntimeHelper(state: RuntimeState, helper: ReactNode) {
+  if (state === "connected" || state === "disconnected") {
     return helper;
   }
 

@@ -1,1 +1,2 @@
 {"_type":"plan","name":"issue2-cwd-auto-bind","status":"done","title":"Issue 2 补充：启动时 cwd 自动绑定","created_at":"2026-07-03T12:52:33.618Z","completed_at":"2026-07-03T13:11:38.874Z"}
+{"_type":"plan","name":"issue01-setup-ui","status":"done","title":"Issue 01 Setup UI 决策记录","created_at":"2026-07-04T06:48:00.000Z","completed_at":"2026-07-04T06:48:00.000Z","notes":"Setup 不做四区 workbench；heartbeat 接收但不展示；四区延至无限画布。"}

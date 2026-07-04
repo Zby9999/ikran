@@ -177,57 +177,73 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     const startButton = page.getByRole("button", { name: "Start Building" });
     await expect(startButton).toBeDisabled();
     await page.getByRole("button", { name: "Codex" }).click();
-    await expect(page.getByRole("button", { name: "Codex" })).toHaveAttribute(
-      "aria-pressed",
-      "true"
+    await expect(page.getByTestId("agent-helper")).toContainText("Codex connected");
+    await expect(startButton).toBeEnabled();
+
+    const mismatchResult = await rawPost(
+      "/api/agent/connect",
+      { agent: "codex", projectPath: "/tmp/not-the-active-project" },
+      { host: `localhost:${port}`, "x-ikran-session": token }
     );
+    expect(mismatchResult.status).toBe(409);
+    expect(JSON.parse(mismatchResult.body).error).toBe("project_mismatch");
+
+    await page.reload();
+    await expect(page.getByTestId("agent-helper")).toContainText("Codex connected");
+    await expect(startButton).toBeEnabled();
+
+    const persistedConfig = JSON.parse(
+      readFileSync(`${testFolder}/.ikran/config.json`, "utf-8")
+    );
+    expect(persistedConfig.connected_agent).toBe("codex");
+
+    const rebindSameResult = await rawPost(
+      "/api/project/bind",
+      { path: testFolder },
+      { host: `localhost:${port}`, "x-ikran-session": token }
+    );
+    expect(rebindSameResult.status).toBe(200);
+    const rebindSameBody = JSON.parse(rebindSameResult.body);
+    expect(rebindSameBody.project.connected_agent).toBe("codex");
+
+    const rebindSameConfig = JSON.parse(
+      readFileSync(`${testFolder}/.ikran/config.json`, "utf-8")
+    );
+    expect(rebindSameConfig.connected_agent).toBe("codex");
+
+    const activeAfterRebind = await rawGet("/api/project", {
+      host: `localhost:${port}`,
+      "x-ikran-session": token
+    });
+    expect(JSON.parse(activeAfterRebind.body).connected_agent).toBe("codex");
+
+    await page.reload();
+    await expect(page.getByTestId("agent-helper")).toContainText("Codex connected");
     await expect(startButton).toBeEnabled();
 
     otherFolder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-other-"));
-    await page.route("**/api/project/select-folder", async (route) => {
-      await route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({
-          ok: true,
-          path: testFolder,
-          project: {
-            path: testFolder,
-            name: path.basename(testFolder)
-          }
-        })
-      });
-    });
-    await page.getByTestId("select-folder-button").click();
-    await expect(page.getByTestId("folder-helper")).toContainText(
-      `Complete! ${testFolder}`
+    const bindOtherResult = await rawPost(
+      "/api/project/bind",
+      { path: otherFolder },
+      { host: `localhost:${port}`, "x-ikran-session": token }
     );
-    await expect(page.getByRole("button", { name: "Codex" })).toHaveAttribute(
-      "aria-pressed",
-      "true"
-    );
-    await expect(startButton).toBeEnabled();
+    expect(bindOtherResult.status).toBe(200);
+    expect(JSON.parse(bindOtherResult.body).project.path).toBe(otherFolder);
+    expect(
+      JSON.parse(readFileSync(`${otherFolder}/.ikran/config.json`, "utf-8"))
+        .connected_agent
+    ).toBeUndefined();
 
-    await page.unroute("**/api/project/select-folder");
-    await page.route("**/api/project/select-folder", async (route) => {
-      await route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({
-          ok: true,
-          path: otherFolder,
-          project: {
-            path: otherFolder,
-            name: path.basename(otherFolder)
-          }
-        })
-      });
-    });
-    await page.getByTestId("select-folder-button").click();
+    const folderAConfig = JSON.parse(
+      readFileSync(`${testFolder}/.ikran/config.json`, "utf-8")
+    );
+    expect(folderAConfig.connected_agent).toBe("codex");
+
+    await page.reload();
     await expect(page.getByTestId("folder-helper")).toContainText(
       `Complete! ${otherFolder}`
     );
-    await expect(page.getByRole("button", { name: "Codex" })).not.toHaveClass(
-      /agent-option--selected/
-    );
+    await expect(page.getByTestId("agent-helper")).not.toContainText("connected");
     await expect(startButton).toBeDisabled();
   });
 

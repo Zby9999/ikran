@@ -2,7 +2,11 @@
 
 ## Design
 
-Prefer the designer's Figma reference for all UI / visual / interaction design. If no Figma reference exists for a surface, ask the designer first; only self-design or fill in with explicit confirmation. Figma-driven page specs live in `Design issue/`.
+Prefer the designer's **Figma reference** for all UI / visual / interaction design. If no Figma reference exists for a surface, ask the designer first; only self-design or fill in with explicit confirmation.
+
+**`Design issue/` (including D01–D10) is for designer communication only** — not implementation requirements. Do **not** use it as coding reference.
+
+**`issues/`** describe capability and API boundaries; **concrete UI follows Figma**. When no Figma exists for a surface, ask the designer first — do not make autonomous design changes.
 
 ## Commands
 
