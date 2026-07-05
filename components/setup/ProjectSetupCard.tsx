@@ -63,6 +63,8 @@ export function ProjectSetupCard({
   const [agentConnection, setAgentConnection] = useState<AgentConnectionState>({
     status: "idle"
   });
+  const agentConnectionRef = useRef(agentConnection);
+  agentConnectionRef.current = agentConnection;
   const [cwdManualCandidate, setCwdManualCandidate] = useState<string | null>(null);
   const projectRef = useRef(project);
   projectRef.current = project;
@@ -223,8 +225,16 @@ export function ProjectSetupCard({
         return;
       }
 
+      const current = agentConnectionRef.current;
+      if (current.status === "connecting") {
+        return;
+      }
+
       const boundPath = project.path;
-      setAgentConnection({ status: "connecting", agent });
+      const previousAgent =
+        current.status === "connected" ? current.agent : undefined;
+
+      setAgentConnection({ status: "connecting", agent, previousAgent });
       try {
         const response = await fetch("/api/agent/connect", {
           method: "POST",
@@ -243,11 +253,20 @@ export function ProjectSetupCard({
           return;
         }
         if (!response.ok || !data.ok || !data.agent) {
-          setAgentConnection({
-            status: "error",
-            agent,
-            message: agentErrorMessage(data.error)
-          });
+          const message = agentErrorMessage(data.error);
+          if (previousAgent) {
+            setAgentConnection({
+              status: "connected",
+              agent: previousAgent,
+              switchError: message
+            });
+          } else {
+            setAgentConnection({
+              status: "error",
+              agent,
+              message
+            });
+          }
           return;
         }
         setAgentConnection({ status: "connected", agent: data.agent });
@@ -255,11 +274,20 @@ export function ProjectSetupCard({
         if (!isStillBoundTo(boundPath)) {
           return;
         }
-        setAgentConnection({
-          status: "error",
-          agent,
-          message: agentErrorMessage("connection_failed")
-        });
+        const message = agentErrorMessage("connection_failed");
+        if (previousAgent) {
+          setAgentConnection({
+            status: "connected",
+            agent: previousAgent,
+            switchError: message
+          });
+        } else {
+          setAgentConnection({
+            status: "error",
+            agent,
+            message
+          });
+        }
       }
     },
     [bootstrap.session, project]

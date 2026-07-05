@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkbenchButton } from "@/components/workbench";
+
 export function SetupActionButton({
   label,
   disabled = false
@@ -8,13 +10,12 @@ export function SetupActionButton({
   disabled?: boolean;
 }) {
   return (
-    <button
-      className="action"
+    <WorkbenchButton
+      variant="primaryAction"
       data-testid="start-building-button"
       disabled={disabled}
-      type="button"
     >
       <span>{label}</span>
-    </button>
+    </WorkbenchButton>
   );
 }

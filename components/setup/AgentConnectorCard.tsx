@@ -3,7 +3,9 @@
 import { CheckIcon as PhosphorCheckIcon } from "@phosphor-icons/react";
 import { RobotIcon as PhosphorRobotIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 import type { AgentId } from "../../lib/runtime/agent-types";
+import { WorkbenchButton } from "@/components/workbench";
 import { AgentIcon } from "./AgentIcon";
 import { activeIconGradients } from "./IconGradients";
 import { IconBox } from "./IconBox";
@@ -13,14 +15,30 @@ export type { AgentId };
 
 export type AgentConnectionState =
   | { status: "idle" }
-  | { status: "connecting"; agent: AgentId }
-  | { status: "connected"; agent: AgentId }
+  | { status: "connecting"; agent: AgentId; previousAgent?: AgentId }
+  | { status: "connected"; agent: AgentId; switchError?: string }
   | { status: "error"; agent: AgentId; message: string };
 
 const AGENT_LABELS: Record<AgentId, string> = {
   codex: "Codex",
   cursor: "Cursor",
   claude: "Claude"
+};
+
+const AGENT_ICONS: Record<AgentId, { default: string; active: string; className?: string }> = {
+  codex: {
+    default: "/icons/codex.svg",
+    active: "/icons/codex-active.svg",
+    className: "agent-icon--codex"
+  },
+  cursor: {
+    default: "/icons/cursor.svg",
+    active: "/icons/cursor-active.svg"
+  },
+  claude: {
+    default: "/icons/claude.svg",
+    active: "/icons/claude-active.svg"
+  }
 };
 
 export function AgentConnectorCard({
@@ -34,8 +52,15 @@ export function AgentConnectorCard({
 }) {
   const rowRef = useSquircle<HTMLDivElement>(16);
   const selectedAgent =
-    connection.status === "connected" ? connection.agent : null;
-  const headerTone = active && !selectedAgent ? "purple" : "gray";
+    connection.status === "connected"
+      ? connection.agent
+      : connection.status === "connecting" && connection.previousAgent
+        ? connection.previousAgent
+        : null;
+  const headerPromptActive =
+    active &&
+    (connection.status === "idle" || connection.status === "error");
+  const headerTone = headerPromptActive ? "purple" : "gray";
   const connectingAgent =
     connection.status === "connecting" ? connection.agent : null;
 
@@ -53,7 +78,7 @@ export function AgentConnectorCard({
           <div className="step-fill">
             <p className="step-label">Connect Your Agent</p>
             <span
-              className={`number ${active && !selectedAgent ? "number--purple" : ""}`}
+              className={`number ${headerPromptActive ? "number--purple" : ""}`}
             >
               3
             </span>
@@ -63,8 +88,6 @@ export function AgentConnectorCard({
           <AgentChoice
             active={active}
             agent="codex"
-            iconSrc="/icons/codex.svg"
-            iconClassName="agent-icon--codex"
             selected={selectedAgent === "codex"}
             connecting={connectingAgent === "codex"}
             disabled={Boolean(connectingAgent && connectingAgent !== "codex")}
@@ -75,7 +98,6 @@ export function AgentConnectorCard({
           <AgentChoice
             active={active}
             agent="cursor"
-            iconSrc="/icons/cursor.svg"
             selected={selectedAgent === "cursor"}
             connecting={connectingAgent === "cursor"}
             disabled={Boolean(connectingAgent && connectingAgent !== "cursor")}
@@ -86,7 +108,6 @@ export function AgentConnectorCard({
           <AgentChoice
             active={active}
             agent="claude"
-            iconSrc="/icons/claude.svg"
             selected={selectedAgent === "claude"}
             connecting={connectingAgent === "claude"}
             disabled={Boolean(connectingAgent && connectingAgent !== "claude")}
@@ -99,7 +120,9 @@ export function AgentConnectorCard({
       <p
         className={`helper ${
           connection.status === "connected"
-            ? "success"
+            ? connection.switchError
+              ? "error"
+              : "success"
             : connection.status === "error"
               ? "error"
               : ""
@@ -114,6 +137,9 @@ export function AgentConnectorCard({
 
 function renderAgentHelper(connection: AgentConnectionState) {
   if (connection.status === "connected") {
+    if (connection.switchError) {
+      return connection.switchError;
+    }
     return `${AGENT_LABELS[connection.agent]} connected`;
   }
 
@@ -136,8 +162,6 @@ function AgentChoice({
   active,
   agent,
   children,
-  iconSrc,
-  iconClassName = "",
   selected = false,
   connecting = false,
   disabled = false,
@@ -146,30 +170,37 @@ function AgentChoice({
   active: boolean;
   agent: AgentId;
   children: ReactNode;
-  iconSrc: string;
-  iconClassName?: string;
   selected?: boolean;
   connecting?: boolean;
   disabled?: boolean;
   onSelect?: (agent: AgentId) => void;
 }) {
+  const icons = AGENT_ICONS[agent];
+  const isDisabled = !active || disabled || selected || connecting;
+
   return (
-    <button
-      className={`agent-option ${active ? "agent-option--active" : ""} ${selected ? "agent-option--connected" : ""}`}
+    <WorkbenchButton
+      variant="agentChip"
+      className={cn(
+        active && !selected && "agent-option--active",
+        selected && "agent-option--connected agent-option--locked disabled:cursor-default"
+      )}
       aria-busy={connecting || undefined}
       aria-label={typeof children === "string" ? children : agent}
       aria-pressed={selected || undefined}
-      disabled={!active || disabled}
+      disabled={isDisabled}
       onClick={() => onSelect?.(agent)}
-      type="button"
     >
-      <AgentIcon src={iconSrc} className={iconClassName} />
-      {!selected ? <span>{children}</span> : null}
+      <AgentIcon
+        src={selected ? icons.active : icons.default}
+        className={icons.className ?? ""}
+      />
+      {!selected ? <span className="agent-option-label">{children}</span> : null}
       {selected ? (
         <span className="agent-option-check" aria-hidden="true">
           <PhosphorCheckIcon size={8} weight="bold" />
         </span>
       ) : null}
-    </button>
+    </WorkbenchButton>
   );
 }

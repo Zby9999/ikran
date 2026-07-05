@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { WorkbenchButton } from "@/components/workbench";
 import { useSquircle } from "./useSquircle";
 
 type HelperTone = "default" | "success" | "error";
@@ -35,6 +36,7 @@ export function SetupStepButton({
 }) {
   const rowRef = useSquircle<HTMLDivElement>(12);
   const buttonRowRef = useSquircle<HTMLButtonElement>(12);
+  const rowClassName = `step-row${labelComplete ? " step-row--settled" : ""}`;
 
   const rowContent = (
     <>
@@ -59,18 +61,17 @@ export function SetupStepButton({
   return (
     <div className="step" aria-disabled={disabled || undefined}>
       {onClick ? (
-        <button
-          className="step-row step-row-button"
+        <WorkbenchButton
+          variant={labelComplete ? "setupRowSettled" : "setupRow"}
           data-testid={rowTestId}
           disabled={disabled}
           onClick={onClick}
           ref={buttonRowRef}
-          type="button"
         >
           {rowContent}
-        </button>
+        </WorkbenchButton>
       ) : (
-        <div className="step-row" ref={rowRef}>
+        <div className={rowClassName} ref={rowRef}>
           {rowContent}
         </div>
       )}

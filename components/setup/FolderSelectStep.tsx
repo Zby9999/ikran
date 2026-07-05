@@ -1,5 +1,6 @@
 "use client";
 
+import { WorkbenchButton } from "@/components/workbench";
 import { FolderSimpleIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import { activeIconGradients } from "./IconGradients";
@@ -35,6 +36,7 @@ export function FolderSelectStep({
   const rowStaticRef = useSquircle<HTMLDivElement>(12);
   const active = variant === "default" || variant === "inside-folder";
   const complete = variant === "complete";
+  const mutedLabel = complete && !onSelectFolder;
 
   const icon = complete ? (
     <CompleteCheckIcon />
@@ -52,7 +54,7 @@ export function FolderSelectStep({
     <>
       {icon}
       <div className="step-fill">
-        <p className={`step-label ${complete ? "complete" : ""}`}>Select a Folder</p>
+        <p className={`step-label ${mutedLabel ? "complete" : ""}`}>Select a Folder</p>
         {!complete ? (
           <span className={`number ${active ? "number--blue" : ""}`}>2</span>
         ) : null}
@@ -63,16 +65,15 @@ export function FolderSelectStep({
   return (
     <div className="step" aria-disabled={folderActionDisabled || undefined}>
       {onSelectFolder ? (
-        <button
-          className="step-row step-row-button"
+        <WorkbenchButton
+          variant="setupRow"
           data-testid={rowTestId}
           disabled={folderActionDisabled}
           onClick={onSelectFolder}
           ref={rowRef}
-          type="button"
         >
           {rowContent}
-        </button>
+        </WorkbenchButton>
       ) : (
         <div className="step-row" ref={rowStaticRef}>
           {rowContent}
@@ -89,15 +90,14 @@ export function FolderSelectStep({
           >
             {helper}
           </p>
-          <button
-            className="use-folder-directly"
+          <WorkbenchButton
+            variant="subtlePill"
             data-testid="use-folder-directly-button"
             disabled={useFolderDirectlyDisabled}
             onClick={onUseFolderDirectly}
-            type="button"
           >
             Use this folder directly
-          </button>
+          </WorkbenchButton>
         </div>
       ) : (
         <p
