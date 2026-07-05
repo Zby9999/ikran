@@ -92,7 +92,7 @@ PRD 故事 76（npm/npx 启动）的目标用户里有一类“懂一点代码�
 - 绑定失败：语义化错误文案（`folder-error-message.ts`），不暴露 error code。
 - `cwd_candidate` manual：Figma **Inside folder** 变体（`Select a Folder` 行 + `Choose a local folder` + `Use this folder directly` 子按钮）；子按钮调用 `/api/project/bind`。
 - Runtime Step 1 断连：helper 红色语义化文案含「Try again」纯文本；重试靠点击 Step 1 行。
-- `Start Building` 在无限画布未就绪前为**无 handler 的占位按钮**；三步完成后仅亮起，属预期行为。
+- `Start Building` 在 React Flow 工作区未就绪前为**无 handler 的占位按钮**；三步完成后仅亮起，属预期行为。
 - `Design issue/` 仅供设计师沟通，不作为编码参考。
 
 ### Frontend implementation (Setup UI, 2026-07)

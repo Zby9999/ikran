@@ -16,6 +16,7 @@
 
 让设计师从 human intent 创建新的 prototype，并可选提供一个 visual reference。  
 默认路径应该是 human-intent-first，因为 PRD 的研究重点是从 aligned design language 生成新设计，而不是只复刻参考图。
+生成后应进入 Prototype Evidence Surface review，支持整体 feedback 和局部 region feedback。
 
 ## 页面结构
 
@@ -29,7 +30,7 @@
   - optional visual reference input。
   - selected design-system context summary。
   - generation status。
-  - preview area 或进入 preview 的状态。
+  - generated Prototype Evidence Surface 或进入 preview 的状态。
 
 - 右侧 Agent/sidebar：
   - agent questions if needed。
@@ -62,6 +63,7 @@
 - 页面不应像 generic AI app builder；它是在现有 design system 内创建 prototype。
 - generation 后应自然进入 live preview/review，而不是停留在表单。
 - feedback 是当前 prototype 的反馈，不应立即变成 formal rule。
+- 局部 feedback 应使用 prototype region anchor；无局部区域时绑定当前 prototype surface/run。
 
 ## 需要交付的设计稿
 

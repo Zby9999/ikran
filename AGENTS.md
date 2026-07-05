@@ -15,4 +15,4 @@ Prefer the designer's **Figma reference** for all UI / visual / interaction desi
 - `npm run build` — production build
 - `npm run check` — typecheck + e2e
 
-Product and architecture details are in `MAP-MVP-PRD.zh-CN.md` and `issues/`.
+Product and architecture details are in `IKRAN-MVP-PRD.zh-CN.md` and `issues/`.

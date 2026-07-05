@@ -2,7 +2,7 @@
 
 ## What to build
 
-实现 seed startup 后的主要循环：设计师用自然语言描述新的 prototype intent，Ikran Runtime 携带当前 design-system context 把请求路由给 agent，agent 在用户选择的项目文件夹中创建或更新 prototype code，live preview 更新，并生成可追踪的 prototype run record。
+实现 seed startup 后的主要循环：设计师用自然语言描述新的 prototype intent，Ikran Runtime 携带当前 design-system context 把请求路由给 agent，agent 在用户选择的项目文件夹中创建或更新 prototype code，live preview 更新，并生成可追踪的 prototype run record 和 Prototype Evidence Surface。
 
 ## User stories covered
 
@@ -21,7 +21,9 @@
 - [ ] mocked adapter 创建或更新 prototype surface，并返回 prototype run metadata。
 - [ ] Ikran Runtime 将 prototype run 链接到 design-system version，以及可用的相关 alignment answers。
 - [ ] iframe preview 在 run 后更新，或显示 refreshed preview state。
-- [ ] UI 允许设计师对生成的 prototype 给 feedback，以便后续 rule recursion 有触发来源。
+- [ ] UI 将生成结果表现为 React Flow 中的 Prototype Evidence Surface。
+- [ ] UI 允许设计师对整个 prototype surface 或局部 prototype region 给 feedback，以便后续 rule recursion 有触发来源。
+- [ ] prototype feedback 同时链接 prototype run、prototype surface，以及可选 Region Annotation。
 - [ ] 测试验证 task、run metadata、preview status 和 event linkage。
 
 ## Blocked by

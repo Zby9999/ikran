@@ -16,6 +16,7 @@
 
 让设计师在 MAP 中看到 live prototype，并能进入 focus mode 直接体验交互。  
 页面同时需要支持 seed reconstruction review 和后续 new prototype review。
+prototype preview 在 React Flow 中表现为 Prototype Evidence Surface；局部反馈通过 surface overlay 选择区域，而不是截图历史。
 
 ## 页面结构
 
@@ -29,8 +30,10 @@
   - run history 简要列表。
   - linked design-system version。
 
-- 中心区域：
+- 中心 React Flow 工作区：
+  - Prototype Evidence Surface。
   - iframe live preview。
+  - Region Annotation overlay。
   - preview unavailable fallback。
   - loading skeleton。
 
@@ -56,6 +59,7 @@
 - focus mode 应该是明确动作，但不要破坏主工作区上下文。
 - designer feedback 针对当前 prototype，不要自动等同于 design-system rule update。
 - seed reconstruction 和 new prototype 可以复用同一 preview 框架，但标题与上下文要区别清楚。
+- 局部 feedback 可以绑定到 prototype region；整体 feedback 只绑定到当前 prototype surface/run。
 
 ## 需要交付的设计稿
 

@@ -19,7 +19,7 @@
 
 - [x] Ikran Runtime 可以本地启动，并托管 Browser UI 与 `/api/*` Runtime API。
 - [x] Browser UI 渲染 Ikran workbench shell，包括 PRD 中的左侧流程区、中心工作区、右侧 Agent/sidebar 区和顶部阶段区。
-  > **Setup 阶段不做四区 workbench shell。** 当前 project-setup 单卡界面即为 Setup 的最终 UI；四区布局（顶/左/中/右）延至进入**无限画布**之后再实现，届时以 Figma 参考为准。
+  > **Setup 阶段不做四区 workbench shell。** 当前 project-setup 单卡界面即为 Setup 的最终 UI；四区布局（顶/左/中/右）延至进入 **React Flow 工作区**之后再实现，届时以 Figma 参考为准。
 - [x] Browser UI 通过同源 HTTP 调用 `/api/health`，并能显示 ready、loading、error 状态；断开时可重试连接。
 - [x] Browser UI 订阅 `/api/events` SSE heartbeat 以维持连接态（**刻意不展示** heartbeat 细节）。
 - [x] Runtime 默认绑定 localhost 或 `127.0.0.1`，不启用宽泛 CORS。
@@ -36,7 +36,7 @@ None - can start immediately
 
 ### Frontend decisions (Setup)
 
-- Setup 屏为最终 UI，不含左右侧栏；四区 workbench 在无限画布阶段再做。
+- Setup 屏为最终 UI，不含左右侧栏；四区 workbench 在 React Flow 工作区阶段再做。
 - SSE heartbeat 仅用于内部连接保活，不向设计师展示技术细节。
 
 ### Frontend implementation (Setup UI, 2026-07)

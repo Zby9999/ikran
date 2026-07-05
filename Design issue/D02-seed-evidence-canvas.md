@@ -1,4 +1,4 @@
-# D02 Seed Evidence Canvas
+# D02 Seed Evidence Surface
 
 ## 对应实现 Issue
 
@@ -14,11 +14,14 @@
 
 展示 Figma seed page 的视觉证据，并让 agent annotation 与 evidence anchor 可见、可扫读、可定位。
 
+这个页面使用 React Flow 承载 Figma Evidence Surface；局部标注由 surface overlay 渲染，不把 Figma 内部节点或 annotation 变成 React Flow nodes。
+
 设计师应该能一眼看出：
 
 - agent 正在看哪个 seed page。
 - 哪些地方被标注为问题、假设、事实或泛化风险。
 - 标注和 Figma node / local region / whole frame 的关系。
+- visual surface 只是可视化和定位层；设计系统抽取依赖 Figma structured evidence。
 
 ## 页面结构
 
@@ -34,9 +37,9 @@
   - Annotation type filters。
   - 当前 stage 的 annotation summary。
 
-- 中心 canvas：
-  - Figma seed screenshot 或 visual surface。
-  - Anchored annotations。
+- 中心 React Flow 工作区：
+  - Figma Evidence Surface。
+  - Surface-local Region Annotation overlay。
   - zoom / pan 控制。
   - whole-frame anchor 的视觉表达。
 
@@ -67,10 +70,11 @@
 - 不要让 annotation 覆盖设计本身太多；它们是阅读辅助，不是主角。
 - canvas 操作不能成为研究事件噪声；设计上也不要暗示每次 pan/zoom 都是重要行为。
 - whole-frame question 也需要可见 anchor，不能只是一条抽象问题。
+- 不要把这个页面设计成通用白板；它是 Figma evidence 的研究工作区。
 
 ## 需要交付的设计稿
 
-- seed evidence canvas 默认状态。
+- seed evidence surface 默认状态。
 - 多 annotation 类型同时出现的状态。
 - annotation selected 状态。
 - missing evidence 状态。

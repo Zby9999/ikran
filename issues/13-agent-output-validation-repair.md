@@ -13,6 +13,10 @@
 ## Acceptance criteria
 
 - [ ] Ikran Runtime 校验目前已实现的 MVP task families 的 structured agent outputs。
+- [ ] Region Annotation intent 必须包含 `surfaceArtifactId` 或 `surfaceNodeId`，否则 validation failure。
+- [ ] `figma-region` output 必须包含 region rect；single-node 语义必须包含 primary Figma node 或高置信 candidate。
+- [ ] `prototype-region` output 必须包含 bounding box 和 normalized rect；DOM candidates 可选。
+- [ ] question / finding / feedback 不允许只使用“这里”等无结构化 anchor 的模糊引用。
 - [ ] invalid output 会记录 `invalid-output` event，并包含足够的诊断上下文，方便研究和 debugging。
 - [ ] Ikran Runtime 最多向 AgentAdapter 请求一次 repair attempt。
 - [ ] repair 成功时记录 repaired-output event，并继续 task flow。

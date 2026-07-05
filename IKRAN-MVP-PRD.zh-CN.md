@@ -169,7 +169,6 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
   - 规则递归。
 - 新设计创建同时支持人类意图优先和视觉参考优先输入，但人类意图优先是主要路径。
 - 核心用户是设计师；UI 不应暴露不必要的工程状态。
-- 实现会使用用户后续提供的具体 Figma 页面设计。Codex 将负责代码和技术实现。
 
 ### 产品形态与启动方式
 
@@ -259,7 +258,7 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
 - 设计师提供一个空的本地文件夹。
 - 文件夹选择应尽量使用操作系统原生文件夹选择器。
 - 浏览器 UI 通过 Runtime API 触发文件夹选择；Runtime 拥有原生 dialog，并返回被选中的真实路径。
-- 如果某个平台暂时无法使用原生 dialog，MVP 可以退回到手动输入本地路径并进行校验。
+- 当原生 dialog 不可用时，MVP 提供手动本地路径输入并进行校验。
 - 项目开始时，该文件夹预计不包含源代码。
 - Agent 在该文件夹中初始化原型 App 和工作流文件。
 - 该文件夹成为完整的项目工作空间和研究案例。
@@ -272,7 +271,7 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
   - Tailwind 配置，
   - 以及生成的 artifacts。
 - Ikran Runtime 将 runtime 和研究元数据存储在 `.ikran/` 下。
-- 建议的 `.ikran/` 内容：
+- `.ikran/` 内容包括：
   - SQLite App 数据库，
   - JSONL events，
   - config，
@@ -546,7 +545,6 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
 - 最高价值的测试边界是完整工作流边界：浏览器 UI -> Ikran Runtime -> mocked AgentAdapter -> 项目 artifacts -> 浏览器 UI render。
 - 偏好一个高层集成边界，而不是许多低层测试，因为 MVP 风险在于工作流协调，而不是孤立 helper function。
 - 测试应验证外部行为和持久输出，而不是实现细节。
-- 由于目标文件夹当前包含研究和方法文件，而不是应用代码，新的测试边界需要随着产品实现引入。
 
 ### 主要测试边界
 
@@ -636,60 +634,5 @@ Figma MCP 有意不嵌入 Ikran Runtime。Runtime 应要求被选中的外部 Ag
 - 生产级桌面应用打包。
 
 ## 进一步说明
-
-- 本 PRD 先作为产品事实源记录；相关 issue 文件会在 Ikran 架构对齐后再修改。
-- 与用户确认 Ikran 本地工作台架构后，应更新相关 issue，使它们与本地 Runtime 模型一致。
-- 一个月 MVP 节奏应优先完成完整研究循环，而不是打磨。
-
-### 建议的一个月里程碑
-
-1. 第 1 周：项目基础
-   - npm/npx 启动路径。
-   - 本地 Ikran Runtime shell。
-   - 由 Runtime 托管的 Next.js 浏览器 UI shell。
-   - 同源 HTTP + SSE 通信。
-   - localhost session token。
-   - 项目文件夹选择流程。
-   - 原生文件夹选择器 spike 或平台级 MVP 实现。
-   - `.ikran/` 元数据创建。
-   - SQLite/事件日志基础。
-   - mocked AgentAdapter。
-   - 基础任务/结果 schema。
-
-2. 第 2 周：种子提取工作台
-   - React Flow 研究工作流画布 shell。
-   - Figma Evidence Surface。
-   - Region Annotation overlay。
-   - 顶部五个阶段标签页。
-   - 左侧问题列表。
-   - 右侧回答面板。
-   - Figma region anchor 模型。
-   - mocked Figma evidence package。
-   - 生成对齐问题，每个阶段二到五张卡。
-   - 回答完成门禁。
-
-3. 第 3 周：设计系统和预览循环
-   - Agent 驱动的空文件夹项目初始化。
-   - Next.js/TypeScript/Tailwind/npm 原型 scaffold。
-   - workflow design-system/evidence 文件夹。
-   - token.json 和设计系统源文件创建流程。
-   - design-system-view.json 生成。
-   - 带 Foundations 和 Components 的设计系统浏览器。
-   - 来自本地开发服务器的实时 iframe 预览。
-   - Prototype Evidence Surface。
-   - Prototype region anchor 与非侵入式 DOM candidates。
-   - 使用 mocked 或 real Agent 的种子重建流程。
-
-4. 第 4 周：新原型和规则递归
-   - 人类意图优先的新原型任务。
-   - 可选视觉参考输入路径。
-   - rule-update Agent 侧栏提案流程。
-   - Confirm/Cancel 应用流程。
-   - 导出包。
-   - 真实 Agent smoke test。
-   - 真实 Figma MCP smoke test。
-   - 面向实验准备的加固 pass。
-
-### 产品原则
 
 像可扩展的 Agent-design platform 一样做战略思考，但像一个月研究工具一样做战术构建。MVP 应该快速、可用，并且足够完整以支持实验，同时为 ACP、Sandpack、WebContainers、设计语言混合和更丰富的规则递归留下清晰边界。

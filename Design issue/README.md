@@ -1,6 +1,6 @@
-# MAP 关键页面设计 Issue 总览
+# Ikran 关键页面设计 Issue 总览
 
-来源：`MAP-MVP-PRD.md` 与 `issues/` 中的实现 issue。
+来源：`IKRAN-MVP-PRD.zh-CN.md` 与 `issues/` 中的实现 issue。
 
 这个文件夹列出设计师需要优先提供的关键页面设计。这里的“页面”不是代码路由，而是需要在 Figma 中明确视觉结构、信息层级和交互状态的主要工作区。
 
@@ -10,10 +10,10 @@
    先确定 MAP 的整体外壳、项目绑定、Bridge/Agent 状态，因为后续所有页面都复用这个布局和状态表达。
 
 2. `D02-seed-evidence-canvas.md`  
-   再设计 seed evidence 的视觉工作区，因为这是 MAP 与普通 chat workflow 最大的差异：agent 的理解状态必须落在设计表面上。
+   再设计 seed evidence 的 React Flow 视觉工作区，因为这是 MAP 与普通 chat workflow 最大的差异：agent 的理解状态必须落在 Evidence Surface 上。
 
 3. `D03-seed-alignment-question-workspace.md`  
-   在 evidence canvas 基础上设计 question answering，因为问题卡、canvas anchor、右侧回答区共同定义核心 alignment 体验。
+   在 evidence surface 基础上设计 question answering，因为问题卡、Region Annotation anchor、右侧回答区共同定义核心 alignment 体验。
 
 4. `D04-seed-extraction-progress-and-artifacts.md`  
    设计 all-answered 之后的生成与结果状态，确保用户知道系统正在把回答转成 design-system artifacts。

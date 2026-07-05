@@ -9,7 +9,7 @@
 ## 设计顺序
 
 第 10 个设计。  
-这是最后设计的页面，因为它依赖前面所有工作流产生的数据：questions、answers、prototype runs、rule-update proposals、events 和 artifacts。
+这是最后设计的页面，因为它依赖前面所有工作流产生的数据：questions、answers、evidence surfaces、region annotations、prototype runs、rule-update proposals、events 和 artifacts。
 
 ## 页面目标
 
@@ -28,6 +28,7 @@
   - project name/path。
   - seed extraction complete / incomplete。
   - prototype runs count。
+  - region annotations count。
   - rule-update proposals count。
   - export status。
 
@@ -44,6 +45,7 @@
   - `prototype-runs.json`
   - `rule-update-proposals.json`
   - `artifacts-index.json`
+  - region annotation / evidence surface artifacts 摘要。
 
 - integration readiness section：
   - mocked workflow verified。
