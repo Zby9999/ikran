@@ -412,9 +412,9 @@ button {
   overflow: visible;
   text-overflow: clip;
   white-space: nowrap;
-  font-size: 10px;
+  font-size: 8px;
   line-height: 1;
-  letter-spacing: -0.3px;
+  letter-spacing: -0.24px;
 }
 
 .agent-option-check {
