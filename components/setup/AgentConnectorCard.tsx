@@ -195,7 +195,16 @@ function AgentChoice({
         src={selected ? icons.active : icons.default}
         className={icons.className ?? ""}
       />
-      {!selected ? <span className="agent-option-label">{children}</span> : null}
+      {!selected ? (
+        <span
+          className={cn(
+            "agent-option-label",
+            agent === "claude" && "agent-option-label--claude"
+          )}
+        >
+          {children}
+        </span>
+      ) : null}
       {selected ? (
         <span className="agent-option-check" aria-hidden="true">
           <PhosphorCheckIcon size={8} weight="bold" />
