@@ -49,6 +49,11 @@ type ProjectState =
   | { status: "bound"; path: string; name: string }
   | { status: "error"; message: string };
 
+type BoundProjectResponse = {
+  path: string;
+  name: string;
+};
+
 export function ProjectSetupCard({
   bootstrap
 }: {
@@ -121,6 +126,7 @@ export function ProjectSetupCard({
 
   const bindFolder = useCallback(
     async (folderPath: string) => {
+      const previousAgent = agentConnectionRef.current;
       setProject({ status: "binding", path: folderPath });
       try {
         const response = await fetch("/api/project/bind", {
@@ -133,7 +139,7 @@ export function ProjectSetupCard({
         });
         const data = (await response.json()) as {
           ok: boolean;
-          project?: { path: string; name: string };
+          project?: BoundProjectResponse;
           error?: string;
         };
         if (!response.ok || !data.ok || !data.project) {
@@ -149,7 +155,7 @@ export function ProjectSetupCard({
           path: data.project.path,
           name: data.project.name
         });
-        setAgentConnection({ status: "idle" });
+        setAgentConnection(previousAgent);
       } catch {
         setProject({
           status: "error",
@@ -309,21 +315,15 @@ export function ProjectSetupCard({
       setProject(previousProject);
       setAgentConnection(previousAgent);
     };
-    const applyBoundProject = (nextProject: { path: string; name: string }) => {
+    const applyBoundProject = (nextProject: BoundProjectResponse) => {
       setProject({
         status: "bound",
         path: nextProject.path,
         name: nextProject.name
       });
-      setAgentConnection(
-        previousProject.status === "bound" &&
-          previousProject.path === nextProject.path
-          ? previousAgent
-          : { status: "idle" }
-      );
+      setAgentConnection(previousAgent);
     };
 
-    setAgentConnection({ status: "idle" });
     setProject({ status: "selecting" });
     try {
       const response = await fetch("/api/project/select-folder", {
@@ -333,7 +333,7 @@ export function ProjectSetupCard({
       const data = (await response.json()) as {
         ok: boolean;
         path?: string;
-        project?: { path: string; name: string };
+        project?: BoundProjectResponse;
         error?: string;
         detail?: string;
       };

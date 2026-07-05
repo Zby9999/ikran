@@ -7,6 +7,7 @@ import path from "node:path";
 let port = 3000;
 let baseURL = "http://localhost:3000";
 let testFolder = "";
+let otherFolder = "";
 
 function rawPost(
   route: string,
@@ -70,6 +71,19 @@ async function captureSessionToken(page: import("@playwright/test").Page) {
   return sessionToken;
 }
 
+async function ensureConnectedAgent(
+  page: import("@playwright/test").Page,
+  agentName: "Codex" | "Cursor" | "Claude Code"
+) {
+  const helper = page.getByTestId("agent-helper");
+  if ((await helper.textContent())?.includes(`${agentName} connected`)) {
+    return;
+  }
+
+  await page.getByRole("button", { name: agentName }).click();
+  await expect(helper).toContainText(`${agentName} connected`);
+}
+
 test.describe("Ikran setup — agent switching", () => {
   test.beforeEach(async ({ runtime }) => {
     port = runtime.port;
@@ -82,6 +96,10 @@ test.describe("Ikran setup — agent switching", () => {
       rmSync(testFolder, { recursive: true, force: true });
       testFolder = "";
     }
+    if (otherFolder) {
+      rmSync(otherFolder, { recursive: true, force: true });
+      otherFolder = "";
+    }
   });
 
   test("preserves connected agent when a switch attempt fails", async ({ page }) => {
@@ -93,8 +111,7 @@ test.describe("Ikran setup — agent switching", () => {
     );
 
     const startButton = page.getByRole("button", { name: "Start Building" });
-    await page.getByRole("button", { name: "Codex" }).click();
-    await expect(page.getByTestId("agent-helper")).toContainText("Codex connected");
+    await ensureConnectedAgent(page, "Codex");
     await expect(startButton).toBeEnabled();
 
     await page.route("**/api/agent/connect", async (route) => {
@@ -119,6 +136,92 @@ test.describe("Ikran setup — agent switching", () => {
     await expect(page.getByRole("button", { name: "Cursor" })).toBeEnabled();
   });
 
+  test("keeps connected agent when selecting the same folder again", async ({ page }) => {
+    const token = await captureSessionToken(page);
+    await bindTestFolder(token, testFolder);
+    await page.reload();
+    await expect(page.getByTestId("folder-helper")).toContainText(
+      `Complete! ${testFolder}`
+    );
+
+    const startButton = page.getByRole("button", { name: "Start Building" });
+    await ensureConnectedAgent(page, "Codex");
+    await expect(startButton).toBeEnabled();
+
+    let selectFolderCalls = 0;
+    await page.route("**/api/project/select-folder", async (route) => {
+      selectFolderCalls += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          path: testFolder,
+          project: {
+            path: testFolder,
+            name: path.basename(testFolder),
+            connected_agent: "codex"
+          },
+          events: {
+            project_created: "test-project-created",
+            folder_selected: "test-folder-selected"
+          }
+        })
+      });
+    });
+
+    await page.getByTestId("select-folder-button").click();
+
+    expect(selectFolderCalls).toBe(1);
+    await expect(page.getByTestId("folder-helper")).toContainText(
+      `Complete! ${testFolder}`
+    );
+    await expect(page.getByTestId("agent-helper")).toContainText("Codex connected");
+    await expect(startButton).toBeEnabled();
+  });
+
+  test("keeps current agent when selecting a different folder", async ({ page }) => {
+    const token = await captureSessionToken(page);
+    await bindTestFolder(token, testFolder);
+    await page.reload();
+    await expect(page.getByTestId("folder-helper")).toContainText(
+      `Complete! ${testFolder}`
+    );
+
+    const startButton = page.getByRole("button", { name: "Start Building" });
+    await ensureConnectedAgent(page, "Cursor");
+    await expect(startButton).toBeEnabled();
+
+    otherFolder = mkdtempSync(path.join(tmpdir(), "ikran-agent-switch-other-"));
+    await page.route("**/api/project/select-folder", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          path: otherFolder,
+          project: {
+            path: otherFolder,
+            name: path.basename(otherFolder),
+            connected_agent: "claude"
+          },
+          events: {
+            project_created: "test-project-created",
+            folder_selected: "test-folder-selected"
+          }
+        })
+      });
+    });
+
+    await page.getByTestId("select-folder-button").click();
+
+    await expect(page.getByTestId("folder-helper")).toContainText(
+      `Complete! ${otherFolder}`
+    );
+    await expect(page.getByTestId("agent-helper")).toContainText("Cursor connected");
+    await expect(startButton).toBeEnabled();
+  });
+
   test("ignores duplicate clicks while connecting", async ({ page }) => {
     const token = await captureSessionToken(page);
     await bindTestFolder(token, testFolder);
@@ -134,12 +237,14 @@ test.describe("Ikran setup — agent switching", () => {
       await route.continue();
     });
 
-    const cursorButton = page.getByRole("button", { name: "Cursor" });
-    await cursorButton.click();
-    await expect(cursorButton).toBeDisabled();
-    await cursorButton.click({ force: true });
+    const helperText = (await page.getByTestId("agent-helper").textContent()) ?? "";
+    const targetAgent = helperText.includes("Cursor connected") ? "Codex" : "Cursor";
+    const targetButton = page.getByRole("button", { name: targetAgent });
+    await targetButton.click();
+    await expect(targetButton).toBeDisabled();
+    await targetButton.click({ force: true });
 
-    await expect(page.getByTestId("agent-helper")).toContainText("Cursor connected", {
+    await expect(page.getByTestId("agent-helper")).toContainText(`${targetAgent} connected`, {
       timeout: 10_000
     });
     expect(connectCalls).toBe(1);

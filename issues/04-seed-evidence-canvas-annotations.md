@@ -32,3 +32,4 @@ React Flow 只承载高层 Evidence Surface 和工作流布局。Region Annotati
 
 - `02-project-folder-ikran-metadata.md`
 - `03-mocked-agent-task-runner.md`
+- `03a-real-agent-smoke-adapter.md`

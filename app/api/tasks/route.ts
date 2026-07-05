@@ -8,7 +8,7 @@ import { getActiveProjectState } from "../../../lib/runtime/project";
 import {
   createTask,
   listTasks,
-  DEFAULT_TIMEOUT_MS
+  clampTimeoutMs
 } from "../../../lib/runtime/task-runner";
 import type { TaskFamily } from "../../../lib/runtime/adapter";
 
@@ -23,7 +23,8 @@ const FAMILY_WHITELIST: ReadonlySet<TaskFamily> = new Set<TaskFamily>([
   "generate_design_system_view",
   "create_new_prototype",
   "rule_update",
-  "export_research_package"
+  "export_research_package",
+  "real_agent_smoke"
 ]);
 
 export async function GET(request: NextRequest) {
@@ -86,10 +87,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const timeoutMs =
-    typeof body.timeoutMs === "number" && body.timeoutMs > 0
-      ? body.timeoutMs
-      : DEFAULT_TIMEOUT_MS;
+  // Clamp the client-requested timeout to (0, MAX_TIMEOUT_MS]. A real CLI
+  // subprocess (Issue 3A) makes an unbounded timeout a real risk; the mock
+  // era tolerated any positive number. The bound lives in a pure helper
+  // (clampTimeoutMs) shared with tests/timeout-clamp.spec.ts so the cap has
+  // exactly one definition.
+  const timeoutMs = clampTimeoutMs(body.timeoutMs);
 
   const created = createTask(
     state.project.path,

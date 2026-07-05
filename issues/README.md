@@ -9,19 +9,20 @@
 1. `01-ikran-local-workbench-runtime-health.md` - Ikran local workbench 启动与 runtime health
 2. `02-project-folder-ikran-metadata.md` - 项目文件夹选择与 `.ikran` 元数据
 3. `03-mocked-agent-task-runner.md` - Mocked AgentAdapter 任务闭环
-4. `04-seed-evidence-canvas-annotations.md` - seed evidence React Flow surface 与锚定标注
-5. `05-seed-alignment-question-gate.md` - 五阶段 seed alignment 问题门
-6. `06-draft-design-system-artifacts.md` - draft design-system 文件与 view JSON
-7. `07-seed-prototype-live-preview.md` - seed prototype scaffold 与实时预览
-8. `08-design-system-browser.md` - 基于 `design-system-view.json` 的设计系统浏览器
-9. `09-contextual-rule-update-proposals.md` - 上下文 rule-update proposal 流程
-10. `10-human-intent-new-prototype.md` - human-intent 新原型创建
-11. `11-visual-reference-new-prototype.md` - 可选 visual-reference 新原型创建
-12. `12-research-event-export.md` - 语义事件日志与研究导出包
-13. `13-agent-output-validation-repair.md` - Agent 输出校验与一次修复
-14. `14-headless-cli-agent-adapter.md` - Headless CLI AgentAdapter smoke path
-15. `15-mocked-full-workflow-test.md` - 完整 mocked workflow 集成测试
-16. `16-real-figma-agent-smoke-checks.md` - 真实 Figma 与真实 Agent smoke checks
+4. `03a-real-agent-smoke-adapter.md` - Evidence Surface 前的真实 AgentAdapter smoke
+5. `04-seed-evidence-canvas-annotations.md` - seed evidence React Flow surface 与锚定标注
+6. `05-seed-alignment-question-gate.md` - 五阶段 seed alignment 问题门
+7. `06-draft-design-system-artifacts.md` - draft design-system 文件与 view JSON
+8. `07-seed-prototype-live-preview.md` - seed prototype scaffold 与实时预览
+9. `08-design-system-browser.md` - 基于 `design-system-view.json` 的设计系统浏览器
+10. `09-contextual-rule-update-proposals.md` - 上下文 rule-update proposal 流程
+11. `10-human-intent-new-prototype.md` - human-intent 新原型创建
+12. `11-visual-reference-new-prototype.md` - 可选 visual-reference 新原型创建
+13. `12-research-event-export.md` - 语义事件日志与研究导出包
+14. `13-agent-output-validation-repair.md` - Agent 输出校验与一次修复
+15. `14-headless-cli-agent-adapter.md` - Hardened Headless CLI AgentAdapter path
+16. `15-mocked-full-workflow-test.md` - 完整 mocked workflow 集成测试
+17. `16-real-figma-agent-smoke-checks.md` - 真实 Figma 与真实 Agent smoke checks
 
 ## 说明
 
@@ -44,6 +45,7 @@
    - SQLite/事件日志基础。
    - mocked AgentAdapter。
    - 基础任务/结果 schema。
+   - Evidence Surface 前的真实 AgentAdapter smoke。
 
 2. 第 2 阶段：种子提取工作台
    - React Flow 研究工作流画布 shell。

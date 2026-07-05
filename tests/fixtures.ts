@@ -33,6 +33,13 @@ export interface RuntimeHandle {
   stateDir: string;
 }
 
+/** Extra environment variables to inject into the worker's Runtime process.
+ *  Overridable by downstream fixtures (e.g. the smoke fixture sets
+ *  IKRAN_AGENT_CLI_COMMAND / IKRAN_AGENT_CLI_ARGS so the real_agent_smoke
+ *  family spawns the fake local CLI). Defaults to {} so existing specs are
+ *  unchanged. */
+export type RuntimeEnv = Record<string, string>;
+
 function pickFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = createServer();
@@ -87,9 +94,22 @@ async function waitForRuntime(port: number, timeoutMs = 60_000): Promise<void> {
 // `runtime` is a WORKER-scoped fixture (one Ikran Runtime per worker). Per
 // Playwright's Fixtures typing, worker-scoped fixtures must be declared in the
 // `W` (second) generic of extend<T, W>, NOT in T — T only permits scope:'test'.
-export const test = base.extend<{}, { runtime: RuntimeHandle }>({
-  runtime: [
+// `runtimeEnv` is a worker-scoped, overridable fixture the `runtime` fixture
+// depends on: downstream fixtures (tests/smoke-fixtures.ts) override it to
+// inject extra env into the spawned Runtime without duplicating spawn logic.
+export const test = base.extend<
+  {},
+  { runtime: RuntimeHandle; runtimeEnv: RuntimeEnv }
+>({
+  runtimeEnv: [
     async ({}, use) => {
+      await use({});
+    },
+    { scope: "worker" }
+  ],
+
+  runtime: [
+    async ({ runtimeEnv }, use) => {
       const port = await pickFreePort();
       const stateDir = mkdtempSync(path.join(tmpdir(), "ikran-e2e-w-"));
       const nextBin = path.join(process.cwd(), "node_modules", ".bin", "next");
@@ -100,6 +120,7 @@ export const test = base.extend<{}, { runtime: RuntimeHandle }>({
         {
           env: {
             ...process.env,
+            ...runtimeEnv,
             IKRAN_STATE_DIR: stateDir,
             IKRAN_NEXT_DIST_DIR: SHARED_BUILD_DIR
           },

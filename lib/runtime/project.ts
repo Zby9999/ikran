@@ -26,11 +26,11 @@ export interface ProjectConfig {
   name: string;
   created_at: string;
   updated_at: string;
-  connected_agent?: AgentId;
 }
 
 export interface RuntimeState {
   active_project?: string;
+  connected_agent?: AgentId;
   last_updated?: string;
 }
 
@@ -114,11 +114,6 @@ export async function bindProjectFolder(folderPath: string): Promise<BindRespons
     updated_at: now
   };
 
-  // Re-binding the same project folder keeps a valid persisted agent connection.
-  if (existing?.connected_agent && isAgentId(existing.connected_agent)) {
-    config.connected_agent = existing.connected_agent;
-  }
-
   writeFileSync(getProjectConfigPath(resolved), JSON.stringify(config, null, 2), "utf-8");
 
   // Initialize SQLite schema for this project (open + ensure schema + close,
@@ -144,27 +139,53 @@ export async function bindProjectFolder(folderPath: string): Promise<BindRespons
 }
 
 export function getActiveProject(): string | null {
+  const state = loadRuntimeState();
+  if (state.active_project && isProjectFolder(state.active_project)) {
+    return state.active_project;
+  }
+  return null;
+}
+
+function loadRuntimeState(): RuntimeState {
   if (!existsSync(RUNTIME_STATE_FILE)) {
-    return null;
+    return {};
   }
   try {
-    const state = JSON.parse(readFileSync(RUNTIME_STATE_FILE, "utf-8")) as RuntimeState;
-    if (state.active_project && isProjectFolder(state.active_project)) {
-      return state.active_project;
-    }
-    return null;
+    return JSON.parse(readFileSync(RUNTIME_STATE_FILE, "utf-8")) as RuntimeState;
   } catch {
-    return null;
+    return {};
   }
 }
 
-export function setActiveProject(folderPath: string): void {
+function writeRuntimeState(state: RuntimeState): void {
   mkdirSync(RUNTIME_STATE_DIR, { recursive: true });
-  const state: RuntimeState = {
+  writeFileSync(RUNTIME_STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
+}
+
+export function getRuntimeConnectedAgent(): AgentId | null {
+  const agent = loadRuntimeState().connected_agent;
+  if (agent && isAgentId(agent)) {
+    return agent;
+  }
+  return null;
+}
+
+export function setRuntimeConnectedAgent(agent: AgentId): void {
+  const state = loadRuntimeState();
+  writeRuntimeState({
+    ...state,
+    connected_agent: agent,
+    last_updated: new Date().toISOString()
+  });
+}
+
+export function setActiveProject(folderPath: string): void {
+  const state = loadRuntimeState();
+  writeRuntimeState({
+    ...state,
     active_project: path.resolve(folderPath),
     last_updated: new Date().toISOString()
-  };
-  writeFileSync(RUNTIME_STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
+  });
 }
 
 export function loadProjectConfig(folderPath: string): ProjectConfig | null {
@@ -193,33 +214,4 @@ export function getActiveProjectState(): { ok: true; project: ProjectConfig } | 
 
 export function projectPathsMatch(left: string, right: string): boolean {
   return path.resolve(left) === path.resolve(right);
-}
-
-export function getProjectConnectedAgent(folderPath: string): AgentId | null {
-  const config = loadProjectConfig(folderPath);
-  const agent = config?.connected_agent;
-  return agent && isAgentId(agent) ? agent : null;
-}
-
-export function setProjectConnectedAgent(
-  folderPath: string,
-  agent: AgentId
-): void {
-  const resolved = path.resolve(folderPath);
-  const config = loadProjectConfig(resolved);
-  if (!config) {
-    return;
-  }
-
-  const updated: ProjectConfig = {
-    ...config,
-    path: resolved,
-    connected_agent: agent,
-    updated_at: new Date().toISOString()
-  };
-  writeFileSync(
-    getProjectConfigPath(resolved),
-    JSON.stringify(updated, null, 2),
-    "utf-8"
-  );
 }

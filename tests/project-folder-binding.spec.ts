@@ -195,7 +195,7 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     const persistedConfig = JSON.parse(
       readFileSync(`${testFolder}/.ikran/config.json`, "utf-8")
     );
-    expect(persistedConfig.connected_agent).toBe("codex");
+    expect(persistedConfig.connected_agent).toBeUndefined();
 
     const rebindSameResult = await rawPost(
       "/api/project/bind",
@@ -204,12 +204,12 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     );
     expect(rebindSameResult.status).toBe(200);
     const rebindSameBody = JSON.parse(rebindSameResult.body);
-    expect(rebindSameBody.project.connected_agent).toBe("codex");
+    expect(rebindSameBody.project.connected_agent).toBeUndefined();
 
     const rebindSameConfig = JSON.parse(
       readFileSync(`${testFolder}/.ikran/config.json`, "utf-8")
     );
-    expect(rebindSameConfig.connected_agent).toBe("codex");
+    expect(rebindSameConfig.connected_agent).toBeUndefined();
 
     const activeAfterRebind = await rawGet("/api/project", {
       host: `localhost:${port}`,
@@ -237,14 +237,14 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     const folderAConfig = JSON.parse(
       readFileSync(`${testFolder}/.ikran/config.json`, "utf-8")
     );
-    expect(folderAConfig.connected_agent).toBe("codex");
+    expect(folderAConfig.connected_agent).toBeUndefined();
 
     await page.reload();
     await expect(page.getByTestId("folder-helper")).toContainText(
       `Complete! ${otherFolder}`
     );
-    await expect(page.getByTestId("agent-helper")).not.toContainText("connected");
-    await expect(startButton).toBeDisabled();
+    await expect(page.getByTestId("agent-helper")).toContainText("Codex connected");
+    await expect(startButton).toBeEnabled();
   });
 
   test("rejects invalid project folders", async ({ page }) => {

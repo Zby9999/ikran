@@ -70,6 +70,17 @@ const MOCK_OUTPUTS: Record<TaskFamily, () => unknown> = {
     exportId: "exp-mock-0001",
     manifest: { files: ["design-system.json", "evidence.md", "questions.json"] },
     format: "json+jsonl"
+  }),
+  // Type-completion only. real_agent_smoke is routed to the CLI adapter by
+  // selectAdapter(), never to the mock; this entry just keeps Record<TaskFamily>
+  // total. It returns a schema-valid smoke result so a hypothetical mock run
+  // would still pass intake validation (no special-casing).
+  real_agent_smoke: () => ({
+    message: "mock smoke ok",
+    checklist: [
+      { label: "runtime reached agent", done: true },
+      { label: "agent returned json", done: true }
+    ]
   })
 };
 

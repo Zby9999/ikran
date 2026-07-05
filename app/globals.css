@@ -371,6 +371,7 @@ button {
   height: 28px;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   padding: 0 8px;
   border: 1px solid #ffffff;
@@ -380,6 +381,10 @@ button {
   background: linear-gradient(#ebebeb, #f6f6f6);
   box-shadow: 0 0 0 1px var(--line);
   opacity: 0.82;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 400;
+  transition: none;
 }
 
 .agent-option--active {
@@ -403,13 +408,13 @@ button {
 }
 
 .agent-option-label {
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: 0 0 auto;
+  overflow: visible;
+  text-overflow: clip;
   white-space: nowrap;
   font-size: 11px;
   line-height: 1;
+  letter-spacing: -0.33px;
 }
 
 .agent-option-check {
@@ -475,8 +480,8 @@ button {
 
 .action:not(:disabled) {
   color: #dedede;
-  background: linear-gradient(
-    180deg,
+  background: radial-gradient(
+    ellipse 100% 260% at 50% 0%,
     #757575 0%,
     #4d4d4d 50%,
     #3a3a3a 75%,

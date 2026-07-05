@@ -50,5 +50,17 @@ export const familySchemas: Record<TaskFamily, OutputSchemaHook> = {
       exportId: z.string(),
       manifest: z.object({ files: z.array(z.string()) }),
       format: z.string()
+    }),
+  // Issue 3A — real_agent_smoke. The smallest honest round-trip a real
+  // external Agent CLI can perform. The Agent MUST return JSON conforming to
+  // this shape; the runner validates it at the intake point (pass -> done,
+  // fail -> failed/invalid_output), reusing the existing Issue 03 path.
+  // This family does NOT ingest Figma, call Figma MCP, or write design
+  // artifacts — it only proves the adapter boundary works against a real
+  // subprocess. Hardening / repair / multi-provider config are Issue 14.
+  real_agent_smoke: () =>
+    z.object({
+      message: z.string(),
+      checklist: z.array(z.object({ label: z.string(), done: z.boolean() }))
     })
 };

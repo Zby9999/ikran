@@ -8,6 +8,12 @@ Prefer the designer's **Figma reference** for all UI / visual / interaction desi
 
 **`issues/`** describe capability and API boundaries; **concrete UI follows Figma**. When no Figma exists for a surface, ask the designer first — do not make autonomous design changes.
 
+## UI Components
+
+Prefer shadcn/ui components in `components/ui` before building custom UI. Customize shadcn components to match the Figma reference; do not replace Figma visuals with shadcn defaults.
+
+For new primitives, use the shadcn CLI and keep custom variants in the shadcn component file. Add separate custom components only when shadcn has no suitable primitive.
+
 ## Commands
 
 - `npm run dev` — start Runtime + UI (Next.js dev, `127.0.0.1:3000`)

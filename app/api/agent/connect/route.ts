@@ -4,7 +4,7 @@ import { connectAgent, isAgentId } from "../../../../lib/runtime/agent-connect";
 import {
   getActiveProjectState,
   projectPathsMatch,
-  setProjectConnectedAgent
+  setRuntimeConnectedAgent
 } from "../../../../lib/runtime/project";
 import { authorize } from "../../../../lib/runtime/session";
 
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  setProjectConnectedAgent(state.project.path, result.agent);
+  setRuntimeConnectedAgent(result.agent);
 
   return NextResponse.json({
     ok: true,

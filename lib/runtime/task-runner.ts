@@ -11,8 +11,14 @@ import { openProjectDb, closeProjectDb } from "./db";
 import { logEvent } from "./events";
 import { emitTaskEvent } from "./task-bus";
 import { getMockAdapter } from "./adapters/mock-adapter";
+import {
+  getCliAdapter,
+  getNoCliAdapter,
+  resolveCliCommand
+} from "./adapters/cli-adapter";
 import { familySchemas } from "./schemas";
 import type {
+  AgentAdapter,
   AdapterEvent,
   MockControl,
   TaskFamily,
@@ -24,11 +30,37 @@ export type TaskStatus = "running" | "done" | "failed";
 
 export const DEFAULT_TIMEOUT_MS = 30_000; // constraint #6
 
+// Hard upper bound on a client-requested per-task timeout. Without this, an
+// authorized client could keep a real CLI subprocess alive indefinitely once
+// real Agents are wired (Issue 3A enables that path). Real-CLI risk > mock.
+export const MAX_TIMEOUT_MS = 5 * 60_000; // 5 min
+
+// Clamp a client-requested per-task timeout to (0, MAX_TIMEOUT_MS], falling
+// back to DEFAULT_TIMEOUT_MS for non-positive / non-finite / non-number input.
+// Extracted as a PURE function so the route layer and tests share exactly ONE
+// definition of the bound — a regression guard: if someone removes the cap,
+// tests/timeout-clamp.spec.ts fails before an unbounded timeout reaches a real
+// CLI subprocess. Observing the clamped timeout FIRE end-to-end would take
+// MAX_TIMEOUT_MS (5 min), so the bound is unit-tested directly instead.
+export function clampTimeoutMs(
+  requested: number | undefined | null
+): number {
+  if (
+    typeof requested !== "number" ||
+    !Number.isFinite(requested) ||
+    requested <= 0
+  ) {
+    return DEFAULT_TIMEOUT_MS;
+  }
+  return Math.min(requested, MAX_TIMEOUT_MS);
+}
+
 export interface LiveHandle {
   taskId: string;
   family: TaskFamily;
   projectPath: string;
   status: TaskStatus;
+  adapter: AgentAdapter;
   iterator: AsyncIterator<AdapterEvent> | null;
   timeoutHandle: ReturnType<typeof setTimeout> | null;
   timeoutMs: number;
@@ -61,6 +93,26 @@ const liveHandles: Map<string, LiveHandle> =
 
 // ---- public API ----
 
+// Adapter selection. The mocked adapter is the default for the 8 MVP
+// product families (unchanged behavior, existing tests/contract stay green).
+// The real_agent_smoke family (Issue 3A) is routed to the common CLI smoke
+// runner: command + args come from CONFIG (env), so Codex / Claude Code /
+// Cursor profiles can plug in later WITHOUT changing this selector. If no CLI
+// is configured, an honest adapter_error ("not configured") is produced rather
+// than fabricating a success.
+function selectAdapter(family: TaskFamily): AgentAdapter {
+  if (family === "real_agent_smoke") {
+    const cmd = resolveCliCommand();
+    if (!cmd) {
+      return getNoCliAdapter(
+        "Agent CLI command not configured (set IKRAN_AGENT_CLI_COMMAND)"
+      );
+    }
+    return getCliAdapter({ command: cmd.command, args: cmd.args });
+  }
+  return getMockAdapter();
+}
+
 export function createTask(
   projectPath: string,
   family: TaskFamily,
@@ -92,14 +144,18 @@ export function createTask(
     timestamp: now
   });
 
-  // Layer 2: in-process live handle.
-  const iterable = getMockAdapter().run(payload);
+  // Layer 2: in-process live handle. Retain the adapter so the runner can call
+  // adapter.cancel() directly on timeout — the ONLY reliable way to SIGKILL a
+  // hung subprocess (iterator.return() alone orphans it; see cancel-leak fix).
+  const adapter = selectAdapter(payload.family);
+  const iterable = adapter.run(payload);
   const iterator = iterable[Symbol.asyncIterator]();
   const handle: LiveHandle = {
     taskId,
     family,
     projectPath,
     status: "running",
+    adapter,
     iterator,
     timeoutHandle: null,
     timeoutMs,
@@ -278,8 +334,19 @@ function onError(handle: LiveHandle, code: TaskErrorCode, message: string): void
 function onTimeout(handle: LiveHandle): void {
   if (handle.status !== "running") return;
   handle.timeoutHandle = null;
-  // Best-effort cooperative cancel via the AsyncIterable protocol (constraint #2:
-  // no AbortSignal in the payload). The runner does NOT wait for the generator.
+  // PRIMARY: kill the subprocess directly via adapter.cancel(). This is the
+  // only reliable way to SIGKILL a hung subprocess — iterator.return() alone
+  // orphans the child (Issue 3A cancel-leak: .return() is queued behind the
+  // runner's pending it.next() and never processed, so `finally` never runs).
+  // cancel() also wakes the generator so it exits and `finally` runs (no-op).
+  try {
+    handle.adapter?.cancel?.();
+  } catch {
+    /* ignore */
+  }
+  // SECONDARY: cooperative signal via the AsyncIterable protocol. Belt-and-
+  // suspenders; harmless if cancel() already killed the child. The runner
+  // does NOT wait for the generator. No AbortSignal in the payload (serializable).
   try {
     void handle.iterator?.return?.();
   } catch {
