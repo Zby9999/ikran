@@ -1,0 +1,5 @@
+COMMAND: agent -p --force --output-format json
+TIMESTAMP_UTC: 2026-07-06T13:59:43Z
+PROMPT: Issue 04 manual seed evidence import smoke (one shot, no file writes). Inputs: figmaSeedReference=https://www.figma.com/design/FSgnAj1yrNlgDCt4V4wTfa/recursive-design-agent?node-id=133-129&t=LwSpnKeeLinWI1kI-11; originalDesignIntent=This is a high-end, editorial minimalist black-and-white portfolio system where images dominate expression and text acts as a precise index.. Use the Figma MCP plugin (get_design_context) for fileKey FSgnAj1yrNlgDCt4V4wTfa nodeId 133:129. If Figma MCP is unavailable or auth fails, reply with JSON {"status":"blocked","reason":"..."}. On success reply with ONLY one JSON object matching seed_evidence_import: {packageId, structuredEvidence:{source:{figmaSeedReference,originalDesignIntent},frame:{id,name,bounds:{x,y,width,height}},designSignals:[{id,label,evidence}]},evidenceSurface:{id,kind:"figma",title,sourceReference,originalDesignIntent,dimensions:{width,height},summary}}.
+---OUTPUT---
+---KILLED_AFTER_390S_NO_STDOUT---

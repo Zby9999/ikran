@@ -10,7 +10,7 @@
 2. `02-project-folder-ikran-metadata.md` - 项目文件夹选择与 `.ikran` 元数据
 3. `03-mocked-agent-task-runner.md` - Mocked AgentAdapter 任务闭环
 4. `03a-real-agent-smoke-adapter.md` - Evidence Surface 前的真实 AgentAdapter smoke
-5. `04-seed-evidence-canvas-annotations.md` - seed evidence React Flow surface 与锚定标注
+5. `04-seed-evidence-canvas-annotations.md` - Seed Figma Import 与 Evidence Surface 初始化
 6. `05-seed-alignment-question-gate.md` - 五阶段 seed alignment 问题门
 7. `06-draft-design-system-artifacts.md` - draft design-system 文件与 view JSON
 8. `07-seed-prototype-live-preview.md` - seed prototype scaffold 与实时预览

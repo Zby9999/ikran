@@ -46,6 +46,7 @@ import type { ZodTypeAny } from "zod";
 // product workflow family and does not ingest Figma / write design artifacts.
 export type TaskFamily =
   | "project_setup"
+  | "seed_evidence_import"
   | "generate_seed_alignment_questions"
   | "draft_design_system"
   | "reconstruct_seed_prototype"

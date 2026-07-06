@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { agentErrorMessage } from "../../lib/runtime/agent-error-message";
 import type { AgentId } from "../../lib/runtime/agent-types";
 import { folderErrorMessage } from "../../lib/runtime/folder-error-message";
+import { SeedEvidenceWorkbench } from "../workbench";
 import {
   type AgentConnectionState,
   AgentConnectorCard
@@ -71,6 +72,7 @@ export function ProjectSetupCard({
   const agentConnectionRef = useRef(agentConnection);
   agentConnectionRef.current = agentConnection;
   const [cwdManualCandidate, setCwdManualCandidate] = useState<string | null>(null);
+  const [showSeedWorkbench, setShowSeedWorkbench] = useState(false);
   const projectRef = useRef(project);
   projectRef.current = project;
 
@@ -407,6 +409,16 @@ export function ProjectSetupCard({
     project.status === "binding" ||
     agentConnection.status === "connecting";
 
+  if (showSeedWorkbench && project.status === "bound") {
+    return (
+      <SeedEvidenceWorkbench
+        session={bootstrap.session}
+        folderName={project.name}
+        onBack={() => setShowSeedWorkbench(false)}
+      />
+    );
+  }
+
   return (
     <main className="page">
       <IconGradients />
@@ -473,7 +485,11 @@ export function ProjectSetupCard({
           />
         </div>
 
-        <SetupActionButton label="Start Building" disabled={!buildingReady} />
+        <SetupActionButton
+          label="Start Building"
+          disabled={!buildingReady}
+          onClick={() => setShowSeedWorkbench(true)}
+        />
       </section>
 
       <span hidden data-testid="runtime-service">

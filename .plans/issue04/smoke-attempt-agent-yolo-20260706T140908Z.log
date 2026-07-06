@@ -1,0 +1,6 @@
+COMMAND: agent -p --yolo --output-format text
+TIMESTAMP_UTC: 2026-07-06T14:09:08Z
+PROMPT: Issue04 seed_evidence_import smoke. figmaSeedReference=https://www.figma.com/design/FSgnAj1yrNlgDCt4V4wTfa/recursive-design-agent?node-id=133-129&t=LwSpnKeeLinWI1kI-11 originalDesignIntent=This is a high-end, editorial minimalist black-and-white portfolio system where images dominate expression and text acts as a precise index.. Call Figma MCP get_design_context fileKey FSgnAj1yrNlgDCt4V4wTfa nodeId 133:129 with excludeScreenshot true. Reply ONLY with JSON matching seed_evidence_import schema or {"status":"blocked","reason"}.
+---OUTPUT---
+{"status":"blocked","reason":"Figma MCP get_design_context is unavailable in this agent session: the plugin-figma-figma MCP tool is not exposed to the agent, FIGMA_OAUTH_TOKEN is unset, and a direct POST to https://mcp.figma.com/mcp returned Unauthorized."}
+---EXIT: 0---

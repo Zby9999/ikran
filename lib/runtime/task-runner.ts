@@ -136,6 +136,14 @@ export function createTask(
 
   // Layer 3: JSONL + SQLite events (started milestone).
   logEvent(projectPath, "agent_task_started", { taskId, family });
+  if (family === "seed_evidence_import") {
+    logEvent(projectPath, "seed_evidence_import_started", {
+      taskId,
+      family,
+      figmaSeedReference: extractSeedField(payload.input, "figmaSeedReference"),
+      originalDesignIntent: extractSeedField(payload.input, "originalDesignIntent")
+    });
+  }
   emitTaskEvent({
     kind: "started",
     taskId,
@@ -373,6 +381,14 @@ function finalizeDone(handle: LiveHandle, output: unknown): void {
     taskId: handle.taskId,
     family: handle.family
   });
+  if (handle.family === "seed_evidence_import") {
+    logEvent(handle.projectPath, "figma_evidence_package_returned", {
+      taskId: handle.taskId,
+      family: handle.family,
+      packageId: extractPackageId(output),
+      surfaceId: extractSurfaceId(output)
+    });
+  }
   emitTaskEvent({
     kind: "completed",
     taskId: handle.taskId,
@@ -445,6 +461,33 @@ function safeParse(s: string): unknown {
   } catch {
     return s;
   }
+}
+
+function extractSeedField(input: unknown, key: string): string | null {
+  if (input && typeof input === "object") {
+    const value = (input as Record<string, unknown>)[key];
+    return typeof value === "string" ? value : null;
+  }
+  return null;
+}
+
+function extractPackageId(output: unknown): string | null {
+  if (output && typeof output === "object") {
+    const value = (output as Record<string, unknown>).packageId;
+    return typeof value === "string" ? value : null;
+  }
+  return null;
+}
+
+function extractSurfaceId(output: unknown): string | null {
+  if (output && typeof output === "object") {
+    const surface = (output as Record<string, unknown>).evidenceSurface;
+    if (surface && typeof surface === "object") {
+      const value = (surface as Record<string, unknown>).id;
+      return typeof value === "string" ? value : null;
+    }
+  }
+  return null;
 }
 
 const TASK_ERROR_CODES: ReadonlySet<TaskErrorCode> = new Set<TaskErrorCode>([

@@ -1,0 +1,428 @@
+/* Issue 04 — seed evidence workbench (Figma nodes 133:129, 133:362, 134:406, 139:437, 155:95, 155:126, 177:841) */
+
+.seed-workbench {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  background: #dcdcdc;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.seed-workbench__flow {
+  width: 100%;
+  height: 100vh;
+}
+
+.seed-workbench__flow .react-flow__background {
+  background: #dcdcdc;
+}
+
+.squircle-chrome {
+  box-sizing: border-box;
+  padding: 1px;
+  background: rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.squircle-chrome__surface {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 100%;
+  border: 1px solid #ffffff;
+  background: #f1f1f1;
+  overflow: hidden;
+}
+
+.seed-workbench__folder {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 30;
+  width: 270px;
+  height: 48px;
+}
+
+.seed-workbench__folder-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  color: #3d3d3d;
+  font-size: 13px;
+  line-height: normal;
+  letter-spacing: -0.39px;
+}
+
+.seed-workbench__folder-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seed-workbench__enter-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.seed-workbench__enter-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+}
+
+.seed-workbench__enter-panel--interactive {
+  pointer-events: auto;
+  cursor: default;
+}
+
+.seed-workbench__enter-panel > * {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+}
+
+.small-icon-button {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  appearance: none;
+  border: 1px solid #c3c3c3;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #f0f0f0 100%);
+  box-shadow: 0 0 0 1px #e8e8e8;
+  color: #3d3d3d;
+  cursor: pointer;
+  padding: 0;
+  user-select: none;
+  transition: transform 150ms ease;
+}
+
+.small-icon-button:active:enabled {
+  transform: scale(0.99) translateY(1px);
+  background: linear-gradient(180deg, #e1e1e1 0%, #f0f0f0 100%);
+}
+
+.small-icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.small-icon-button__icon {
+  pointer-events: none;
+}
+
+.enter-panel-chrome {
+  width: 270px;
+}
+
+.enter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  color: #3d3d3d;
+}
+
+.enter-panel__title {
+  padding: 4px;
+  font-size: 13px;
+  line-height: normal;
+  letter-spacing: -0.39px;
+  font-weight: 400;
+}
+
+.enter-panel__subtitle {
+  padding: 4px;
+  font-size: 13px;
+  line-height: normal;
+  letter-spacing: -0.39px;
+  font-weight: 400;
+}
+
+.enter-panel__divider {
+  height: 1px;
+  margin: 0;
+  background: #c7c7c7;
+}
+
+.enter-panel__action-slot {
+  height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.enter-panel__field-row,
+.enter-panel__description-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.enter-panel__field-row--confirmed {
+  gap: 4px;
+  align-items: center;
+}
+
+.enter-panel__check {
+  width: 11.667px;
+  height: 11.667px;
+  margin: 1.167px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #11c514;
+  color: #ffffff;
+}
+
+/* validating: the green check becomes a spinning arc (Figma note on 133:382). */
+.enter-panel__check--validating {
+  background: transparent;
+  border: 1.5px solid rgba(17, 197, 20, 0.25);
+  border-top-color: #11c514;
+  animation: enter-panel-spin 700ms linear infinite;
+}
+
+@keyframes enter-panel-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.enter-panel__input,
+.enter-panel__textarea {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  letter-spacing: -0.36px;
+  resize: none;
+  outline: none;
+}
+
+.enter-panel__input::placeholder,
+.enter-panel__textarea::placeholder {
+  color: var(--muted);
+}
+
+.enter-panel__input--inline {
+  height: 24px;
+  line-height: 24px;
+  padding: 0;
+}
+
+.enter-panel__input--confirmed {
+  padding: 4px;
+  color: #999999;
+  font-size: 13px;
+  line-height: normal;
+  letter-spacing: -0.39px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.enter-panel__description-row {
+  position: relative;
+  gap: 10px;
+  align-items: flex-start;
+  min-height: 24px;
+}
+
+.enter-panel__description-copy {
+  width: 100%;
+  height: 100px;
+  margin: 0;
+  padding: 4px;
+  box-sizing: border-box;
+  color: #999999;
+  font-size: 13px;
+  line-height: normal;
+  letter-spacing: -0.39px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+}
+
+.enter-panel__textarea {
+  min-height: 24px;
+  padding: 4px;
+  color: #3d3d3d;
+  font-size: 13px;
+  line-height: normal;
+  letter-spacing: -0.39px;
+}
+
+.enter-panel__submit {
+  width: 100%;
+  height: 28px;
+  padding: 0 12px;
+  appearance: none;
+  border: 1px solid #ffffff;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #ebebeb 0%, #f6f6f6 100%);
+  box-shadow: 0 0 0 1px #a8a8a8;
+  color: #9d9d9d;
+  font: inherit;
+  font-size: 11px;
+  line-height: normal;
+  letter-spacing: -0.33px;
+  cursor: not-allowed;
+}
+
+.enter-panel__submit:not(:disabled) {
+  color: #3d3d3d;
+  cursor: pointer;
+}
+
+.enter-panel__loading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.enter-panel__progress {
+  height: 2px;
+  border-radius: 99px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.enter-panel__progress > span {
+  display: block;
+  width: var(--enter-panel-progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: #3d3d3d;
+  transition: width 280ms ease;
+}
+
+.enter-panel__loading-label {
+  margin: 0;
+  align-self: flex-end;
+  font-size: 10px;
+  line-height: normal;
+  letter-spacing: -0.3px;
+  color: #3d3d3d;
+}
+
+/* Smart Animation (Figma note on 133:382): the Description block reveals by
+   growing the panel (grid-template-rows 0fr -> 1fr) while its inner content
+   fades + slides down from the top. Plays once when the block first appears
+   (validating -> description); stays open across description <-> loading. */
+.enter-panel__reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.enter-panel__reveal--open {
+  grid-template-rows: 1fr;
+}
+
+.enter-panel__reveal-inner {
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition:
+    opacity 300ms ease,
+    transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.enter-panel__reveal--open .enter-panel__reveal-inner {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.figma-evidence-surface {
+  width: 420px;
+  border-radius: 16px;
+  border: 1px solid #c7c7c7;
+  background: #f5f5f5;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  color: var(--text);
+}
+
+.figma-evidence-surface__media {
+  height: 180px;
+  background: linear-gradient(180deg, #e8e8e8 0%, #d2d2d2 100%);
+  display: grid;
+  place-items: center;
+}
+
+.figma-evidence-surface__frame-label {
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 11px;
+  letter-spacing: -0.33px;
+}
+
+.figma-evidence-surface__body {
+  padding: 16px;
+}
+
+.figma-evidence-surface__eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  letter-spacing: -0.3px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.figma-evidence-surface__body h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.42px;
+}
+
+.figma-evidence-surface__body p {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  letter-spacing: -0.36px;
+}
+
+.figma-evidence-surface__body dl {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.figma-evidence-surface__body dt {
+  font-size: 10px;
+  letter-spacing: -0.3px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.figma-evidence-surface__body dd {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: -0.33px;
+  word-break: break-word;
+}

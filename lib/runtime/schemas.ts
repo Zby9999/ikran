@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import type { OutputSchemaHook, TaskFamily } from "./adapter";
+import { seedEvidencePackageSchema } from "./seed-evidence-types";
 
 export const familySchemas: Record<TaskFamily, OutputSchemaHook> = {
   project_setup: () =>
@@ -11,6 +12,9 @@ export const familySchemas: Record<TaskFamily, OutputSchemaHook> = {
       projectId: z.string(),
       steps: z.array(z.string())
     }),
+  // Schema + inferred type live in ./seed-evidence-types so the adapter and
+  // Browser UI share one contract (no drift).
+  seed_evidence_import: () => seedEvidencePackageSchema,
   generate_seed_alignment_questions: () =>
     z.object({
       questions: z.array(z.object({ id: z.string(), text: z.string() }))

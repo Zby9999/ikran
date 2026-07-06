@@ -11,12 +11,14 @@ import {
   clampTimeoutMs
 } from "../../../lib/runtime/task-runner";
 import type { TaskFamily } from "../../../lib/runtime/adapter";
+import { seedEvidenceInputSchema } from "../../../lib/runtime/seed-evidence-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const FAMILY_WHITELIST: ReadonlySet<TaskFamily> = new Set<TaskFamily>([
   "project_setup",
+  "seed_evidence_import",
   "generate_seed_alignment_questions",
   "draft_design_system",
   "reconstruct_seed_prototype",
@@ -78,6 +80,13 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+  const inputValidation = validateTaskInput(family, body.payload.input);
+  if (!inputValidation.ok) {
+    return NextResponse.json(
+      { ok: false, error: inputValidation.error },
+      { status: 400 }
+    );
+  }
 
   const state = getActiveProjectState();
   if (!state.ok) {
@@ -105,4 +114,19 @@ export async function POST(request: NextRequest) {
     { ok: true, taskId: created.taskId, status: created.status },
     { status: 201 }
   );
+}
+
+function validateTaskInput(
+  family: TaskFamily,
+  input: unknown
+): { ok: true } | { ok: false; error: string } {
+  if (family !== "seed_evidence_import") {
+    return { ok: true };
+  }
+
+  const parsed = seedEvidenceInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "invalid_seed_evidence_input" };
+  }
+  return { ok: true };
 }
