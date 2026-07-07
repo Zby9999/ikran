@@ -1,7 +1,7 @@
 "use client";
 
 import "./seed-evidence-workbench.css";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -29,8 +29,6 @@ import { useSeedEvidenceTask } from "./use-seed-evidence-task";
 // figma-evidence-surface-node. No annotations / question cards / region
 // selections (those are Issue 05).
 
-const VALIDATING_MS = 600;
-
 // Where the Evidence Surface node first appears inside React Flow. Arbitrary
 // on-canvas placement; React Flow fitView frames it once it exists.
 const SURFACE_POSITION = { x: 420, y: 230 } as const;
@@ -47,7 +45,8 @@ export function SeedEvidenceWorkbench({
   const [panelState, setPanelState] = useState<EnterPanelState>("default");
   const [figmaSeedReference, setFigmaSeedReference] = useState("");
   const [originalDesignIntent, setOriginalDesignIntent] = useState("");
-  const validatingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const validatingRef = useRef(false);
+  const validationRequestRef = useRef(0);
 
   const task = useSeedEvidenceTask(session);
   const result = task.state.result;
@@ -68,16 +67,6 @@ export function SeedEvidenceWorkbench({
     ];
   }, [result]);
 
-  const clearValidatingTimer = useCallback(() => {
-    if (validatingTimerRef.current) {
-      clearTimeout(validatingTimerRef.current);
-      validatingTimerRef.current = null;
-    }
-  }, []);
-
-  // Clean up the validating timer on unmount.
-  useEffect(() => clearValidatingTimer, [clearValidatingTimer]);
-
   // Failed import → drop back to the editable description state so the user
   // can retry (inputs retained). We deliberately do NOT invent a Figma-less
   // error surface here (per AGENTS.md, a designed error state needs a Figma
@@ -96,21 +85,33 @@ export function SeedEvidenceWorkbench({
     setFigmaSeedReference(value);
   }
 
-  function handleConfirmReference() {
+  async function handleConfirmReference() {
     // Guard against a second confirm (blur firing as the address input
-    // unmounts after Enter). clearValidatingTimer keeps a duplicate safe.
+    // unmounts after Enter).
     if (panelState !== "address") return;
-    if (!figmaSeedReference.trim()) return;
+    if (validatingRef.current) return;
+    const reference = figmaSeedReference.trim();
+    if (!reference) return;
+
+    validatingRef.current = true;
+    const requestId = validationRequestRef.current + 1;
+    validationRequestRef.current = requestId;
     setPanelState("validating");
-    clearValidatingTimer();
-    validatingTimerRef.current = setTimeout(() => {
-      validatingTimerRef.current = null;
+
+    const ok = await validateFigmaSeedReference(reference, session);
+    validatingRef.current = false;
+    if (validationRequestRef.current !== requestId) return;
+
+    if (ok) {
       setPanelState("description");
-    }, VALIDATING_MS);
+    } else {
+      setPanelState("address");
+    }
   }
 
   function handleClearFigmaSeedReference() {
-    clearValidatingTimer();
+    validatingRef.current = false;
+    validationRequestRef.current += 1;
     setFigmaSeedReference("");
     setOriginalDesignIntent("");
     setPanelState("default");
@@ -121,7 +122,8 @@ export function SeedEvidenceWorkbench({
   }
 
   function resetEnterPanel() {
-    clearValidatingTimer();
+    validatingRef.current = false;
+    validationRequestRef.current += 1;
     task.reset();
     setPanelState("default");
     setFigmaSeedReference("");
@@ -213,7 +215,7 @@ export function SeedEvidenceWorkbench({
             progress={task.state.progress}
             onStart={handleStart}
             onFigmaSeedReferenceChange={handleFigmaSeedReferenceChange}
-            onFigmaSeedReferenceConfirm={handleConfirmReference}
+            onFigmaSeedReferenceConfirm={() => void handleConfirmReference()}
             onFigmaSeedReferenceClear={handleClearFigmaSeedReference}
             onOriginalDesignIntentChange={handleOriginalDesignIntentChange}
             onSubmit={() => void handleSubmit()}
@@ -222,4 +224,24 @@ export function SeedEvidenceWorkbench({
       ) : null}
     </main>
   );
+}
+
+async function validateFigmaSeedReference(
+  figmaSeedReference: string,
+  session: string
+): Promise<boolean> {
+  try {
+    const response = await fetch("/api/figma/validate", {
+      method: "POST",
+      headers: {
+        "x-ikran-session": session,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ figmaSeedReference })
+    });
+    const data = (await response.json().catch(() => ({}))) as { ok?: boolean };
+    return response.ok && data.ok === true;
+  } catch {
+    return false;
+  }
 }

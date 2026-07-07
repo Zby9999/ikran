@@ -396,6 +396,10 @@
   transition: width 280ms ease;
 }
 
+.enter-panel__loading[data-progress-complete="true"] .enter-panel__progress > span {
+  transition: none;
+}
+
 .enter-panel__loading-label {
   margin: 0;
   align-self: flex-end;

@@ -16,6 +16,8 @@ import {
   getNoCliAdapter,
   resolveCliCommand
 } from "./adapters/cli-adapter";
+import { getAgentCliProfile } from "./agent-profiles";
+import { getRuntimeConnectedAgent } from "./project";
 import { familySchemas } from "./schemas";
 import type {
   AgentAdapter,
@@ -101,6 +103,34 @@ const liveHandles: Map<string, LiveHandle> =
 // is configured, an honest adapter_error ("not configured") is produced rather
 // than fabricating a success.
 function selectAdapter(family: TaskFamily): AgentAdapter {
+  const useCliForSeedEvidence =
+    family === "seed_evidence_import" &&
+    process.env.IKRAN_SEED_EVIDENCE_ADAPTER === "cli";
+
+  if (useCliForSeedEvidence) {
+    const cmd = resolveCliCommand();
+    if (!cmd) {
+      return getNoCliAdapter(
+        "Agent CLI command not configured (set IKRAN_AGENT_CLI_COMMAND)"
+      );
+    }
+    const selectedAgent = getRuntimeConnectedAgent();
+    if (!selectedAgent) {
+      return getNoCliAdapter("No connected Agent selected in Setup");
+    }
+    const profile = getAgentCliProfile(selectedAgent);
+    return getCliAdapter({
+      command: cmd.command,
+      args: cmd.args,
+      env: {
+        ...process.env,
+        IKRAN_REAL_AGENT_ID: selectedAgent,
+        IKRAN_REAL_AGENT_COMMAND: profile.command,
+        IKRAN_REAL_AGENT_ARGS: JSON.stringify(profile.args)
+      }
+    });
+  }
+
   if (family === "real_agent_smoke") {
     const cmd = resolveCliCommand();
     if (!cmd) {

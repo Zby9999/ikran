@@ -1,6 +1,21 @@
 import http from "node:http";
 import { expect, test } from "./fixtures";
 
+// Ikran Issue 02/01 — Workbench URL + session shell.
+//
+// Migrated from the old "capture token + hit /api/health" framing to the new
+// Workbench URL semantics: the Runtime returns a localhost URL
+// `http://127.0.0.1:{port}/?session={token}` (printed by `bin/ikran.mjs`,
+// returned by the `open_workbench` MCP tool). Opening that URL in a browser
+// must render the shell, reach the same-origin Runtime health, and keep an SSE
+// heartbeat — while the privileged `/api/*` surface still rejects a missing,
+// wrong, or cross-origin token.
+//
+// The `runtime` fixture spawns `next start` directly (no IKRAN_SESSION_TOKEN),
+// so `lib/runtime/session.ts` generates a startup token exactly as before; we
+// capture it from the page's same-origin `/api/health` call (the page injects
+// it into the request header) and reuse it for the API-level assertions.
+
 let port = 3000;
 let baseURL = "http://localhost:3000";
 
@@ -32,13 +47,13 @@ function rawGet(
   });
 }
 
-test.describe("Ikran Issue 01 — local workbench runtime health", () => {
+test.describe("Ikran Issue 02/01 — Workbench URL opens the session shell", () => {
   test.beforeEach(async ({ runtime }) => {
     port = runtime.port;
     baseURL = runtime.baseURL;
   });
 
-  test("renders the existing project setup screen and reaches the same-origin Runtime", async ({
+  test("the Workbench URL form opens the shell and reaches the same-origin Runtime", async ({
     page
   }) => {
     // Capture the real session token the same-origin UI sends, without leaking
@@ -52,20 +67,12 @@ test.describe("Ikran Issue 01 — local workbench runtime health", () => {
       await route.continue();
     });
 
+    // First load: wait until the Runtime connects. This also guarantees the
+    // page's same-origin /api/health request has fired, so the route above has
+    // captured the startup token from its `x-ikran-session` header.
     await page.goto(baseURL + "/");
-
-    // The designer's existing (Figma-owned) project setup screen.
-    await expect(page.getByText("Project set up...")).toBeVisible();
-    await expect(page.getByText("Select a Folder")).toBeVisible();
-    await expect(page.getByText("Connect Your Agent")).toBeVisible();
-
-    // Same-origin Runtime health + live SSE heartbeat.
     await expect(page.getByTestId("runtime-helper")).toContainText(
       "Local runtime connected"
-    );
-    await expect(page.getByTestId("runtime-service")).toHaveText("ikran-runtime");
-    await expect(page.getByTestId("runtime-helper")).not.toContainText(
-      "heartbeat"
     );
 
     if (!sessionToken) {
@@ -75,13 +82,35 @@ test.describe("Ikran Issue 01 — local workbench runtime health", () => {
     }
     const token = sessionToken;
 
+    // The canonical Workbench URL the Agent returns / the designer copies to a
+    // system browser. Navigating it must render the shell + health + SSE.
+    const workbenchUrl = `http://127.0.0.1:${port}/?session=${token}`;
+    await page.goto(workbenchUrl);
+
+    // The designer's existing (Figma-owned) project setup screen renders from
+    // the Workbench URL (the "copy to system browser" path works).
+    await expect(page.getByText("Project set up...")).toBeVisible();
+    await expect(page.getByText("Select a Folder")).toBeVisible();
+    await expect(page.getByText("Connect Your Agent")).toBeVisible();
+
+    // Same-origin Runtime health + live SSE heartbeat, reached via the explicit
+    // Workbench URL form.
+    await expect(page.getByTestId("runtime-helper")).toContainText(
+      "Local runtime connected"
+    );
+    await expect(page.getByTestId("runtime-service")).toHaveText("ikran-runtime");
+    await expect(page.getByTestId("runtime-helper")).not.toContainText(
+      "heartbeat"
+    );
+
     // Valid token + same-origin localhost -> 200 (proves the happy path at the
     // API boundary, not just through the browser).
     const ok = await rawGet({ host: `localhost:${port}`, "x-ikran-session": token });
     expect(ok.status).toBe(200);
     expect(ok.body).toContain("ikran-runtime");
 
-    // No session token -> 403 (fail-closed).
+    // No session token -> 403 (fail-closed). This is the "缺失/错误 token 被拒绝"
+    // acceptance criterion at the API boundary.
     const noToken = await rawGet({ host: `localhost:${port}` });
     expect(noToken.status).toBe(403);
 

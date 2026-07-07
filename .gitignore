@@ -1,5 +1,6 @@
 node_modules
 .next
+.next-real-seed
 .playwright-mcp
 .pi-subagents/
 .pi/sandbox.json

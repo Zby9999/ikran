@@ -279,6 +279,8 @@ export function getCliAdapter(opts: CliAdapterOptions): AgentAdapter {
     // the queue is drained, the generator yields terminal and returns.
     const queued: AdapterEvent[] = [];
     let terminal: AdapterEvent | null = null;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+    let heartbeatStep = 0;
 
     const wake = () => {
       if (resolveWait) {
@@ -292,8 +294,22 @@ export function getCliAdapter(opts: CliAdapterOptions): AgentAdapter {
       queued.push({ kind: "progress", message });
       wake();
     };
+    const pushStepProgress = (message: string) => {
+      if (cancelled || terminal) return;
+      heartbeatStep += 1;
+      queued.push({
+        kind: "progress",
+        message,
+        data: { step: Math.min(heartbeatStep, 5.5) }
+      });
+      wake();
+    };
     const setTerminal = (ev: AdapterEvent) => {
       if (cancelled) return;
+      if (heartbeat) {
+        clearInterval(heartbeat);
+        heartbeat = null;
+      }
       terminal = ev;
       wake();
     };
@@ -435,6 +451,9 @@ export function getCliAdapter(opts: CliAdapterOptions): AgentAdapter {
       }
 
       pushProgress("agent CLI running");
+      heartbeat = setInterval(() => {
+        pushStepProgress("agent CLI still running");
+      }, 700);
 
       // Drain queued events, then yield the terminal event and return.
       while (true) {
@@ -467,6 +486,10 @@ export function getCliAdapter(opts: CliAdapterOptions): AgentAdapter {
       // never leaked even if cancel() was never wired (defense in depth).
       cancelled = true;
       resolveWait = null;
+      if (heartbeat) {
+        clearInterval(heartbeat);
+        heartbeat = null;
+      }
       if (child && isLive(child)) {
         try {
           child.kill("SIGKILL");

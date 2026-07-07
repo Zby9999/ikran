@@ -285,6 +285,7 @@ export function EnterPanel({
               <div
                 className="enter-panel__loading"
                 aria-live="polite"
+                data-progress-complete={boundedProgress === 100 ? "true" : "false"}
                 style={{ "--enter-panel-progress": `${boundedProgress}%` } as CSSProperties}
               >
                 <div className="enter-panel__progress" aria-hidden="true">

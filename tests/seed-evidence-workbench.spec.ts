@@ -18,6 +18,9 @@ const test = base.extend<{ folder: string }>({
   }
 });
 
+const REAL_FIGMA_SEED_REFERENCE =
+  "https://www.figma.com/design/FSgnAj1yrNlgDCt4V4wTfa/recursive-design-agent?node-id=177-426&t=RC4FGd8KwNfX6uqP-11";
+
 function rawGet(
   route: string,
   headers: Record<string, string>,
@@ -167,8 +170,7 @@ test.describe("Ikran Issue 04 — seed evidence workbench", () => {
     const token = await captureToken(page, runtime.baseURL);
     await bindFolder(token, folder, runtime.port);
 
-    const figmaSeedReference =
-      "https://www.figma.com/design/FSgnAj1yrNlgDCt4V4wTfa/recursive-design-agent?node-id=133-129&t=issue04-runtime-test";
+    const figmaSeedReference = REAL_FIGMA_SEED_REFERENCE;
     const originalDesignIntent =
       "Runtime test intent: editorial black-and-white portfolio system.";
 
@@ -352,9 +354,7 @@ test.describe("Ikran Issue 04 — seed evidence workbench", () => {
     await expect(folderBody).toHaveCSS("letter-spacing", "-0.39px");
 
     const seedInput = page.getByTestId("figma-seed-reference-input");
-    await seedInput.fill(
-      "https://www.figma.com/design/FSgnAj1yrNlgDCt4V4wTfa/recursive-design-agent?node-id=133-129&t=issue04-ui-test"
-    );
+    await seedInput.fill(REAL_FIGMA_SEED_REFERENCE);
     // Confirm the address with Enter (not per-keystroke) -> validating -> description.
     await seedInput.press("Enter");
     await expect(enterPanel).toHaveAttribute("data-state", "validating");
@@ -382,7 +382,7 @@ test.describe("Ikran Issue 04 — seed evidence workbench", () => {
 
     await expect(page.getByTestId("figma-evidence-surface")).toBeVisible();
     await expect(page.getByTestId("figma-evidence-surface")).toContainText(
-      "issue04-ui-test"
+      "RC4FGd8KwNfX6uqP-11"
     );
     await expect(page.getByTestId("figma-evidence-surface")).toContainText(
       "UI test intent"
@@ -433,7 +433,7 @@ test.describe("Ikran Issue 04 — seed evidence workbench", () => {
     const seedInput = page.getByTestId("figma-seed-reference-input");
     // Typing char-by-char must NOT flip the panel out of address (the old bug
     // locked the field read-only after the first character).
-    await seedInput.type("https://www.figma.com/design/abc");
+    await seedInput.type(REAL_FIGMA_SEED_REFERENCE);
     await expect(enterPanel).toHaveAttribute("data-state", "address");
     await expect(seedInput).toBeEditable();
 
@@ -442,6 +442,28 @@ test.describe("Ikran Issue 04 — seed evidence workbench", () => {
     await expect(enterPanel).toHaveAttribute("data-state", "validating");
     await expect(enterPanel).toHaveAttribute("data-state", "description");
     await expect(page.getByTestId("figma-seed-reference-input")).not.toBeEditable();
+  });
+
+  test("rejects non-Figma seed references before showing the confirmed check", async ({
+    page,
+    runtime,
+    folder
+  }) => {
+    const token = await captureToken(page, runtime.baseURL);
+    await bindFolder(token, folder, runtime.port);
+    await page.reload();
+    await page.getByRole("button", { name: "Codex" }).click();
+    await page.getByRole("button", { name: "Start Building" }).click();
+
+    const enterPanel = page.getByTestId("enter-panel");
+    await page.getByTestId("seed-add-button").click();
+    const seedInput = page.getByTestId("figma-seed-reference-input");
+    await seedInput.fill("not a figma link");
+    await seedInput.press("Enter");
+
+    await expect(enterPanel).toHaveAttribute("data-state", "address");
+    await expect(seedInput).toBeEditable();
+    await expect(page.getByTestId("original-design-intent-input")).toHaveCount(0);
   });
 
   test("clearing confirmed Figma address returns to the default plus state", async ({
@@ -459,7 +481,7 @@ test.describe("Ikran Issue 04 — seed evidence workbench", () => {
     await page.getByTestId("seed-add-button").click();
 
     const seedInput = page.getByTestId("figma-seed-reference-input");
-    await seedInput.fill("https://www.figma.com/design/abc");
+    await seedInput.fill(REAL_FIGMA_SEED_REFERENCE);
     await seedInput.press("Enter");
     await expect(enterPanel).toHaveAttribute("data-state", "description");
     await page.getByTestId("original-design-intent-input").fill("Intent to clear");
@@ -486,7 +508,7 @@ test.describe("Ikran Issue 04 — seed evidence workbench", () => {
 
     await page.getByTestId("seed-add-button").click();
     const seedInput = page.getByTestId("figma-seed-reference-input");
-    await seedInput.fill("https://www.figma.com/design/overflow");
+    await seedInput.fill(REAL_FIGMA_SEED_REFERENCE);
     await seedInput.press("Enter");
     await expect(page.getByTestId("original-design-intent-input")).toBeVisible();
     await page
@@ -544,7 +566,7 @@ test.describe("Ikran Issue 04 — seed evidence workbench", () => {
 
     await page.getByTestId("seed-add-button").click();
     const seedInput = page.getByTestId("figma-seed-reference-input");
-    await seedInput.fill("https://www.figma.com/design/xyz");
+    await seedInput.fill(REAL_FIGMA_SEED_REFERENCE);
     await seedInput.press("Enter");
     await expect(page.getByTestId("original-design-intent-input")).toBeVisible();
     await page

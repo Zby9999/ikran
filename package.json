@@ -6,6 +6,7 @@
   },
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 3000",
+    "dev:real-seed": "node scripts/dev-real-seed.mjs",
     "build": "next build",
     "start": "node bin/ikran.mjs",
     "typecheck": "tsc --noEmit",
@@ -15,6 +16,7 @@
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.2.2",
     "@hugeicons/react": "^1.1.9",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@phosphor-icons/react": "^2.1.10",
     "@tailwindcss/postcss": "^4.3.2",
     "@types/better-sqlite3": "^7.6.13",

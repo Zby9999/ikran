@@ -53,12 +53,21 @@ interface TaskSseEvent {
 }
 
 const POLL_INTERVAL_MS = 300;
+const COMPLETION_FLASH_MS = 420;
 
 export function useSeedEvidenceTask(session: string) {
   const [state, setState] = useState<SeedTaskState>(INITIAL_STATE);
   const eventSourceRef = useRef<EventSource | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const completionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressTotalRef = useRef<number>(6);
+
+  const clearCompletionTimer = useCallback(() => {
+    if (completionTimerRef.current) {
+      clearTimeout(completionTimerRef.current);
+      completionTimerRef.current = null;
+    }
+  }, []);
 
   const stopPoll = useCallback(() => {
     if (pollRef.current) {
@@ -75,7 +84,8 @@ export function useSeedEvidenceTask(session: string) {
   const teardown = useCallback(() => {
     closeSource();
     stopPoll();
-  }, [closeSource, stopPoll]);
+    clearCompletionTimer();
+  }, [clearCompletionTimer, closeSource, stopPoll]);
 
   // Tear down any live SSE/poll on unmount.
   useEffect(() => teardown, [teardown]);
@@ -86,6 +96,28 @@ export function useSeedEvidenceTask(session: string) {
   }, [teardown]);
 
   const finishWithResult = useCallback((output: unknown) => {
+    closeSource();
+    stopPoll();
+    clearCompletionTimer();
+    setState((prev) => ({
+      ...prev,
+      status: "loading",
+      progress: 100,
+      result: null,
+      error: null
+    }));
+    completionTimerRef.current = setTimeout(() => {
+      completionTimerRef.current = null;
+      setState({
+        status: "done",
+        progress: 100,
+        result: output as SeedEvidencePackage,
+        error: null
+      });
+    }, COMPLETION_FLASH_MS);
+  }, [clearCompletionTimer, closeSource, stopPoll]);
+
+  const restoreCompletedResult = useCallback((output: unknown) => {
     teardown();
     setState({
       status: "done",
@@ -152,13 +184,13 @@ export function useSeedEvidenceTask(session: string) {
         const task = data.task;
         if (!task) return;
         if (task.status === "done" && task.result) {
-          finishWithResult(task.result);
+          restoreCompletedResult(task.result);
         } else if (task.status === "failed") {
           fail("Seed import failed.");
         }
       }, POLL_INTERVAL_MS);
     },
-    [fail, finishWithResult, session, stopPoll]
+    [fail, restoreCompletedResult, session, stopPoll]
   );
 
   const submit = useCallback(
