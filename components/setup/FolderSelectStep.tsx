@@ -4,7 +4,7 @@ import { WorkbenchButton } from "@/components/workbench";
 import { FolderSimpleIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import { activeIconGradients } from "./IconGradients";
-import { CompleteCheckIcon, IconBox } from "./IconBox";
+import { IconBox, SettledCheckIcon } from "./IconBox";
 import { useSquircle } from "./useSquircle";
 
 export type FolderSelectVariant = "inactive" | "default" | "inside-folder" | "complete";
@@ -38,12 +38,10 @@ export function FolderSelectStep({
   const complete = variant === "complete";
   const mutedLabel = complete && !onSelectFolder;
 
-  const icon = complete ? (
-    <CompleteCheckIcon />
-  ) : (
-    <IconBox tone={active ? "blue" : "gray"}>
+  const icon = (
+    <IconBox tone={complete || active ? "blue" : "gray"}>
       <FolderSimpleIcon
-        color={active ? activeIconGradients.folder : "white"}
+        color={complete || active ? activeIconGradients.folder : "white"}
         size={14}
         weight="fill"
       />
@@ -55,9 +53,11 @@ export function FolderSelectStep({
       {icon}
       <div className="step-fill">
         <p className={`step-label ${mutedLabel ? "complete" : ""}`}>Select a Folder</p>
-        {!complete ? (
+        {complete ? (
+          <SettledCheckIcon />
+        ) : (
           <span className={`number ${active ? "number--blue" : ""}`}>2</span>
-        ) : null}
+        )}
       </div>
     </>
   );

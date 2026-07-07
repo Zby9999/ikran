@@ -109,6 +109,13 @@ export function SeedEvidenceWorkbench({
     }, VALIDATING_MS);
   }
 
+  function handleClearFigmaSeedReference() {
+    clearValidatingTimer();
+    setFigmaSeedReference("");
+    setOriginalDesignIntent("");
+    setPanelState("default");
+  }
+
   function handleOriginalDesignIntentChange(value: string) {
     setOriginalDesignIntent(value);
   }
@@ -207,6 +214,7 @@ export function SeedEvidenceWorkbench({
             onStart={handleStart}
             onFigmaSeedReferenceChange={handleFigmaSeedReferenceChange}
             onFigmaSeedReferenceConfirm={handleConfirmReference}
+            onFigmaSeedReferenceClear={handleClearFigmaSeedReference}
             onOriginalDesignIntentChange={handleOriginalDesignIntentChange}
             onSubmit={() => void handleSubmit()}
           />

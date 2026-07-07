@@ -261,6 +261,23 @@ button {
   background: var(--purple);
 }
 
+.settled-check {
+  width: 11.667px;
+  height: 11.667px;
+  margin: 1.167px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--green);
+  color: #ffffff;
+}
+
+.settled-check svg {
+  width: 8.167px;
+  height: 8.167px;
+}
+
 .check {
   width: 20px;
   height: 20px;

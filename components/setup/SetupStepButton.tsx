@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { WorkbenchButton } from "@/components/workbench";
+import { SettledCheckIcon } from "./IconBox";
 import { useSquircle } from "./useSquircle";
 
 type HelperTone = "default" | "success" | "error";
@@ -45,7 +46,9 @@ export function SetupStepButton({
         <p className={`step-label ${labelComplete ? "complete" : ""}`}>
           {label}
         </p>
-        {stepNumber !== undefined && (
+        {labelComplete ? (
+          <SettledCheckIcon />
+        ) : stepNumber !== undefined ? (
           <span
             className={`number ${stepNumberActive ? "active" : ""} ${
               stepNumberTone === "blue" ? "number--blue" : ""
@@ -53,7 +56,7 @@ export function SetupStepButton({
           >
             {stepNumber}
           </span>
-        )}
+        ) : null}
       </div>
     </>
   );
@@ -62,7 +65,7 @@ export function SetupStepButton({
     <div className="step" aria-disabled={disabled || undefined}>
       {onClick ? (
         <WorkbenchButton
-          variant={labelComplete ? "setupRowSettled" : "setupRow"}
+          variant="setupRow"
           data-testid={rowTestId}
           disabled={disabled}
           onClick={onClick}

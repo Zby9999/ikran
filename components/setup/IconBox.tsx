@@ -17,6 +17,15 @@ export function IconBox({
   );
 }
 
+export function SettledCheckIcon() {
+  return (
+    <span className="settled-check" aria-hidden="true">
+      <PhosphorCheckIcon size={8} weight="bold" />
+    </span>
+  );
+}
+
+/** @deprecated Use SettledCheckIcon on the right; keep the original icon on the left. */
 export function CompleteCheckIcon() {
   return (
     <span className="check" aria-hidden="true">

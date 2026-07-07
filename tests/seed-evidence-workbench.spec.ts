@@ -444,6 +444,93 @@ test.describe("Ikran Issue 04 — seed evidence workbench", () => {
     await expect(page.getByTestId("figma-seed-reference-input")).not.toBeEditable();
   });
 
+  test("clearing confirmed Figma address returns to the default plus state", async ({
+    page,
+    runtime,
+    folder
+  }) => {
+    const token = await captureToken(page, runtime.baseURL);
+    await bindFolder(token, folder, runtime.port);
+    await page.reload();
+    await page.getByRole("button", { name: "Codex" }).click();
+    await page.getByRole("button", { name: "Start Building" }).click();
+
+    const enterPanel = page.getByTestId("enter-panel");
+    await page.getByTestId("seed-add-button").click();
+
+    const seedInput = page.getByTestId("figma-seed-reference-input");
+    await seedInput.fill("https://www.figma.com/design/abc");
+    await seedInput.press("Enter");
+    await expect(enterPanel).toHaveAttribute("data-state", "description");
+    await page.getByTestId("original-design-intent-input").fill("Intent to clear");
+
+    const confirmedRow = page.locator(".enter-panel__field-row--confirmed");
+    await confirmedRow.hover();
+    await page.getByTestId("figma-seed-reference-clear").click();
+
+    await expect(enterPanel).toHaveAttribute("data-state", "default");
+    await expect(page.getByTestId("seed-add-button")).toBeVisible();
+    await expect(page.getByTestId("original-design-intent-input")).toHaveCount(0);
+  });
+
+  test("loading progress stays inside the panel with long unbroken description", async ({
+    page,
+    runtime,
+    folder
+  }) => {
+    const token = await captureToken(page, runtime.baseURL);
+    await bindFolder(token, folder, runtime.port);
+    await page.reload();
+    await page.getByRole("button", { name: "Codex" }).click();
+    await page.getByRole("button", { name: "Start Building" }).click();
+
+    await page.getByTestId("seed-add-button").click();
+    const seedInput = page.getByTestId("figma-seed-reference-input");
+    await seedInput.fill("https://www.figma.com/design/overflow");
+    await seedInput.press("Enter");
+    await expect(page.getByTestId("original-design-intent-input")).toBeVisible();
+    await page
+      .getByTestId("original-design-intent-input")
+      .fill(`intent-${"x".repeat(240)}`);
+
+    let releaseTask = () => {};
+    const taskGate = new Promise<void>((resolve) => {
+      releaseTask = resolve;
+    });
+    await page.route("**/api/tasks", async (route) => {
+      await taskGate;
+      await route.fulfill({ status: 500, body: '{"ok":false}' });
+    });
+
+    await page.getByRole("button", { name: "Enter Canvas" }).click();
+    const enterPanel = page.getByTestId("enter-panel");
+    await expect(enterPanel).toHaveAttribute("data-state", "loading");
+
+    const metrics = await page.evaluate(() => {
+      const panel = document.querySelector(".enter-panel-chrome");
+      const progress = document.querySelector(".enter-panel__progress");
+      const bar = document.querySelector(".enter-panel__progress > span");
+      if (!panel || !progress || !bar) {
+        throw new Error("Loading progress elements were not rendered");
+      }
+      const panelRect = panel.getBoundingClientRect();
+      const progressRect = progress.getBoundingClientRect();
+      const barRect = bar.getBoundingClientRect();
+      return {
+        panelRight: panelRect.right,
+        progressRight: progressRect.right,
+        barRight: barRect.right
+      };
+    });
+
+    expect(metrics.progressRight).toBeLessThanOrEqual(metrics.panelRight + 0.5);
+    expect(metrics.barRight).toBeLessThanOrEqual(metrics.panelRight + 0.5);
+
+    releaseTask();
+    await expect(enterPanel).toHaveAttribute("data-state", "description");
+    await page.unroute("**/api/tasks");
+  });
+
   test("failed seed import returns to the description state instead of hanging", async ({
     page,
     runtime,

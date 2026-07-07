@@ -20,7 +20,7 @@ import {
 } from "./AgentConnectorCard";
 import { FolderSelectStep, type FolderSelectVariant } from "./FolderSelectStep";
 import { activeIconGradients, IconGradients } from "./IconGradients";
-import { CompleteCheckIcon, IconBox } from "./IconBox";
+import { IconBox } from "./IconBox";
 import { SetupActionButton } from "./SetupActionButton";
 import { SetupStepButton } from "./SetupStepButton";
 
@@ -431,17 +431,13 @@ export function ProjectSetupCard({
         <div className="steps">
           <SetupStepButton
             icon={
-              runtimeState === "connected" ? (
-                <CompleteCheckIcon />
-              ) : (
-                <IconBox tone="pink">
-                  <PhosphorDownloadIcon
-                    color={activeIconGradients.download}
-                    size={14}
-                    weight="fill"
-                  />
-                </IconBox>
-              )
+              <IconBox tone="pink">
+                <PhosphorDownloadIcon
+                  color={activeIconGradients.download}
+                  size={14}
+                  weight="fill"
+                />
+              </IconBox>
             }
             label={runtimeState === "loading" ? "Connecting..." : "Local Runtime"}
             labelComplete={runtimeState === "connected"}
