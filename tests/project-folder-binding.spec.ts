@@ -125,8 +125,8 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     expect(existsSync(`${testFolder}/.ikran/events.jsonl`)).toBe(true);
 
     // SQLite should contain the recorded events.
-    const Database = require("better-sqlite3");
-    const db = new Database(`${testFolder}/.ikran/ikran.db`);
+    const { DatabaseSync } = require("node:sqlite");
+    const db = new DatabaseSync(`${testFolder}/.ikran/ikran.db`);
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table'")
       .all()

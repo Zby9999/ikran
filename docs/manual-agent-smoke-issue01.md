@@ -124,7 +124,7 @@ Expected: the Agent calls `open_workbench` and returns a
 
 Confirm:
 
-- the shell renders (`Project set up...`, `Select a Folder`, `Connect Your Agent`),
+- the shell renders (`Project set up...`, `Project Folder`, `Connect Your Agent`),
 - `Local runtime connected` (Runtime health),
 - the SSE connection stays alive (the connection-state helper stays green; the
   UI deliberately does not show "heartbeat" text).

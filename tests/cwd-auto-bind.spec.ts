@@ -6,11 +6,13 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { getCwdCandidate } from "../lib/runtime/cwd-candidate";
+import { projectPathsMatch } from "../lib/runtime/project";
 
 let port = 3000;
 
@@ -127,9 +129,28 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
     expect(candidate).toBeNull();
   });
 
+  // ---------- Symlink equivalence (projectPathsMatch) — unit ----------
+
+  test("projectPathsMatch resolves symlinks: same physical folder via different paths matches", () => {
+    const real = mkdtempSync(path.join(tmpdir(), "ikran-symlink-real-"));
+    const linkParent = mkdtempSync(path.join(tmpdir(), "ikran-symlink-parent-"));
+    const link = path.join(linkParent, "link");
+    symlinkSync(real, link);
+    try {
+      expect(projectPathsMatch(link, real)).toBe(true);
+      expect(projectPathsMatch(real, link)).toBe(true);
+      const other = mkdtempSync(path.join(tmpdir(), "ikran-symlink-other-"));
+      expect(projectPathsMatch(link, other)).toBe(false);
+      rmSync(other, { recursive: true, force: true });
+    } finally {
+      rmSync(real, { recursive: true, force: true });
+      rmSync(linkParent, { recursive: true, force: true });
+    }
+  });
+
   // ---------- UI auto-bind flow (mocked /api/project, mocked /bind) ----------
 
-  test("UI auto-binds an `init` cwd candidate without a confirm", async ({ page, runtime }) => {
+  test("UI does NOT auto-bind an `init` cwd; a one-click Initialize binds it", async ({ page, runtime }) => {
     const dir = mkdtempSync(path.join(tmpdir(), "ikran-cwd-ui-init-"));
     try {
       const bind = mockBind(page, dir);
@@ -146,8 +167,15 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
 
       await page.goto(runtime.baseURL + "/");
 
-      // The UI should call /api/project/bind with the cwd candidate path and
-      // then render the bound state.
+      // No silent auto-bind: the Initialize button is shown and bind has not run.
+      await expect(page.getByTestId("folder-helper")).toContainText(
+        "Click to initialize the project folder"
+      );
+      await expect(page.getByTestId("project-path")).toHaveText("");
+      expect(bind.paths()).not.toContain(dir);
+
+      // One click on the folder row binds the cwd candidate.
+      await page.getByTestId("select-folder-button").click();
       await expect.poll(() => bind.paths()).toContainEqual(dir);
       await expect(page.getByTestId("project-path")).toHaveText(dir);
     } finally {
@@ -182,7 +210,7 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
     }
   });
 
-  test("UI does NOT auto-bind a `manual` cwd; offers a one-click 'use current folder'", async ({ page, runtime }) => {
+  test("UI does NOT auto-bind a `manual` cwd; a one-click Initialize binds alongside", async ({ page, runtime }) => {
     const dir = mkdtempSync(path.join(tmpdir(), "ikran-cwd-ui-manual-"));
     writeFileSync(path.join(dir, "keep-me.txt"), "hi");
     try {
@@ -200,17 +228,16 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
 
       await page.goto(runtime.baseURL + "/");
 
-      // No silent bind: the inside-folder variant is shown and bind has not run.
-      await expect(page.getByTestId("use-folder-directly-button")).toBeVisible();
+      // No silent bind: the Initialize button is shown and bind has not run.
       await expect(page.getByTestId("folder-helper")).toContainText(
-        "Choose a local folder"
+        "Initialize .ikran in this folder"
       );
       await expect(page.getByTestId("project-path")).toHaveText("");
       expect(existsSync(path.join(dir, ".ikran", "config.json"))).toBe(false);
       expect(bind.paths()).not.toContain(dir);
 
-      // One click on the sub-button confirms and binds.
-      await page.getByTestId("use-folder-directly-button").click();
+      // One click on the folder row binds (creating .ikran alongside keep-me.txt).
+      await page.getByTestId("select-folder-button").click();
       await expect.poll(() => bind.paths()).toContainEqual(dir);
       await expect(page.getByTestId("project-path")).toHaveText(dir);
     } finally {

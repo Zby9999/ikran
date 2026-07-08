@@ -4,7 +4,15 @@
 //
 // Data flows through the same-origin Ikran Runtime (`/api/health`,
 // `/api/events`, `/api/project`, `/api/agent/connect`). Do not alter layout,
-// copy, icons, or styling here without a Figma source.
+// icons, or styling here without a Figma source.
+//
+// Issue 02/02: the folder step no longer picks a folder. The working folder is
+// chosen before the conversation (the folder the user opened in the Agent
+// host), forwarded to the Runtime as IKRAN_CWD. So the step now auto-completes
+// when `.ikran` already exists, or offers a one-click "Initialize here" that
+// creates `.ikran` in that folder. The helper COPY was changed for this flow
+// (label + per-state text); the visual layout is unchanged. Final wording
+// should be confirmed against Figma by the designer.
 
 import {
   DownloadIcon as PhosphorDownloadIcon
@@ -45,7 +53,6 @@ type HeartbeatEvent = {
 
 type ProjectState =
   | { status: "idle" }
-  | { status: "selecting" }
   | { status: "binding"; path: string }
   | { status: "bound"; path: string; name: string }
   | { status: "error"; message: string };
@@ -71,7 +78,10 @@ export function ProjectSetupCard({
   });
   const agentConnectionRef = useRef(agentConnection);
   agentConnectionRef.current = agentConnection;
-  const [cwdManualCandidate, setCwdManualCandidate] = useState<string | null>(null);
+  const [cwdCandidate, setCwdCandidate] = useState<{
+    path: string;
+    kind: "init" | "manual";
+  } | null>(null);
   const [showSeedWorkbench, setShowSeedWorkbench] = useState(false);
   const projectRef = useRef(project);
   projectRef.current = project;
@@ -151,7 +161,7 @@ export function ProjectSetupCard({
           });
           return;
         }
-        setCwdManualCandidate(null);
+        setCwdCandidate(null);
         setProject({
           status: "bound",
           path: data.project.path,
@@ -187,36 +197,66 @@ export function ProjectSetupCard({
           cwd_candidate?:
             | { path: string; kind: "resume" | "init" | "manual" }
             | null;
+          cwd_matches_active?: boolean;
         };
         if (cancelled) return;
 
         const candidate = data.cwd_candidate ?? null;
+        const active = data.ok ? data.project : null;
 
-        if (candidate && (candidate.kind === "resume" || candidate.kind === "init")) {
+        // The working folder (cwd) is chosen before the conversation. If it
+        // already has .ikran AND is already the active binding, just show
+        // complete (no rebind -> no event spam on refresh).
+        if (
+          active &&
+          candidate &&
+          candidate.kind === "resume" &&
+          data.cwd_matches_active
+        ) {
+          setProject({
+            status: "bound",
+            path: active.path,
+            name: active.name
+          });
+          setAgentConnection(
+            data.connected_agent
+              ? { status: "connected", agent: data.connected_agent }
+              : { status: "idle" }
+          );
+          return;
+        }
+
+        // Working folder has .ikran but is not the active binding -> bind it
+        // (the cwd working folder is authoritative).
+        if (candidate && candidate.kind === "resume") {
           await bindFolder(candidate.path);
           return;
         }
 
-        if (data.ok && data.project) {
+        // An active project exists from a prior bind this session -> show it.
+        if (active) {
           setProject({
             status: "bound",
-            path: data.project.path,
-            name: data.project.name
+            path: active.path,
+            name: active.name
           });
-          if (data.connected_agent) {
-            setAgentConnection({
-              status: "connected",
-              agent: data.connected_agent
-            });
-          } else {
-            setAgentConnection({ status: "idle" });
-          }
+          setAgentConnection(
+            data.connected_agent
+              ? { status: "connected", agent: data.connected_agent }
+              : { status: "idle" }
+          );
           return;
         }
 
-        if (candidate && candidate.kind === "manual") {
-          setCwdManualCandidate(candidate.path);
+        // Working folder is bindable but not yet initialized -> offer a
+        // one-click "Initialize here" (do NOT auto-bind; the user clicks).
+        if (candidate && (candidate.kind === "init" || candidate.kind === "manual")) {
+          setCwdCandidate({ path: candidate.path, kind: candidate.kind });
+          return;
         }
+
+        // No working folder known (IKRAN_CWD not forwarded).
+        setCwdCandidate(null);
       } catch {
         // ignore; UI stays in idle/selecting state
       }
@@ -301,83 +341,15 @@ export function ProjectSetupCard({
     [bootstrap.session, project]
   );
 
-  async function handleUseCurrentFolder() {
-    if (!cwdManualCandidate) {
-      return;
-    }
-    await bindFolder(cwdManualCandidate);
-  }
-
-  async function handleSelectFolder() {
+  // Initialize the working folder (the cwd candidate the Runtime forwarded) as
+  // the Ikran project: create `.ikran/` inside it and bind it. Replaces the old
+  // native folder picker + manual path input (Issue 02/02: the working folder is
+  // chosen before the conversation, so the panel no longer selects a folder).
+  async function handleInitialize() {
     if (runtimeState !== "connected") return;
-
-    const previousProject = project;
-    const previousAgent = agentConnection;
-    const restorePreviousProject = () => {
-      setProject(previousProject);
-      setAgentConnection(previousAgent);
-    };
-    const applyBoundProject = (nextProject: BoundProjectResponse) => {
-      setProject({
-        status: "bound",
-        path: nextProject.path,
-        name: nextProject.name
-      });
-      setAgentConnection(previousAgent);
-    };
-
-    setProject({ status: "selecting" });
-    try {
-      const response = await fetch("/api/project/select-folder", {
-        method: "POST",
-        headers: { "x-ikran-session": bootstrap.session }
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        path?: string;
-        project?: BoundProjectResponse;
-        error?: string;
-        detail?: string;
-      };
-
-      if (!response.ok || !data.ok) {
-        if (data.error === "native_picker_cancelled") {
-          restorePreviousProject();
-          return;
-        }
-
-        const fallback = data.error || "native_picker_unavailable";
-        const manualPath = window.prompt(
-          `Native folder picker could not open (${fallback}${data.detail ? `: ${data.detail}` : ""}). Enter the full project folder path:`
-        );
-        if (manualPath) {
-          await bindFolder(manualPath);
-        } else {
-          restorePreviousProject();
-        }
-        return;
-      }
-
-      if (data.project) {
-        applyBoundProject(data.project);
-        return;
-      }
-
-      if (data.path) {
-        await bindFolder(data.path);
-      } else {
-        restorePreviousProject();
-      }
-    } catch {
-      if (previousProject.status === "bound") {
-        restorePreviousProject();
-        return;
-      }
-      setProject({
-        status: "error",
-        message: folderErrorMessage("native_picker_unavailable")
-      });
-    }
+    if (project.status === "bound") return;
+    if (!cwdCandidate) return;
+    await bindFolder(cwdCandidate.path);
   }
 
   const runtimeHelper = useMemo(() => {
@@ -398,16 +370,18 @@ export function ProjectSetupCard({
   const folderVariant: FolderSelectVariant =
     project.status === "bound"
       ? "complete"
-      : cwdManualCandidate
-        ? "inside-folder"
-        : folderReady
-          ? "default"
-          : "inactive";
+      : folderReady
+        ? "default"
+        : "inactive";
 
   const folderBusy =
-    project.status === "selecting" ||
     project.status === "binding" ||
     agentConnection.status === "connecting";
+
+  const folderActionDisabled =
+    !folderReady ||
+    folderBusy ||
+    (project.status !== "bound" && !cwdCandidate);
 
   if (showSeedWorkbench && project.status === "bound") {
     return (
@@ -460,7 +434,7 @@ export function ProjectSetupCard({
           />
           <FolderSelectStep
             variant={folderVariant}
-            helper={renderFolderHelper(project, folderVariant)}
+            helper={renderFolderHelper(project, folderVariant, cwdCandidate)}
             helperTone={
               project.status === "bound"
                 ? "success"
@@ -469,10 +443,8 @@ export function ProjectSetupCard({
                   : "default"
             }
             rowTestId="select-folder-button"
-            onSelectFolder={handleSelectFolder}
-            onUseFolderDirectly={() => void handleUseCurrentFolder()}
-            folderActionDisabled={!folderReady || folderBusy}
-            useFolderDirectlyDisabled={!folderReady || folderBusy}
+            onSelectFolder={handleInitialize}
+            folderActionDisabled={folderActionDisabled}
           />
           <AgentConnectorCard
             active={agentReady}
@@ -500,28 +472,30 @@ export function ProjectSetupCard({
 
 function renderFolderHelper(
   project: ProjectState,
-  variant: FolderSelectVariant
+  variant: FolderSelectVariant,
+  cwdCandidate: { path: string; kind: "init" | "manual" } | null
 ) {
   switch (project.status) {
     case "bound":
       return <>Complete! {project.path}</>;
-    case "selecting":
-      return <>Opening folder picker...</>;
     case "binding":
-      return <>Binding {project.path}...</>;
+      return <>Initializing {project.path}...</>;
     case "error":
       return <>{project.message}</>;
     default:
-      if (variant === "inside-folder") {
-        return <>Choose a local folder</>;
-      }
-      return (
-        <>
-          Choose a local folder for <strong>files storage</strong> of this
-          project
-        </>
-      );
+      break;
   }
+  // Not bound (idle).
+  if (variant === "inactive") {
+    return <>Connect the local runtime to bind a project folder.</>;
+  }
+  if (!cwdCandidate) {
+    return <>Open from Agent to bind folder.</>;
+  }
+  if (cwdCandidate.kind === "manual") {
+    return <>Initialize .ikran in this folder</>;
+  }
+  return <>Click to initialize the project folder</>;
 }
 
 function renderRuntimeHelper(state: RuntimeState, helper: ReactNode) {

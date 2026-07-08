@@ -90,7 +90,7 @@ test.describe("Ikran Issue 02/01 — Workbench URL opens the session shell", () 
     // The designer's existing (Figma-owned) project setup screen renders from
     // the Workbench URL (the "copy to system browser" path works).
     await expect(page.getByText("Project set up...")).toBeVisible();
-    await expect(page.getByText("Select a Folder")).toBeVisible();
+    await expect(page.getByText("Project Folder", { exact: true })).toBeVisible();
     await expect(page.getByText("Connect Your Agent")).toBeVisible();
 
     // Same-origin Runtime health + live SSE heartbeat, reached via the explicit

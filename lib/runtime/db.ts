@@ -1,12 +1,19 @@
 // SQLite state + indexing for a single Ikran project.
 //
+// Uses Node's built-in `node:sqlite` (`DatabaseSync`) — no native addon, so
+// no ABI dependency on the host's Node version. `node:sqlite` is built into
+// Node 22.5+ (unflagged since 22.13); the previous `better-sqlite3` native
+// module caused `ERR_DLOPEN_FAILED` 500s when the MCP host (Cursor/Codex)
+// spawned Ikran under a different Node than the one that installed the addon.
+//
+//
 // Each project has its own `.ikran/ikran.db` file. A fresh connection is opened
 // per call so the Runtime behaves correctly when the project folder (and its
 // database file) is recreated between runs — for example by tests or by a user
 // resetting a project.
 
-import Database from "better-sqlite3";
-import type { Database as DatabaseType } from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync as DatabaseType } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { getIkranDir, getProjectDbPath } from "./paths";
 
@@ -50,9 +57,9 @@ export function openProjectDb(projectPath: string): DatabaseType {
   const resolved = getProjectDbPath(projectPath);
   mkdirSync(getIkranDir(projectPath), { recursive: true });
 
-  const db = new Database(resolved);
+  const db = new DatabaseSync(resolved);
   db.exec(SCHEMA);
-  db.pragma("journal_mode = WAL");
+  db.exec("PRAGMA journal_mode = WAL");
   return db;
 }
 
@@ -66,7 +73,7 @@ export function closeProjectDb(db: DatabaseType): void {
 
 // Ensure a project's SQLite database exists with the current schema, then close
 // the connection immediately. Use this for one-shot initialization (e.g. project
-// binding) so we never leak a better-sqlite3 handle by forgetting to close it.
+// binding) so we never leak a SQLite handle by forgetting to close it.
 export function initializeProjectDb(projectPath: string): void {
   const db = openProjectDb(projectPath);
   try {

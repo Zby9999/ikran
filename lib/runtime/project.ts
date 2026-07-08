@@ -5,7 +5,7 @@
 // Runtime-global `~/.ikran/runtime-state.json` pointer). The Browser UI never
 // touches the filesystem directly.
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, realpathSync } from "node:fs";
 import { stat, access } from "node:fs/promises";
 import path from "node:path";
 import type { AgentId } from "./agent-types";
@@ -117,7 +117,7 @@ export async function bindProjectFolder(folderPath: string): Promise<BindRespons
   writeFileSync(getProjectConfigPath(resolved), JSON.stringify(config, null, 2), "utf-8");
 
   // Initialize SQLite schema for this project (open + ensure schema + close,
-  // so no better-sqlite3 handle is left open after binding).
+  // so no SQLite handle is left open after binding).
   initializeProjectDb(resolved);
 
   // Record semantic events.
@@ -212,6 +212,14 @@ export function getActiveProjectState(): { ok: true; project: ProjectConfig } | 
   return { ok: true, project: config };
 }
 
+export function canonicalPath(folderPath: string): string {
+  try {
+    return realpathSync(folderPath);
+  } catch {
+    return path.resolve(folderPath);
+  }
+}
+
 export function projectPathsMatch(left: string, right: string): boolean {
-  return path.resolve(left) === path.resolve(right);
+  return canonicalPath(left) === canonicalPath(right);
 }

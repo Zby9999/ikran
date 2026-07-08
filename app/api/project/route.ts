@@ -13,7 +13,8 @@ import type { NextRequest } from "next/server";
 import { authorize } from "../../../lib/runtime/session";
 import {
   getActiveProjectState,
-  getRuntimeConnectedAgent
+  getRuntimeConnectedAgent,
+  projectPathsMatch
 } from "../../../lib/runtime/project";
 import { getCwdCandidate } from "../../../lib/runtime/cwd-candidate";
 
@@ -34,11 +35,16 @@ export async function GET(request: NextRequest) {
   const state = getActiveProjectState();
   const project = state.ok ? state.project : null;
   const connected_agent = getRuntimeConnectedAgent();
+  const cwd_matches_active =
+    project && cwdCandidate
+      ? projectPathsMatch(cwdCandidate.path, project.path)
+      : false;
 
   return NextResponse.json({
     ok: true,
     project,
     connected_agent,
-    cwd_candidate: cwdCandidate
+    cwd_candidate: cwdCandidate,
+    cwd_matches_active
   });
 }

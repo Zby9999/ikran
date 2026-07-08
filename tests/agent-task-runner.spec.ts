@@ -278,8 +278,8 @@ function readEvents(folder: string): { type: string; payload: Record<string, unk
 
 function getTaskRow(folder: string, taskId: string): { status: string; error_code: string | null } | null {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require("better-sqlite3");
-  const db = new Database(`${folder}/.ikran/ikran.db`);
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(`${folder}/.ikran/ikran.db`);
   try {
     const row = db
       .prepare("SELECT status, error_code FROM tasks WHERE id = ?")
@@ -292,8 +292,8 @@ function getTaskRow(folder: string, taskId: string): { status: string; error_cod
 
 function insertFakeRunningTask(folder: string, id: string, family: string): void {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require("better-sqlite3");
-  const db = new Database(`${folder}/.ikran/ikran.db`);
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(`${folder}/.ikran/ikran.db`);
   try {
     const now = new Date().toISOString();
     db.prepare(

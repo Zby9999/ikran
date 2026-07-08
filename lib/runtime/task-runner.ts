@@ -229,7 +229,7 @@ export function listTasks(projectPath: string): TaskView[] {
   try {
     const rows = db
       .prepare("SELECT * FROM tasks ORDER BY created_at ASC")
-      .all() as TaskRow[];
+      .all() as unknown as TaskRow[];
     return rows.map(rowToView);
   } finally {
     closeProjectDb(db);

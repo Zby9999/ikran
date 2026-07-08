@@ -7,7 +7,7 @@
 // Event types mirror the PRD's semantic event model. Low-level UI noise such as
 // canvas pan/zoom/keystrokes is intentionally not logged here.
 
-import type { Database as DatabaseType } from "better-sqlite3";
+import type { DatabaseSync as DatabaseType } from "node:sqlite";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { openProjectDb, closeProjectDb } from "./db";
@@ -94,11 +94,11 @@ export function listEvents(projectPath: string, type?: EventType): LoggedEvent[]
     if (type) {
       return db
         .prepare("SELECT * FROM events WHERE type = ? ORDER BY created_at ASC")
-        .all(type) as LoggedEvent[];
+        .all(type) as unknown as LoggedEvent[];
     }
     return db
       .prepare("SELECT * FROM events ORDER BY created_at ASC")
-      .all() as LoggedEvent[];
+      .all() as unknown as LoggedEvent[];
   } finally {
     closeProjectDb(db);
   }

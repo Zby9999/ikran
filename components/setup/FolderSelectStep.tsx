@@ -7,7 +7,7 @@ import { activeIconGradients } from "./IconGradients";
 import { IconBox, SettledCheckIcon } from "./IconBox";
 import { useSquircle } from "./useSquircle";
 
-export type FolderSelectVariant = "inactive" | "default" | "inside-folder" | "complete";
+export type FolderSelectVariant = "inactive" | "default" | "complete";
 
 type HelperTone = "default" | "success" | "error";
 
@@ -18,9 +18,7 @@ export function FolderSelectStep({
   helperTestId = "folder-helper",
   rowTestId = "select-folder-button",
   onSelectFolder,
-  onUseFolderDirectly,
-  folderActionDisabled = false,
-  useFolderDirectlyDisabled = false
+  folderActionDisabled = false
 }: {
   variant: FolderSelectVariant;
   helper: ReactNode;
@@ -28,13 +26,11 @@ export function FolderSelectStep({
   helperTestId?: string;
   rowTestId?: string;
   onSelectFolder?: () => void;
-  onUseFolderDirectly?: () => void;
   folderActionDisabled?: boolean;
-  useFolderDirectlyDisabled?: boolean;
 }) {
   const rowRef = useSquircle<HTMLButtonElement>(12);
   const rowStaticRef = useSquircle<HTMLDivElement>(12);
-  const active = variant === "default" || variant === "inside-folder";
+  const active = variant === "default";
   const complete = variant === "complete";
   const mutedLabel = complete && !onSelectFolder;
 
@@ -52,7 +48,7 @@ export function FolderSelectStep({
     <>
       {icon}
       <div className="step-fill">
-        <p className={`step-label ${mutedLabel ? "complete" : ""}`}>Select a Folder</p>
+        <p className={`step-label ${mutedLabel ? "complete" : ""}`}>Project Folder</p>
         {complete ? (
           <SettledCheckIcon />
         ) : (
@@ -80,33 +76,12 @@ export function FolderSelectStep({
         </div>
       )}
 
-      {variant === "inside-folder" ? (
-        <div
-          className={`folder-step-footer ${helperTone === "error" ? "is-expanded" : ""}`}
-        >
-          <p
-            className={`helper ${helperTone === "default" ? "" : helperTone}`}
-            data-testid={helperTestId}
-          >
-            {helper}
-          </p>
-          <WorkbenchButton
-            variant="subtlePill"
-            data-testid="use-folder-directly-button"
-            disabled={useFolderDirectlyDisabled}
-            onClick={onUseFolderDirectly}
-          >
-            Use this folder directly
-          </WorkbenchButton>
-        </div>
-      ) : (
-        <p
-          className={`helper ${helperTone === "default" ? "" : helperTone}`}
-          data-testid={helperTestId}
-        >
-          {helper}
-        </p>
-      )}
+      <p
+        className={`helper ${helperTone === "default" ? "" : helperTone}`}
+        data-testid={helperTestId}
+      >
+        {helper}
+      </p>
     </div>
   );
 }
