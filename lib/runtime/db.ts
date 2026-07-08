@@ -46,11 +46,19 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_at    TEXT NOT NULL              -- ISO 8601
 );
 
+CREATE TABLE IF NOT EXISTS seed_references (
+  id TEXT PRIMARY KEY,                  -- UUID (randomUUID)
+  figma_seed_reference TEXT NOT NULL,    -- original Figma URL, stored verbatim
+  original_design_intent TEXT NOT NULL,  -- designer's original design intent
+  created_at TEXT NOT NULL               -- ISO 8601
+);
+
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_family ON tasks(family);
 CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
+CREATE INDEX IF NOT EXISTS idx_seed_references_created_at ON seed_references(created_at);
 `;
 
 export function openProjectDb(projectPath: string): DatabaseType {

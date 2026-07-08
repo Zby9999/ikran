@@ -271,7 +271,7 @@ const mcp = new McpServer(
   { name: "ikran", version: "0.1.0" },
   {
     instructions:
-      "Ikran local research workbench. open_workbench starts (or reuses) the local HTTP Workbench and returns a localhost URL with a startup-level session token. create_or_open_project binds or opens the project/session (initializing `.ikran/`); with no `path` it discovers the working folder from the MCP client's workspace Roots (or IKRAN_CWD env). list_working_folders shows which folder was discovered. setup_workspace returns the per-project MCP config snippet (cwd + IKRAN_STATE_DIR) to pin a workspace without Roots — the Agent writes it into .cursor/mcp.json and reloads. create_or_open_project fails closed if the Runtime is bound to a different project. The URL is local-only; open it in any browser, ideally this Agent host's embedded browser. All research source-of-truth changes go through Ikran tools."
+      "Ikran local research workbench. open_workbench starts (or reuses) the local HTTP Workbench and returns a localhost URL with a startup-level session token. create_or_open_project binds or opens the project/session (initializing `.ikran/`); with no `path` it discovers the working folder from the MCP client's workspace Roots (or IKRAN_CWD env). list_working_folders shows which folder was discovered. setup_workspace returns the per-project MCP config snippet (cwd + IKRAN_STATE_DIR) to pin a workspace without Roots — the Agent writes it into .cursor/mcp.json and reloads. register_seed_reference records a Figma seed URL + the designer's original design intent as Runtime-owned research source-of-truth (it does NOT access Figma — local format check only). create_or_open_project fails closed if the Runtime is bound to a different project. The URL is local-only; open it in any browser, ideally this Agent host's embedded browser. All research source-of-truth changes go through Ikran tools."
   }
 );
 
@@ -615,11 +615,109 @@ mcp.registerTool(
   }
 );
 
+// register_seed_reference — the Agent's semantic record-write tool (Issue
+// 02/03). It records a Figma seed URL + the designer's original design intent as
+// Runtime-owned research source-of-truth by PROXYING to the Workbench HTTP API
+// at POST /api/seed-reference (the SAME route the Web UI would use). It is the
+// ONLY sanctioned way for an Agent to change this Runtime-owned record — there
+// is no raw exec tool and no separate geometry tool. The handler only performs
+// a LOCAL format check; it never accesses Figma, fetches, or probes the link.
+// On validation failure the HTTP route returns a structured error and writes NO
+// record/event (no half-written state); this proxy surfaces that error.
+mcp.registerTool(
+  "register_seed_reference",
+  {
+    description:
+      "Register a Figma seed reference and the designer's original design intent for the active Ikran project. SEMANTIC BOUNDARY: this records the seed URL + design intent as Runtime-owned research source-of-truth. It does NOT access Figma, does NOT fetch / oEmbed / probe the link, and does NOT verify the file exists online — it only performs a LOCAL format check (https URL, figma.com / www.figma.com host, /design/<key> or /file/<key> path) and stores the ORIGINAL URL verbatim (never rewritten). Requires an active project — call create_or_open_project first. Pass { figmaSeedReference, originalDesignIntent }. On validation failure returns a structured error and writes NO record/event (no half-written state). All research source-of-truth changes go through Ikran tools.",
+    inputSchema: {
+      figmaSeedReference: z.string(),
+      originalDesignIntent: z.string()
+    }
+  },
+  async (args) => {
+    try {
+      const rt = await ensureRuntime();
+      const res = await apiPost(rt.port, rt.token, "/api/seed-reference", {
+        figmaSeedReference: args.figmaSeedReference,
+        originalDesignIntent: args.originalDesignIntent
+      });
+      // 404 means the Runtime serving this MCP server does NOT know the
+      // /api/seed-reference route — i.e. it is a STALE build/runtime spawned
+      // before this tool existed (the most likely real-Agent failure). Surface
+      // a diagnosable error instead of a generic "register_failed" so the user
+      // knows to rebuild + restart the MCP host / Runtime.
+      if (res.status === 404) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `register_seed_reference failed: the Runtime at ${rt.host}:${rt.port} returned HTTP 404 for /api/seed-reference — the running Runtime is STALE (built before this route existed). Fix ONE of: (a) npm run build, then restart the MCP host / Ikran Runtime so it serves the fresh build; or (b) run the MCP server in dev mode (drop --prod) so the route hot-reloads. Then retry.`
+            }
+          ],
+          structuredContent: {
+            ok: false,
+            error: "route_not_found",
+            detail: `HTTP 404 on /api/seed-reference (stale Runtime at ${rt.host}:${rt.port}; fix: npm run build + restart MCP host/runtime, or use dev mode)`,
+            route: "/api/seed-reference",
+            session: rt.token,
+            workbench_url: rt.url
+          }
+        };
+      }
+      if (res.status !== 200 || !res.body || !res.body.ok) {
+        const reason = (res.body && res.body.error) || `HTTP ${res.status}`;
+        return {
+          content: [
+            {
+              type: "text",
+              text: `register_seed_reference failed: ${reason}`
+            }
+          ],
+          structuredContent: {
+            ok: false,
+            error: (res.body && res.body.error) || "register_failed",
+            detail: reason,
+            session: rt.token,
+            workbench_url: rt.url
+          }
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Seed reference registered: ${res.body.record.figma_seed_reference}\nDesign intent: ${res.body.record.original_design_intent}\nEvent: ${res.body.event_id ? res.body.event_id : "(audit write failed — record still saved; do NOT retry)"}\nWorkbench URL: ${rt.url}`
+          }
+        ],
+        structuredContent: {
+          ok: true,
+          record: res.body.record,
+          event_id: res.body.event_id,
+          ...(res.body.audit_warning ? { audit_warning: res.body.audit_warning } : {}),
+          session: rt.token,
+          workbench_url: rt.url
+        }
+      };
+    } catch (err) {
+      return {
+        content: [
+          { type: "text", text: `register_seed_reference failed: ${err.message}` }
+        ],
+        structuredContent: {
+          ok: false,
+          error: "runtime_unavailable",
+          detail: err.message
+        }
+      };
+    }
+  }
+);
+
 const transport = new StdioServerTransport();
 mcp
   .connect(transport)
   .then(() => {
-    console.error(`[ikran-mcp] ready (open_workbench, create_or_open_project, list_working_folders, setup_workspace, host=${host}, prod=${prod})`);
+    console.error(`[ikran-mcp] ready (open_workbench, create_or_open_project, register_seed_reference, list_working_folders, setup_workspace, host=${host}, prod=${prod})`);
   })
   .catch((err) => {
     console.error(`[ikran-mcp] failed to connect transport: ${err.message}`);

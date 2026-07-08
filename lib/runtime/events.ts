@@ -22,6 +22,7 @@ export type EventType =
   | "seed_evidence_import_started"
   | "figma_evidence_package_returned"
   | "real_agent_seed_evidence_smoke_recorded"
+  | "seed_reference_registered"
   | "annotation_created"
   | "question_card_created"
   | "designer_answer_submitted"
