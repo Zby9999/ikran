@@ -679,12 +679,17 @@
   user-select: none;
 }
 
-/* Awaiting Evidence Surface screenshot — minimal purple-frame spinner. */
+/* Awaiting Evidence Surface screenshot — minimal purple-frame spinner + hint. */
 .seed-ref-frame__awaiting {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   width: 100%;
   height: 100%;
+  padding: 12px;
+  box-sizing: border-box;
   pointer-events: none;
 }
 
@@ -692,10 +697,22 @@
   box-sizing: border-box;
   width: 28px;
   height: 28px;
+  flex: 0 0 auto;
   border: 2px solid rgba(185, 128, 185, 0.35);
   border-top-color: #731b73;
   border-radius: 50%;
   animation: seed-ref-awaiting-spin 0.85s linear infinite;
+}
+
+.seed-ref-frame__awaiting-hint {
+  margin: 0;
+  max-width: 200px;
+  color: #4a084a;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: normal;
+  letter-spacing: -0.3px;
+  text-align: center;
 }
 
 @keyframes seed-ref-awaiting-spin {

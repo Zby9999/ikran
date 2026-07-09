@@ -69,6 +69,36 @@ function rawPost(
   });
 }
 
+function rawGet(
+  route: string,
+  headers: Record<string, string>,
+  port: number
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve) => {
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path: route,
+        method: "GET",
+        headers: {
+          host: `localhost:${port}`,
+          ...headers
+        }
+      },
+      (res) => {
+        let body = "";
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
+      }
+    );
+    req.on("error", () => resolve({ status: 0, body: "" }));
+    req.end();
+  });
+}
+
 async function captureToken(
   page: import("@playwright/test").Page,
   baseURL: string
@@ -537,6 +567,9 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
       await expect(awaiting).toBeVisible();
       await expect(awaiting).toHaveAttribute("data-awaiting-evidence", "true");
       await expect(
+        projection.getByTestId("seed-reference-projection-awaiting-hint")
+      ).toHaveText("Waiting for Agent evidence capture");
+      await expect(
         projection.getByTestId("seed-reference-projection-screenshot")
       ).toHaveCount(0);
 
@@ -762,6 +795,130 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
       await expect(img).toHaveAttribute(
         "src",
         new RegExp(`/api/artifacts/.*figma-smoke-screenshot\\.png\\?session=`)
+      );
+
+      expect(figmaNetworkHits).toBe(0);
+    } finally {
+      await page.unroute("**/*");
+    }
+  });
+
+  test("UI-registered seed appears in pending-seed-evidence until Agent records screenshot", async ({
+    page,
+    runtime,
+    folder
+  }) => {
+    const token = await captureToken(page, runtime.baseURL);
+    await bindFolder(token, folder, runtime.port);
+
+    let figmaNetworkHits = 0;
+    await page.route("**/*", async (route) => {
+      const url = route.request().url();
+      if (
+        url.includes("figma.com") ||
+        url.includes("/api/figma/") ||
+        url.includes("oembed")
+      ) {
+        figmaNetworkHits += 1;
+        await route.abort();
+        return;
+      }
+      await route.continue();
+    });
+
+    try {
+      const seedRes = await rawPost(
+        "/api/seed-reference",
+        {
+          figmaSeedReference: REAL_FIGMA_SEED_REFERENCE,
+          originalDesignIntent: "UI-initiated pending: Agent must capture evidence."
+        },
+        { "x-ikran-session": token },
+        runtime.port
+      );
+      expect(seedRes.status).toBe(200);
+      const seedId = (JSON.parse(seedRes.body).record as { id: string }).id;
+
+      const pendingBefore = await rawGet(
+        "/api/pending-seed-evidence",
+        { "x-ikran-session": token },
+        runtime.port
+      );
+      expect(pendingBefore.status).toBe(200);
+      const pendingBeforeBody = JSON.parse(pendingBefore.body) as {
+        ok: boolean;
+        records: Array<{ id: string; figma_seed_reference: string }>;
+      };
+      expect(pendingBeforeBody.ok).toBe(true);
+      expect(pendingBeforeBody.records.map((r) => r.id)).toContain(seedId);
+      expect(
+        pendingBeforeBody.records.find((r) => r.id === seedId)?.figma_seed_reference
+      ).toBe(REAL_FIGMA_SEED_REFERENCE);
+
+      await page.reload();
+      await enterWorkbench(page);
+
+      const projection = page.getByTestId("seed-reference-projection");
+      await expect(projection).toBeVisible();
+      await expect(projection).toHaveAttribute("data-runtime-record-id", seedId);
+      await expect(
+        projection.getByTestId("seed-reference-projection-awaiting")
+      ).toBeVisible();
+      await expect(
+        projection.getByTestId("seed-reference-projection-awaiting-hint")
+      ).toHaveText("Waiting for Agent evidence capture");
+
+      const TINY_PNG =
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+      const evidenceRes = await rawPost(
+        "/api/evidence-package",
+        {
+          figmaSeedReference: REAL_FIGMA_SEED_REFERENCE,
+          seedReferenceId: seedId,
+          frame: { nodeId: "177:426", name: "Pending Bridge Frame" },
+          evidenceViews: { rawData: "available", screenshot: "available" },
+          screenshot: { dataUrl: TINY_PNG }
+        },
+        { "x-ikran-session": token },
+        runtime.port
+      );
+      expect(evidenceRes.status).toBe(200);
+      const surfaceId = (JSON.parse(evidenceRes.body).record as { id: string }).id;
+
+      const pendingAfter = await rawGet(
+        "/api/pending-seed-evidence",
+        { "x-ikran-session": token },
+        runtime.port
+      );
+      expect(pendingAfter.status).toBe(200);
+      const pendingAfterBody = JSON.parse(pendingAfter.body) as {
+        ok: boolean;
+        records: Array<{ id: string }>;
+      };
+      expect(pendingAfterBody.ok).toBe(true);
+      expect(pendingAfterBody.records.map((r) => r.id)).not.toContain(seedId);
+
+      await expect
+        .poll(async () => {
+          const p = page.getByTestId("seed-reference-projection");
+          return (await p.getAttribute("data-kind")) === "figma_evidence_surface"
+            ? await p.getAttribute("data-surface-record-id")
+            : null;
+        })
+        .toBe(surfaceId);
+
+      await expect(
+        projection.getByTestId("seed-reference-projection-awaiting")
+      ).toHaveCount(0);
+      await expect(
+        projection.getByTestId("seed-reference-projection-awaiting-hint")
+      ).toHaveCount(0);
+      await expect(
+        projection.getByTestId("seed-reference-projection-screenshot")
+      ).toBeVisible();
+      await expect(projection.getByTestId("seed-reference-projection-title")).toHaveText(
+        "Pending Bridge Frame"
       );
 
       expect(figmaNetworkHits).toBe(0);

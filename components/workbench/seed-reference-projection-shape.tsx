@@ -277,9 +277,15 @@ function SeedReferenceProjectionFrame({
             data-testid="seed-reference-projection-awaiting"
             data-awaiting-evidence="true"
             role="status"
-            aria-label="Awaiting evidence"
+            aria-label="Waiting for Agent evidence capture"
           >
             <span className="seed-ref-frame__awaiting-spinner" aria-hidden="true" />
+            <p
+              className="seed-ref-frame__awaiting-hint"
+              data-testid="seed-reference-projection-awaiting-hint"
+            >
+              Waiting for Agent evidence capture
+            </p>
           </div>
         ) : null}
       </div>
