@@ -40,6 +40,13 @@ export interface SeedReferenceInput {
   figmaSeedReference: string;
   /** Designer's original design intent (free text). */
   originalDesignIntent: string;
+  /**
+   * Who registered the seed. Controls Workbench awaiting UX:
+   * - `ui` — EnterPanel / plus: show guide (no spinner)
+   * - `agent` — MCP register_seed_reference: show loading spinner
+   * Defaults to `agent` when omitted (MCP / older clients).
+   */
+  registeredVia?: "ui" | "agent";
 }
 
 export interface SeedReferenceRecord {
@@ -48,6 +55,8 @@ export interface SeedReferenceRecord {
   figma_seed_reference: string;
   original_design_intent: string;
   created_at: string;
+  /** `ui` | `agent` — who registered; missing/legacy treated as agent. */
+  registered_via: "ui" | "agent";
 }
 
 export type SeedReferenceValidationReason =
@@ -122,25 +131,30 @@ export function registerSeedReference(
     return { ok: false, reason: validationError };
   }
 
+  const registeredVia: "ui" | "agent" =
+    input.registeredVia === "ui" ? "ui" : "agent";
+
   const record: SeedReferenceRecord = {
     id: randomUUID(),
     // Store the ORIGINAL input verbatim — do not rewrite/normalize the URL.
     figma_seed_reference: input.figmaSeedReference,
     original_design_intent: input.originalDesignIntent,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    registered_via: registeredVia
   };
 
   const db = openProjectDb(projectPath);
   try {
     const stmt = db.prepare(
-      `INSERT INTO seed_references (id, figma_seed_reference, original_design_intent, created_at)
-       VALUES (?, ?, ?, ?)`
+      `INSERT INTO seed_references (id, figma_seed_reference, original_design_intent, created_at, registered_via)
+       VALUES (?, ?, ?, ?, ?)`
     );
     stmt.run(
       record.id,
       record.figma_seed_reference,
       record.original_design_intent,
-      record.created_at
+      record.created_at,
+      record.registered_via
     );
   } catch {
     return { ok: false, reason: "db_error" };
@@ -158,7 +172,8 @@ export function registerSeedReference(
     const event = logEvent(projectPath, "seed_reference_registered", {
       seed_reference_id: record.id,
       figma_seed_reference: record.figma_seed_reference,
-      original_design_intent: record.original_design_intent
+      original_design_intent: record.original_design_intent,
+      registered_via: record.registered_via
     });
     event_id = event.event_id;
   } catch {
@@ -173,9 +188,16 @@ export function registerSeedReference(
 export function listSeedReferences(projectPath: string): SeedReferenceRecord[] {
   const db = openProjectDb(projectPath);
   try {
-    return db
+    const rows = db
       .prepare("SELECT * FROM seed_references ORDER BY created_at ASC")
-      .all() as unknown as SeedReferenceRecord[];
+      .all() as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      id: String(row.id),
+      figma_seed_reference: String(row.figma_seed_reference),
+      original_design_intent: String(row.original_design_intent),
+      created_at: String(row.created_at),
+      registered_via: row.registered_via === "ui" ? "ui" : "agent"
+    }));
   } finally {
     closeProjectDb(db);
   }

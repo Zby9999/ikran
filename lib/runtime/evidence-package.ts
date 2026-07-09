@@ -89,6 +89,7 @@ export type EvidencePackageValidationReason =
   | "screenshot_required_when_available"
   | "screenshot_payload_when_missing"
   | "screenshot_too_large"
+  | "invalid_screenshot_data_url"
   | "invalid_screenshot"
   | "invalid_design_signals"
   | "design_signals_too_many"
@@ -110,6 +111,21 @@ export type EvidencePackageValidationResult =
   | EvidencePackageError;
 
 const SCREENSHOT_DATA_URL_MAX_CHARS = 2_000_000;
+
+/**
+ * Agent-supplied inline screenshots must be image data URLs only — never
+ * https://… (would let the Workbench <img> fetch external hosts, including
+ * Figma, and break the zero-Figma / local-projection boundary).
+ */
+const SCREENSHOT_IMAGE_DATA_URL_RE =
+  /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/]+=*$/i;
+
+export function isScreenshotImageDataUrl(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("data:image/")) return false;
+  // Allow whitespace-free base64 body; reject remote URLs and non-image schemes.
+  return SCREENSHOT_IMAGE_DATA_URL_RE.test(trimmed);
+}
 const DESIGN_SIGNALS_MAX = 20;
 
 /** Local Figma URL format check — same rules as seed-reference.ts. No network. */
@@ -267,6 +283,9 @@ export function validateEvidencePackage(
     if (!hasArtifact && !hasDataUrl) {
       return fail("screenshot_required_when_available");
     }
+    if (hasDataUrl && !isScreenshotImageDataUrl(dataUrl!)) {
+      return fail("invalid_screenshot_data_url");
+    }
     if (hasDataUrl && dataUrl!.length > SCREENSHOT_DATA_URL_MAX_CHARS) {
       return fail("screenshot_too_large", {
         maxChars: SCREENSHOT_DATA_URL_MAX_CHARS,
@@ -276,7 +295,7 @@ export function validateEvidencePackage(
 
     screenshot = {};
     if (hasArtifact) screenshot.artifactPath = artifactPath;
-    if (hasDataUrl) screenshot.dataUrl = dataUrl;
+    if (hasDataUrl) screenshot.dataUrl = dataUrl!.trim();
   } else {
     // screenshot === "missing"
     if (shotRaw !== undefined && shotRaw !== null) {
@@ -437,8 +456,9 @@ function logInvalidOutput(
 /**
  * Ensure a project-relative artifact path stays under project root.
  * Does NOT require the file to exist yet (Agent may declare before write).
+ * Exported so GET /api/artifacts can reuse the same escape check.
  */
-function assertArtifactPathInProject(
+export function assertArtifactPathInProject(
   projectPath: string,
   artifactPath: string
 ): "artifact_path_escape" | null {
@@ -454,6 +474,20 @@ function assertArtifactPathInProject(
     return "artifact_path_escape";
   }
   return null;
+}
+
+/** Resolve a project-relative artifact path; null if escape or empty. */
+export function resolveProjectArtifactPath(
+  projectPath: string,
+  artifactPath: string
+): string | null {
+  if (typeof artifactPath !== "string" || artifactPath.trim().length === 0) {
+    return null;
+  }
+  if (assertArtifactPathInProject(projectPath, artifactPath) !== null) {
+    return null;
+  }
+  return path.resolve(projectPath, artifactPath);
 }
 
 function lookupSeedReferenceUrl(

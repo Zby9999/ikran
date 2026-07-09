@@ -155,12 +155,53 @@ test.describe("validateEvidencePackage (unit)", () => {
     const res = validateEvidencePackage(
       minimalPackage({
         evidenceViews: { rawData: "missing", screenshot: "available" },
-        screenshot: { dataUrl: "x".repeat(2_000_001) }
+        screenshot: {
+          dataUrl: `data:image/png;base64,${"A".repeat(2_000_001)}`
+        }
       })
     );
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.reason).toBe("screenshot_too_large");
+  });
+
+  test("invalid: dataUrl must be image data URL (reject https)", () => {
+    const res = validateEvidencePackage(
+      minimalPackage({
+        evidenceViews: { rawData: "missing", screenshot: "available" },
+        screenshot: {
+          dataUrl: "https://www.figma.com/file/abc/preview.png"
+        }
+      })
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toBe("invalid_screenshot_data_url");
+  });
+
+  test("invalid: dataUrl rejects non-image data: schemes", () => {
+    const res = validateEvidencePackage(
+      minimalPackage({
+        evidenceViews: { rawData: "missing", screenshot: "available" },
+        screenshot: { dataUrl: "data:text/plain;base64,YQ==" }
+      })
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toBe("invalid_screenshot_data_url");
+  });
+
+  test("valid: tiny png dataUrl accepted", () => {
+    const res = validateEvidencePackage(
+      minimalPackage({
+        evidenceViews: { rawData: "missing", screenshot: "available" },
+        screenshot: {
+          dataUrl:
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        }
+      })
+    );
+    expect(res.ok).toBe(true);
   });
 
   test("invalid: neither figmaSeedReference nor seedReferenceId", () => {

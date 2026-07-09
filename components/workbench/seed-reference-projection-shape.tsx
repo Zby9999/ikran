@@ -19,16 +19,20 @@
 // Visual (230:297): purple-bordered frame with header title + info tip
 // (227:130 Description). Media shows a screenshot when the surface supplies
 // `screenshotDataUrl` (inline data URL or authenticated /api/artifacts URL).
-// Until then, seed-only projections show awaiting_evidence loading in the
-// media area. URL is stored in props but NOT shown on the card.
+// Until then, seed-only projections show awaiting UX in the media area:
+// Agent-registered seeds keep a loading spinner; UI-registered seeds show
+// guidance to ask Agents for a Figma screenshot (no spinner).
+// URL is stored in props but NOT shown on the card.
 //
 // Default size: 380×520 — readable tall placeholder on the workbench canvas
 // (not the full Figma page aspect 695:1851, which would be ~380×1013).
-// Resize is aspect-ratio locked. Blue selection bounds stay hidden; corner
-// resize hit targets stay active (visual corner squares suppressed via
-// SeedSelectionForegroundOverlayUtil — do NOT use hideResizeHandles, which
-// also removes hit geometry). Unselected strokes are #B980B9; selected
-// deepens both to #731b73 (`.seed-ref-frame--selected`).
+// Resize is aspect-ratio locked. With a screenshot, corner resize cannot grow
+// past natural pixels + frame chrome (object-fit: scale-down); shrink is free.
+// Without a screenshot, resize is unconstrained. Blue selection bounds stay
+// hidden; corner resize hit targets stay active (visual corner squares
+// suppressed via SeedSelectionForegroundOverlayUtil — do NOT use
+// hideResizeHandles, which also removes hit geometry). Unselected strokes are
+// #B980B9; selected deepens both to #731b73 (`.seed-ref-frame--selected`).
 
 import "tldraw/tldraw.css";
 import { useState, type SyntheticEvent } from "react";
@@ -38,9 +42,20 @@ import {
   T,
   TLShape,
   TLCreateShapePartial,
+  TLResizeInfo,
+  resizeBox,
   useEditor,
   useValue
 } from "tldraw";
+import { SeedReferenceDescriptionTip } from "./seed-reference-description-tip";
+import {
+  SEED_REF_FRAME_CHROME_H,
+  SEED_REF_FRAME_CHROME_W,
+  clampSeedReferenceResizeToNaturalSize,
+  sizeFromNaturalPixels
+} from "./seed-reference-resize-clamp";
+
+export { SEED_REF_FRAME_CHROME_H, SEED_REF_FRAME_CHROME_W, sizeFromNaturalPixels };
 
 declare module "@tldraw/tlschema" {
   interface TLGlobalShapePropsMap {
@@ -60,9 +75,20 @@ declare module "@tldraw/tlschema" {
       hasScreenshotArtifact: boolean;
       /**
        * True when a seed/surface is projected but there is not yet a screenshot
-       * src — media shows awaiting_evidence loading until Evidence Surface arrives.
+       * src — media shows awaiting UX until Evidence Surface arrives.
        */
       awaitingEvidence: boolean;
+      /**
+       * Awaiting presentation: `spinner` (Agent path) or `guide` (UI path).
+       */
+      awaitingUx: "spinner" | "guide";
+      /**
+       * Screenshot intrinsic pixel size (0 when unknown / no screenshot).
+       * Used to clamp corner resize so the frame cannot grow past natural
+       * media size + chrome while object-fit: scale-down is in effect.
+       */
+      naturalMediaW: number;
+      naturalMediaH: number;
     };
   }
 }
@@ -92,38 +118,8 @@ export const SEED_REFERENCE_PROJECTION_TYPE = "seed-reference-projection" as con
 export const SEED_REFERENCE_PROJECTION_DEFAULT_W = 380;
 export const SEED_REFERENCE_PROJECTION_DEFAULT_H = 520;
 
-/**
- * Frame chrome around the media bitmap (padding + header + media border).
- * Matches `.seed-ref-frame` / `__header` / `__media` in seed-evidence-workbench.css.
- * Used when resizing the shape to the screenshot's natural pixel size.
- */
-export const SEED_REF_FRAME_CHROME_W = 10; // pad 4+4 + media border 1+1
-export const SEED_REF_FRAME_CHROME_H = 32; // pad top 2 + header 24 + pad bottom 4 + media border 1+1
-
-/** Cap the longer media edge in page pixels (downscale only; never upscale).
- *  Align with Figma MCP get_screenshot maxDimension guidance (4096). */
-const MAX_SCREENSHOT_MEDIA_EDGE = 4096;
-
 const FALLBACK_TITLE = "Figma seed";
 const FALLBACK_DESCRIPTION = "Description Place Holder";
-
-function sizeFromNaturalPixels(
-  naturalWidth: number,
-  naturalHeight: number
-): { w: number; h: number } {
-  let mediaW = naturalWidth;
-  let mediaH = naturalHeight;
-  const longEdge = Math.max(mediaW, mediaH);
-  if (longEdge > MAX_SCREENSHOT_MEDIA_EDGE) {
-    const scale = MAX_SCREENSHOT_MEDIA_EDGE / longEdge;
-    mediaW = Math.round(mediaW * scale);
-    mediaH = Math.round(mediaH * scale);
-  }
-  return {
-    w: mediaW + SEED_REF_FRAME_CHROME_W,
-    h: mediaH + SEED_REF_FRAME_CHROME_H
-  };
-}
 
 function SeedReferenceProjectionFrame({
   shape
@@ -137,7 +133,8 @@ function SeedReferenceProjectionFrame({
     frameName,
     screenshotDataUrl,
     hasScreenshotArtifact,
-    awaitingEvidence
+    awaitingEvidence,
+    awaitingUx
   } = shape.props;
   const { canvasRecordId, runtimeRecordId, kind, seedRecordId, surfaceRecordId } =
     shape.meta;
@@ -154,6 +151,8 @@ function SeedReferenceProjectionFrame({
   const screenshotSrc = screenshotDataUrl.trim();
   const hasScreenshot = screenshotSrc.length > 0;
   const showAwaiting = awaitingEvidence && !hasScreenshot;
+  const showGuide = showAwaiting && awaitingUx === "guide";
+  const showSpinner = showAwaiting && awaitingUx !== "guide";
 
   const stopShapePointer = (event: SyntheticEvent) => {
     event.stopPropagation();
@@ -166,17 +165,22 @@ function SeedReferenceProjectionFrame({
     // Ignore tiny fixtures / broken loads — keep the default placeholder size.
     if (!nw || !nh || Math.max(nw, nh) < 32) return;
     const next = sizeFromNaturalPixels(nw, nh);
-    if (
+    const sizeUnchanged =
       Math.abs(shape.props.w - next.w) < 1 &&
-      Math.abs(shape.props.h - next.h) < 1
-    ) {
-      return;
-    }
-    // Local geometry only — never written back to Runtime.
+      Math.abs(shape.props.h - next.h) < 1;
+    const naturalUnchanged =
+      shape.props.naturalMediaW === nw && shape.props.naturalMediaH === nh;
+    if (sizeUnchanged && naturalUnchanged) return;
+    // Local geometry + natural size for resize clamp — never written back to Runtime.
     editor.updateShape<SeedReferenceProjectionShape>({
       id: shape.id,
       type: SEED_REFERENCE_PROJECTION_TYPE,
-      props: { w: next.w, h: next.h }
+      props: {
+        w: next.w,
+        h: next.h,
+        naturalMediaW: nw,
+        naturalMediaH: nh
+      }
     });
   };
 
@@ -240,15 +244,7 @@ function SeedReferenceProjectionFrame({
               <circle cx="7" cy="4.5" r="0.7" fill="#731b73" />
             </svg>
           </button>
-          {tipOpen ? (
-            <div
-              className="seed-ref-frame__tip"
-              data-testid="seed-reference-projection-tip"
-              role="tooltip"
-            >
-              {description}
-            </div>
-          ) : null}
+          {tipOpen ? <SeedReferenceDescriptionTip description={description} /> : null}
         </div>
       </div>
       <div
@@ -259,6 +255,7 @@ function SeedReferenceProjectionFrame({
           hasScreenshot && hasScreenshotArtifact ? "true" : "false"
         }
         data-awaiting-evidence={showAwaiting ? "true" : "false"}
+        data-awaiting-ux={showAwaiting ? awaitingUx : undefined}
         aria-hidden={hasScreenshot || showAwaiting ? undefined : "true"}
       >
         {hasScreenshot ? (
@@ -271,11 +268,28 @@ function SeedReferenceProjectionFrame({
             draggable={false}
             onLoad={handleScreenshotLoad}
           />
-        ) : showAwaiting ? (
+        ) : showGuide ? (
           <div
-            className="seed-ref-frame__awaiting"
+            className="seed-ref-frame__awaiting seed-ref-frame__awaiting--guide"
             data-testid="seed-reference-projection-awaiting"
             data-awaiting-evidence="true"
+            data-awaiting-ux="guide"
+            role="status"
+            aria-label="Ask Agents to fetch a Figma screenshot"
+          >
+            <p
+              className="seed-ref-frame__awaiting-hint"
+              data-testid="seed-reference-projection-awaiting-hint"
+            >
+              Ask Agents to fetch a Figma screenshot for this seed
+            </p>
+          </div>
+        ) : showSpinner ? (
+          <div
+            className="seed-ref-frame__awaiting seed-ref-frame__awaiting--spinner"
+            data-testid="seed-reference-projection-awaiting"
+            data-awaiting-evidence="true"
+            data-awaiting-ux="spinner"
             role="status"
             aria-label="Waiting for Agent to fulfill pending evidence"
           >
@@ -284,8 +298,7 @@ function SeedReferenceProjectionFrame({
               className="seed-ref-frame__awaiting-hint"
               data-testid="seed-reference-projection-awaiting-hint"
             >
-              Waiting for Agent — ask Agent to fulfill pending evidence
-              (list_pending_seed_evidence → Figma screenshot @4096)
+              Waiting for Agent — capturing Figma screenshot
             </p>
           </div>
         ) : null}
@@ -305,7 +318,10 @@ export class SeedReferenceProjectionShapeUtil extends BaseBoxShapeUtil<SeedRefer
     frameName: T.string,
     screenshotDataUrl: T.string,
     hasScreenshotArtifact: T.boolean,
-    awaitingEvidence: T.boolean
+    awaitingEvidence: T.boolean,
+    awaitingUx: T.literalEnum("spinner", "guide"),
+    naturalMediaW: T.number,
+    naturalMediaH: T.number
   };
 
   getDefaultProps(): SeedReferenceProjectionShape["props"] {
@@ -317,7 +333,10 @@ export class SeedReferenceProjectionShapeUtil extends BaseBoxShapeUtil<SeedRefer
       frameName: "",
       screenshotDataUrl: "",
       hasScreenshotArtifact: false,
-      awaitingEvidence: false
+      awaitingEvidence: false,
+      awaitingUx: "spinner",
+      naturalMediaW: 0,
+      naturalMediaH: 0
     };
   }
 
@@ -341,6 +360,46 @@ export class SeedReferenceProjectionShapeUtil extends BaseBoxShapeUtil<SeedRefer
 
   override hideSelectionBoundsFg(_shape: SeedReferenceProjectionShape) {
     return true;
+  }
+
+  /**
+   * Corner resize: allow shrink below screenshot natural size; clamp grow at
+   * natural pixels + frame chrome. No screenshot / unknown natural → free resize.
+   */
+  override onResize(
+    shape: SeedReferenceProjectionShape,
+    info: TLResizeInfo<SeedReferenceProjectionShape>
+  ) {
+    const resized = resizeBox(shape, info);
+    const { naturalMediaW, naturalMediaH, screenshotDataUrl } =
+      info.initialShape.props;
+    const hasScreenshot = screenshotDataUrl.trim().length > 0;
+    if (!hasScreenshot || naturalMediaW <= 0 || naturalMediaH <= 0) {
+      return resized;
+    }
+
+    const max = sizeFromNaturalPixels(naturalMediaW, naturalMediaH);
+    const clamped = clampSeedReferenceResizeToNaturalSize({
+      x: resized.x,
+      y: resized.y,
+      rotation: resized.rotation,
+      handle: info.handle,
+      w: resized.props.w,
+      h: resized.props.h,
+      maxW: max.w,
+      maxH: max.h
+    });
+
+    return {
+      ...resized,
+      x: clamped.x,
+      y: clamped.y,
+      props: {
+        ...resized.props,
+        w: clamped.w,
+        h: clamped.h
+      }
+    };
   }
 
   override component(shape: SeedReferenceProjectionShape) {

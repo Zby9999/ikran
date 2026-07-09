@@ -693,7 +693,8 @@ mcp.registerTool(
       const rt = await ensureRuntime();
       const res = await apiPost(rt.port, rt.token, "/api/seed-reference", {
         figmaSeedReference: args.figmaSeedReference,
-        originalDesignIntent: args.originalDesignIntent
+        originalDesignIntent: args.originalDesignIntent,
+        registeredVia: "agent"
       });
       // 404 means the Runtime serving this MCP server does NOT know the
       // /api/seed-reference route — i.e. it is a STALE build/runtime spawned

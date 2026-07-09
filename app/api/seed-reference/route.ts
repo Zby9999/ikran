@@ -79,9 +79,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const registeredVia =
+    body.registeredVia === "ui" || body.registeredVia === "agent"
+      ? body.registeredVia
+      : undefined;
+
   const result = registerSeedReference(state.project.path, {
     figmaSeedReference: body.figmaSeedReference ?? "",
-    originalDesignIntent: body.originalDesignIntent ?? ""
+    originalDesignIntent: body.originalDesignIntent ?? "",
+    ...(registeredVia ? { registeredVia } : {})
   });
 
   if (!result.ok) {

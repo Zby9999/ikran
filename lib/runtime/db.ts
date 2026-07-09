@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS seed_references (
   id TEXT PRIMARY KEY,                  -- UUID (randomUUID)
   figma_seed_reference TEXT NOT NULL,    -- original Figma URL, stored verbatim
   original_design_intent TEXT NOT NULL,  -- designer's original design intent
-  created_at TEXT NOT NULL               -- ISO 8601
+  created_at TEXT NOT NULL,              -- ISO 8601
+  registered_via TEXT NOT NULL DEFAULT 'agent'  -- 'ui' | 'agent' (awaiting UX)
 );
 
 CREATE TABLE IF NOT EXISTS figma_evidence_surfaces (
@@ -83,6 +84,14 @@ export function openProjectDb(projectPath: string): DatabaseType {
 
   const db = new DatabaseSync(resolved);
   db.exec(SCHEMA);
+  // Existing projects created before registered_via: add column (ignore if present).
+  try {
+    db.exec(
+      `ALTER TABLE seed_references ADD COLUMN registered_via TEXT NOT NULL DEFAULT 'agent'`
+    );
+  } catch {
+    // column already exists
+  }
   db.exec("PRAGMA journal_mode = WAL");
   return db;
 }

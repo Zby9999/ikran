@@ -38,6 +38,7 @@ import { SeedSelectionForegroundOverlayUtil } from "./seed-selection-foreground-
 import { WORKBENCH_CANVAS_COMPONENTS } from "./workbench-canvas-grid";
 import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 import type { FigmaEvidenceSurfaceRecord } from "@/lib/runtime/evidence-package";
+import { findSurfaceForSeed } from "./find-surface-for-seed";
 
 /** Build a same-origin Workbench URL for a project-relative artifact path. */
 export function artifactScreenshotUrl(
@@ -106,10 +107,16 @@ type ProjectionTarget = {
   hasScreenshotArtifact: boolean;
   /**
    * Seed (or surface) is projected but there is not yet a screenshot src to
-   * show — Workbench media shows awaiting_evidence loading until Evidence
-   * Surface screenshot arrives.
+   * show — Workbench media shows awaiting UX until Evidence Surface screenshot
+   * arrives.
    */
   awaitingEvidence: boolean;
+  /**
+   * How to present awaiting state:
+   * - `spinner` — Agent-registered seed (loading while Agent continues)
+   * - `guide` — UI-registered seed (tell designer to ask Agents for screenshot)
+   */
+  awaitingUx: "spinner" | "guide";
   meta: SeedReferenceProjectionMeta;
   /** Placeholder size until screenshot onLoad resizes to natural pixels. */
   w: number;
@@ -132,25 +139,6 @@ function projectionSize(_surface: FigmaEvidenceSurfaceRecord | null): {
   };
 }
 
-function findSurfaceForSeed(
-  seed: SeedReferenceRecord,
-  surfaces: FigmaEvidenceSurfaceRecord[],
-  claimedSurfaceIds: Set<string>
-): FigmaEvidenceSurfaceRecord | null {
-  // Prefer explicit seed_reference_id link, then same figma URL.
-  const byId = surfaces.find(
-    (s) =>
-      !claimedSurfaceIds.has(s.id) && s.seed_reference_id === seed.id
-  );
-  if (byId) return byId;
-  const byUrl = surfaces.find(
-    (s) =>
-      !claimedSurfaceIds.has(s.id) &&
-      s.figma_seed_reference === seed.figma_seed_reference
-  );
-  return byUrl ?? null;
-}
-
 function buildProjectionTargets(
   seeds: SeedReferenceRecord[],
   surfaces: FigmaEvidenceSurfaceRecord[],
@@ -160,10 +148,16 @@ function buildProjectionTargets(
   const claimedSurfaceIds = new Set<string>();
 
   for (const seed of seeds) {
-    const surface = findSurfaceForSeed(seed, surfaces, claimedSurfaceIds);
-    if (surface) claimedSurfaceIds.add(surface.id);
+    const { surface, claimIds } = findSurfaceForSeed(
+      seed,
+      surfaces,
+      claimedSurfaceIds
+    );
+    for (const id of claimIds) claimedSurfaceIds.add(id);
 
     const size = projectionSize(surface);
+    const awaitingUx: "spinner" | "guide" =
+      seed.registered_via === "ui" ? "guide" : "spinner";
     if (surface) {
       const shot = screenshotSrcForSurface(surface, session);
       // Shape stays keyed by seed id so in-session drag survives surface arrival.
@@ -177,6 +171,7 @@ function buildProjectionTargets(
         screenshotDataUrl: shot.src,
         hasScreenshotArtifact: shot.hasArtifactOnly,
         awaitingEvidence: !shot.src,
+        awaitingUx,
         w: size.w,
         h: size.h,
         meta: {
@@ -197,6 +192,7 @@ function buildProjectionTargets(
         screenshotDataUrl: "",
         hasScreenshotArtifact: false,
         awaitingEvidence: true,
+        awaitingUx,
         w: size.w,
         h: size.h,
         meta: {
@@ -222,6 +218,8 @@ function buildProjectionTargets(
       screenshotDataUrl: shot.src,
       hasScreenshotArtifact: shot.hasArtifactOnly,
       awaitingEvidence: !shot.src,
+      // Orphan surfaces have no seed registration path — treat as agent spinner.
+      awaitingUx: "spinner",
       w: size.w,
       h: size.h,
       meta: {
@@ -248,7 +246,8 @@ function propsEqual(
     a.frameName === b.frameName &&
     a.screenshotDataUrl === b.screenshotDataUrl &&
     a.hasScreenshotArtifact === b.hasScreenshotArtifact &&
-    a.awaitingEvidence === b.awaitingEvidence
+    a.awaitingEvidence === b.awaitingEvidence &&
+    a.awaitingUx === b.awaitingUx
   );
 }
 
@@ -295,13 +294,21 @@ function SeedProjectionSync({
       if (existing) {
         // Update semantic props / meta when a surface arrives or changes;
         // keep in-session x/y/w/h (never write geometry back).
+        // Reset natural media size when screenshot src changes or clears so
+        // resize stays free until the next img onLoad; preserve when unchanged.
+        const screenshotChanged =
+          existing.props.screenshotDataUrl !== target.screenshotDataUrl;
+        const clearNatural =
+          screenshotChanged || target.screenshotDataUrl.trim().length === 0;
         const nextProps = {
           figmaSeedReference: target.figmaSeedReference,
           originalDesignIntent: target.originalDesignIntent,
           frameName: target.frameName,
           screenshotDataUrl: target.screenshotDataUrl,
           hasScreenshotArtifact: target.hasScreenshotArtifact,
-          awaitingEvidence: target.awaitingEvidence
+          awaitingEvidence: target.awaitingEvidence,
+          awaitingUx: target.awaitingUx,
+          ...(clearNatural ? { naturalMediaW: 0, naturalMediaH: 0 } : {})
         };
         const propsChanged = !propsEqual(existing.props, target);
         const metaChanged = !metaEqual(
@@ -334,7 +341,10 @@ function SeedProjectionSync({
           frameName: target.frameName,
           screenshotDataUrl: target.screenshotDataUrl,
           hasScreenshotArtifact: target.hasScreenshotArtifact,
-          awaitingEvidence: target.awaitingEvidence
+          awaitingEvidence: target.awaitingEvidence,
+          awaitingUx: target.awaitingUx,
+          naturalMediaW: 0,
+          naturalMediaH: 0
         },
         meta: target.meta
       });

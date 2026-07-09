@@ -679,7 +679,7 @@
   user-select: none;
 }
 
-/* Awaiting Evidence Surface screenshot — minimal purple-frame spinner + hint. */
+/* Awaiting Evidence Surface — Agent path: spinner; UI path: guide only. */
 .seed-ref-frame__awaiting {
   display: flex;
   flex-direction: column;
@@ -713,6 +713,10 @@
   line-height: normal;
   letter-spacing: -0.3px;
   text-align: center;
+}
+
+.seed-ref-frame__awaiting--guide .seed-ref-frame__awaiting-hint {
+  max-width: 220px;
 }
 
 @keyframes seed-ref-awaiting-spin {

@@ -151,6 +151,7 @@ function readSeedReferences(folder: string): Array<{
   id: string;
   figma_seed_reference: string;
   original_design_intent: string;
+  registered_via?: string;
 }> {
   const dbPath = path.join(folder, ".ikran", "ikran.db");
   if (!existsSync(dbPath)) return [];
@@ -164,6 +165,7 @@ function readSeedReferences(folder: string): Array<{
       id: string;
       figma_seed_reference: string;
       original_design_intent: string;
+      registered_via?: string;
     }>;
   } finally {
     db.close();
@@ -267,11 +269,21 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
     await expect(projection.getByTestId("seed-reference-projection-url")).toHaveCount(0);
     await expect(projection).not.toContainText("RC4FGd8KwNfX6uqP-11");
 
+    // UI-registered seed: guide copy, no loading spinner.
+    const awaiting = projection.getByTestId("seed-reference-projection-awaiting");
+    await expect(awaiting).toBeVisible();
+    await expect(awaiting).toHaveAttribute("data-awaiting-ux", "guide");
+    await expect(
+      projection.getByTestId("seed-reference-projection-awaiting-hint")
+    ).toContainText("Ask Agents to fetch a Figma screenshot");
+    await expect(projection.locator(".seed-ref-frame__awaiting-spinner")).toHaveCount(0);
+
     // Info hover shows Description tip with originalDesignIntent (Figma 227:130).
     await projection.getByTestId("seed-reference-projection-info").hover();
-    await expect(projection.getByTestId("seed-reference-projection-tip")).toContainText(
-      "UI test intent"
-    );
+    const tip = projection.getByTestId("seed-reference-projection-tip");
+    await expect(tip).toContainText("UI test intent");
+    await expect(tip).toHaveAttribute("style", /--seed-ref-tip-scale:/);
+    await expect(tip).toHaveAttribute("style", /transform: scale/);
 
     // The projection's canvas-record-id ties the shape back to the record id.
     expect(canvasRecordId).toBe(`seed-reference:${runtimeRecordId}`);
@@ -282,6 +294,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
     expect(records[0].id).toBe(runtimeRecordId);
     expect(records[0].figma_seed_reference).toBe(REAL_FIGMA_SEED_REFERENCE);
     expect(records[0].original_design_intent).toBe(intent);
+    expect(records[0].registered_via).toBe("ui");
 
     // A seed_reference_registered semantic event was logged.
     const types = readEvents(folder).map((e) => e.type);
@@ -519,7 +532,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
     await page.unroute("**/api/seed-reference");
   });
 
-  test("seed-only projection shows awaiting-evidence loading until screenshot surface arrives", async ({
+  test("Agent-registered seed shows awaiting spinner until screenshot surface arrives", async ({
     page,
     runtime,
     folder
@@ -547,7 +560,8 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
         "/api/seed-reference",
         {
           figmaSeedReference: REAL_FIGMA_SEED_REFERENCE,
-          originalDesignIntent: "Awaiting evidence: seed before screenshot."
+          originalDesignIntent: "Awaiting evidence: seed before screenshot.",
+          registeredVia: "agent"
         },
         { "x-ikran-session": token },
         runtime.port
@@ -566,6 +580,8 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
       const awaiting = projection.getByTestId("seed-reference-projection-awaiting");
       await expect(awaiting).toBeVisible();
       await expect(awaiting).toHaveAttribute("data-awaiting-evidence", "true");
+      await expect(awaiting).toHaveAttribute("data-awaiting-ux", "spinner");
+      await expect(projection.locator(".seed-ref-frame__awaiting-spinner")).toBeVisible();
       await expect(
         projection.getByTestId("seed-reference-projection-awaiting-hint")
       ).toContainText("Waiting for Agent");
@@ -831,7 +847,8 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
         "/api/seed-reference",
         {
           figmaSeedReference: REAL_FIGMA_SEED_REFERENCE,
-          originalDesignIntent: "UI-initiated pending: Agent must capture evidence."
+          originalDesignIntent: "UI-initiated pending: Agent must capture evidence.",
+          registeredVia: "ui"
         },
         { "x-ikran-session": token },
         runtime.port
@@ -861,12 +878,13 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
       const projection = page.getByTestId("seed-reference-projection");
       await expect(projection).toBeVisible();
       await expect(projection).toHaveAttribute("data-runtime-record-id", seedId);
-      await expect(
-        projection.getByTestId("seed-reference-projection-awaiting")
-      ).toBeVisible();
+      const awaiting = projection.getByTestId("seed-reference-projection-awaiting");
+      await expect(awaiting).toBeVisible();
+      await expect(awaiting).toHaveAttribute("data-awaiting-ux", "guide");
+      await expect(projection.locator(".seed-ref-frame__awaiting-spinner")).toHaveCount(0);
       await expect(
         projection.getByTestId("seed-reference-projection-awaiting-hint")
-      ).toContainText("Waiting for Agent");
+      ).toContainText("Ask Agents to fetch a Figma screenshot");
 
       const TINY_PNG =
         "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";

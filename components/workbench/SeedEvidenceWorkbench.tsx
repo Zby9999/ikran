@@ -164,7 +164,8 @@ export function SeedEvidenceWorkbench({
 
     const result = await register({
       figmaSeedReference: figmaSeedReference.trim(),
-      originalDesignIntent: originalDesignIntent.trim()
+      originalDesignIntent: originalDesignIntent.trim(),
+      registeredVia: "ui"
     });
 
     if (result.ok) {
@@ -208,7 +209,11 @@ export function SeedEvidenceWorkbench({
       />
 
       <div className="seed-workbench__canvas" data-testid="workbench-canvas">
-        <WorkbenchCanvas records={records} surfaces={surfaces} />
+        <WorkbenchCanvas
+          records={records}
+          surfaces={surfaces}
+          session={session}
+        />
       </div>
 
       {showEnterPanel ? (

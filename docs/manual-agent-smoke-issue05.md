@@ -26,8 +26,11 @@ Mock / Playwright 只能证明 schema、MCP 代理与 UI 投影路径；**不能
    - **禁止询问**：发现 pending 时不得回复「如果需要，我可以继续」；必须在同一 turn 直接执行。  
    - **Host 限制**：UI 加号无法打断空闲 Agent；需要 Agent **下一轮**调用 Ikran（如 `open_workbench` / `list_pending_seed_evidence`）才能捡起 pending。
 
-4. **Workbench awaiting-evidence**  
-   Seed 已注册、尚无带截图的 Evidence Surface 时，Workbench 投影显示 **awaiting-evidence loading**，并提示 Agent 去 fulfill pending；`record_evidence_package` 写入截图后，loading 结束并显示图像。
+4. **Workbench awaiting UX（按注册来源区分）**  
+   Seed 已注册、尚无带截图的 Evidence Surface 时：
+   - **UI / EnterPanel**（`registered_via: ui`）：投影显示**引导文案**（请设计师让 Agents 调取 Figma screenshot），**不**显示加载圆圈。  
+   - **Agent**（`registered_via: agent`）：投影显示 **loading 圆圈**，等待同一会话内 Agent 继续截图。  
+   `record_evidence_package` 写入截图后，awaiting 结束并显示图像。
 
 ## 0. 前置条件
 

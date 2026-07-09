@@ -29,6 +29,8 @@ export type SeedReferencesStatus = "idle" | "loading" | "ready";
 export interface SeedReferenceRegisterInput {
   figmaSeedReference: string;
   originalDesignIntent: string;
+  /** Always `"ui"` for EnterPanel / plus — drives guide (no spinner) awaiting UX. */
+  registeredVia?: "ui" | "agent";
 }
 
 export interface SeedReferenceRegisterResult {
@@ -72,8 +74,12 @@ export function useSeedReferences(session: string) {
       // Only replace state when the record set actually changed, so the
       // light polling does not churn tldraw shape re-syncs every tick.
       setRecords((prev) => {
-        const prevSig = prev.map((r) => r.id).join("|");
-        const nextSig = next.map((r) => r.id).join("|");
+        const prevSig = prev
+          .map((r) => `${r.id}:${r.registered_via ?? "agent"}`)
+          .join("|");
+        const nextSig = next
+          .map((r) => `${r.id}:${r.registered_via ?? "agent"}`)
+          .join("|");
         return prevSig === nextSig ? prev : next;
       });
       return { ok: true };
