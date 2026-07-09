@@ -8,7 +8,7 @@
 //     add complex toolbars or side panels.
 //   - The custom `seed-reference-projection` shape (Figma Frame surface 230:297)
 //     projects seed references and, when present, Figma Evidence Surfaces
-//     (frameName + screenshot data URL in media).
+//     (frameName + screenshot via data URL or authenticated /api/artifacts).
 //   - `SeedProjectionSync` does a one-way reconciliation: Runtime records ->
 //     tldraw shapes. It never reads geometry back. tldraw positions are local
 //     only; the default `<Tldraw>` store is in-memory (no persistence), so a
@@ -39,12 +39,43 @@ import { WORKBENCH_CANVAS_COMPONENTS } from "./workbench-canvas-grid";
 import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 import type { FigmaEvidenceSurfaceRecord } from "@/lib/runtime/evidence-package";
 
+/** Build a same-origin Workbench URL for a project-relative artifact path. */
+export function artifactScreenshotUrl(
+  relativePath: string,
+  session: string
+): string {
+  const segments = relativePath
+    .split(/[/\\]/)
+    .filter((s) => s.length > 0)
+    .map((s) => encodeURIComponent(s));
+  return `/api/artifacts/${segments.join("/")}?session=${encodeURIComponent(session)}`;
+}
+
+function screenshotSrcForSurface(
+  surface: FigmaEvidenceSurfaceRecord,
+  session: string
+): { src: string; hasArtifactOnly: boolean } {
+  const dataUrl = surface.screenshot_data_url?.trim() ?? "";
+  if (dataUrl) return { src: dataUrl, hasArtifactOnly: false };
+  const artifactPath = surface.screenshot_artifact_path?.trim() ?? "";
+  if (artifactPath && session) {
+    return {
+      src: artifactScreenshotUrl(artifactPath, session),
+      hasArtifactOnly: true
+    };
+  }
+  return { src: "", hasArtifactOnly: false };
+}
+
 export function WorkbenchCanvas({
   records,
-  surfaces = []
+  surfaces = [],
+  session
 }: {
   records: SeedReferenceRecord[];
   surfaces?: FigmaEvidenceSurfaceRecord[];
+  /** Startup session token — required to load artifactPath screenshots via /api/artifacts. */
+  session: string;
 }) {
   return (
     <Tldraw
@@ -53,7 +84,11 @@ export function WorkbenchCanvas({
       components={WORKBENCH_CANVAS_COMPONENTS}
       overlayUtils={[SeedSelectionForegroundOverlayUtil]}
     >
-      <SeedProjectionSync records={records} surfaces={surfaces} />
+      <SeedProjectionSync
+        records={records}
+        surfaces={surfaces}
+        session={session}
+      />
     </Tldraw>
   );
 }
@@ -65,55 +100,36 @@ type ProjectionTarget = {
   figmaSeedReference: string;
   originalDesignIntent: string;
   frameName: string;
+  /** <img src>: data URL or authenticated /api/artifacts URL. */
   screenshotDataUrl: string;
+  /** True when src comes from artifactPath (not an inline data URL). */
   hasScreenshotArtifact: boolean;
+  /**
+   * Seed (or surface) is projected but there is not yet a screenshot src to
+   * show — Workbench media shows awaiting_evidence loading until Evidence
+   * Surface screenshot arrives.
+   */
+  awaitingEvidence: boolean;
   meta: SeedReferenceProjectionMeta;
-  /** Optional size from surface_bounds / frame.bounds; else defaults. */
+  /** Placeholder size until screenshot onLoad resizes to natural pixels. */
   w: number;
   h: number;
 };
 
-function parsePositiveSize(
-  json: string | null
-): { width: number; height: number } | null {
-  if (!json) return null;
-  try {
-    const parsed = JSON.parse(json) as Record<string, unknown>;
-    const width = parsed.width;
-    const height = parsed.height;
-    if (
-      typeof width === "number" &&
-      typeof height === "number" &&
-      Number.isFinite(width) &&
-      Number.isFinite(height) &&
-      width > 0 &&
-      height > 0
-    ) {
-      return { width, height };
-    }
-  } catch {
-    // ignore malformed bounds
-  }
-  return null;
-}
-
-/** Default 380×520, or aspect-locked height from surface/frame bounds. */
-function projectionSize(surface: FigmaEvidenceSurfaceRecord | null): {
+/** Default 380×520 placeholder.
+ *  Do NOT size from Figma design-unit bounds (e.g. 1280×3408) — those are not
+ *  screenshot pixels. Figma MCP screenshots are often capped (default
+ *  maxDimension=1024); sizing the shape to design aspect upscales a small PNG
+ *  and looks soft. When a screenshot loads, the shape util resizes to the
+ *  image's natural pixel size (+ frame chrome). */
+function projectionSize(_surface: FigmaEvidenceSurfaceRecord | null): {
   w: number;
   h: number;
 } {
-  const w = SEED_REFERENCE_PROJECTION_DEFAULT_W;
-  const bounds =
-    (surface && parsePositiveSize(surface.surface_bounds_json)) ||
-    (surface && parsePositiveSize(surface.frame_bounds_json));
-  if (!bounds) {
-    return { w, h: SEED_REFERENCE_PROJECTION_DEFAULT_H };
-  }
-  const aspect = bounds.height / bounds.width;
-  if (!Number.isFinite(aspect) || aspect <= 0) {
-    return { w, h: SEED_REFERENCE_PROJECTION_DEFAULT_H };
-  }
-  return { w, h: Math.round(w * aspect) };
+  return {
+    w: SEED_REFERENCE_PROJECTION_DEFAULT_W,
+    h: SEED_REFERENCE_PROJECTION_DEFAULT_H
+  };
 }
 
 function findSurfaceForSeed(
@@ -137,7 +153,8 @@ function findSurfaceForSeed(
 
 function buildProjectionTargets(
   seeds: SeedReferenceRecord[],
-  surfaces: FigmaEvidenceSurfaceRecord[]
+  surfaces: FigmaEvidenceSurfaceRecord[],
+  session: string
 ): ProjectionTarget[] {
   const targets: ProjectionTarget[] = [];
   const claimedSurfaceIds = new Set<string>();
@@ -148,6 +165,7 @@ function buildProjectionTargets(
 
     const size = projectionSize(surface);
     if (surface) {
+      const shot = screenshotSrcForSurface(surface, session);
       // Shape stays keyed by seed id so in-session drag survives surface arrival.
       // runtimeRecordId becomes surface.id; seed id kept in seedRecordId + data-*.
       targets.push({
@@ -156,10 +174,9 @@ function buildProjectionTargets(
         figmaSeedReference: seed.figma_seed_reference,
         originalDesignIntent: seed.original_design_intent,
         frameName: surface.frame_name,
-        screenshotDataUrl: surface.screenshot_data_url ?? "",
-        hasScreenshotArtifact: Boolean(
-          surface.screenshot_artifact_path && !surface.screenshot_data_url
-        ),
+        screenshotDataUrl: shot.src,
+        hasScreenshotArtifact: shot.hasArtifactOnly,
+        awaitingEvidence: !shot.src,
         w: size.w,
         h: size.h,
         meta: {
@@ -179,6 +196,7 @@ function buildProjectionTargets(
         frameName: "",
         screenshotDataUrl: "",
         hasScreenshotArtifact: false,
+        awaitingEvidence: true,
         w: size.w,
         h: size.h,
         meta: {
@@ -194,16 +212,16 @@ function buildProjectionTargets(
   for (const surface of surfaces) {
     if (claimedSurfaceIds.has(surface.id)) continue;
     const size = projectionSize(surface);
+    const shot = screenshotSrcForSurface(surface, session);
     targets.push({
       shapeKey: `surface:${surface.id}`,
       canvasRecordId: `figma-evidence-surface:${surface.id}`,
       figmaSeedReference: surface.figma_seed_reference,
       originalDesignIntent: "",
       frameName: surface.frame_name,
-      screenshotDataUrl: surface.screenshot_data_url ?? "",
-      hasScreenshotArtifact: Boolean(
-        surface.screenshot_artifact_path && !surface.screenshot_data_url
-      ),
+      screenshotDataUrl: shot.src,
+      hasScreenshotArtifact: shot.hasArtifactOnly,
+      awaitingEvidence: !shot.src,
       w: size.w,
       h: size.h,
       meta: {
@@ -229,7 +247,8 @@ function propsEqual(
     a.originalDesignIntent === b.originalDesignIntent &&
     a.frameName === b.frameName &&
     a.screenshotDataUrl === b.screenshotDataUrl &&
-    a.hasScreenshotArtifact === b.hasScreenshotArtifact
+    a.hasScreenshotArtifact === b.hasScreenshotArtifact &&
+    a.awaitingEvidence === b.awaitingEvidence
   );
 }
 
@@ -250,17 +269,19 @@ function metaEqual(
 // Geometry is chosen here and NEVER written back to the Runtime.
 function SeedProjectionSync({
   records,
-  surfaces
+  surfaces,
+  session
 }: {
   records: SeedReferenceRecord[];
   surfaces: FigmaEvidenceSurfaceRecord[];
+  session: string;
 }) {
   const editor = useEditor();
 
   useEffect(() => {
     if (!editor) return;
 
-    const targets = buildProjectionTargets(records, surfaces);
+    const targets = buildProjectionTargets(records, surfaces, session);
     const wantIds = new Set<string>();
 
     targets.forEach((target, index) => {
@@ -279,7 +300,8 @@ function SeedProjectionSync({
           originalDesignIntent: target.originalDesignIntent,
           frameName: target.frameName,
           screenshotDataUrl: target.screenshotDataUrl,
-          hasScreenshotArtifact: target.hasScreenshotArtifact
+          hasScreenshotArtifact: target.hasScreenshotArtifact,
+          awaitingEvidence: target.awaitingEvidence
         };
         const propsChanged = !propsEqual(existing.props, target);
         const metaChanged = !metaEqual(
@@ -311,7 +333,8 @@ function SeedProjectionSync({
           originalDesignIntent: target.originalDesignIntent,
           frameName: target.frameName,
           screenshotDataUrl: target.screenshotDataUrl,
-          hasScreenshotArtifact: target.hasScreenshotArtifact
+          hasScreenshotArtifact: target.hasScreenshotArtifact,
+          awaitingEvidence: target.awaitingEvidence
         },
         meta: target.meta
       });
@@ -325,7 +348,7 @@ function SeedProjectionSync({
         editor.deleteShape(shape.id);
       }
     }
-  }, [editor, records, surfaces]);
+  }, [editor, records, surfaces, session]);
 
   return null;
 }

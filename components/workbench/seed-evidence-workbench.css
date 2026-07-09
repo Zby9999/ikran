@@ -627,7 +627,8 @@
 
 /* Description tip (Figma 227:130) — white, purple border, 10px text.
    Parent `.seed-ref-frame__info-wrap` is only 24px wide; without max-content
-   the tip collapses to that width and CJK wraps one glyph per line (vertical). */
+   the tip collapses to that width and CJK wraps one glyph per line (vertical).
+   Cap at 300px and wrap overflow (do not use nowrap). */
 .seed-ref-frame__tip {
   position: absolute;
   right: 0;
@@ -635,7 +636,7 @@
   z-index: 2;
   box-sizing: border-box;
   width: max-content;
-  max-width: 240px;
+  max-width: 300px;
   padding: 10px;
   border: 1px solid #731b73;
   border-radius: 8px;
@@ -645,7 +646,9 @@
   font-weight: 400;
   line-height: normal;
   letter-spacing: -0.3px;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
   pointer-events: none;
 }
 
@@ -662,21 +665,41 @@
   overflow: hidden;
 }
 
+/* scale-down = never upscale past intrinsic pixels (fixes soft Figma MCP
+   screenshots that were stretched into design-aspect frames). Large bitmaps
+   still shrink to fit the media box. Shape onLoad resizes the frame to hug
+   the bitmap so evidence surfaces stay sharp at ~1 CSS px per image px. */
 .seed-ref-frame__media-img {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: scale-down;
+  object-position: center center;
   pointer-events: none;
   user-select: none;
 }
 
-.seed-ref-frame__media-empty {
-  color: #731b73;
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: -0.3px;
-  opacity: 0.7;
+/* Awaiting Evidence Surface screenshot — minimal purple-frame spinner. */
+.seed-ref-frame__awaiting {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
-  user-select: none;
+}
+
+.seed-ref-frame__awaiting-spinner {
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  border: 2px solid rgba(185, 128, 185, 0.35);
+  border-top-color: #731b73;
+  border-radius: 50%;
+  animation: seed-ref-awaiting-spin 0.85s linear infinite;
+}
+
+@keyframes seed-ref-awaiting-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

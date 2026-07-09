@@ -17,9 +17,10 @@
 //     seedRecordId = seed.id when linked, surfaceRecordId = surface.id
 //
 // Visual (230:297): purple-bordered frame with header title + info tip
-// (227:130 Description). Media is a white placeholder until a surface supplies
-// `screenshotDataUrl`; artifact-path-only leaves a minimal empty state (no
-// Design-issue UI). URL is stored in props but NOT shown on the card.
+// (227:130 Description). Media shows a screenshot when the surface supplies
+// `screenshotDataUrl` (inline data URL or authenticated /api/artifacts URL).
+// Until then, seed-only projections show awaiting_evidence loading in the
+// media area. URL is stored in props but NOT shown on the card.
 //
 // Default size: 380×520 — readable tall placeholder on the workbench canvas
 // (not the full Figma page aspect 695:1851, which would be ~380×1013).
@@ -50,13 +51,18 @@ declare module "@tldraw/tlschema" {
       originalDesignIntent: string;
       /** Source frame / node name when known; empty → title falls back to "Figma seed". */
       frameName: string;
-      /** Prefer data URL for <img src> in MVP (no artifact file server). */
+      /** Screenshot <img src>: data URL or /api/artifacts?... URL. */
       screenshotDataUrl: string;
       /**
-       * True when Runtime has screenshot_artifact_path but no dataUrl —
-       * media stays empty / minimal "screenshot on file" (no fancy UI).
+       * True when src is served from screenshot_artifact_path via /api/artifacts
+       * (vs an inline data URL). Used for diagnostics; media still renders <img>.
        */
       hasScreenshotArtifact: boolean;
+      /**
+       * True when a seed/surface is projected but there is not yet a screenshot
+       * src — media shows awaiting_evidence loading until Evidence Surface arrives.
+       */
+      awaitingEvidence: boolean;
     };
   }
 }
@@ -86,8 +92,38 @@ export const SEED_REFERENCE_PROJECTION_TYPE = "seed-reference-projection" as con
 export const SEED_REFERENCE_PROJECTION_DEFAULT_W = 380;
 export const SEED_REFERENCE_PROJECTION_DEFAULT_H = 520;
 
+/**
+ * Frame chrome around the media bitmap (padding + header + media border).
+ * Matches `.seed-ref-frame` / `__header` / `__media` in seed-evidence-workbench.css.
+ * Used when resizing the shape to the screenshot's natural pixel size.
+ */
+export const SEED_REF_FRAME_CHROME_W = 10; // pad 4+4 + media border 1+1
+export const SEED_REF_FRAME_CHROME_H = 32; // pad top 2 + header 24 + pad bottom 4 + media border 1+1
+
+/** Cap the longer media edge in page pixels (downscale only; never upscale).
+ *  Align with Figma MCP get_screenshot maxDimension guidance (4096). */
+const MAX_SCREENSHOT_MEDIA_EDGE = 4096;
+
 const FALLBACK_TITLE = "Figma seed";
 const FALLBACK_DESCRIPTION = "Description Place Holder";
+
+function sizeFromNaturalPixels(
+  naturalWidth: number,
+  naturalHeight: number
+): { w: number; h: number } {
+  let mediaW = naturalWidth;
+  let mediaH = naturalHeight;
+  const longEdge = Math.max(mediaW, mediaH);
+  if (longEdge > MAX_SCREENSHOT_MEDIA_EDGE) {
+    const scale = MAX_SCREENSHOT_MEDIA_EDGE / longEdge;
+    mediaW = Math.round(mediaW * scale);
+    mediaH = Math.round(mediaH * scale);
+  }
+  return {
+    w: mediaW + SEED_REF_FRAME_CHROME_W,
+    h: mediaH + SEED_REF_FRAME_CHROME_H
+  };
+}
 
 function SeedReferenceProjectionFrame({
   shape
@@ -100,7 +136,8 @@ function SeedReferenceProjectionFrame({
     originalDesignIntent,
     frameName,
     screenshotDataUrl,
-    hasScreenshotArtifact
+    hasScreenshotArtifact,
+    awaitingEvidence
   } = shape.props;
   const { canvasRecordId, runtimeRecordId, kind, seedRecordId, surfaceRecordId } =
     shape.meta;
@@ -114,11 +151,33 @@ function SeedReferenceProjectionFrame({
 
   const title = frameName.trim() || FALLBACK_TITLE;
   const description = originalDesignIntent.trim() || FALLBACK_DESCRIPTION;
-  const dataUrl = screenshotDataUrl.trim();
-  const showArtifactEmpty = !dataUrl && hasScreenshotArtifact;
+  const screenshotSrc = screenshotDataUrl.trim();
+  const hasScreenshot = screenshotSrc.length > 0;
+  const showAwaiting = awaitingEvidence && !hasScreenshot;
 
   const stopShapePointer = (event: SyntheticEvent) => {
     event.stopPropagation();
+  };
+
+  const handleScreenshotLoad = (event: SyntheticEvent<HTMLImageElement>) => {
+    const img = event.currentTarget;
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+    // Ignore tiny fixtures / broken loads — keep the default placeholder size.
+    if (!nw || !nh || Math.max(nw, nh) < 32) return;
+    const next = sizeFromNaturalPixels(nw, nh);
+    if (
+      Math.abs(shape.props.w - next.w) < 1 &&
+      Math.abs(shape.props.h - next.h) < 1
+    ) {
+      return;
+    }
+    // Local geometry only — never written back to Runtime.
+    editor.updateShape<SeedReferenceProjectionShape>({
+      id: shape.id,
+      type: SEED_REFERENCE_PROJECTION_TYPE,
+      props: { w: next.w, h: next.h }
+    });
   };
 
   return (
@@ -195,25 +254,33 @@ function SeedReferenceProjectionFrame({
       <div
         className="seed-ref-frame__media"
         data-testid="seed-reference-projection-media"
-        data-has-screenshot={dataUrl ? "true" : "false"}
-        aria-hidden={dataUrl ? undefined : "true"}
+        data-has-screenshot={hasScreenshot ? "true" : "false"}
+        data-screenshot-from-artifact={
+          hasScreenshot && hasScreenshotArtifact ? "true" : "false"
+        }
+        data-awaiting-evidence={showAwaiting ? "true" : "false"}
+        aria-hidden={hasScreenshot || showAwaiting ? undefined : "true"}
       >
-        {dataUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element -- data URL from Runtime; not a remote asset
+        {hasScreenshot ? (
+          // eslint-disable-next-line @next/next/no-img-element -- Runtime data URL or same-origin /api/artifacts
           <img
             className="seed-ref-frame__media-img"
             data-testid="seed-reference-projection-screenshot"
-            src={dataUrl}
+            src={screenshotSrc}
             alt=""
             draggable={false}
+            onLoad={handleScreenshotLoad}
           />
-        ) : showArtifactEmpty ? (
-          <span
-            className="seed-ref-frame__media-empty"
-            data-testid="seed-reference-projection-screenshot-file"
+        ) : showAwaiting ? (
+          <div
+            className="seed-ref-frame__awaiting"
+            data-testid="seed-reference-projection-awaiting"
+            data-awaiting-evidence="true"
+            role="status"
+            aria-label="Awaiting evidence"
           >
-            screenshot on file
-          </span>
+            <span className="seed-ref-frame__awaiting-spinner" aria-hidden="true" />
+          </div>
         ) : null}
       </div>
     </HTMLContainer>
@@ -230,7 +297,8 @@ export class SeedReferenceProjectionShapeUtil extends BaseBoxShapeUtil<SeedRefer
     originalDesignIntent: T.string,
     frameName: T.string,
     screenshotDataUrl: T.string,
-    hasScreenshotArtifact: T.boolean
+    hasScreenshotArtifact: T.boolean,
+    awaitingEvidence: T.boolean
   };
 
   getDefaultProps(): SeedReferenceProjectionShape["props"] {
@@ -241,7 +309,8 @@ export class SeedReferenceProjectionShapeUtil extends BaseBoxShapeUtil<SeedRefer
       originalDesignIntent: "",
       frameName: "",
       screenshotDataUrl: "",
-      hasScreenshotArtifact: false
+      hasScreenshotArtifact: false,
+      awaitingEvidence: false
     };
   }
 
