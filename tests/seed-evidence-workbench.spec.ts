@@ -506,62 +506,66 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
       await route.continue();
     });
 
-    // Seed first (seed-only projection), then evidence package upgrades media.
-    const seedRes = await rawPost(
-      "/api/seed-reference",
-      {
-        figmaSeedReference: REAL_FIGMA_SEED_REFERENCE,
-        originalDesignIntent: "Issue 05 workbench: evidence screenshot projection."
-      },
-      { "x-ikran-session": token },
-      runtime.port
-    );
-    expect(seedRes.status).toBe(200);
-    const seedId = (JSON.parse(seedRes.body).record as { id: string }).id;
+    try {
+      // Seed first (seed-only projection), then evidence package upgrades media.
+      const seedRes = await rawPost(
+        "/api/seed-reference",
+        {
+          figmaSeedReference: REAL_FIGMA_SEED_REFERENCE,
+          originalDesignIntent: "Issue 05 workbench: evidence screenshot projection."
+        },
+        { "x-ikran-session": token },
+        runtime.port
+      );
+      expect(seedRes.status).toBe(200);
+      const seedId = (JSON.parse(seedRes.body).record as { id: string }).id;
 
-    // 1x1 PNG data URL — Agent-supplied; Runtime must not fetch Figma.
-    const TINY_PNG =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+      // 1x1 PNG data URL — Agent-supplied; Runtime must not fetch Figma.
+      const TINY_PNG =
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
-    const evidenceRes = await rawPost(
-      "/api/evidence-package",
-      {
-        figmaSeedReference: REAL_FIGMA_SEED_REFERENCE,
-        seedReferenceId: seedId,
-        frame: { nodeId: "177:426", name: "Evidence Frame" },
-        evidenceViews: { rawData: "available", screenshot: "available" },
-        screenshot: { dataUrl: TINY_PNG }
-      },
-      { "x-ikran-session": token },
-      runtime.port
-    );
-    expect(evidenceRes.status).toBe(200);
-    const surfaceId = (JSON.parse(evidenceRes.body).record as { id: string }).id;
+      const evidenceRes = await rawPost(
+        "/api/evidence-package",
+        {
+          figmaSeedReference: REAL_FIGMA_SEED_REFERENCE,
+          seedReferenceId: seedId,
+          frame: { nodeId: "177:426", name: "Evidence Frame" },
+          evidenceViews: { rawData: "available", screenshot: "available" },
+          screenshot: { dataUrl: TINY_PNG }
+        },
+        { "x-ikran-session": token },
+        runtime.port
+      );
+      expect(evidenceRes.status).toBe(200);
+      const surfaceId = (JSON.parse(evidenceRes.body).record as { id: string }).id;
 
-    await page.reload();
-    await enterWorkbench(page);
+      await page.reload();
+      await enterWorkbench(page);
 
-    const projection = page.getByTestId("seed-reference-projection");
-    await expect(projection).toBeVisible();
-    // Seed-only tests use data-runtime-record-id === seed id; with a surface,
-    // runtime id is the surface id and seed id stays on data-seed-record-id.
-    await expect(projection).toHaveAttribute("data-seed-record-id", seedId);
-    await expect(projection).toHaveAttribute("data-surface-record-id", surfaceId);
-    await expect(projection).toHaveAttribute("data-runtime-record-id", surfaceId);
-    await expect(projection).toHaveAttribute("data-kind", "figma_evidence_surface");
-    await expect(projection.getByTestId("seed-reference-projection-title")).toHaveText(
-      "Evidence Frame"
-    );
+      const projection = page.getByTestId("seed-reference-projection");
+      await expect(projection).toBeVisible();
+      // Seed-only tests use data-runtime-record-id === seed id; with a surface,
+      // runtime id is the surface id and seed id stays on data-seed-record-id.
+      await expect(projection).toHaveAttribute("data-seed-record-id", seedId);
+      await expect(projection).toHaveAttribute("data-surface-record-id", surfaceId);
+      await expect(projection).toHaveAttribute("data-runtime-record-id", surfaceId);
+      await expect(projection).toHaveAttribute("data-kind", "figma_evidence_surface");
+      await expect(projection.getByTestId("seed-reference-projection-title")).toHaveText(
+        "Evidence Frame"
+      );
 
-    const media = projection.getByTestId("seed-reference-projection-media");
-    await expect(media).toHaveAttribute("data-has-screenshot", "true");
-    await expect(
-      projection.getByTestId("seed-reference-projection-screenshot")
-    ).toBeVisible();
+      const media = projection.getByTestId("seed-reference-projection-media");
+      await expect(media).toHaveAttribute("data-has-screenshot", "true");
+      await expect(
+        projection.getByTestId("seed-reference-projection-screenshot")
+      ).toBeVisible();
 
-    expect(figmaNetworkHits).toBe(0);
-    expect(readEvents(folder).map((e) => e.type)).toContain(
-      "evidence_package_recorded"
-    );
+      expect(figmaNetworkHits).toBe(0);
+      expect(readEvents(folder).map((e) => e.type)).toContain(
+        "evidence_package_recorded"
+      );
+    } finally {
+      await page.unroute("**/*");
+    }
   });
 });

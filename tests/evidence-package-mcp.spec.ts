@@ -243,6 +243,7 @@ test.describe("Ikran Issue 05 — record_evidence_package MCP tool", () => {
       expect(recorded).toBeTruthy();
       expect(recorded?.payload?.surface_id).toBe(record.id);
 
+      // MCP zero-Figma proof is offline/schema (fake key); workbench test owns abort/count interception.
       // Zero Figma contact: FAKE_FIGMA_URL is not a real file. If Runtime had
       // fetched figma.com / oEmbed / /api/figma/*, this success path would fail.
     } finally {
