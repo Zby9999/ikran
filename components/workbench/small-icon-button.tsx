@@ -26,7 +26,9 @@ export function SmallIconButton({
         icon={icon}
         size={14}
         color="currentColor"
-        strokeWidth={1.7}
+        // Figma 134:429 arrow-left-01: stroke #575757, stroke-width 0.875
+        // (was 1.7 / inherited #3d3d3d — looked larger and heavier).
+        strokeWidth={0.875}
       />
     </button>
   );

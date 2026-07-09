@@ -11,6 +11,8 @@
 //     tldraw shapes. It never reads geometry back. tldraw positions are local
 //     only; the default `<Tldraw>` store is in-memory (no persistence), so a
 //     refresh resets shapes and they are rebuilt from the records.
+//   - Decorative camera-aware 100px page-space grid (Figma 133:129) via
+//     Background — visual only, no snap-to-grid.
 //
 // This file is imported via `next/dynamic({ ssr: false })` from
 // SeedEvidenceWorkbench because `<Tldraw>` touches the DOM during render.
@@ -27,6 +29,7 @@ import {
   SEED_REFERENCE_PROJECTION_TYPE,
   type SeedReferenceProjectionShape
 } from "./seed-reference-projection-shape";
+import { WORKBENCH_CANVAS_COMPONENTS } from "./workbench-canvas-grid";
 import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 
 export function WorkbenchCanvas({
@@ -35,7 +38,11 @@ export function WorkbenchCanvas({
   records: SeedReferenceRecord[];
 }) {
   return (
-    <Tldraw hideUi shapeUtils={[SeedReferenceProjectionShapeUtil]}>
+    <Tldraw
+      hideUi
+      shapeUtils={[SeedReferenceProjectionShapeUtil]}
+      components={WORKBENCH_CANVAS_COMPONENTS}
+    >
       <SeedProjectionSync records={records} />
     </Tldraw>
   );

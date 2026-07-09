@@ -12,17 +12,27 @@
 }
 
 /* tldraw canvas 底座 (Issue 02/04). The <Tldraw> component fills this container,
-   so it must have an explicit height. */
+   so it must have an explicit height. Fill + decorative 100px grid are drawn by
+   the camera-aware Background canvas (Figma 133:129). No snap-to-grid.
+   Initial-state 15% black veil lives on `.seed-workbench__enter-panel::before`. */
 .seed-workbench__canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100vh;
   z-index: 0;
+  background-color: #dcdcdc;
 }
 
 .seed-workbench__canvas .tl-container {
+  --tl-color-background: #dcdcdc;
   background: #dcdcdc;
+}
+
+.seed-workbench__canvas .tl-background__wrapper,
+.seed-workbench__canvas .seed-workbench__grid-canvas {
+  width: 100%;
+  height: 100%;
 }
 
 .squircle-chrome {
@@ -108,7 +118,8 @@
   border-radius: 8px;
   background: linear-gradient(180deg, #ffffff 0%, #f0f0f0 100%);
   box-shadow: 0 0 0 1px #e8e8e8;
-  color: #3d3d3d;
+  /* Figma 134:429 icon stroke — not body text #3d3d3d */
+  color: #575757;
   cursor: pointer;
   padding: 0;
   user-select: none;
