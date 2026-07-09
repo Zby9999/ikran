@@ -1,37 +1,60 @@
 "use client";
 
 import "./seed-evidence-workbench.css";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Background,
-  BackgroundVariant,
-  ReactFlow
-} from "@xyflow/react";
+import dynamic from "next/dynamic";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import { SmallIconButton } from "./small-icon-button";
 import { EnterPanel, type EnterPanelState } from "./enter-panel";
 import { SquircleChrome } from "./squircle-chrome";
-import {
-  figmaEvidenceNodeTypes,
-  type FigmaEvidenceSurfaceNode
-} from "./figma-evidence-surface-node";
-import { useSeedEvidenceTask } from "./use-seed-evidence-task";
+import { useSeedReferences } from "./use-seed-references";
 
-// Issue 04 — seed evidence workbench.
-//
-// Shown after Start Building. The React Flow canvas is strictly locked until
-// the first Figma seed import completes: no pan / zoom / edit, only the
-// centered Enter Panel. Once the Runtime/AgentAdapter returns a seed evidence
-// package, the Figma Evidence Surface renders and the canvas unlocks.
-//
-// This component owns layout + lock state + the Enter Panel state machine. The
-// task round-trip lives in useSeedEvidenceTask; the surface node lives in
-// figma-evidence-surface-node. No annotations / question cards / region
-// selections (those are Issue 05).
+// tldraw touches the DOM during render, so the canvas shell is loaded with
+// `next/dynamic({ ssr: false })` to keep Next.js SSR happy.
+const WorkbenchCanvas = dynamic(
+  () => import("./workbench-canvas").then((m) => m.WorkbenchCanvas),
+  { ssr: false }
+);
 
-// Where the Evidence Surface node first appears inside React Flow. Arbitrary
-// on-canvas placement; React Flow fitView frames it once it exists.
-const SURFACE_POSITION = { x: 420, y: 230 } as const;
+// Issue 02/04 — tldraw Workbench shell.
+//
+// New seed entry path (replaces the React Flow + `seed_evidence_import` path):
+//
+//   EnterPanel -> POST /api/seed-reference -> seed_references record
+//               -> tldraw projection
+//
+// The tldraw canvas is the 底座. The Runtime `seed_references` records are the
+// source of truth; tldraw shapes are one-way projections (see
+// workbench-canvas.tsx). The EnterPanel is reused (Figma-referenced) as the
+// seed entry surface. It is shown as an overlay only while there are no
+// records yet; once a record exists (registered here, restored on refresh, or
+// written by a real Agent via the `register_seed_reference` MCP tool and picked
+// up by the hook's light polling), the overlay is dismissed and the canvas
+// shows the projections.
+//
+// This path does NOT call `/api/tasks`, does NOT run `seed_evidence_import`,
+// does NOT call `/api/figma/validate`, and does NOT touch the legacy mock
+// adapter seed evidence package or the React Flow evidence surface node. Those
+// are left in place for Issue 02/04A to retire.
+
+// Local-only Figma URL format hint. This mirrors the Runtime's
+// `validateSeedReferenceInput` URL rules (https, figma.com / www.figma.com,
+// /design/ or /file/ path). It is a UX affordance for the address -> description
+// step ONLY; the Runtime is the authority and re-checks at POST time. It never
+// accesses the network.
+function looksLikeFigmaSeedReference(raw: string): boolean {
+  if (typeof raw !== "string" || raw.trim().length === 0) return false;
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:") return false;
+  if (url.hostname !== "figma.com" && url.hostname !== "www.figma.com") return false;
+  const parts = url.pathname.split("/").filter(Boolean);
+  return parts.length >= 2 && (parts[0] === "design" || parts[0] === "file");
+}
 
 export function SeedEvidenceWorkbench({
   session,
@@ -45,37 +68,23 @@ export function SeedEvidenceWorkbench({
   const [panelState, setPanelState] = useState<EnterPanelState>("default");
   const [figmaSeedReference, setFigmaSeedReference] = useState("");
   const [originalDesignIntent, setOriginalDesignIntent] = useState("");
+  const [progress, setProgress] = useState(0);
+
   const validatingRef = useRef(false);
-  const validationRequestRef = useRef(0);
+  const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const task = useSeedEvidenceTask(session);
-  const result = task.state.result;
-  const locked = result === null;
-  const showEnterMask = locked;
+  const { records, register } = useSeedReferences(session);
 
-  const nodes = useMemo<FigmaEvidenceSurfaceNode[]>(() => {
-    if (!result) return [];
-    return [
-      {
-        id: result.evidenceSurface.id,
-        type: "figmaEvidenceSurface",
-        position: SURFACE_POSITION,
-        draggable: false,
-        selectable: false,
-        data: result.evidenceSurface
-      }
-    ];
-  }, [result]);
+  // EnterPanel overlay is the seed entry surface, shown only while there are
+  // no Runtime records yet (first seed, or a fresh project). Once a record
+  // exists the overlay is dismissed and the tldraw projection takes over.
+  const showEnterPanel = records.length === 0;
 
-  // Failed import → drop back to the editable description state so the user
-  // can retry (inputs retained). We deliberately do NOT invent a Figma-less
-  // error surface here (per AGENTS.md, a designed error state needs a Figma
-  // reference first); the Runtime already records failed/invalid_output.
   useEffect(() => {
-    if (task.state.status === "error") {
-      setPanelState("description");
-    }
-  }, [task.state.status]);
+    return () => {
+      if (progressTimerRef.current) clearInterval(progressTimerRef.current);
+    };
+  }, []);
 
   function handleStart() {
     setPanelState("address");
@@ -94,24 +103,18 @@ export function SeedEvidenceWorkbench({
     if (!reference) return;
 
     validatingRef.current = true;
-    const requestId = validationRequestRef.current + 1;
-    validationRequestRef.current = requestId;
     setPanelState("validating");
 
-    const ok = await validateFigmaSeedReference(reference, session);
+    // Brief async so the Figma-referenced validating spinner animates. The
+    // check itself is a local format hint; the Runtime re-validates at POST.
+    await new Promise((resolve) => setTimeout(resolve, 120));
     validatingRef.current = false;
-    if (validationRequestRef.current !== requestId) return;
 
-    if (ok) {
-      setPanelState("description");
-    } else {
-      setPanelState("address");
-    }
+    setPanelState(looksLikeFigmaSeedReference(reference) ? "description" : "address");
   }
 
   function handleClearFigmaSeedReference() {
     validatingRef.current = false;
-    validationRequestRef.current += 1;
     setFigmaSeedReference("");
     setOriginalDesignIntent("");
     setPanelState("default");
@@ -123,8 +126,8 @@ export function SeedEvidenceWorkbench({
 
   function resetEnterPanel() {
     validatingRef.current = false;
-    validationRequestRef.current += 1;
-    task.reset();
+    stopProgress();
+    setProgress(0);
     setPanelState("default");
     setFigmaSeedReference("");
     setOriginalDesignIntent("");
@@ -135,29 +138,62 @@ export function SeedEvidenceWorkbench({
     resetEnterPanel();
   }
 
+  function startProgress() {
+    stopProgress();
+    setProgress(0);
+    let p = 0;
+    progressTimerRef.current = setInterval(() => {
+      p = Math.min(90, p + 10);
+      setProgress(p);
+    }, 60);
+  }
+
+  function stopProgress() {
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+  }
+
+  // Semantic record-write: POST /api/seed-reference. On success the hook
+  // refreshes records from the Runtime source of truth, so `records` becomes
+  // non-empty and the EnterPanel overlay is dismissed (see `showEnterPanel`),
+  // revealing the tldraw projection built from the committed record. On a
+  // Runtime validation failure we drop back to the editable description state so
+  // the user can retry (inputs retained) — no record is written by the Runtime on
+  // validation failure, so no projection appears.
   async function handleSubmit() {
     if (!figmaSeedReference.trim() || !originalDesignIntent.trim()) return;
     setPanelState("loading");
-    await task.submit(
-      {
-        figmaSeedReference: figmaSeedReference.trim(),
-        originalDesignIntent: originalDesignIntent.trim()
-      },
-      { progressTicks: 6, delayMs: 80 }
-    );
+    startProgress();
+
+    const result = await register({
+      figmaSeedReference: figmaSeedReference.trim(),
+      originalDesignIntent: originalDesignIntent.trim()
+    });
+
+    if (result.ok) {
+      stopProgress();
+      setProgress(100);
+      // records refreshed by the hook -> showEnterPanel becomes false and the
+      // overlay is dismissed; the tldraw projection renders from the record.
+      return;
+    }
+
+    stopProgress();
+    setProgress(0);
+    setPanelState("description");
   }
 
   const enterPanelInteractive =
-    locked && panelState !== "default" && panelState !== "loading";
+    showEnterPanel && panelState !== "default" && panelState !== "loading";
 
   return (
     <main
       className="seed-workbench"
       data-testid="seed-workbench"
-      data-canvas-locked={locked ? "true" : "false"}
-      data-enter-masked={showEnterMask ? "true" : "false"}
-      data-pan-enabled={locked ? "false" : "true"}
-      data-zoom-enabled={locked ? "false" : "true"}
+      data-canvas-engine="tldraw"
+      data-enter-masked={showEnterPanel ? "true" : "false"}
     >
       <SquircleChrome
         className="seed-workbench__folder"
@@ -167,38 +203,11 @@ export function SeedEvidenceWorkbench({
         <span className="seed-workbench__folder-name">{folderName || "Folder Name"}</span>
       </SquircleChrome>
 
-      <ReactFlow
-        nodes={nodes}
-        edges={[]}
-        nodeTypes={figmaEvidenceNodeTypes}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        nodesFocusable={!locked}
-        edgesFocusable={false}
-        elementsSelectable={false}
-        selectNodesOnDrag={false}
-        selectionOnDrag={false}
-        panOnDrag={!locked}
-        panOnScroll={false}
-        zoomOnScroll={!locked}
-        zoomOnPinch={!locked}
-        zoomOnDoubleClick={!locked}
-        preventScrolling
-        fitView={nodes.length > 0}
-        minZoom={0.2}
-        maxZoom={2}
-        className="seed-workbench__flow"
-      >
-        <Background
-          variant={BackgroundVariant.Lines}
-          gap={100}
-          color="rgba(0, 0, 0, 0.05)"
-          bgColor="#DCDCDC"
-          lineWidth={1}
-        />
-      </ReactFlow>
+      <div className="seed-workbench__canvas" data-testid="workbench-canvas">
+        <WorkbenchCanvas records={records} />
+      </div>
 
-      {locked ? (
+      {showEnterPanel ? (
         <div
           className={
             enterPanelInteractive
@@ -212,7 +221,7 @@ export function SeedEvidenceWorkbench({
             state={panelState}
             figmaSeedReference={figmaSeedReference}
             originalDesignIntent={originalDesignIntent}
-            progress={task.state.progress}
+            progress={progress}
             onStart={handleStart}
             onFigmaSeedReferenceChange={handleFigmaSeedReferenceChange}
             onFigmaSeedReferenceConfirm={() => void handleConfirmReference()}
@@ -224,24 +233,4 @@ export function SeedEvidenceWorkbench({
       ) : null}
     </main>
   );
-}
-
-async function validateFigmaSeedReference(
-  figmaSeedReference: string,
-  session: string
-): Promise<boolean> {
-  try {
-    const response = await fetch("/api/figma/validate", {
-      method: "POST",
-      headers: {
-        "x-ikran-session": session,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ figmaSeedReference })
-    });
-    const data = (await response.json().catch(() => ({}))) as { ok?: boolean };
-    return response.ok && data.ok === true;
-  } catch {
-    return false;
-  }
 }

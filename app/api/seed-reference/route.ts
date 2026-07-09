@@ -1,11 +1,17 @@
-// POST /api/seed-reference
+// GET / POST /api/seed-reference
 //
-// Semantic MCP tool boundary: registers a Figma seed reference + the
-// designer's original design intent for the active Ikran project. Performs a
-// LOCAL-only format check (https, figma.com / www.figma.com, /design/ or
-// /file/ path); it does NOT access Figma, fetch, or oEmbed. Stores the
-// original URL verbatim. On validation failure returns a structured error and
-// writes NO record/event. Requires an active project (fail closed).
+// Semantic MCP tool boundary for seed references (Issue 02/03 + 02/04).
+//
+// GET lists the Runtime-owned `seed_references` records for the active project
+// so the tldraw Workbench can rebuild its projection from the semantic
+// source-of-truth after a page refresh (Issue 02/04). The tldraw geometry is
+// NEVER the fact source — records are. Requires an active project (fail closed).
+//
+// POST registers a Figma seed reference + the designer's original design
+// intent. Performs a LOCAL-only format check (https, figma.com / www.figma.com,
+// /design/ or /file/ path); it does NOT access Figma, fetch, or oEmbed. Stores
+// the original URL verbatim. On validation failure returns a structured error
+// and writes NO record/event.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -13,11 +19,38 @@ import { authorize } from "../../../lib/runtime/session";
 import { getActiveProjectState } from "../../../lib/runtime/project";
 import {
   registerSeedReference,
+  listSeedReferences,
   type SeedReferenceInput
 } from "../../../lib/runtime/seed-reference";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// GET /api/seed-reference — list the active project's seed reference records.
+// Used by the tldraw Workbench to rebuild its projection from the Runtime
+// semantic record (source-of-truth) after a refresh, and to poll for records a
+// real Agent writes via the `register_seed_reference` MCP tool. tldraw geometry
+// is never read back here — only the records are.
+export async function GET(request: NextRequest) {
+  const auth = authorize(request);
+  if (!auth.ok) {
+    return NextResponse.json(
+      { ok: false, error: auth.reason },
+      { status: auth.status }
+    );
+  }
+
+  const state = getActiveProjectState();
+  if (!state.ok) {
+    return NextResponse.json(
+      { ok: false, error: state.reason },
+      { status: 400 }
+    );
+  }
+
+  const records = listSeedReferences(state.project.path);
+  return NextResponse.json({ ok: true, records });
+}
 
 export async function POST(request: NextRequest) {
   const auth = authorize(request);

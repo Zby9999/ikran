@@ -10,6 +10,7 @@
 2. `02-project-session-binding-ikran-metadata.md` - Project Session Binding 与 `.ikran` 迁移
 3. `03-semantic-mcp-tool-boundary-mock-client.md` - Semantic MCP Tool Boundary 与 Mock Client
 4. `04-tldraw-workbench-shell-seed-entry.md` - tldraw Workbench Shell 替换 React Flow Seed Entry
+4A. `04A-retire-legacy-seed-entry-chain.md` - Retire Legacy Seed Entry Chain
 5. `05-agent-host-figma-evidence-declaration.md` - Agent-Host Figma Evidence Declaration
 6. `06-evidence-surface-region-annotation-slice.md` - Evidence Surface 与 Region Annotation Vertical Slice
 7. `07-design-intent-alignment-six-part-gate.md` - 六部分 Design Intent Alignment Gate
