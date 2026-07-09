@@ -33,13 +33,14 @@
 - Agent 可能把截图转代码当作主要输入，而不是 structured evidence。
 - Evidence package schema 太严格会让真实 Agent 难以一次成功，太宽又会污染后续 design-system extraction。
 - Agent 可能在 `register_seed_reference` 后停止，未继续 Figma `get_screenshot`（4096）+ `record_evidence_package`，导致 Workbench 一直 awaiting-evidence。
+- 设计师经 Workbench plus / EnterPanel（HTTP）注册 seed 后，Agent 可能未调用 `list_pending_seed_evidence`，同样留下 awaiting-evidence loading。
 
 ## Suggested ways through
 
 - 采用最小 evidence package：seed reference、frame/node identity、raw evidence availability、screenshot availability、surface bounds、关键 design signals。
 - 缺失 evidence view 用 explicit missing 标记，不让 Agent 猜。
 - 在 smoke 记录中区分 blocked by Figma access、blocked by schema、blocked by host MCP tool discovery、blocked by Agent orchestration。
-- **UX 编排（产品约定，Ikran MCP）：** `register_seed_reference` 成功后，同一会话内 Agent 必须立刻用 host Figma MCP `get_screenshot`（**`maxDimension: 4096`**，非 Figma 默认 1024）再调用 `record_evidence_package`。Workbench 在截图 surface 到达前显示 awaiting-evidence loading。约定写在 `bin/ikran-mcp.mjs` instructions / tool descriptions，**不**写在 `workflow/` Skills（见 `AGENTS.md`）。
+- **UX 编排（产品约定，Ikran MCP）：** Seed 可由 Agent `register_seed_reference` **或** Workbench plus / EnterPanel（HTTP）注册；任一路径在截图 surface 到达前显示 awaiting-evidence loading（提示 “Waiting for Agent evidence capture”）。Agent 路径：注册成功后立刻 Figma `get_screenshot`（**`maxDimension: 4096`**）→ `record_evidence_package`。UI / Workbench 路径：`open_workbench` 后及协助 seed 录入时必须 `list_pending_seed_evidence`，对每条 pending 同样 4096 截图 → `record_evidence_package`。约定写在 `bin/ikran-mcp.mjs` instructions / tool descriptions，**不**写在 `workflow/` Skills（见 `AGENTS.md`；步骤见 `docs/manual-agent-smoke-issue05.md`）。
 
 ## Blocked by
 
