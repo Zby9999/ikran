@@ -20,6 +20,7 @@ export type EventType =
   | "agent_task_completed"
   | "agent_task_failed"
   | "seed_reference_registered"
+  | "evidence_package_recorded"
   | "annotation_created"
   | "question_card_created"
   | "designer_answer_submitted"

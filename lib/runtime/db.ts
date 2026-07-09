@@ -53,12 +53,28 @@ CREATE TABLE IF NOT EXISTS seed_references (
   created_at TEXT NOT NULL               -- ISO 8601
 );
 
+CREATE TABLE IF NOT EXISTS figma_evidence_surfaces (
+  id TEXT PRIMARY KEY,
+  seed_reference_id TEXT,
+  figma_seed_reference TEXT NOT NULL,
+  frame_node_id TEXT NOT NULL,
+  frame_name TEXT NOT NULL,
+  frame_bounds_json TEXT,
+  evidence_views_json TEXT NOT NULL,
+  screenshot_artifact_path TEXT,
+  screenshot_data_url TEXT,
+  design_signals_json TEXT,
+  surface_bounds_json TEXT,
+  created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_family ON tasks(family);
 CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
 CREATE INDEX IF NOT EXISTS idx_seed_references_created_at ON seed_references(created_at);
+CREATE INDEX IF NOT EXISTS idx_figma_evidence_surfaces_created_at ON figma_evidence_surfaces(created_at);
 `;
 
 export function openProjectDb(projectPath: string): DatabaseType {

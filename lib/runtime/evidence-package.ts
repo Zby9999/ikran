@@ -1,10 +1,20 @@
-// Evidence package schema validation (Issue 05).
+// Evidence package schema validation + Figma Evidence Surface persistence (Issue 05).
 //
 // Agent host declares Figma evidence via a structured package. Runtime validates
-// schema ONLY — no Figma network, no DB, no MCP in this module.
+// schema, then inserts a `figma_evidence_surfaces` row — no Figma network, no MCP.
 //
 // URL format rules mirror seed-reference.ts local checks (https + figma.com +
 // /design|/file path). Original URL strings are kept verbatim when present.
+//
+// Record vs event semantics (same as seed-reference): the surface row is the
+// SOURCE OF TRUTH; `evidence_package_recorded` is a best-effort AUDIT log.
+// On validation / resolve failure: `invalid_output` event + structured error,
+// NO surface row.
+
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { openProjectDb, closeProjectDb } from "./db";
+import { logEvent } from "./events";
 
 export type EvidenceViewStatus = "available" | "missing";
 
@@ -360,4 +370,245 @@ export function validateEvidencePackage(
   }
 
   return { ok: true, package: normalized };
+}
+
+// ---------------------------------------------------------------------------
+// Persist: recordEvidencePackage / listFigmaEvidenceSurfaces
+// ---------------------------------------------------------------------------
+
+export interface FigmaEvidenceSurfaceRecord {
+  id: string;
+  seed_reference_id: string | null;
+  figma_seed_reference: string;
+  frame_node_id: string;
+  frame_name: string;
+  frame_bounds_json: string | null;
+  evidence_views_json: string;
+  screenshot_artifact_path: string | null;
+  screenshot_data_url: string | null;
+  design_signals_json: string | null;
+  surface_bounds_json: string | null;
+  created_at: string;
+}
+
+export type EvidencePackageRecordReason =
+  | EvidencePackageValidationReason
+  | "seed_reference_not_found"
+  | "artifact_path_escape"
+  | "db_error"
+  | string;
+
+export interface EvidencePackageRecordResult {
+  ok: true;
+  record: FigmaEvidenceSurfaceRecord;
+  /** Audit event id, or null when the best-effort audit write failed. */
+  event_id: string | null;
+  /** Present iff the best-effort audit event could not be written. */
+  audit_warning?: "event_write_failed";
+}
+
+export interface EvidencePackageRecordError {
+  ok: false;
+  reason: EvidencePackageRecordReason;
+}
+
+export type EvidencePackageRecordResponse =
+  | EvidencePackageRecordResult
+  | EvidencePackageRecordError;
+
+function logInvalidOutput(
+  projectPath: string,
+  reason: string,
+  details?: unknown
+): void {
+  try {
+    const payload: Record<string, unknown> = {
+      tool: "record_evidence_package",
+      reason
+    };
+    if (details !== undefined) payload.details = details;
+    logEvent(projectPath, "invalid_output", payload);
+  } catch {
+    // Best-effort: do not mask the structured validation error if audit fails.
+  }
+}
+
+/**
+ * Ensure a project-relative artifact path stays under project root.
+ * Does NOT require the file to exist yet (Agent may declare before write).
+ */
+function assertArtifactPathInProject(
+  projectPath: string,
+  artifactPath: string
+): "artifact_path_escape" | null {
+  const projectRoot = path.resolve(projectPath);
+  const resolved = path.resolve(projectRoot, artifactPath);
+  const relative = path.relative(projectRoot, resolved);
+  if (
+    relative === "" ||
+    relative.startsWith("..") ||
+    path.isAbsolute(relative)
+  ) {
+    return "artifact_path_escape";
+  }
+  return null;
+}
+
+function lookupSeedReferenceUrl(
+  projectPath: string,
+  seedReferenceId: string
+): string | null {
+  const db = openProjectDb(projectPath);
+  try {
+    const row = db
+      .prepare(
+        "SELECT figma_seed_reference FROM seed_references WHERE id = ?"
+      )
+      .get(seedReferenceId) as { figma_seed_reference: string } | undefined;
+    return row?.figma_seed_reference ?? null;
+  } finally {
+    closeProjectDb(db);
+  }
+}
+
+export function recordEvidencePackage(
+  projectPath: string,
+  input: unknown
+): EvidencePackageRecordResponse {
+  const validated = validateEvidencePackage(input);
+  if (!validated.ok) {
+    logInvalidOutput(projectPath, validated.reason, validated.details);
+    return { ok: false, reason: validated.reason };
+  }
+
+  const pkg = validated.package;
+
+  // Resolve figma_seed_reference: prefer URL when present; look up seed id when needed.
+  let figmaSeedReference: string;
+  let seedReferenceId: string | null =
+    pkg.seedReferenceId !== undefined ? pkg.seedReferenceId : null;
+
+  if (pkg.figmaSeedReference !== undefined) {
+    figmaSeedReference = pkg.figmaSeedReference;
+    // If id also provided, verify it exists (fail closed if missing).
+    if (seedReferenceId !== null) {
+      const lookedUp = lookupSeedReferenceUrl(projectPath, seedReferenceId);
+      if (lookedUp === null) {
+        logInvalidOutput(projectPath, "seed_reference_not_found");
+        return { ok: false, reason: "seed_reference_not_found" };
+      }
+    }
+  } else {
+    // Only seedReferenceId — must resolve URL from seed_references.
+    const lookedUp = lookupSeedReferenceUrl(projectPath, seedReferenceId!);
+    if (lookedUp === null) {
+      logInvalidOutput(projectPath, "seed_reference_not_found");
+      return { ok: false, reason: "seed_reference_not_found" };
+    }
+    figmaSeedReference = lookedUp;
+  }
+
+  // Path-escape check only — file need not exist yet.
+  let screenshotArtifactPath: string | null = null;
+  let screenshotDataUrl: string | null = null;
+  if (pkg.screenshot?.artifactPath) {
+    const escape = assertArtifactPathInProject(
+      projectPath,
+      pkg.screenshot.artifactPath
+    );
+    if (escape) {
+      logInvalidOutput(projectPath, escape);
+      return { ok: false, reason: escape };
+    }
+    screenshotArtifactPath = pkg.screenshot.artifactPath;
+  }
+  if (pkg.screenshot?.dataUrl) {
+    screenshotDataUrl = pkg.screenshot.dataUrl;
+  }
+
+  const record: FigmaEvidenceSurfaceRecord = {
+    id: randomUUID(),
+    seed_reference_id: seedReferenceId,
+    figma_seed_reference: figmaSeedReference,
+    frame_node_id: pkg.frame.nodeId,
+    frame_name: pkg.frame.name,
+    frame_bounds_json: pkg.frame.bounds
+      ? JSON.stringify(pkg.frame.bounds)
+      : null,
+    evidence_views_json: JSON.stringify(pkg.evidenceViews),
+    screenshot_artifact_path: screenshotArtifactPath,
+    screenshot_data_url: screenshotDataUrl,
+    design_signals_json: pkg.designSignals
+      ? JSON.stringify(pkg.designSignals)
+      : null,
+    surface_bounds_json: pkg.surfaceBounds
+      ? JSON.stringify(pkg.surfaceBounds)
+      : null,
+    created_at: new Date().toISOString()
+  };
+
+  const db = openProjectDb(projectPath);
+  try {
+    const stmt = db.prepare(
+      `INSERT INTO figma_evidence_surfaces (
+        id, seed_reference_id, figma_seed_reference,
+        frame_node_id, frame_name, frame_bounds_json,
+        evidence_views_json, screenshot_artifact_path, screenshot_data_url,
+        design_signals_json, surface_bounds_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    stmt.run(
+      record.id,
+      record.seed_reference_id,
+      record.figma_seed_reference,
+      record.frame_node_id,
+      record.frame_name,
+      record.frame_bounds_json,
+      record.evidence_views_json,
+      record.screenshot_artifact_path,
+      record.screenshot_data_url,
+      record.design_signals_json,
+      record.surface_bounds_json,
+      record.created_at
+    );
+  } catch {
+    return { ok: false, reason: "db_error" };
+  } finally {
+    closeProjectDb(db);
+  }
+
+  // Audit log (best-effort): record already committed as source of truth.
+  let event_id: string | null = null;
+  let audit_warning: "event_write_failed" | undefined;
+  try {
+    const event = logEvent(projectPath, "evidence_package_recorded", {
+      surface_id: record.id,
+      seed_reference_id: record.seed_reference_id,
+      figma_seed_reference: record.figma_seed_reference,
+      frame_node_id: record.frame_node_id,
+      frame_name: record.frame_name
+    });
+    event_id = event.event_id;
+  } catch {
+    audit_warning = "event_write_failed";
+  }
+
+  const result: EvidencePackageRecordResult = { ok: true, record, event_id };
+  if (audit_warning) result.audit_warning = audit_warning;
+  return result;
+}
+
+export function listFigmaEvidenceSurfaces(
+  projectPath: string
+): FigmaEvidenceSurfaceRecord[] {
+  const db = openProjectDb(projectPath);
+  try {
+    return db
+      .prepare(
+        "SELECT * FROM figma_evidence_surfaces ORDER BY created_at ASC"
+      )
+      .all() as unknown as FigmaEvidenceSurfaceRecord[];
+  } finally {
+    closeProjectDb(db);
+  }
 }
