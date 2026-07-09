@@ -319,6 +319,54 @@ test.describe("recordEvidencePackage (unit)", () => {
     });
   });
 
+  test("accepts in-project path that starts with '..' but is not a parent escape", () => {
+    withTempProject((dir) => {
+      const res = recordEvidencePackage(
+        dir,
+        minimalPackage({
+          evidenceViews: { rawData: "available", screenshot: "available" },
+          screenshot: { artifactPath: "..hidden/shot.png" }
+        })
+      );
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.record.screenshot_artifact_path).toBe("..hidden/shot.png");
+      expect(countSurfaces(dir)).toBe(1);
+    });
+  });
+
+  test("fail-closed: both seed refs with mismatched URL → seed_reference_mismatch", () => {
+    withTempProject((dir) => {
+      const seed = registerSeedReference(dir, {
+        figmaSeedReference: VALID_FIGMA,
+        originalDesignIntent: "checkout trust"
+      });
+      expect(seed.ok).toBe(true);
+      if (!seed.ok) return;
+
+      const otherUrl =
+        "https://www.figma.com/design/OtherFile/Other?node-id=9:9";
+      const res = recordEvidencePackage(
+        dir,
+        minimalPackage({
+          figmaSeedReference: otherUrl,
+          seedReferenceId: seed.record.id
+        })
+      );
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("seed_reference_mismatch");
+      expect(countSurfaces(dir)).toBe(0);
+
+      const invalid = listEvents(dir, "invalid_output");
+      expect(invalid.length).toBe(1);
+      expect(eventPayload(invalid[0])).toMatchObject({
+        tool: "record_evidence_package",
+        reason: "seed_reference_mismatch"
+      });
+    });
+  });
+
   test("audit write failure: surface still saved; ok:true + event_id:null + audit_warning", () => {
     withTempProject((dir) => {
       mkdirSync(path.join(dir, ".ikran", "events.jsonl"));

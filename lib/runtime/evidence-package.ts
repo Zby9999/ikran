@@ -394,6 +394,7 @@ export interface FigmaEvidenceSurfaceRecord {
 export type EvidencePackageRecordReason =
   | EvidencePackageValidationReason
   | "seed_reference_not_found"
+  | "seed_reference_mismatch"
   | "artifact_path_escape"
   | "db_error"
   | string;
@@ -446,7 +447,8 @@ function assertArtifactPathInProject(
   const relative = path.relative(projectRoot, resolved);
   if (
     relative === "" ||
-    relative.startsWith("..") ||
+    relative === ".." ||
+    relative.startsWith(".." + path.sep) ||
     path.isAbsolute(relative)
   ) {
     return "artifact_path_escape";
@@ -490,12 +492,16 @@ export function recordEvidencePackage(
 
   if (pkg.figmaSeedReference !== undefined) {
     figmaSeedReference = pkg.figmaSeedReference;
-    // If id also provided, verify it exists (fail closed if missing).
+    // If id also provided, verify it exists and URL matches (fail closed).
     if (seedReferenceId !== null) {
       const lookedUp = lookupSeedReferenceUrl(projectPath, seedReferenceId);
       if (lookedUp === null) {
         logInvalidOutput(projectPath, "seed_reference_not_found");
         return { ok: false, reason: "seed_reference_not_found" };
+      }
+      if (lookedUp !== figmaSeedReference) {
+        logInvalidOutput(projectPath, "seed_reference_mismatch");
+        return { ok: false, reason: "seed_reference_mismatch" };
       }
     }
   } else {
