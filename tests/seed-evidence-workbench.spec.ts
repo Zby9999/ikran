@@ -215,17 +215,24 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
 
     await page.getByRole("button", { name: "Enter Canvas" }).click();
 
-    // The Runtime recorded the seed reference and tldraw projects it.
+    // The Runtime recorded the seed reference and tldraw projects a Frame surface.
     const projection = page.getByTestId("seed-reference-projection");
     await expect(projection).toBeVisible();
     const runtimeRecordId = await projection.getAttribute("data-runtime-record-id");
     expect(runtimeRecordId).toBeTruthy();
     const canvasRecordId = await projection.getAttribute("data-canvas-record-id");
     expect(canvasRecordId).toMatch(/^seed-reference:.+$/);
-    await expect(projection.getByTestId("seed-reference-projection-url")).toContainText(
-      "RC4FGd8KwNfX6uqP-11"
+    // Title falls back to "Figma seed" when frameName is empty; URL is not on the card.
+    await expect(projection.getByTestId("seed-reference-projection-title")).toHaveText(
+      "Figma seed"
     );
-    await expect(projection.getByTestId("seed-reference-projection-intent")).toContainText(
+    await expect(projection.getByTestId("seed-reference-projection-media")).toBeVisible();
+    await expect(projection.getByTestId("seed-reference-projection-url")).toHaveCount(0);
+    await expect(projection).not.toContainText("RC4FGd8KwNfX6uqP-11");
+
+    // Info hover shows Description tip with originalDesignIntent (Figma 227:130).
+    await projection.getByTestId("seed-reference-projection-info").hover();
+    await expect(projection.getByTestId("seed-reference-projection-tip")).toContainText(
       "UI test intent"
     );
 
@@ -297,6 +304,9 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
     await expect(projection).toHaveAttribute(
       "data-canvas-record-id",
       `seed-reference:${record.id}`
+    );
+    await expect(projection.getByTestId("seed-reference-projection-title")).toHaveText(
+      "Figma seed"
     );
 
     // The record still exists in the DB (source of truth survives refresh;

@@ -98,3 +98,14 @@ EnterPanel(+ → 输入 Figma URL → 本地格式门 → description → 输入
 - **两进程拓扑**：MCP 与 UI 仍为两进程 + HTTP proxy（沿用 02/03，未做一进程整合）。共享同一 `IKRAN_STATE_DIR` 时复用同一 Runtime / active project，record 可见；若 `setup_workspace` 给 `.cursor/mcp.json` 设了 per-project `IKRAN_STATE_DIR`，会与 launcher 的 Runtime 分裂，Agent 写入的 record 在 UI 不可见——需对齐 state dir。一进程整合留给后续 issue。
 - 轻量轮询 1.5s；未做 event bus / SSE 推送（本 slice 明确不做复杂机制）。
 - 旧链路退役、`record_evidence_package`、Figma 真验真、Region Annotation / Question Card 均属后续 issue。
+
+---
+
+## Follow-up：投影层 UI 收口（Figma Extraction / Frame）
+
+主路径完成后的视觉跟进，不改 Runtime / MCP 边界。
+
+- **左上角 Folder 面板**：EnterPanel 关闭后增加 Extraction 一栏（阶段/总进度 stub、Follow Agent / Annotate 按钮 stub）。
+- **Figma seed Frame**：紫框 + 标题（缺省「Figma seed」）+ info tip；媒体区白底占位（真截图留给后续）；默认约 380×520；等比缩放。
+- **选中 chrome**：隐藏 tldraw 蓝框与角点方块，保留四角等比缩放命中；隐藏旋转柄。
+- **Stroke**：未选中外框 + 媒体框均为 `#B980B9`；选中加深为 `#731b73`。

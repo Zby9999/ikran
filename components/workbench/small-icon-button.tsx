@@ -26,9 +26,10 @@ export function SmallIconButton({
         icon={icon}
         size={14}
         color="currentColor"
-        // Figma 134:429 arrow-left-01: stroke #575757, stroke-width 0.875
-        // (was 1.7 / inherited #3d3d3d — looked larger and heavier).
-        strokeWidth={0.875}
+        // Figma mini icons are 14×14 with stroke-width 0.875. Hugeicons uses a
+        // 24×24 viewBox, so the matching strokeWidth is (0.875/14)*24 = 1.5.
+        // Passing 0.875 here made strokes ~0.51px and looked much thinner.
+        strokeWidth={1.5}
       />
     </button>
   );

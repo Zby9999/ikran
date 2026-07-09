@@ -3,10 +3,8 @@
 import "./seed-evidence-workbench.css";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
-import { SmallIconButton } from "./small-icon-button";
 import { EnterPanel, type EnterPanelState } from "./enter-panel";
-import { SquircleChrome } from "./squircle-chrome";
+import { FolderChrome } from "./folder-chrome";
 import { useSeedReferences } from "./use-seed-references";
 
 // tldraw touches the DOM during render, so the canvas shell is loaded with
@@ -190,13 +188,22 @@ export function SeedEvidenceWorkbench({
       data-canvas-engine="tldraw"
       data-enter-masked={showEnterPanel ? "true" : "false"}
     >
-      <SquircleChrome
-        className="seed-workbench__folder"
-        surfaceClassName="seed-workbench__folder-body"
-      >
-        <SmallIconButton icon={ArrowLeft01Icon} label="Back to setup" onClick={onBack} />
-        <span className="seed-workbench__folder-name">{folderName || "Folder Name"}</span>
-      </SquircleChrome>
+      <FolderChrome
+        folderName={folderName}
+        onBack={onBack}
+        extraction={
+          showEnterPanel
+            ? null
+            : {
+                stageRemaining: 3,
+                stageTotal: 5,
+                overallRemaining: 27,
+                overallTotal: 32,
+                onFollowAgent: () => {},
+                onAnnotate: () => {}
+              }
+        }
+      />
 
       <div className="seed-workbench__canvas" data-testid="workbench-canvas">
         <WorkbenchCanvas records={records} />

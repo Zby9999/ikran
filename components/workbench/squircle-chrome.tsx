@@ -4,7 +4,7 @@ import { getSvgPath } from "figma-squircle";
 import { useEffect, useRef, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-const OUTER_RING_PX = 1;
+const RING_PX = 1;
 
 type SquircleChromeProps = {
   className?: string;
@@ -16,6 +16,22 @@ type SquircleChromeProps = {
   children: ReactNode;
 };
 
+function applySquircleClip(
+  el: HTMLElement,
+  width: number,
+  height: number,
+  cornerRadius: number,
+  cornerSmoothing: number
+) {
+  if (!width || !height) return;
+  el.style.clipPath = `path('${getSvgPath({
+    width,
+    height,
+    cornerRadius: Math.max(0, cornerRadius),
+    cornerSmoothing
+  })}')`;
+}
+
 export function SquircleChrome({
   className,
   surfaceClassName,
@@ -26,40 +42,51 @@ export function SquircleChrome({
   children
 }: SquircleChromeProps) {
   const shellRef = useRef<HTMLDivElement>(null);
+  const ringRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const shell = shellRef.current;
+    const ring = ringRef.current;
     const surface = surfaceRef.current;
-    if (!shell || !surface || typeof ResizeObserver === "undefined") return;
+    if (!shell || !ring || !surface || typeof ResizeObserver === "undefined") {
+      return;
+    }
 
+    // Three nested squircles paint the Figma chrome rings without CSS border:
+    //   shell  = dark outer ring (padding)
+    //   ring   = white inner ring (padding)
+    //   surface = #f1f1f1 fill + content
+    // A CSS `border` on a clipped element is drawn on the rectangular box and
+    // gets cut off at squircle corners — padding rings avoid that.
     const update = () => {
-      const width = shell.offsetWidth;
-      const height = shell.offsetHeight;
-      if (!width || !height) return;
-
-      shell.style.clipPath = `path('${getSvgPath({
-        width,
-        height,
+      applySquircleClip(
+        shell,
+        shell.offsetWidth,
+        shell.offsetHeight,
         cornerRadius,
         cornerSmoothing
-      })}')`;
-
-      const innerWidth = surface.offsetWidth;
-      const innerHeight = surface.offsetHeight;
-      if (!innerWidth || !innerHeight) return;
-
-      surface.style.clipPath = `path('${getSvgPath({
-        width: innerWidth,
-        height: innerHeight,
-        cornerRadius: Math.max(0, cornerRadius - OUTER_RING_PX),
+      );
+      applySquircleClip(
+        ring,
+        ring.offsetWidth,
+        ring.offsetHeight,
+        cornerRadius - RING_PX,
         cornerSmoothing
-      })}')`;
+      );
+      applySquircleClip(
+        surface,
+        surface.offsetWidth,
+        surface.offsetHeight,
+        cornerRadius - RING_PX * 2,
+        cornerSmoothing
+      );
     };
 
     update();
     const observer = new ResizeObserver(update);
     observer.observe(shell);
+    observer.observe(ring);
     observer.observe(surface);
     return () => observer.disconnect();
   }, [cornerRadius, cornerSmoothing]);
@@ -68,15 +95,17 @@ export function SquircleChrome({
 
   return (
     <div ref={shellRef} className={cn("squircle-chrome", className)}>
-      <SurfaceTag
-        ref={(el) => {
-          surfaceRef.current = el;
-        }}
-        className={cn("squircle-chrome__surface", surfaceClassName)}
-        {...surfaceProps}
-      >
-        {children}
-      </SurfaceTag>
+      <div ref={ringRef} className="squircle-chrome__ring">
+        <SurfaceTag
+          ref={(el) => {
+            surfaceRef.current = el;
+          }}
+          className={cn("squircle-chrome__surface", surfaceClassName)}
+          {...surfaceProps}
+        >
+          {children}
+        </SurfaceTag>
+      </div>
     </div>
   );
 }

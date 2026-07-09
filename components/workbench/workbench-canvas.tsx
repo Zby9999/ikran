@@ -6,7 +6,8 @@
 //   - `<Tldraw hideUi>` renders only the drawing surface (no default
 //     toolbar / panels / page menu). The Issue 02/04 brief explicitly says do not
 //     add complex toolbars or side panels.
-//   - The custom `seed-reference-projection` shape is the ONLY thing projected.
+//   - The custom `seed-reference-projection` shape (Figma Frame surface 230:297)
+//     is the ONLY thing projected — purple frame + white media placeholder.
 //   - `SeedProjectionSync` does a one-way reconciliation: Runtime records ->
 //     tldraw shapes. It never reads geometry back. tldraw positions are local
 //     only; the default `<Tldraw>` store is in-memory (no persistence), so a
@@ -27,8 +28,11 @@ import {
 import {
   SeedReferenceProjectionShapeUtil,
   SEED_REFERENCE_PROJECTION_TYPE,
+  SEED_REFERENCE_PROJECTION_DEFAULT_W,
+  SEED_REFERENCE_PROJECTION_DEFAULT_H,
   type SeedReferenceProjectionShape
 } from "./seed-reference-projection-shape";
+import { SeedSelectionForegroundOverlayUtil } from "./seed-selection-foreground-overlay";
 import { WORKBENCH_CANVAS_COMPONENTS } from "./workbench-canvas-grid";
 import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 
@@ -42,6 +46,7 @@ export function WorkbenchCanvas({
       hideUi
       shapeUtils={[SeedReferenceProjectionShapeUtil]}
       components={WORKBENCH_CANVAS_COMPONENTS}
+      overlayUtils={[SeedSelectionForegroundOverlayUtil]}
     >
       <SeedProjectionSync records={records} />
     </Tldraw>
@@ -73,16 +78,19 @@ function SeedProjectionSync({ records }: { records: SeedReferenceRecord[] }) {
       const row = Math.floor(index / 4);
       // Pin the create-partial to the concrete shape type so `props`/`meta` are
       // checked against the augmented TLShape<'seed-reference-projection'>.
+      // Default 380×520: readable tall Frame placeholder (see shape util).
+      // frameName "" → UI title "Figma seed". URL stays in props (not displayed).
       editor.createShape<SeedReferenceProjectionShape>({
         id: shapeId,
         type: SEED_REFERENCE_PROJECTION_TYPE,
-        x: 120 + column * 400,
-        y: 140 + row * 220,
+        x: 120 + column * 420,
+        y: 140 + row * 560,
         props: {
-          w: 360,
-          h: 168,
+          w: SEED_REFERENCE_PROJECTION_DEFAULT_W,
+          h: SEED_REFERENCE_PROJECTION_DEFAULT_H,
           figmaSeedReference: record.figma_seed_reference,
-          originalDesignIntent: record.original_design_intent
+          originalDesignIntent: record.original_design_intent,
+          frameName: ""
         },
         meta: {
           canvasRecordId: `seed-reference:${record.id}`,
