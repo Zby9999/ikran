@@ -20,12 +20,14 @@ Mock / Playwright 只能证明 schema、MCP 代理与 UI 投影路径；**不能
 2. **两条 seed 注册路径，同一 pending 工作**  
    设计师可通过 **Workbench plus / EnterPanel**（HTTP `POST /api/seed-reference`）**或** Agent `register_seed_reference` 注册 seed。两条路径写入同一 `seed_references` 事实；尚无截图 Evidence Surface 的 seed 都是 **pending Agent evidence work**。
 
-3. **Seed → evidence 编排（含 UI 发起）**  
+3. **Seed → evidence 编排（含 UI 发起）— AUTO-EXECUTE**  
    - Agent 路径：`register_seed_reference` 成功后**不是终点**——同一会话内立刻 Figma `get_screenshot`（4096）→ `record_evidence_package`。  
-   - **UI 路径 / 打开 Workbench 后**：Agent 必须调用 `list_pending_seed_evidence`（在 `open_workbench` 之后，以及协助设计师做 Workbench seed 录入 / 看到 awaiting loading 时）。对**每一条** pending seed：Figma MCP `get_screenshot`（`maxDimension: 4096`）→ Ikran `record_evidence_package`（带 screenshot payload + 显式 `evidenceViews`）。
+   - **UI 路径 / 打开 Workbench 后**：`open_workbench` / `list_pending_seed_evidence` 会返回 `pending_seed_evidence` 与 `fulfill_now`。对**每一条** pending seed：Figma MCP `get_screenshot`（`maxDimension: 4096`）→ Ikran `record_evidence_package`。  
+   - **禁止询问**：发现 pending 时不得回复「如果需要，我可以继续」；必须在同一 turn 直接执行。  
+   - **Host 限制**：UI 加号无法打断空闲 Agent；需要 Agent **下一轮**调用 Ikran（如 `open_workbench` / `list_pending_seed_evidence`）才能捡起 pending。
 
 4. **Workbench awaiting-evidence**  
-   Seed 已注册、尚无带截图的 Evidence Surface 时，Workbench 投影显示 **awaiting-evidence loading**，并带提示 **“Waiting for Agent evidence capture”**；`record_evidence_package` 写入截图后，loading 结束并显示图像。
+   Seed 已注册、尚无带截图的 Evidence Surface 时，Workbench 投影显示 **awaiting-evidence loading**，并提示 Agent 去 fulfill pending；`record_evidence_package` 写入截图后，loading 结束并显示图像。
 
 ## 0. 前置条件
 

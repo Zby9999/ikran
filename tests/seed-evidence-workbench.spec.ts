@@ -568,7 +568,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
       await expect(awaiting).toHaveAttribute("data-awaiting-evidence", "true");
       await expect(
         projection.getByTestId("seed-reference-projection-awaiting-hint")
-      ).toHaveText("Waiting for Agent evidence capture");
+      ).toContainText("Waiting for Agent");
       await expect(
         projection.getByTestId("seed-reference-projection-screenshot")
       ).toHaveCount(0);
@@ -866,7 +866,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
       ).toBeVisible();
       await expect(
         projection.getByTestId("seed-reference-projection-awaiting-hint")
-      ).toHaveText("Waiting for Agent evidence capture");
+      ).toContainText("Waiting for Agent");
 
       const TINY_PNG =
         "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
