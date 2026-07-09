@@ -1,7 +1,8 @@
 // Ikran Issue 05 — `record_evidence_package` MCP tool end-to-end (Task 5).
 //
 // Coverage:
-// - listTools: tool is registered
+// - listTools: record_evidence_package + list_pending_seed_evidence registered
+// - list_pending_seed_evidence: after register_seed_reference, seed is pending
 // - success: valid minimal package → surface row + evidence_package_recorded;
 //   uses a valid-format Figma URL that is NOT a real reachable file (proves
 //   Runtime never needs Figma network contact)
@@ -137,6 +138,7 @@ test.describe("Ikran Issue 05 — record_evidence_package MCP tool", () => {
       const names = (await client.listTools()).tools.map((t) => t.name);
       expect(names).toContain("record_evidence_package");
       expect(names).toContain("register_seed_reference");
+      expect(names).toContain("list_pending_seed_evidence");
     } finally {
       if (client) {
         try {
@@ -151,6 +153,74 @@ test.describe("Ikran Issue 05 — record_evidence_package MCP tool", () => {
       } catch {
         /* ignore */
       }
+    }
+  });
+
+  test("list_pending_seed_evidence: after register_seed_reference, seed is pending", async () => {
+    test.setTimeout(150_000);
+
+    const stateDir = mkdtempSync(path.join(tmpdir(), "ikran-mcp-pending-"));
+    const dir = mkdtempSync(path.join(tmpdir(), "ikran-pending-proj-"));
+    let client: Client | null = null;
+    try {
+      const handle = await spawnMcpClient(stateDir);
+      client = handle.client;
+
+      const create = await client.callTool({
+        name: "create_or_open_project",
+        arguments: { path: dir }
+      });
+      const createSc = sc(create);
+      expect(createSc.ok).toBe(true);
+      const token = createSc.session as string;
+
+      const empty = await client.callTool({
+        name: "list_pending_seed_evidence",
+        arguments: {}
+      });
+      const emptySc = sc(empty);
+      expect(emptySc.ok).toBe(true);
+      expect(emptySc.session).toBe(token);
+      expect(Array.isArray(emptySc.records)).toBe(true);
+      expect((emptySc.records as unknown[]).length).toBe(0);
+
+      const seedRes = await client.callTool({
+        name: "register_seed_reference",
+        arguments: {
+          figmaSeedReference: FAKE_FIGMA_URL,
+          originalDesignIntent: "Pending list e2e: seed awaiting screenshot."
+        }
+      });
+      const seedSc = sc(seedRes);
+      expect(seedSc.ok).toBe(true);
+      const seedRecord = seedSc.record as { id: string };
+
+      const pending = await client.callTool({
+        name: "list_pending_seed_evidence",
+        arguments: {}
+      });
+      const pendingSc = sc(pending);
+      expect(pendingSc.ok).toBe(true);
+      expect(pendingSc.session).toBe(token);
+      expect(typeof pendingSc.workbench_url).toBe("string");
+      const records = pendingSc.records as Array<{
+        id: string;
+        figma_seed_reference: string;
+        original_design_intent: string;
+      }>;
+      expect(records.length).toBe(1);
+      expect(records[0].id).toBe(seedRecord.id);
+      expect(records[0].figma_seed_reference).toBe(FAKE_FIGMA_URL);
+      expect(records[0].original_design_intent).toContain("Pending list e2e");
+    } finally {
+      try {
+        await client?.close();
+      } catch {
+        /* ignore */
+      }
+      killRecordedRuntime(stateDir);
+      rmSync(stateDir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

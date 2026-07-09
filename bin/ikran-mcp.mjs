@@ -273,7 +273,7 @@ const mcp = new McpServer(
     instructions:
       "Ikran local research workbench. open_workbench starts (or reuses) the local HTTP Workbench and returns a localhost URL with a startup-level session token. create_or_open_project binds or opens the project/session (initializing `.ikran/`); with no `path` it discovers the working folder from the MCP client's workspace Roots (or IKRAN_CWD env). list_working_folders shows which folder was discovered. setup_workspace returns the per-project MCP config snippet (cwd + IKRAN_STATE_DIR) to pin a workspace without Roots — the Agent writes it into .cursor/mcp.json and reloads. create_or_open_project fails closed if the Runtime is bound to a different project. The URL is local-only; open it in any browser, ideally this Agent host's embedded browser. All research source-of-truth changes go through Ikran tools.\n\n" +
       "ZERO FIGMA CONTACT: Ikran Runtime and Ikran MCP tools never fetch, oEmbed, probe, or otherwise contact Figma. Seed registration is a local format check only. Evidence (screenshots, view availability) is always Agent-supplied. Use the host's separate Figma MCP for any Figma read.\n\n" +
-      "SEED → EVIDENCE ORCHESTRATION (required): After register_seed_reference succeeds in a session where the designer just provided a Figma seed, do NOT stop. Immediately: (1) call the host Figma MCP get_screenshot with maxDimension: 4096 (never rely on the Figma MCP default of 1024 — that resolution is too soft for Workbench), then (2) call Ikran record_evidence_package with the screenshot (artifactPath and/or dataUrl) and explicit evidenceViews (rawData / screenshot each \"available\"|\"missing\"). The Workbench shows a loading Evidence Surface until a surface with a screenshot arrives — continue the flow so the designer is not left waiting."
+      "SEED → EVIDENCE ORCHESTRATION (required): Pending seed evidence work is created BOTH by Agent register_seed_reference AND by the designer using the Workbench EnterPanel / plus control (HTTP seed register). After register_seed_reference succeeds when the designer just provided a Figma seed, do NOT stop — fulfill immediately. ALSO: after open_workbench, and whenever helping with Workbench seed entry or awaiting-evidence loading, you MUST call list_pending_seed_evidence. For EACH pending item: (1) call the host Figma MCP get_screenshot with maxDimension: 4096 (never rely on the Figma MCP default of 1024 — that resolution is too soft for Workbench), then (2) call Ikran record_evidence_package with the screenshot (artifactPath and/or dataUrl) and explicit evidenceViews (rawData / screenshot each \"available\"|\"missing\"). The Workbench shows a loading Evidence Surface until a surface with a screenshot arrives — continue the flow so the designer is not left waiting."
   }
 );
 
@@ -715,6 +715,101 @@ mcp.registerTool(
   }
 );
 
+// list_pending_seed_evidence — discover seeds awaiting Agent evidence capture
+// (UI-initiated plus/EnterPanel path and Agent register_seed_reference). Proxies
+// to GET /api/pending-seed-evidence. Zero Figma contact; Agent fulfills each
+// pending item via host Figma get_screenshot @4096 then record_evidence_package.
+mcp.registerTool(
+  "list_pending_seed_evidence",
+  {
+    description:
+      "List active-project seed references that still need an Agent-declared Evidence Surface screenshot. Covers seeds registered via Agent register_seed_reference AND via the Workbench EnterPanel / plus UI. No arguments. Requires an active project — call create_or_open_project first. After open_workbench, and whenever helping with Workbench seed entry or awaiting-evidence loading, call this tool; for EACH pending item immediately: (1) host Figma MCP get_screenshot with maxDimension: 4096, then (2) record_evidence_package with the screenshot and explicit evidenceViews. Ikran never contacts Figma."
+  },
+  async () => {
+    try {
+      const rt = await ensureRuntime();
+      const res = await apiGet(rt.port, rt.token, "/api/pending-seed-evidence");
+      if (res.status === 404) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `list_pending_seed_evidence failed: the Runtime at ${rt.host}:${rt.port} returned HTTP 404 for /api/pending-seed-evidence — the running Runtime is STALE (built before this route existed). Fix ONE of: (a) npm run build, then restart the MCP host / Ikran Runtime so it serves the fresh build; or (b) run the MCP server in dev mode (drop --prod) so the route hot-reloads. Then retry.`
+            }
+          ],
+          structuredContent: {
+            ok: false,
+            error: "route_not_found",
+            detail: `HTTP 404 on /api/pending-seed-evidence (stale Runtime at ${rt.host}:${rt.port}; fix: npm run build + restart MCP host/runtime, or use dev mode)`,
+            route: "/api/pending-seed-evidence",
+            session: rt.token,
+            workbench_url: rt.url
+          }
+        };
+      }
+      if (res.status !== 200 || !res.body || !res.body.ok) {
+        const reason = (res.body && res.body.error) || `HTTP ${res.status}`;
+        return {
+          content: [
+            {
+              type: "text",
+              text: `list_pending_seed_evidence failed: ${reason}`
+            }
+          ],
+          structuredContent: {
+            ok: false,
+            error: (res.body && res.body.error) || "list_failed",
+            detail: reason,
+            session: rt.token,
+            workbench_url: rt.url
+          }
+        };
+      }
+      const records = Array.isArray(res.body.records) ? res.body.records : [];
+      const lines =
+        records.length === 0
+          ? ["No pending seed evidence."]
+          : [
+              `Pending seed evidence (${records.length}):`,
+              ...records.map((r, i) => {
+                const id = r && r.id != null ? String(r.id) : "(unknown id)";
+                const url =
+                  r && r.figma_seed_reference != null
+                    ? String(r.figma_seed_reference)
+                    : "(no url)";
+                const intent =
+                  r && r.original_design_intent != null
+                    ? String(r.original_design_intent)
+                    : "";
+                return `${i + 1}. ${id} — ${url}${intent ? `\n   Intent: ${intent}` : ""}`;
+              }),
+              "",
+              "Fulfill each pending item: host Figma MCP get_screenshot with maxDimension: 4096, then Ikran record_evidence_package with the screenshot and explicit evidenceViews."
+            ];
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+        structuredContent: {
+          ok: true,
+          records,
+          session: rt.token,
+          workbench_url: rt.url
+        }
+      };
+    } catch (err) {
+      return {
+        content: [
+          { type: "text", text: `list_pending_seed_evidence failed: ${err.message}` }
+        ],
+        structuredContent: {
+          ok: false,
+          error: "runtime_unavailable",
+          detail: err.message
+        }
+      };
+    }
+  }
+);
+
 // record_evidence_package — the Agent's Figma Evidence Surface write tool
 // (Issue 05). It validates a minimal evidence package and creates a Runtime-
 // owned `figma_evidence_surfaces` record by PROXYING to POST
@@ -857,7 +952,7 @@ const transport = new StdioServerTransport();
 mcp
   .connect(transport)
   .then(() => {
-    console.error(`[ikran-mcp] ready (open_workbench, create_or_open_project, register_seed_reference, record_evidence_package, list_working_folders, setup_workspace, host=${host}, prod=${prod})`);
+    console.error(`[ikran-mcp] ready (open_workbench, create_or_open_project, register_seed_reference, list_pending_seed_evidence, record_evidence_package, list_working_folders, setup_workspace, host=${host}, prod=${prod})`);
   })
   .catch((err) => {
     console.error(`[ikran-mcp] failed to connect transport: ${err.message}`);
