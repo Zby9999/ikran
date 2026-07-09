@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { EnterPanel, type EnterPanelState } from "./enter-panel";
 import { FolderChrome } from "./folder-chrome";
 import { useSeedReferences } from "./use-seed-references";
+import { useFigmaEvidenceSurfaces } from "./use-figma-evidence-surfaces";
 
 // tldraw touches the DOM during render, so the canvas shell is loaded with
 // `next/dynamic({ ssr: false })` to keep Next.js SSR happy.
@@ -67,6 +68,7 @@ export function SeedEvidenceWorkbench({
   const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { records, register } = useSeedReferences(session);
+  const { records: surfaces } = useFigmaEvidenceSurfaces(session);
 
   // EnterPanel overlay is the seed entry surface, shown only while there are
   // no Runtime records yet (first seed, or a fresh project). Once a record
@@ -206,7 +208,7 @@ export function SeedEvidenceWorkbench({
       />
 
       <div className="seed-workbench__canvas" data-testid="workbench-canvas">
-        <WorkbenchCanvas records={records} />
+        <WorkbenchCanvas records={records} surfaces={surfaces} />
       </div>
 
       {showEnterPanel ? (

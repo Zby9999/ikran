@@ -1,17 +1,25 @@
 "use client";
 
-// tldraw custom shape: a single seed-reference PROJECTION as a Figma Frame surface
-// (Figma 230:297). Visual only — never a source of truth.
+// tldraw custom shape: a single seed-reference / Evidence Surface PROJECTION as
+// a Figma Frame surface (Figma 230:297). Visual only — never a source of truth.
 //
-// Issue 02/04 boundary rule: a tldraw shape is ONLY a projection of a Runtime
-// `seed_references` record. It carries the Runtime record id in `meta` (and as
-// data-* attributes) so tests / UI can tie the canvas shape back to the semantic
-// record, but geometry (x/y/w/h) is local-only and never written back. On refresh
-// the shape is rebuilt from the record at a default position.
+// Issue 02/04 + 05 boundary: a tldraw shape is ONLY a projection of Runtime
+// records (`seed_references` and/or `figma_evidence_surfaces`). It carries
+// Runtime ids in `meta` (and as data-* attributes) so tests / UI can tie the
+// canvas shape back to the semantic record, but geometry (x/y/w/h) is local-only
+// and never written back. On refresh the shape is rebuilt from records at a
+// default position.
+//
+// Meta id convention (Issue 05):
+//   - Seed-only: kind = "seed_reference_projection", runtimeRecordId = seed.id
+//   - With Evidence Surface: kind = "figma_evidence_surface",
+//     runtimeRecordId = surface.id (stable for surface-linked tests),
+//     seedRecordId = seed.id when linked, surfaceRecordId = surface.id
 //
 // Visual (230:297): purple-bordered frame with header title + info tip
-// (227:130 Description). Media is a white placeholder until Issue 05 screenshots.
-// URL is stored in props but NOT shown on the card.
+// (227:130 Description). Media is a white placeholder until a surface supplies
+// `screenshotDataUrl`; artifact-path-only leaves a minimal empty state (no
+// Design-issue UI). URL is stored in props but NOT shown on the card.
 //
 // Default size: 380×520 — readable tall placeholder on the workbench canvas
 // (not the full Figma page aspect 695:1851, which would be ~380×1013).
@@ -42,15 +50,30 @@ declare module "@tldraw/tlschema" {
       originalDesignIntent: string;
       /** Source frame / node name when known; empty → title falls back to "Figma seed". */
       frameName: string;
+      /** Prefer data URL for <img src> in MVP (no artifact file server). */
+      screenshotDataUrl: string;
+      /**
+       * True when Runtime has screenshot_artifact_path but no dataUrl —
+       * media stays empty / minimal "screenshot on file" (no fancy UI).
+       */
+      hasScreenshotArtifact: boolean;
     };
   }
 }
 
 export type SeedReferenceProjectionMeta = {
   canvasRecordId: string;
+  /**
+   * Primary Runtime id for this projection.
+   * Seed-only → seed id; with Evidence Surface → surface id.
+   */
   runtimeRecordId: string;
-  /** Discriminator so a future reader can tell a projection from other shapes. */
-  kind: "seed_reference_projection";
+  /** Discriminator: seed-only vs upgraded / surface-only Evidence Surface. */
+  kind: "seed_reference_projection" | "figma_evidence_surface";
+  /** Seed id when linked (kept when runtimeRecordId is the surface id). */
+  seedRecordId?: string;
+  /** Surface id when an Evidence Surface is projected. */
+  surfaceRecordId?: string;
 };
 
 export interface SeedReferenceProjectionShape extends TLShape<"seed-reference-projection"> {
@@ -71,8 +94,16 @@ function SeedReferenceProjectionFrame({
 }: {
   shape: SeedReferenceProjectionShape;
 }) {
-  const { w, h, originalDesignIntent, frameName } = shape.props;
-  const { canvasRecordId, runtimeRecordId, kind } = shape.meta;
+  const {
+    w,
+    h,
+    originalDesignIntent,
+    frameName,
+    screenshotDataUrl,
+    hasScreenshotArtifact
+  } = shape.props;
+  const { canvasRecordId, runtimeRecordId, kind, seedRecordId, surfaceRecordId } =
+    shape.meta;
   const [tipOpen, setTipOpen] = useState(false);
   const editor = useEditor();
   const isSelected = useValue(
@@ -83,6 +114,8 @@ function SeedReferenceProjectionFrame({
 
   const title = frameName.trim() || FALLBACK_TITLE;
   const description = originalDesignIntent.trim() || FALLBACK_DESCRIPTION;
+  const dataUrl = screenshotDataUrl.trim();
+  const showArtifactEmpty = !dataUrl && hasScreenshotArtifact;
 
   const stopShapePointer = (event: SyntheticEvent) => {
     event.stopPropagation();
@@ -94,6 +127,8 @@ function SeedReferenceProjectionFrame({
       data-canvas-record-id={canvasRecordId}
       data-runtime-record-id={runtimeRecordId}
       data-kind={kind}
+      data-seed-record-id={seedRecordId ?? undefined}
+      data-surface-record-id={surfaceRecordId ?? undefined}
       data-selected={isSelected ? "true" : "false"}
       className={
         isSelected ? "seed-ref-frame seed-ref-frame--selected" : "seed-ref-frame"
@@ -160,8 +195,27 @@ function SeedReferenceProjectionFrame({
       <div
         className="seed-ref-frame__media"
         data-testid="seed-reference-projection-media"
-        aria-hidden="true"
-      />
+        data-has-screenshot={dataUrl ? "true" : "false"}
+        aria-hidden={dataUrl ? undefined : "true"}
+      >
+        {dataUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- data URL from Runtime; not a remote asset
+          <img
+            className="seed-ref-frame__media-img"
+            data-testid="seed-reference-projection-screenshot"
+            src={dataUrl}
+            alt=""
+            draggable={false}
+          />
+        ) : showArtifactEmpty ? (
+          <span
+            className="seed-ref-frame__media-empty"
+            data-testid="seed-reference-projection-screenshot-file"
+          >
+            screenshot on file
+          </span>
+        ) : null}
+      </div>
     </HTMLContainer>
   );
 }
@@ -174,7 +228,9 @@ export class SeedReferenceProjectionShapeUtil extends BaseBoxShapeUtil<SeedRefer
     h: T.number,
     figmaSeedReference: T.string,
     originalDesignIntent: T.string,
-    frameName: T.string
+    frameName: T.string,
+    screenshotDataUrl: T.string,
+    hasScreenshotArtifact: T.boolean
   };
 
   getDefaultProps(): SeedReferenceProjectionShape["props"] {
@@ -183,7 +239,9 @@ export class SeedReferenceProjectionShapeUtil extends BaseBoxShapeUtil<SeedRefer
       h: SEED_REFERENCE_PROJECTION_DEFAULT_H,
       figmaSeedReference: "",
       originalDesignIntent: "",
-      frameName: ""
+      frameName: "",
+      screenshotDataUrl: "",
+      hasScreenshotArtifact: false
     };
   }
 
