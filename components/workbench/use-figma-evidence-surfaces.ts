@@ -26,7 +26,7 @@ function surfaceSignature(records: FigmaEvidenceSurfaceRecord[]): string {
           r.seed_reference_id ?? "",
           r.figma_seed_reference,
           r.frame_name,
-          r.screenshot_data_url?.length ?? 0,
+          r.screenshot_data_url ?? "",
           r.screenshot_artifact_path ?? "",
           r.surface_bounds_json ?? "",
           r.frame_bounds_json ?? ""

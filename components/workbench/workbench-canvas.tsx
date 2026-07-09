@@ -290,8 +290,8 @@ function SeedProjectionSync({
           editor.updateShape<SeedReferenceProjectionShape>({
             id: shapeId,
             type: SEED_REFERENCE_PROJECTION_TYPE,
-            props: propsChanged ? nextProps : undefined,
-            meta: metaChanged ? target.meta : undefined
+            ...(propsChanged ? { props: nextProps } : {}),
+            ...(metaChanged ? { meta: target.meta } : {})
           });
         }
         return;
