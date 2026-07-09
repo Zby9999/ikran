@@ -13,17 +13,19 @@
 ## Acceptance criteria
 
 - [x] Runtime 不再调用 Figma oEmbed/API 做 seed validation。（由 Issue 02/04A 删除 `/api/figma/validate` 完成；本 issue 不再重复退役。）
-- [ ] `record_evidence_package` 接收 Agent host 返回的 structured evidence package。
-- [ ] Runtime 校验 evidence package schema，失败时记录 invalid-output 事件。
-- [ ] 校验通过后创建 Figma Evidence Surface canvas record。
-- [ ] Workbench 在 tldraw 中投影 Figma Evidence Surface。
-- [ ] 测试覆盖 valid package、invalid package、Runtime 不触网访问 Figma。
+- [x] `record_evidence_package` 接收 Agent host 返回的 structured evidence package。（HTTP `POST /api/evidence-package` + MCP tool；自动化已覆盖，Real Agent 见下方。）
+- [x] Runtime 校验 evidence package schema，失败时记录 invalid-output 事件。
+- [x] 校验通过后创建 Figma Evidence Surface canvas record。
+- [x] Workbench 在 tldraw 中投影 Figma Evidence Surface。（MVP 截图预览依赖 `dataUrl`；见 `docs/manual-agent-smoke-issue05.md` open gaps。）
+- [x] 测试覆盖 valid package、invalid package、Runtime 不触网访问 Figma。
 
 ## Real Agent validation
 
 - [ ] 使用真实 Agent host + 已配置 Figma MCP + 真实 Figma seed page 生成最小 evidence package。
 - [ ] Agent 通过 Ikran tool 声明 package，Runtime 创建 Figma Evidence Surface。
 - [ ] 如果 Figma MCP 不可用、权限不足或截图/结构化证据缺失，必须记录 open gap 和缺失 evidence view。
+
+> Real Agent 步骤与失败分类：`docs/manual-agent-smoke-issue05.md`（本会话未跑真实 Figma MCP，故上方三项保持未勾选）。
 
 ## Likely difficulties for Agent
 
