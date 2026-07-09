@@ -16,7 +16,7 @@
 - [x] `record_evidence_package` 接收 Agent host 返回的 structured evidence package。（HTTP `POST /api/evidence-package` + MCP tool；自动化已覆盖，Real Agent 见下方。）
 - [x] Runtime 校验 evidence package schema，失败时记录 invalid-output 事件。
 - [x] 校验通过后创建 Figma Evidence Surface canvas record。
-- [x] Workbench 在 tldraw 中投影 Figma Evidence Surface。（MVP 截图预览依赖 `dataUrl`；见 `docs/manual-agent-smoke-issue05.md` open gaps。）
+- [x] Workbench 在 tldraw 中投影 Figma Evidence Surface。（截图可用 `dataUrl` 或项目内 `artifactPath`；seed 无截图时显示 awaiting-evidence loading。见 `docs/manual-agent-smoke-issue05.md`。）
 - [x] 测试覆盖 valid package、invalid package、Runtime 不触网访问 Figma。
 
 ## Real Agent validation
@@ -32,12 +32,14 @@
 - 真实 Figma MCP 可能只返回 raw data 或 screenshot 中的一种 evidence view。
 - Agent 可能把截图转代码当作主要输入，而不是 structured evidence。
 - Evidence package schema 太严格会让真实 Agent 难以一次成功，太宽又会污染后续 design-system extraction。
+- Agent 可能在 `register_seed_reference` 后停止，未继续 Figma `get_screenshot`（4096）+ `record_evidence_package`，导致 Workbench 一直 awaiting-evidence。
 
 ## Suggested ways through
 
 - 采用最小 evidence package：seed reference、frame/node identity、raw evidence availability、screenshot availability、surface bounds、关键 design signals。
 - 缺失 evidence view 用 explicit missing 标记，不让 Agent 猜。
-- 在 smoke 记录中区分 blocked by Figma access、blocked by schema、blocked by host MCP tool discovery。
+- 在 smoke 记录中区分 blocked by Figma access、blocked by schema、blocked by host MCP tool discovery、blocked by Agent orchestration。
+- **UX 编排（产品约定，Ikran MCP）：** `register_seed_reference` 成功后，同一会话内 Agent 必须立刻用 host Figma MCP `get_screenshot`（**`maxDimension: 4096`**，非 Figma 默认 1024）再调用 `record_evidence_package`。Workbench 在截图 surface 到达前显示 awaiting-evidence loading。约定写在 `bin/ikran-mcp.mjs` instructions / tool descriptions，**不**写在 `workflow/` Skills（见 `AGENTS.md`）。
 
 ## Blocked by
 

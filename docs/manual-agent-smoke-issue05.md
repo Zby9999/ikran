@@ -10,12 +10,25 @@
 
 Mock / Playwright 只能证明 schema、MCP 代理与 UI 投影路径；**不能**代替本文件的 Real Agent 步骤。
 
+## Product conventions（Ikran MCP，非 workflow Skills）
+
+这些约定写在 **Ikran MCP**（`bin/ikran-mcp.mjs` 的 server `instructions` 与相关 tool descriptions）里，由 Agent 在同一会话中遵守。它们**不是** Figma 插件默认值，也**不**编码在 `workflow/` Skills 中（见 `AGENTS.md` → Workflow vs Ikran MCP）。
+
+1. **截图清晰度：`maxDimension: 4096`**  
+   Agent 调用 host Figma MCP `get_screenshot` 时必须传 **`maxDimension: 4096`**（产品默认约定）。Figma MCP 自身默认常为 `1024`，大 frame 会被压糊；Workbench 按截图像素投影，长边显示上限同为 4096。不要依赖插件默认。
+
+2. **Seed → evidence 同会话编排**  
+   `register_seed_reference` 成功后**不是终点**。同一会话内 Agent 必须立刻：Figma MCP `get_screenshot`（4096）→ Ikran `record_evidence_package`（带 screenshot payload + 显式 `evidenceViews`）。
+
+3. **Workbench awaiting-evidence**  
+   Seed 已注册、尚无带截图的 Evidence Surface 时，Workbench 投影显示 **awaiting-evidence loading**；`record_evidence_package` 写入截图后，loading 结束并显示图像。
+
 ## 0. 前置条件
 
 1. **Ikran Runtime 与 MCP 对齐**
    - `--prod`：先 `npm run build`，再重启 MCP host + Runtime（否则新 route 会 `route_not_found`）。
    - dev：MCP 配置去掉 `--prod`；仍须 **reload MCP servers**，让 `bin/ikran-mcp.mjs` 注册
-     `record_evidence_package`。
+     `record_evidence_package`（并加载上述 instructions）。
 2. **MCP host 同时配置 Ikran + Figma MCP**（Cursor / Codex 等）。Figma MCP 负责读真实 seed page；
    Ikran 只收声明。
 3. **`IKRAN_STATE_DIR` 与 UI 一致**（推荐项目级 `.ikran`，与 `setup_workspace` / Issue 02 一致）。
@@ -25,14 +38,18 @@ Mock / Playwright 只能证明 schema、MCP 代理与 UI 投影路径；**不能
 
 ## 1. 冒烟步骤
 
-### 1a. Agent 用 Figma MCP 读真实 seed page
+### 1a. 同会话：seed 注册后继续截图 + 声明
 
-对已注册的 Figma seed URL，让 Agent 通过 **Figma MCP**（非 Ikran）拉取至少一种证据：
+对设计师刚提供的 Figma seed，在**同一 Agent 会话**中：
 
-- raw / 节点结构（frame `nodeId` + `name`，可选 bounds）
-- 和/或 screenshot
+1. `register_seed_reference`（成功后不要停）。
+2. 立刻用 **Figma MCP**（非 Ikran）`get_screenshot`，**必须** `maxDimension: 4096`。
+3. 可选：再取 raw / 节点结构（frame `nodeId` + `name`，可选 bounds）。
+4. 立刻调用 Ikran `record_evidence_package`。
 
-若只有一种可用：在 package 里对另一种标 `"missing"`，**不要猜、不要编造截图**。
+若只有一种 evidence view 可用：在 package 里对另一种标 `"missing"`，**不要猜、不要编造截图**。
+
+需要时再对照截图响应里的 `original_width` / `original_height` 决定是否重取。
 
 ### 1b. 组装最小 evidence package
 
@@ -50,7 +67,7 @@ Mock / Playwright 只能证明 schema、MCP 代理与 UI 投影路径；**不能
 
 - `evidenceViews.rawData` / `screenshot` 必须是 `"available"` | `"missing"`。
 - `screenshot === "available"` 时必须带 `screenshot.artifactPath` 和/或 `dataUrl`；`missing` 时不要带 payload。
-- **Workbench 要显示截图**：MVP 请用 `dataUrl`（见下方 open gaps）。仅 `artifactPath` 会落盘，但 UI 暂不 file-serve。
+- **Workbench 截图**：`dataUrl` 或项目内 `artifactPath` 均可；后者由 Runtime 经 `GET /api/artifacts/...?session=` 提供（需与 Workbench 同一 session）。
 
 ### 1c. 调用 `record_evidence_package`
 
@@ -61,8 +78,10 @@ Mock / Playwright 只能证明 schema、MCP 代理与 UI 投影路径；**不能
 
 ### 1d. Workbench 核对
 
-打开返回的 `workbench_url`：tldraw 上应出现 / 更新 Figma Evidence Surface 投影（frame 名；有
-`dataUrl` 时应看到截图）。可截屏留证。
+打开返回的 `workbench_url`（或 seed 注册后已打开的 Workbench）：
+
+1. **在 evidence 到达前**：投影应显示 **awaiting-evidence loading**（seed 已在、尚无截图 surface）。
+2. **`record_evidence_package` 成功后**：loading 结束，tldraw 上出现 / 更新 Figma Evidence Surface，并显示截图（`dataUrl` 或 artifact URL）。可截屏留证。
 
 ### 1e. 落盘抽查（绑定项目的 `.ikran/`）
 
@@ -80,14 +99,18 @@ node --input-type=module -e "import{DatabaseSync}from'node:sqlite';const db=new 
 | `blocked by schema` | package 被拒（缺 frame、screenshot available 无 payload、URL 非法、dataUrl 过大等）→ `invalid_output`、无 surface |
 | `blocked by host MCP tool discovery` | host 不暴露 `record_evidence_package`（或只暴露部分 Ikran tools） |
 | `blocked by IKRAN_STATE_DIR mismatch` | tool 写成功但 UI / 另一进程看不到同一 `.ikran` 状态 |
+| `blocked by Agent orchestration` | seed 注册成功但 Agent 未继续 4096 截图 / `record_evidence_package`，Workbench 一直 loading |
 
 缺失 evidence view：在 package 里标 `"missing"`，并在冒烟日志写清是 access 还是 Agent 未取到。
 
 ## 3. Open gaps（实现侧已知）
 
-- **`artifactPath` 未在 UI file-serve**：Workbench 投影截图依赖 `screenshot_data_url`；仅 path 时 shape 可提示「有 artifact 无预览」。
-- **Real Agent 未进 CI**：Playwright 覆盖 MCP valid / invalid / 零 Figma 触网；真实 Figma MCP 仍靠本手册。
+- **Real Agent 未进 CI**：Playwright 覆盖 MCP valid / invalid / 零 Figma 触网、awaiting-evidence → screenshot；真实 Figma MCP 仍靠本手册。
 - Figma MCP 可能只返回 raw 或 screenshot 之一——用 explicit missing，勿猜。
+- Workbench 可通过 `GET /api/artifacts/<path>?session=…` 加载 `artifactPath` 截图（与 `dataUrl` 二选一即可）。
+- **截图像素 vs 设计尺寸**：投影按截图 natural 像素 sizing（+ chrome），不按 `surface_bounds` 设计单位放大。
+  取图时必须用 `get_screenshot` 的 `maxDimension: 4096`（产品约定；Figma 默认 1024 会明显偏糊）；Workbench 长边显示上限同为 4096。
+- **约定归属**：seed→evidence 编排与 4096 约定在 Ikran MCP（`bin/ikran-mcp.mjs`），不在 `workflow/` Skills。
 
 ## 4. 冒烟日志模板
 
@@ -103,10 +126,11 @@ MCP： [ ] --prod（build + 重启）  [ ] dev（reload MCP）
   - IKRAN_STATE_DIR 与 UI 一致？ [ ] 是  [ ] 否 → blocked by IKRAN_STATE_DIR mismatch
 
 Real Agent：
-  - Figma MCP 读到真实 seed page？ [ ] 是  [ ] 否（gap：____）
+  - 同会话：seed 后继续 get_screenshot(maxDimension:4096)？ [ ] 是  [ ] 否 → blocked by Agent orchestration
+  - Figma MCP 读到真实 seed page / 截图？ [ ] 是  [ ] 否（gap：____）
   - evidenceViews 显式 available/missing？ [ ] 是
   - record_evidence_package ok + surface？ [ ] 是  [ ] 否（error：____ → schema?）
-  - Workbench 投影可见（有 dataUrl 则见图）？ [ ] 是  [ ] 否
+  - Workbench：先 awaiting-evidence loading，后显示截图？ [ ] 是  [ ] 否
   - 落盘：evidence_package_recorded + figma_evidence_surfaces 行？ [ ] 是
 
 备注 / open gaps：
@@ -115,5 +139,6 @@ Real Agent：
 ## 5. 实现侧已完成的自动化验证（非 Real Agent）
 
 - `record_evidence_package` HTTP + MCP；schema 失败 → `invalid_output`、无半写 surface。
-- Workbench 轮询 `/api/evidence-package` 并投影（`dataUrl` 可显示截图）。
+- Workbench 轮询 `/api/evidence-package` 并投影（`dataUrl` / artifact URL 可显示截图）。
+- Seed 无截图 surface 时投影 awaiting-evidence loading；evidence 到达后显示截图（`tests/seed-evidence-workbench.spec.ts`）。
 - `tests/evidence-package-unit.spec.ts`、`tests/evidence-package-mcp.spec.ts`：valid / invalid / Runtime 不触网 Figma。

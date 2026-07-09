@@ -22,3 +22,11 @@ For new primitives, use the shadcn CLI and keep custom variants in the shadcn co
 - `npm run check` — typecheck + e2e
 
 Product and architecture details are in `IKRAN-MVP-PRD.zh-CN.md` and `issues/`.
+
+## Workflow vs Ikran MCP
+
+`workflow/` Skills are **project guidance and background only**. They are **not** part of the Ikran MCP server, are **not** packaged into MCP, and are **not** the place to encode Ikran product behavior (tool orchestration, evidence declaration, Workbench flows).
+
+- Do **not** edit files under `workflow/` for Ikran Runtime / MCP / Workbench work.
+- Ikran Agent conventions belong in Ikran surfaces (e.g. MCP `instructions`, tool descriptions, `AGENTS.md`, `Issues 02/`, product docs) — not in `workflow/` Skills.
+- `workflow/` Skills may still inform design-agent methodology for this repository; treat them as foundation context for the project, not as Ikran MCP configuration.
