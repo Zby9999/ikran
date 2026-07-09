@@ -9,9 +9,8 @@
 // check on the Figma URL. It does NOT access Figma, does NOT fetch / oEmbed /
 // probe the link, and does NOT verify the file actually exists online. The
 // ORIGINAL URL is stored verbatim (never rewritten/normalized), per the
-// Issue 02/03 decision. The heavier Figma contact surface (oembed probe) lives
-// in the legacy `app/api/figma/validate` path, which is intentionally NOT
-// touched or cleaned up here.
+// Issue 02/03 decision. Real Figma evidence ingestion is Agent-host-side
+// (Issue 02/05 `record_evidence_package`); Runtime stays zero-Figma-contact.
 //
 // On validation failure the handler returns a structured error and writes NO
 // record and NO event (no half-written state).

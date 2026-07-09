@@ -16,9 +16,9 @@ const WorkbenchCanvas = dynamic(
   { ssr: false }
 );
 
-// Issue 02/04 — tldraw Workbench shell.
+// Issue 02/04 + 02/04A — tldraw Workbench shell.
 //
-// New seed entry path (replaces the React Flow + `seed_evidence_import` path):
+// Seed entry path:
 //
 //   EnterPanel -> POST /api/seed-reference -> seed_references record
 //               -> tldraw projection
@@ -31,11 +31,6 @@ const WorkbenchCanvas = dynamic(
 // written by a real Agent via the `register_seed_reference` MCP tool and picked
 // up by the hook's light polling), the overlay is dismissed and the canvas
 // shows the projections.
-//
-// This path does NOT call `/api/tasks`, does NOT run `seed_evidence_import`,
-// does NOT call `/api/figma/validate`, and does NOT touch the legacy mock
-// adapter seed evidence package or the React Flow evidence surface node. Those
-// are left in place for Issue 02/04A to retire.
 
 // Local-only Figma URL format hint. This mirrors the Runtime's
 // `validateSeedReferenceInput` URL rules (https, figma.com / www.figma.com,

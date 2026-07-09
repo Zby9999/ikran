@@ -11,11 +11,6 @@
   text-rendering: optimizeLegibility;
 }
 
-.seed-workbench__flow {
-  width: 100%;
-  height: 100vh;
-}
-
 /* tldraw canvas 底座 (Issue 02/04). The <Tldraw> component fills this container,
    so it must have an explicit height. */
 .seed-workbench__canvas {
@@ -27,10 +22,6 @@
 }
 
 .seed-workbench__canvas .tl-container {
-  background: #dcdcdc;
-}
-
-.seed-workbench__flow .react-flow__background {
   background: #dcdcdc;
 }
 
@@ -456,76 +447,4 @@
 .enter-panel__reveal--open .enter-panel__reveal-inner {
   opacity: 1;
   transform: translateY(0);
-}
-
-.figma-evidence-surface {
-  width: 420px;
-  border-radius: 16px;
-  border: 1px solid #c7c7c7;
-  background: #f5f5f5;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
-  overflow: hidden;
-  color: var(--text);
-}
-
-.figma-evidence-surface__media {
-  height: 180px;
-  background: linear-gradient(180deg, #e8e8e8 0%, #d2d2d2 100%);
-  display: grid;
-  place-items: center;
-}
-
-.figma-evidence-surface__frame-label {
-  padding: 4px 8px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.8);
-  font-size: 11px;
-  letter-spacing: -0.33px;
-}
-
-.figma-evidence-surface__body {
-  padding: 16px;
-}
-
-.figma-evidence-surface__eyebrow {
-  margin: 0 0 4px;
-  font-size: 10px;
-  letter-spacing: -0.3px;
-  color: var(--muted);
-  text-transform: uppercase;
-}
-
-.figma-evidence-surface__body h2 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.42px;
-}
-
-.figma-evidence-surface__body p {
-  margin: 0 0 12px;
-  font-size: 12px;
-  line-height: 1.4;
-  letter-spacing: -0.36px;
-}
-
-.figma-evidence-surface__body dl {
-  margin: 0;
-  display: grid;
-  gap: 8px;
-}
-
-.figma-evidence-surface__body dt {
-  font-size: 10px;
-  letter-spacing: -0.3px;
-  color: var(--muted);
-  text-transform: uppercase;
-}
-
-.figma-evidence-surface__body dd {
-  margin: 2px 0 0;
-  font-size: 11px;
-  line-height: 1.35;
-  letter-spacing: -0.33px;
-  word-break: break-word;
 }

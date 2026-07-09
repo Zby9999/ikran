@@ -8,23 +8,23 @@
 
 ## User stories covered
 
-- 5, 6, 9, 54, 55
+- 5, 6, 54, 55
 
 ## Acceptance criteria
 
-- [ ] Workbench 不再 import 或渲染 React Flow seed evidence surface。
-- [ ] `useSeedEvidenceTask` / `seed_evidence_import` 不再被 Workbench seed entry 调用。
-- [ ] 旧 React Flow seed entry 测试已删除或迁移为 tldraw + `seed_references` 测试。
-- [ ] 旧 mock seed evidence package 代码没有被新版 seed entry 路径引用。
-- [ ] Runtime source-of-truth 仍是 `seed_references` 专用表和语义事件。
-- [ ] 删除清理不会影响 `register_seed_reference`、project/session binding、Workbench URL/session。
-- [ ] 如果 `/api/figma/validate` 仍保留给 05 之前的兼容/排查，必须明确标注为 legacy unused by Workbench；如果删除，则 05 中对应退役验收同步调整。
+- [x] Workbench 不再 import 或渲染 React Flow seed evidence surface。
+- [x] `useSeedEvidenceTask` / `seed_evidence_import` 不再被 Workbench seed entry 调用。
+- [x] 旧 React Flow seed entry 测试已删除或迁移为 tldraw + `seed_references` 测试。
+- [x] 旧 mock seed evidence package 代码没有被新版 seed entry 路径引用。
+- [x] Runtime source-of-truth 仍是 `seed_references` 专用表和语义事件。
+- [x] 删除清理不会影响 `register_seed_reference`、project/session binding、Workbench URL/session。
+- [x] `/api/figma/validate` 已删除（与 Issue 05「Runtime 不再调用 Figma oEmbed」对齐，避免重复退役）。
 
 ## Real Agent validation
 
-- [ ] 真实 Agent 调用 `register_seed_reference` 登记一个真实 Figma link。
-- [ ] Workbench 只通过 tldraw projection 显示 seed reference，不触发旧 `seed_evidence_import`。
-- [ ] Agent 不需要直接操作画布，也不需要调用旧 task family。
+- [x] 真实 Agent 调用 `register_seed_reference` 登记一个真实 Figma link。（在 Issue 02/04 签收时已完成；本 slice 未改写路径。）
+- [x] Workbench 只通过 tldraw projection 显示 seed reference，不触发旧 `seed_evidence_import`。
+- [x] Agent 不需要直接操作画布，也不需要调用旧 task family。
 
 ## Likely difficulties for Agent
 
@@ -45,3 +45,28 @@
 
 - `03-semantic-mcp-tool-boundary-mock-client.md`
 - `04-tldraw-workbench-shell-seed-entry.md`
+
+---
+
+## 实现技术报告（Issue 02/04A 完成）
+
+**结论：Issue 02/04A 完成。** 旧 React Flow seed entry 链路已退役；Workbench 只保留 tldraw + `seed_references` 路径。未实现 `record_evidence_package` / Evidence Surface（留给 05）。
+
+### 删除
+
+| 项 | 说明 |
+|---|---|
+| `figma-evidence-surface-node.tsx` / `use-seed-evidence-task.ts` | 孤儿 React Flow UI |
+| `@xyflow/react` + layout CSS import | 画布依赖 |
+| `app/api/figma/validate` + `figma-reference.ts` | Runtime oEmbed 验真 |
+| `seed_evidence_import` family / mock 分支 / seed-evidence-types | 旧 task 入口 |
+| `dev-real-seed` / real-seed wrapper / agent-profiles / real-agent-smoke seed recorder | 旧 CLI seed smoke |
+| `tests/real-agent-seed-evidence-smoke-record.spec.ts` | 旧 smoke 测试 |
+
+### 保留（给后续 issue）
+
+通用 `/api/tasks`、task-runner、mock/cli adapter（非 seed family）、`seed_references` + `register_seed_reference`、tldraw Workbench shell。
+
+### Issue 05 同步
+
+`/api/figma/validate` 已在本 slice 删除；05 的「Runtime 不再调用 Figma oEmbed」验收项记为已由 04A 完成。

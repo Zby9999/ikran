@@ -6,11 +6,9 @@
 //
 //   EnterPanel -> POST /api/seed-reference -> seed_references record -> tldraw projection
 //
-// It is the replacement for `useSeedEvidenceTask` on the new path. It does NOT
-// call `/api/tasks`, does NOT run `seed_evidence_import`, does NOT touch the
-// legacy mock adapter seed evidence package, and does NOT call
-// `/api/figma/validate`. Those legacy surfaces are intentionally left in place
-// for Issue 02/04A to retire.
+// Browser UI <-> Runtime boundary for seed entry. It does NOT call `/api/tasks`
+// and does NOT touch Figma network validation — Runtime owns local format
+// checks on POST /api/seed-reference.
 //
 // Responsibilities:
 //   - load records: GET /api/seed-reference (authoritative read of the Runtime

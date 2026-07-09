@@ -9,9 +9,6 @@
 // (x/y/w/h) is local-only and never written back to the Runtime. On a page
 // refresh the shape is rebuilt from the record at a default position.
 //
-// This is the replacement rendering surface for the legacy React Flow
-// `figma-evidence-surface-node`. That node is left in place for Issue 02/04A.
-//
 // Custom-shape typing follows tldraw's documented pattern: augment
 // `TLGlobalShapePropsMap` so the shape type is part of the `TLShape` union, then
 // `BaseBoxShapeUtil` can take the concrete shape type. See the doc comment on

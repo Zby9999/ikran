@@ -171,12 +171,13 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
     const token = await captureToken(page, runtime.baseURL);
     await bindFolder(token, folder, runtime.port);
 
-    // Track every /api/tasks request so we can prove the new path never uses
-    // the legacy task runner.
+    // Track legacy endpoints so we can prove the new path never uses them.
     const tasksRequests: string[] = [];
+    const figmaValidateRequests: string[] = [];
     page.on("request", (req) => {
       const url = req.url();
       if (url.includes("/api/tasks")) tasksRequests.push(url);
+      if (url.includes("/api/figma/validate")) figmaValidateRequests.push(url);
     });
 
     await page.reload();
@@ -242,10 +243,11 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
     const types = readEvents(folder).map((e) => e.type);
     expect(types).toContain("seed_reference_registered");
 
-    // The legacy seed_evidence_import path was NOT used.
+    // The legacy seed_evidence_import / figma validate paths were NOT used.
     expect(types).not.toContain("seed_evidence_import_started");
     expect(types).not.toContain("figma_evidence_package_returned");
     expect(tasksRequests).toEqual([]);
+    expect(figmaValidateRequests).toEqual([]);
 
     // With a record present, the EnterPanel entry overlay is dismissed.
     await expect(workbench).toHaveAttribute("data-enter-masked", "false");
@@ -440,9 +442,9 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + seed entry", () =>
       .getByTestId("original-design-intent-input")
       .fill("intent for validation failure test");
 
-    // The new path does NOT call /api/figma/validate; the Runtime is the
-    // authority at POST time. Mock POST /api/seed-reference to return a
-    // structured validation error (only POST; let GET polling pass through).
+    // Runtime is the authority at POST time (no /api/figma/validate). Mock
+    // POST /api/seed-reference to return a structured validation error (only
+    // POST; let GET polling pass through).
     await page.route("**/api/seed-reference", async (route) => {
       if (route.request().method() === "POST") {
         await route.fulfill({

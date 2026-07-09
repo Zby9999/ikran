@@ -122,14 +122,7 @@ export const test = base.extend<
             ...process.env,
             ...runtimeEnv,
             IKRAN_STATE_DIR: stateDir,
-            IKRAN_NEXT_DIST_DIR: SHARED_BUILD_DIR,
-            // Default: run the figma oembed probe OFFLINE in e2e (deterministic;
-            // no figma.com dependency - see app/api/figma/validate/route.ts). Set
-            // IKRAN_FIGMA_OEMBED_MOCK=0 in the shell to force the real network
-            // probe for a dedicated network test.
-            ...(process.env.IKRAN_FIGMA_OEMBED_MOCK === undefined
-              ? { IKRAN_FIGMA_OEMBED_MOCK: "1" }
-              : {})
+            IKRAN_NEXT_DIST_DIR: SHARED_BUILD_DIR
           },
           stdio: ["ignore", "pipe", "pipe"],
           cwd: process.cwd(),

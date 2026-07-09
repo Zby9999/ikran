@@ -2,7 +2,7 @@
 
 ## What to build
 
-退役 Runtime Figma validate/oEmbed 路径，改为 Agent host 使用自己的 Figma MCP 摄取 seed evidence，然后通过 `record_evidence_package` 声明给 Runtime。Runtime 只保存 seed reference、校验 evidence package schema、创建 Figma Evidence Surface record，并广播给 Workbench。
+退役 Runtime 侧遗留 Figma validate/oEmbed 路径已在 Issue 02/04A 完成。本 issue 改为：Agent host 使用自己的 Figma MCP 摄取 seed evidence，然后通过 `record_evidence_package` 声明给 Runtime。Runtime 只保存 seed reference、校验 evidence package schema、创建 Figma Evidence Surface record，并广播给 Workbench。
 
 这个 slice 必须用真实 Figma seed page 做一次 Agent host 验证；mock 只能证明 schema 和 UI 路径，不允许掩盖真实接入失败。
 
@@ -12,7 +12,7 @@
 
 ## Acceptance criteria
 
-- [ ] Runtime 不再调用 Figma oEmbed/API 做 seed validation。
+- [x] Runtime 不再调用 Figma oEmbed/API 做 seed validation。（由 Issue 02/04A 删除 `/api/figma/validate` 完成；本 issue 不再重复退役。）
 - [ ] `record_evidence_package` 接收 Agent host 返回的 structured evidence package。
 - [ ] Runtime 校验 evidence package schema，失败时记录 invalid-output 事件。
 - [ ] 校验通过后创建 Figma Evidence Surface canvas record。
