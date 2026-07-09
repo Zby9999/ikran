@@ -25,8 +25,8 @@
 // user folder). `list_working_folders` surfaces the discovery. `setup_workspace`
 // returns the per-project MCP config snippet (cwd + IKRAN_STATE_DIR) for the
 // Agent to write into .cursor/mcp.json — a universal, non-Roots bootstrap. The
-// rest of the semantic MCP tool boundary (register_seed_reference, record_evidence_package,
-// …) is Issue 02/03 — do NOT add it here.
+// Semantic MCP tools (register_seed_reference, record_evidence_package, …)
+// proxy to the same HTTP routes the Workbench uses.
 //
 // CRITICAL — stdout discipline: MCP stdio uses stdout as the JSON-RPC channel.
 // This server MUST NEVER write to stdout except via the transport. All logging
@@ -271,7 +271,7 @@ const mcp = new McpServer(
   { name: "ikran", version: "0.1.0" },
   {
     instructions:
-      "Ikran local research workbench. open_workbench starts (or reuses) the local HTTP Workbench and returns a localhost URL with a startup-level session token. create_or_open_project binds or opens the project/session (initializing `.ikran/`); with no `path` it discovers the working folder from the MCP client's workspace Roots (or IKRAN_CWD env). list_working_folders shows which folder was discovered. setup_workspace returns the per-project MCP config snippet (cwd + IKRAN_STATE_DIR) to pin a workspace without Roots — the Agent writes it into .cursor/mcp.json and reloads. register_seed_reference records a Figma seed URL + the designer's original design intent as Runtime-owned research source-of-truth (it does NOT access Figma — local format check only). create_or_open_project fails closed if the Runtime is bound to a different project. The URL is local-only; open it in any browser, ideally this Agent host's embedded browser. All research source-of-truth changes go through Ikran tools."
+      "Ikran local research workbench. open_workbench starts (or reuses) the local HTTP Workbench and returns a localhost URL with a startup-level session token. create_or_open_project binds or opens the project/session (initializing `.ikran/`); with no `path` it discovers the working folder from the MCP client's workspace Roots (or IKRAN_CWD env). list_working_folders shows which folder was discovered. setup_workspace returns the per-project MCP config snippet (cwd + IKRAN_STATE_DIR) to pin a workspace without Roots — the Agent writes it into .cursor/mcp.json and reloads. register_seed_reference records a Figma seed URL + the designer's original design intent as Runtime-owned research source-of-truth (it does NOT access Figma — local format check only). record_evidence_package declares a minimal Figma evidence package (frame + evidenceViews + optional screenshot) and creates a Figma Evidence Surface record (it does NOT access Figma — Agent-supplied evidence only). create_or_open_project fails closed if the Runtime is bound to a different project. The URL is local-only; open it in any browser, ideally this Agent host's embedded browser. All research source-of-truth changes go through Ikran tools."
   }
 );
 
@@ -713,11 +713,149 @@ mcp.registerTool(
   }
 );
 
+// record_evidence_package — the Agent's Figma Evidence Surface write tool
+// (Issue 05). It validates a minimal evidence package and creates a Runtime-
+// owned `figma_evidence_surfaces` record by PROXYING to POST
+// /api/evidence-package (the SAME route the Web UI / Workbench would use). It
+// does NOT access Figma — evidence (screenshot path / data URL, view
+// availability markers) is Agent-supplied. On validation failure the HTTP
+// route returns a structured error and writes NO surface row.
+mcp.registerTool(
+  "record_evidence_package",
+  {
+    description:
+      "Record a minimal Figma evidence package for the active Ikran project and create a Figma Evidence Surface. SEMANTIC BOUNDARY: this validates the package schema and inserts a Runtime-owned surface record (source-of-truth). It does NOT access Figma, does NOT fetch / oEmbed / probe the link — evidence views and screenshots are Agent-supplied. Pass { figmaSeedReference and/or seedReferenceId, frame: { nodeId, name, bounds? }, evidenceViews: { rawData, screenshot } each \"available\"|\"missing\", screenshot?: { artifactPath?, dataUrl? }, designSignals?, surfaceBounds? }. Requires an active project — call create_or_open_project first. On validation failure returns a structured error and writes NO surface row (no half-written state). All research source-of-truth changes go through Ikran tools.",
+    inputSchema: {
+      figmaSeedReference: z.string().optional(),
+      seedReferenceId: z.string().optional(),
+      frame: z.object({
+        nodeId: z.string(),
+        name: z.string(),
+        bounds: z
+          .object({
+            x: z.number(),
+            y: z.number(),
+            width: z.number(),
+            height: z.number()
+          })
+          .optional()
+      }),
+      evidenceViews: z.object({
+        rawData: z.string(),
+        screenshot: z.string()
+      }),
+      screenshot: z
+        .object({
+          artifactPath: z.string().optional(),
+          dataUrl: z.string().optional()
+        })
+        .optional(),
+      designSignals: z
+        .array(
+          z.object({
+            id: z.string(),
+            label: z.string(),
+            evidence: z.string()
+          })
+        )
+        .optional(),
+      surfaceBounds: z
+        .object({
+          width: z.number(),
+          height: z.number()
+        })
+        .optional()
+    }
+  },
+  async (args) => {
+    try {
+      const rt = await ensureRuntime();
+      const res = await apiPost(rt.port, rt.token, "/api/evidence-package", {
+        figmaSeedReference: args.figmaSeedReference,
+        seedReferenceId: args.seedReferenceId,
+        frame: args.frame,
+        evidenceViews: args.evidenceViews,
+        screenshot: args.screenshot,
+        designSignals: args.designSignals,
+        surfaceBounds: args.surfaceBounds
+      });
+      // 404 means the Runtime serving this MCP server does NOT know the
+      // /api/evidence-package route — i.e. it is a STALE build/runtime spawned
+      // before this tool existed (the most likely real-Agent failure). Surface
+      // a diagnosable error instead of a generic failure so the user knows to
+      // rebuild + restart the MCP host / Runtime.
+      if (res.status === 404) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `record_evidence_package failed: the Runtime at ${rt.host}:${rt.port} returned HTTP 404 for /api/evidence-package — the running Runtime is STALE (built before this route existed). Fix ONE of: (a) npm run build, then restart the MCP host / Ikran Runtime so it serves the fresh build; or (b) run the MCP server in dev mode (drop --prod) so the route hot-reloads. Then retry.`
+            }
+          ],
+          structuredContent: {
+            ok: false,
+            error: "route_not_found",
+            detail: `HTTP 404 on /api/evidence-package (stale Runtime at ${rt.host}:${rt.port}; fix: npm run build + restart MCP host/runtime, or use dev mode)`,
+            route: "/api/evidence-package",
+            session: rt.token,
+            workbench_url: rt.url
+          }
+        };
+      }
+      if (res.status !== 200 || !res.body || !res.body.ok) {
+        const reason = (res.body && res.body.error) || `HTTP ${res.status}`;
+        return {
+          content: [
+            {
+              type: "text",
+              text: `record_evidence_package failed: ${reason}`
+            }
+          ],
+          structuredContent: {
+            ok: false,
+            error: (res.body && res.body.error) || "record_failed",
+            detail: reason,
+            session: rt.token,
+            workbench_url: rt.url
+          }
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Evidence package recorded: surface ${res.body.record.id}\nFrame: ${res.body.record.frame_name} (${res.body.record.frame_node_id})\nSeed: ${res.body.record.figma_seed_reference}\nEvent: ${res.body.event_id ? res.body.event_id : "(audit write failed — record still saved; do NOT retry)"}\nWorkbench URL: ${rt.url}`
+          }
+        ],
+        structuredContent: {
+          ok: true,
+          record: res.body.record,
+          event_id: res.body.event_id,
+          ...(res.body.audit_warning ? { audit_warning: res.body.audit_warning } : {}),
+          session: rt.token,
+          workbench_url: rt.url
+        }
+      };
+    } catch (err) {
+      return {
+        content: [
+          { type: "text", text: `record_evidence_package failed: ${err.message}` }
+        ],
+        structuredContent: {
+          ok: false,
+          error: "runtime_unavailable",
+          detail: err.message
+        }
+      };
+    }
+  }
+);
+
 const transport = new StdioServerTransport();
 mcp
   .connect(transport)
   .then(() => {
-    console.error(`[ikran-mcp] ready (open_workbench, create_or_open_project, register_seed_reference, list_working_folders, setup_workspace, host=${host}, prod=${prod})`);
+    console.error(`[ikran-mcp] ready (open_workbench, create_or_open_project, register_seed_reference, record_evidence_package, list_working_folders, setup_workspace, host=${host}, prod=${prod})`);
   })
   .catch((err) => {
     console.error(`[ikran-mcp] failed to connect transport: ${err.message}`);
