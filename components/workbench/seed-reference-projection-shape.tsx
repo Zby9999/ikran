@@ -277,14 +277,15 @@ function SeedReferenceProjectionFrame({
             data-testid="seed-reference-projection-awaiting"
             data-awaiting-evidence="true"
             role="status"
-            aria-label="Waiting for Agent evidence capture"
+            aria-label="Waiting for Agent to fulfill pending evidence"
           >
             <span className="seed-ref-frame__awaiting-spinner" aria-hidden="true" />
             <p
               className="seed-ref-frame__awaiting-hint"
               data-testid="seed-reference-projection-awaiting-hint"
             >
-              Waiting for Agent evidence capture
+              Waiting for Agent — ask Agent to fulfill pending evidence
+              (list_pending_seed_evidence → Figma screenshot @4096)
             </p>
           </div>
         ) : null}

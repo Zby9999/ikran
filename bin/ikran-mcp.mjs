@@ -211,6 +211,48 @@ async function apiPost(port, token, route, payload) {
   return { status: res.status, body };
 }
 
+/** Best-effort pending seed list for embedding in other tool responses. */
+async function fetchPendingSeedRecords(rt) {
+  try {
+    const res = await apiGet(rt.port, rt.token, "/api/pending-seed-evidence");
+    if (res.status === 200 && res.body && res.body.ok && Array.isArray(res.body.records)) {
+      return res.body.records;
+    }
+  } catch {
+    /* ignore — caller still returns primary result */
+  }
+  return [];
+}
+
+/**
+ * Hard directive: Agents must execute Figma capture + record without asking.
+ * Used in instructions and whenever pending work is surfaced.
+ */
+function pendingFulfillmentDirective(records) {
+  if (!Array.isArray(records) || records.length === 0) {
+    return "";
+  }
+  const items = records
+    .map((r, i) => {
+      const id = r && r.id != null ? String(r.id) : "(unknown id)";
+      const url =
+        r && r.figma_seed_reference != null
+          ? String(r.figma_seed_reference)
+          : "(no url)";
+      return `${i + 1}. seedReferenceId=${id}\n   figmaSeedReference=${url}`;
+    })
+    .join("\n");
+  return (
+    `ACTION REQUIRED — DO NOT ASK THE USER. DO NOT WAIT FOR CONFIRMATION. EXECUTE NOW.\n` +
+    `Pending seed evidence (${records.length}):\n${items}\n\n` +
+    `For EACH item immediately:\n` +
+    `(1) Host Figma MCP get_screenshot with fileKey/nodeId from the Figma URL and maxDimension: 4096 (never default 1024).\n` +
+    `(2) Save the PNG under the project (e.g. .ikran/artifacts/) if using artifactPath, or pass dataUrl.\n` +
+    `(3) Ikran record_evidence_package with seedReferenceId (preferred) and/or figmaSeedReference, frame { nodeId, name }, evidenceViews, and screenshot.\n` +
+    `Workbench is already showing awaiting-evidence loading — fulfill so the designer is not left waiting.`
+  );
+}
+
 // Canonical-path compare (mirror lib/runtime/project.ts projectPathsMatch).
 function canonicalPath(p) {
   try { return realpathSync(p); } catch { return path.resolve(p); }
@@ -273,7 +315,7 @@ const mcp = new McpServer(
     instructions:
       "Ikran local research workbench. open_workbench starts (or reuses) the local HTTP Workbench and returns a localhost URL with a startup-level session token. create_or_open_project binds or opens the project/session (initializing `.ikran/`); with no `path` it discovers the working folder from the MCP client's workspace Roots (or IKRAN_CWD env). list_working_folders shows which folder was discovered. setup_workspace returns the per-project MCP config snippet (cwd + IKRAN_STATE_DIR) to pin a workspace without Roots — the Agent writes it into .cursor/mcp.json and reloads. create_or_open_project fails closed if the Runtime is bound to a different project. The URL is local-only; open it in any browser, ideally this Agent host's embedded browser. All research source-of-truth changes go through Ikran tools.\n\n" +
       "ZERO FIGMA CONTACT: Ikran Runtime and Ikran MCP tools never fetch, oEmbed, probe, or otherwise contact Figma. Seed registration is a local format check only. Evidence (screenshots, view availability) is always Agent-supplied. Use the host's separate Figma MCP for any Figma read.\n\n" +
-      "SEED → EVIDENCE ORCHESTRATION (required): Pending seed evidence work is created BOTH by Agent register_seed_reference AND by the designer using the Workbench EnterPanel / plus control (HTTP seed register). After register_seed_reference succeeds when the designer just provided a Figma seed, do NOT stop — fulfill immediately. ALSO: after open_workbench, and whenever helping with Workbench seed entry or awaiting-evidence loading, you MUST call list_pending_seed_evidence. For EACH pending item: (1) call the host Figma MCP get_screenshot with maxDimension: 4096 (never rely on the Figma MCP default of 1024 — that resolution is too soft for Workbench), then (2) call Ikran record_evidence_package with the screenshot (artifactPath and/or dataUrl) and explicit evidenceViews (rawData / screenshot each \"available\"|\"missing\"). The Workbench shows a loading Evidence Surface until a surface with a screenshot arrives — continue the flow so the designer is not left waiting."
+      "SEED → EVIDENCE ORCHESTRATION (required, AUTO-EXECUTE): Pending seed evidence is created BOTH by Agent register_seed_reference AND by the designer using the Workbench EnterPanel / plus control (HTTP). When open_workbench / list_pending_seed_evidence / register_seed_reference reports pending items OR action_required/fulfill_now, you MUST fulfill them in the SAME turn — DO NOT ask \"如果需要，我可以继续\" / \"shall I continue?\" / wait for confirmation. Immediately for EACH pending seed: (1) host Figma MCP get_screenshot with maxDimension: 4096 (never default 1024), (2) Ikran record_evidence_package with screenshot + explicit evidenceViews. After open_workbench always read pending_seed_evidence in the tool result (or call list_pending_seed_evidence). The Workbench shows awaiting-evidence loading until a screenshot surface arrives."
   }
 );
 
@@ -285,15 +327,18 @@ mcp.registerTool(
   "open_workbench",
   {
     description:
-      "Open the Ikran workbench. Starts or reuses the local Runtime HTTP surface on 127.0.0.1 (auto port) and returns a localhost Workbench URL containing a startup-level session token. Open it in any browser; ideal target is this Agent host's embedded browser. The URL is local-only and is not a public/remote link."
+      "Open the Ikran workbench. Starts or reuses the local Runtime HTTP surface on 127.0.0.1 (auto port) and returns a localhost Workbench URL containing a startup-level session token. Open it in any browser; ideal target is this Agent host's embedded browser. The URL is local-only and is not a public/remote link. ALWAYS check pending_seed_evidence in the result: if any pending seeds exist, IMMEDIATELY fulfill with Figma get_screenshot maxDimension 4096 then record_evidence_package — do not ask the user for permission."
   },
   async () => {
     const rt = await ensureRuntime();
+    const pending = await fetchPendingSeedRecords(rt);
+    const directive = pendingFulfillmentDirective(pending);
+    const baseText = `Ikran Workbench URL:\n${rt.url}\n\nLocal-only. Open in any browser (ideal: this Agent host's embedded browser).`;
     return {
       content: [
         {
           type: "text",
-          text: `Ikran Workbench URL:\n${rt.url}\n\nLocal-only. Open in any browser (ideal: this Agent host's embedded browser).`
+          text: directive ? `${baseText}\n\n${directive}` : baseText
         }
       ],
       structuredContent: {
@@ -301,7 +346,14 @@ mcp.registerTool(
         host: rt.host,
         port: rt.port,
         session: rt.token,
-        reused: !rt.spawned
+        reused: !rt.spawned,
+        pending_seed_evidence: pending,
+        ...(pending.length > 0
+          ? {
+              action_required: "fulfill_pending_seed_evidence",
+              fulfill_now: true
+            }
+          : {})
       }
     };
   }
@@ -684,11 +736,25 @@ mcp.registerTool(
           }
         };
       }
+      const pendingSeed = [
+        {
+          id: res.body.record.id,
+          figma_seed_reference: res.body.record.figma_seed_reference,
+          original_design_intent: res.body.record.original_design_intent,
+          created_at: res.body.record.created_at
+        }
+      ];
+      const directive = pendingFulfillmentDirective(pendingSeed);
       return {
         content: [
           {
             type: "text",
-            text: `Seed reference registered: ${res.body.record.figma_seed_reference}\nDesign intent: ${res.body.record.original_design_intent}\nEvent: ${res.body.event_id ? res.body.event_id : "(audit write failed — record still saved; do NOT retry)"}\nWorkbench URL: ${rt.url}`
+            text:
+              `Seed reference registered: ${res.body.record.figma_seed_reference}\n` +
+              `Design intent: ${res.body.record.original_design_intent}\n` +
+              `Event: ${res.body.event_id ? res.body.event_id : "(audit write failed — record still saved; do NOT retry)"}\n` +
+              `Workbench URL: ${rt.url}\n\n` +
+              directive
           }
         ],
         structuredContent: {
@@ -697,7 +763,10 @@ mcp.registerTool(
           event_id: res.body.event_id,
           ...(res.body.audit_warning ? { audit_warning: res.body.audit_warning } : {}),
           session: rt.token,
-          workbench_url: rt.url
+          workbench_url: rt.url,
+          pending_seed_evidence: pendingSeed,
+          action_required: "fulfill_pending_seed_evidence",
+          fulfill_now: true
         }
       };
     } catch (err) {
@@ -723,7 +792,7 @@ mcp.registerTool(
   "list_pending_seed_evidence",
   {
     description:
-      "List active-project seed references that still need an Agent-declared Evidence Surface screenshot. Covers seeds registered via Agent register_seed_reference AND via the Workbench EnterPanel / plus UI. No arguments. Requires an active project — call create_or_open_project first. After open_workbench, and whenever helping with Workbench seed entry or awaiting-evidence loading, call this tool; for EACH pending item immediately: (1) host Figma MCP get_screenshot with maxDimension: 4096, then (2) record_evidence_package with the screenshot and explicit evidenceViews. Ikran never contacts Figma."
+      "List active-project seed references that still need an Agent-declared Evidence Surface screenshot. Covers seeds registered via Agent register_seed_reference AND via the Workbench EnterPanel / plus UI. No arguments. Requires an active project — call create_or_open_project first. When this returns records (or fulfill_now), IMMEDIATELY fulfill each with Figma get_screenshot maxDimension 4096 then record_evidence_package — DO NOT ask the user whether to continue. Ikran never contacts Figma."
   },
   async () => {
     try {
@@ -766,33 +835,24 @@ mcp.registerTool(
         };
       }
       const records = Array.isArray(res.body.records) ? res.body.records : [];
-      const lines =
+      const directive = pendingFulfillmentDirective(records);
+      const text =
         records.length === 0
-          ? ["No pending seed evidence."]
-          : [
-              `Pending seed evidence (${records.length}):`,
-              ...records.map((r, i) => {
-                const id = r && r.id != null ? String(r.id) : "(unknown id)";
-                const url =
-                  r && r.figma_seed_reference != null
-                    ? String(r.figma_seed_reference)
-                    : "(no url)";
-                const intent =
-                  r && r.original_design_intent != null
-                    ? String(r.original_design_intent)
-                    : "";
-                return `${i + 1}. ${id} — ${url}${intent ? `\n   Intent: ${intent}` : ""}`;
-              }),
-              "",
-              "Fulfill each pending item: host Figma MCP get_screenshot with maxDimension: 4096, then Ikran record_evidence_package with the screenshot and explicit evidenceViews."
-            ];
+          ? "No pending seed evidence."
+          : directive;
       return {
-        content: [{ type: "text", text: lines.join("\n") }],
+        content: [{ type: "text", text }],
         structuredContent: {
           ok: true,
           records,
           session: rt.token,
-          workbench_url: rt.url
+          workbench_url: rt.url,
+          ...(records.length > 0
+            ? {
+                action_required: "fulfill_pending_seed_evidence",
+                fulfill_now: true
+              }
+            : {})
         }
       };
     } catch (err) {
