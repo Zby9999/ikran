@@ -9,7 +9,7 @@ import { mkdtempSync, mkdirSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test, expect } from "@playwright/test";
-import { registerSeedReference } from "../lib/runtime/seed-reference";
+import { registerSeedReference, parseFigmaSeedIdentity, figmaSeedIdentitiesEqual } from "../lib/runtime/seed-reference";
 import { listEvents } from "../lib/runtime/events";
 
 const VALID = "https://www.figma.com/design/AbCdEf/Checkout?node-id=1:2";
@@ -76,5 +76,67 @@ test.describe("register_seed_reference — best-effort audit (unit)", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test("idempotent: same fileKey+nodeId with different t= reuses existing seed", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "ikran-seed-unit-dedupe-"));
+    try {
+      const firstUrl =
+        "https://www.figma.com/design/AbCdEf/Checkout?node-id=0-81&t=aaa-11";
+      const secondUrl =
+        "https://www.figma.com/design/AbCdEf/Checkout?node-id=0:81&t=bbb-11";
+
+      const first = registerSeedReference(dir, {
+        figmaSeedReference: firstUrl,
+        originalDesignIntent: INTENT
+      });
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+      expect(first.reused).toBeUndefined();
+
+      const second = registerSeedReference(dir, {
+        figmaSeedReference: secondUrl,
+        originalDesignIntent: "different intent text"
+      });
+      expect(second.ok).toBe(true);
+      if (!second.ok) return;
+      expect(second.reused).toBe(true);
+      expect(second.record.id).toBe(first.record.id);
+      // Stored URL stays the first verbatim registration.
+      expect(second.record.figma_seed_reference).toBe(firstUrl);
+
+      const { DatabaseSync } = require("node:sqlite");
+      const db = new DatabaseSync(path.join(dir, ".ikran", "ikran.db"));
+      const rows = db
+        .prepare("SELECT id FROM seed_references")
+        .all() as Array<{ id: string }>;
+      expect(rows.length).toBe(1);
+      db.close();
+
+      // Different node → new seed.
+      const other = registerSeedReference(dir, {
+        figmaSeedReference:
+          "https://www.figma.com/design/AbCdEf/Checkout?node-id=1-2&t=ccc-11",
+        originalDesignIntent: INTENT
+      });
+      expect(other.ok).toBe(true);
+      if (!other.ok) return;
+      expect(other.reused).toBeUndefined();
+      expect(other.record.id).not.toBe(first.record.id);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("parseFigmaSeedIdentity normalizes node-id dashes", () => {
+    const a = parseFigmaSeedIdentity(
+      "https://www.figma.com/design/AbCdEf/X?node-id=0-81&t=foo"
+    );
+    const b = parseFigmaSeedIdentity(
+      "https://www.figma.com/design/AbCdEf/X?node-id=0:81"
+    );
+    expect(a).toEqual({ fileKey: "AbCdEf", nodeId: "0:81" });
+    expect(b).toEqual({ fileKey: "AbCdEf", nodeId: "0:81" });
+    expect(figmaSeedIdentitiesEqual(a!, b!)).toBe(true);
   });
 });

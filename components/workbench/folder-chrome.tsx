@@ -15,6 +15,8 @@ export type FolderChromeExtraction = {
   overallTotal: number;
   onFollowAgent?: () => void;
   onAnnotate?: () => void;
+  /** When true, Annotate button shows pressed/active state. */
+  annotateActive?: boolean;
 };
 
 export type FolderChromeProps = {
@@ -37,8 +39,31 @@ export function FolderChrome({ folderName, onBack, extraction }: FolderChromePro
       surfaceClassName="seed-workbench__folder-body"
     >
       <div className="seed-workbench__folder-row">
-        <SmallIconButton icon={ArrowLeft01Icon} label="Back to setup" onClick={onBack} />
-        <span className="seed-workbench__folder-name">{folderName || "Folder Name"}</span>
+        <div className="seed-workbench__folder-leading">
+          <SmallIconButton icon={ArrowLeft01Icon} label="Back to setup" onClick={onBack} />
+          <span className="seed-workbench__folder-name">{folderName || "Folder Name"}</span>
+        </div>
+        {showExtraction ? (
+          <div className="seed-workbench__folder-actions">
+            {/* CrosshairIcon is drawn at cx=11 in a 24 viewBox (1 unit left of
+                center). Nudge via CSS so the glyph sits optically centered. */}
+            <SmallIconButton
+              className="small-icon-button--crosshair"
+              icon={CrosshairIcon}
+              label="Follow Agent view"
+              data-testid="follow-agent-button"
+              onClick={extraction.onFollowAgent}
+            />
+            <SmallIconButton
+              icon={ArtboardToolIcon}
+              label="Annotate on Figma"
+              data-testid="annotate-button"
+              data-active={extraction.annotateActive ? "true" : undefined}
+              aria-pressed={extraction.annotateActive === true}
+              onClick={extraction.onAnnotate}
+            />
+          </div>
+        ) : null}
       </div>
 
       {showExtraction ? (
@@ -62,23 +87,6 @@ export function FolderChrome({ folderName, onBack, extraction }: FolderChromePro
               >
                 {extraction.overallRemaining}/{extraction.overallTotal}
               </span>
-            </div>
-            <div className="seed-workbench__folder-extraction-actions">
-              {/* CrosshairIcon is drawn at cx=11 in a 24 viewBox (1 unit left of
-                  center). Nudge via CSS so the glyph sits optically centered. */}
-              <SmallIconButton
-                className="small-icon-button--crosshair"
-                icon={CrosshairIcon}
-                label="Follow Agent view"
-                data-testid="follow-agent-button"
-                onClick={extraction.onFollowAgent}
-              />
-              <SmallIconButton
-                icon={ArtboardToolIcon}
-                label="Annotate on Figma"
-                data-testid="annotate-button"
-                onClick={extraction.onAnnotate}
-              />
             </div>
           </div>
         </>

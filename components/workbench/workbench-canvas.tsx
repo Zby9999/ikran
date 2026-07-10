@@ -1,6 +1,6 @@
 "use client";
 
-// tldraw Workbench canvas shell (Issue 02/04 + 05).
+// tldraw Workbench canvas shell (Issue 02/04 + 05 + 06).
 //
 // Replaces the React Flow seed surface. This is a MINIMAL canvas 底座:
 //   - `<Tldraw hideUi>` renders only the drawing surface (no default
@@ -13,6 +13,9 @@
 //     tldraw shapes. It never reads geometry back. tldraw positions are local
 //     only; the default `<Tldraw>` store is in-memory (no persistence), so a
 //     refresh resets shapes and they are rebuilt from the records.
+//   - Issue 06: `region-annotation` markers project from Runtime records onto
+//     the parent surface media box; FolderChrome Annotate toggles a custom
+//     tool (not the default tldraw toolbar) that POSTs designer annotations.
 //   - Decorative camera-aware 100px page-space grid (Figma 133:129) via
 //     Background — visual only, no snap-to-grid.
 //
@@ -34,10 +37,26 @@ import {
   type SeedReferenceProjectionShape,
   type SeedReferenceProjectionMeta
 } from "./seed-reference-projection-shape";
+import {
+  RegionAnnotationShapeUtil,
+  REGION_ANNOTATION_TYPE,
+  type RegionAnnotationShape,
+  type RegionAnnotationMeta
+} from "./region-annotation-shape";
+import {
+  RegionAnnotationTool,
+  RegionAnnotationToolController
+} from "./region-annotation-tool";
+import { RegionAnnotationDeleteController } from "./region-annotation-delete";
+import {
+  mediaBoxInPage,
+  normalizedRectToPage
+} from "./region-annotation-geometry";
 import { SeedSelectionForegroundOverlayUtil } from "./seed-selection-foreground-overlay";
 import { WORKBENCH_CANVAS_COMPONENTS } from "./workbench-canvas-grid";
 import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 import type { FigmaEvidenceSurfaceRecord } from "@/lib/runtime/evidence-package";
+import type { RegionAnnotationRecord } from "@/lib/runtime/region-annotation";
 import { findSurfaceForSeed } from "./find-surface-for-seed";
 
 /** Build a same-origin Workbench URL for a project-relative artifact path. */
@@ -71,17 +90,30 @@ function screenshotSrcForSurface(
 export function WorkbenchCanvas({
   records,
   surfaces = [],
-  session
+  annotations = [],
+  session,
+  annotateMode = false,
+  onAnnotationCreated,
+  onAnnotationDeleted
 }: {
   records: SeedReferenceRecord[];
   surfaces?: FigmaEvidenceSurfaceRecord[];
+  /** Runtime Region Annotation records — one-way projected to marker shapes. */
+  annotations?: RegionAnnotationRecord[];
   /** Startup session token — required to load artifactPath screenshots via /api/artifacts. */
   session: string;
+  /** FolderChrome Annotate toggle — switches the custom region-annotation tool. */
+  annotateMode?: boolean;
+  /** Fired after a successful designer POST so the poll hook can reload. */
+  onAnnotationCreated?: () => void;
+  /** Optimistic remove after Delete removes a designer marker from the canvas. */
+  onAnnotationDeleted?: (annotationId: string) => void;
 }) {
   return (
     <Tldraw
       hideUi
-      shapeUtils={[SeedReferenceProjectionShapeUtil]}
+      shapeUtils={[SeedReferenceProjectionShapeUtil, RegionAnnotationShapeUtil]}
+      tools={[RegionAnnotationTool]}
       components={WORKBENCH_CANVAS_COMPONENTS}
       overlayUtils={[SeedSelectionForegroundOverlayUtil]}
     >
@@ -89,6 +121,17 @@ export function WorkbenchCanvas({
         records={records}
         surfaces={surfaces}
         session={session}
+      />
+      <RegionAnnotationProjectionSync annotations={annotations} />
+      <RegionAnnotationToolController
+        annotateMode={annotateMode}
+        session={session}
+        onCreated={onAnnotationCreated}
+      />
+      <RegionAnnotationDeleteController
+        annotateMode={annotateMode}
+        session={session}
+        onDeleted={onAnnotationDeleted}
       />
     </Tldraw>
   );
@@ -359,6 +402,173 @@ function SeedProjectionSync({
       }
     }
   }, [editor, records, surfaces, session]);
+
+  return null;
+}
+
+function surfaceShapeForAnnotation(
+  editor: ReturnType<typeof useEditor>,
+  record: RegionAnnotationRecord
+): SeedReferenceProjectionShape | undefined {
+  const surfaceId = record.surface_id ?? record.surface_artifact_id;
+  if (!surfaceId) return undefined;
+
+  const shapes = editor
+    .getCurrentPageShapes()
+    .filter((s) => s.type === SEED_REFERENCE_PROJECTION_TYPE) as SeedReferenceProjectionShape[];
+
+  return shapes.find((shape) => {
+    const meta = shape.meta as SeedReferenceProjectionMeta;
+    return (
+      meta.kind === "figma_evidence_surface" &&
+      (meta.surfaceRecordId === surfaceId || meta.runtimeRecordId === surfaceId)
+    );
+  });
+}
+
+function annotationMetaEqual(
+  a: RegionAnnotationMeta,
+  b: RegionAnnotationMeta
+): boolean {
+  return (
+    a.canvasRecordId === b.canvasRecordId &&
+    a.runtimeRecordId === b.runtimeRecordId &&
+    a.surfaceRecordId === b.surfaceRecordId
+  );
+}
+
+/** Reconcile Runtime annotation records → marker shapes (create/update/delete). */
+function syncRegionAnnotationShapes(
+  editor: ReturnType<typeof useEditor>,
+  annotations: RegionAnnotationRecord[]
+): void {
+  const wantIds = new Set<string>();
+
+  for (const record of annotations) {
+    const parent = surfaceShapeForAnnotation(editor, record);
+    if (!parent) continue;
+
+    const pageBounds = editor.getShapePageBounds(parent);
+    if (!pageBounds) continue;
+
+    const mediaBox = mediaBoxInPage(
+      pageBounds.x,
+      pageBounds.y,
+      pageBounds.w,
+      pageBounds.h
+    );
+    if (mediaBox.w <= 0 || mediaBox.h <= 0) continue;
+
+    const pageRect = normalizedRectToPage(mediaBox, {
+      x: record.rect_x,
+      y: record.rect_y,
+      w: record.rect_w,
+      h: record.rect_h
+    });
+
+    const shapeId = createShapeId(`region-annotation:${record.id}`) as TLShapeId;
+    wantIds.add(String(shapeId));
+
+    const surfaceRecordId =
+      record.surface_id ?? record.surface_artifact_id ?? "";
+    const meta: RegionAnnotationMeta = {
+      canvasRecordId: `region-annotation:${record.id}`,
+      runtimeRecordId: record.id,
+      surfaceRecordId
+    };
+    const author = record.author === "agent" ? "agent" : "designer";
+    const nextW = Math.max(1, pageRect.w);
+    const nextH = Math.max(1, pageRect.h);
+
+    const existing = editor.getShape(shapeId) as
+      | RegionAnnotationShape
+      | undefined;
+
+    if (existing) {
+      const propsChanged =
+        existing.props.w !== nextW ||
+        existing.props.h !== nextH ||
+        existing.props.author !== author ||
+        existing.x !== pageRect.x ||
+        existing.y !== pageRect.y;
+      const metaChanged = !annotationMetaEqual(
+        existing.meta as RegionAnnotationMeta,
+        meta
+      );
+      if (propsChanged || metaChanged) {
+        editor.updateShape<RegionAnnotationShape>({
+          id: shapeId,
+          type: REGION_ANNOTATION_TYPE,
+          x: pageRect.x,
+          y: pageRect.y,
+          props: {
+            w: nextW,
+            h: nextH,
+            author,
+            label: ""
+          },
+          ...(metaChanged ? { meta } : {})
+        });
+      }
+      continue;
+    }
+
+    editor.createShape<RegionAnnotationShape>({
+      id: shapeId,
+      type: REGION_ANNOTATION_TYPE,
+      x: pageRect.x,
+      y: pageRect.y,
+      props: {
+        w: nextW,
+        h: nextH,
+        author,
+        label: ""
+      },
+      meta
+    });
+  }
+
+  const projected = editor
+    .getCurrentPageShapes()
+    .filter((s) => s.type === REGION_ANNOTATION_TYPE);
+  for (const shape of projected) {
+    // Keep in-progress drafts from the annotate tool.
+    const meta = shape.meta as RegionAnnotationMeta;
+    if (meta.runtimeRecordId === "draft") continue;
+    if (!wantIds.has(String(shape.id))) {
+      editor.deleteShape(shape.id);
+    }
+  }
+}
+
+/**
+ * One-way projection: Runtime Region Annotation records → marker shapes.
+ * Page geometry is derived from the parent Evidence Surface shape's media box
+ * + the record's normalized rect. Never writes geometry back to Runtime.
+ */
+function RegionAnnotationProjectionSync({
+  annotations
+}: {
+  annotations: RegionAnnotationRecord[];
+}) {
+  const editor = useEditor();
+
+  useEffect(() => {
+    if (!editor) return;
+    syncRegionAnnotationShapes(editor, annotations);
+  }, [editor, annotations]);
+
+  // Re-project when parent surface shapes are created / moved / resized.
+  useEffect(() => {
+    if (!editor) return;
+    const unsub = editor.store.listen(
+      () => {
+        syncRegionAnnotationShapes(editor, annotations);
+      },
+      { source: "user", scope: "document" }
+    );
+    return () => unsub();
+  }, [editor, annotations]);
 
   return null;
 }

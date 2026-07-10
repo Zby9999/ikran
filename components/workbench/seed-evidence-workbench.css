@@ -61,7 +61,7 @@
   overflow: hidden;
 }
 
-/* Folder chip — single-row (EnterPanel) or Extraction two-row (Figma 230:307). */
+/* Folder chip — single-row (EnterPanel) or Extraction two-row (Figma 255:184). */
 .seed-workbench__folder {
   position: fixed;
   top: 16px;
@@ -90,9 +90,18 @@
 .seed-workbench__folder-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   width: 100%;
   min-width: 0;
+}
+
+.seed-workbench__folder-leading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
 }
 
 .seed-workbench__folder-name {
@@ -101,6 +110,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.seed-workbench__folder-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
 .seed-workbench__folder-divider {
@@ -139,13 +155,6 @@
 
 .seed-workbench__folder-extraction-overall {
   color: #949494;
-}
-
-.seed-workbench__folder-extraction-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
 }
 
 .seed-workbench__enter-panel {
@@ -198,6 +207,12 @@
 .small-icon-button:active:enabled {
   transform: scale(0.99) translateY(1px);
   background: linear-gradient(180deg, #e1e1e1 0%, #f0f0f0 100%);
+}
+
+.small-icon-button[data-active="true"] {
+  background: linear-gradient(180deg, #e1e1e1 0%, #f0f0f0 100%);
+  border-color: #a0a0a0;
+  color: #3d3d3d;
 }
 
 .small-icon-button:disabled {
@@ -723,4 +738,33 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Region Annotation marker (Issue 06) — on-surface box only. */
+.region-annotation-marker {
+  box-sizing: border-box;
+  display: block;
+  border-radius: 8px;
+  border-style: solid;
+  border-width: 1px;
+  pointer-events: all;
+}
+
+.region-annotation-marker--designer {
+  border-color: #19d122;
+  background: rgba(25, 209, 34, 0.05);
+}
+
+.region-annotation-marker--agent {
+  border-color: #a5a5a5;
+  background: rgba(165, 165, 165, 0.05);
+}
+
+/* Selected: raise fill opacity so the marker reads clearly (try 40%). */
+.region-annotation-marker--designer.region-annotation-marker--selected {
+  background: rgba(25, 209, 34, 0.4);
+}
+
+.region-annotation-marker--agent.region-annotation-marker--selected {
+  background: rgba(165, 165, 165, 0.4);
 }

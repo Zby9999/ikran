@@ -101,6 +101,7 @@ export async function POST(request: NextRequest) {
     ok: true,
     record: result.record,
     event_id: result.event_id,
-    ...(result.audit_warning ? { audit_warning: result.audit_warning } : {})
+    ...(result.audit_warning ? { audit_warning: result.audit_warning } : {}),
+    ...(result.reused ? { reused: true } : {})
   });
 }

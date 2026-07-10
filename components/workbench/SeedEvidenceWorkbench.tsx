@@ -1,12 +1,17 @@
 "use client";
 
 import "./seed-evidence-workbench.css";
+// Keep tldraw CSS outside the `next/dynamic` async boundary. Importing it from
+// shape modules pulled in by workbench-canvas made Turbopack emit a separate
+// CSS chunk; failing to load that chunk aborted the whole canvas (ChunkLoadError).
+import "tldraw/tldraw.css";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { EnterPanel, type EnterPanelState } from "./enter-panel";
 import { FolderChrome } from "./folder-chrome";
 import { useSeedReferences } from "./use-seed-references";
 import { useFigmaEvidenceSurfaces } from "./use-figma-evidence-surfaces";
+import { useRegionAnnotations } from "./use-region-annotations";
 
 // tldraw touches the DOM during render, so the canvas shell is loaded with
 // `next/dynamic({ ssr: false })` to keep Next.js SSR happy.
@@ -69,6 +74,12 @@ export function SeedEvidenceWorkbench({
 
   const { records, register } = useSeedReferences(session);
   const { records: surfaces } = useFigmaEvidenceSurfaces(session);
+  const {
+    records: annotations,
+    reload: reloadAnnotations,
+    removeLocal: removeAnnotationLocal
+  } = useRegionAnnotations(session);
+  const [annotateMode, setAnnotateMode] = useState(false);
 
   // EnterPanel overlay is the seed entry surface, shown only while there are
   // no Runtime records yet (first seed, or a fresh project). Once a record
@@ -203,7 +214,8 @@ export function SeedEvidenceWorkbench({
                 overallRemaining: 27,
                 overallTotal: 32,
                 onFollowAgent: () => {},
-                onAnnotate: () => {}
+                annotateActive: annotateMode,
+                onAnnotate: () => setAnnotateMode((v) => !v)
               }
         }
       />
@@ -212,7 +224,15 @@ export function SeedEvidenceWorkbench({
         <WorkbenchCanvas
           records={records}
           surfaces={surfaces}
+          annotations={annotations}
           session={session}
+          annotateMode={annotateMode}
+          onAnnotationCreated={() => {
+            void reloadAnnotations();
+          }}
+          onAnnotationDeleted={(annotationId) => {
+            if (annotationId) removeAnnotationLocal(annotationId);
+          }}
         />
       </div>
 

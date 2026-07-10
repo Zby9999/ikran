@@ -315,7 +315,8 @@ const mcp = new McpServer(
     instructions:
       "Ikran local research workbench. open_workbench starts (or reuses) the local HTTP Workbench and returns a localhost URL with a startup-level session token. create_or_open_project binds or opens the project/session (initializing `.ikran/`); with no `path` it discovers the working folder from the MCP client's workspace Roots (or IKRAN_CWD env). list_working_folders shows which folder was discovered. setup_workspace returns the per-project MCP config snippet (cwd + IKRAN_STATE_DIR) to pin a workspace without Roots — the Agent writes it into .cursor/mcp.json and reloads. create_or_open_project fails closed if the Runtime is bound to a different project. The URL is local-only; open it in any browser, ideally this Agent host's embedded browser. All research source-of-truth changes go through Ikran tools.\n\n" +
       "ZERO FIGMA CONTACT: Ikran Runtime and Ikran MCP tools never fetch, oEmbed, probe, or otherwise contact Figma. Seed registration is a local format check only. Evidence (screenshots, view availability) is always Agent-supplied. Use the host's separate Figma MCP for any Figma read.\n\n" +
-      "SEED → EVIDENCE ORCHESTRATION (required, AUTO-EXECUTE): Pending seed evidence is created BOTH by Agent register_seed_reference AND by the designer using the Workbench EnterPanel / plus control (HTTP). When open_workbench / list_pending_seed_evidence / register_seed_reference reports pending items OR action_required/fulfill_now, you MUST fulfill them in the SAME turn — DO NOT ask \"如果需要，我可以继续\" / \"shall I continue?\" / wait for confirmation. Immediately for EACH pending seed: (1) host Figma MCP get_screenshot with maxDimension: 4096 (never default 1024), (2) Ikran record_evidence_package with screenshot + explicit evidenceViews. After open_workbench always read pending_seed_evidence in the tool result (or call list_pending_seed_evidence). The Workbench shows awaiting-evidence loading until a screenshot surface arrives."
+      "SEED → EVIDENCE ORCHESTRATION (required, AUTO-EXECUTE): Pending seed evidence is created BOTH by Agent register_seed_reference AND by the designer using the Workbench EnterPanel / plus control (HTTP). BEFORE register_seed_reference: call list_pending_seed_evidence and/or open_workbench — if the same Figma file+node already has a seed with a screenshot Evidence Surface, DO NOT register again; reuse that seed/surface for annotations. register_seed_reference is idempotent on fileKey+nodeId (ignores share `t=`), but still prefer checking pending/existing first. When open_workbench / list_pending_seed_evidence / register_seed_reference reports pending items OR action_required/fulfill_now, you MUST fulfill them in the SAME turn — DO NOT ask \"如果需要，我可以继续\" / \"shall I continue?\" / wait for confirmation. Immediately for EACH pending seed: (1) host Figma MCP get_screenshot with maxDimension: 4096 (never default 1024), (2) Ikran record_evidence_package with screenshot + explicit evidenceViews. After open_workbench always read pending_seed_evidence in the tool result (or call list_pending_seed_evidence). The Workbench shows awaiting-evidence loading until a screenshot surface arrives.\n\n" +
+      "REGION ANNOTATIONS: Runtime-owned records via create_region_annotation (not canvas geometry). figma-region uses a normalized rect {x,y,w,h} in 0–1 relative to the Evidence Surface screenshot media box; require surfaceArtifactId and/or surfaceNodeId."
   }
 );
 
@@ -682,7 +683,7 @@ mcp.registerTool(
   "register_seed_reference",
   {
     description:
-      "Register a Figma seed reference and the designer's original design intent for the active Ikran project. SEMANTIC BOUNDARY: this records the seed URL + design intent as Runtime-owned research source-of-truth. It does NOT access Figma, does NOT fetch / oEmbed / probe the link, and does NOT verify the file exists online — it only performs a LOCAL format check (https URL, figma.com / www.figma.com host, /design/<key> or /file/<key> path) and stores the ORIGINAL URL verbatim (never rewritten). Requires an active project — call create_or_open_project first. Pass { figmaSeedReference, originalDesignIntent }. On validation failure returns a structured error and writes NO record/event (no half-written state). SUCCESS IS NOT THE END: when the designer just provided this seed, you MUST immediately continue — use the host Figma MCP get_screenshot with maxDimension: 4096 (do not use the default 1024), then call record_evidence_package with the screenshot and explicit evidenceViews. The Workbench shows loading until that Evidence Surface with screenshot arrives. All research source-of-truth changes go through Ikran tools.",
+      "Register a Figma seed reference and the designer's original design intent for the active Ikran project. SEMANTIC BOUNDARY: this records the seed URL + design intent as Runtime-owned research source-of-truth. It does NOT access Figma, does NOT fetch / oEmbed / probe the link, and does NOT verify the file exists online — it only performs a LOCAL format check (https URL, figma.com / www.figma.com host, /design/<key> or /file/<key> path) and stores the ORIGINAL URL verbatim (never rewritten). IDEMPOTENT: same Figma fileKey + node-id (ignoring share `t=` and other query noise) returns the existing seed with reused:true — does not insert a duplicate. Prefer list_pending_seed_evidence / open_workbench first; if a screenshot Evidence Surface already exists for that seed, skip register and reuse it. Requires an active project — call create_or_open_project first. Pass { figmaSeedReference, originalDesignIntent }. On validation failure returns a structured error and writes NO record/event (no half-written state). SUCCESS IS NOT THE END when the seed is NEW or still pending screenshot: use the host Figma MCP get_screenshot with maxDimension: 4096 (do not use the default 1024), then call record_evidence_package with the screenshot and explicit evidenceViews. The Workbench shows loading until that Evidence Surface with screenshot arrives. All research source-of-truth changes go through Ikran tools.",
     inputSchema: {
       figmaSeedReference: z.string(),
       originalDesignIntent: z.string()
@@ -737,23 +738,42 @@ mcp.registerTool(
           }
         };
       }
-      const pendingSeed = [
-        {
-          id: res.body.record.id,
-          figma_seed_reference: res.body.record.figma_seed_reference,
-          original_design_intent: res.body.record.original_design_intent,
-          created_at: res.body.record.created_at
-        }
-      ];
-      const directive = pendingFulfillmentDirective(pendingSeed);
+      const reused = Boolean(res.body.reused);
+      // Only treat as pending-fulfillment when this call created a NEW seed.
+      // Idempotent reuse of an existing file+node must not force another screenshot.
+      let pendingSeed = [];
+      let directive = "";
+      if (!reused) {
+        pendingSeed = [
+          {
+            id: res.body.record.id,
+            figma_seed_reference: res.body.record.figma_seed_reference,
+            original_design_intent: res.body.record.original_design_intent,
+            created_at: res.body.record.created_at
+          }
+        ];
+        directive = pendingFulfillmentDirective(pendingSeed);
+      } else {
+        // Still surface any *other* pending seeds for the project.
+        const allPending = await fetchPendingSeedRecords(rt);
+        pendingSeed = allPending;
+        directive =
+          allPending.length > 0
+            ? pendingFulfillmentDirective(allPending)
+            : "Seed already registered for this Figma file+node (reused). No new row inserted. If a screenshot Evidence Surface already exists, proceed to annotations; otherwise fulfill pending evidence.";
+      }
       return {
         content: [
           {
             type: "text",
             text:
-              `Seed reference registered: ${res.body.record.figma_seed_reference}\n` +
+              (reused
+                ? `Seed reference reused (same fileKey+nodeId): ${res.body.record.figma_seed_reference}\n`
+                : `Seed reference registered: ${res.body.record.figma_seed_reference}\n`) +
               `Design intent: ${res.body.record.original_design_intent}\n` +
-              `Event: ${res.body.event_id ? res.body.event_id : "(audit write failed — record still saved; do NOT retry)"}\n` +
+              (reused
+                ? `Record id: ${res.body.record.id} (reused:true)\n`
+                : `Event: ${res.body.event_id ? res.body.event_id : "(audit write failed — record still saved; do NOT retry)"}\n`) +
               `Workbench URL: ${rt.url}\n\n` +
               directive
           }
@@ -761,13 +781,18 @@ mcp.registerTool(
         structuredContent: {
           ok: true,
           record: res.body.record,
-          event_id: res.body.event_id,
+          event_id: res.body.event_id ?? null,
           ...(res.body.audit_warning ? { audit_warning: res.body.audit_warning } : {}),
+          ...(reused ? { reused: true } : {}),
           session: rt.token,
           workbench_url: rt.url,
           pending_seed_evidence: pendingSeed,
-          action_required: "fulfill_pending_seed_evidence",
-          fulfill_now: true
+          ...(reused && pendingSeed.length === 0
+            ? {}
+            : {
+                action_required: "fulfill_pending_seed_evidence",
+                fulfill_now: true
+              })
         }
       };
     } catch (err) {
@@ -1009,11 +1034,214 @@ mcp.registerTool(
   }
 );
 
+// create_region_annotation — Agent Region Annotation write tool (Issue 06).
+// Validates an anchored figma-region annotation and creates a Runtime-owned
+// `region_annotations` record by PROXYING to POST /api/region-annotation
+// (the SAME route the Workbench uses). Does NOT access Figma. On validation
+// failure the HTTP route returns a structured error and writes NO row.
+mcp.registerTool(
+  "create_region_annotation",
+  {
+    description:
+      "Create a Region Annotation anchored to a Figma Evidence Surface for the active Ikran project. SEMANTIC BOUNDARY: this validates the annotation schema and inserts a Runtime-owned record (source-of-truth). It does NOT access Figma. Pass { author: \"agent\"|\"designer\", surfaceArtifactId and/or surfaceNodeId (at least one), rect?: {x,y,w,h} OR point?: {x,y} normalized 0–1 on the Evidence Surface screenshot media box, body? (defaults to \"Placeholder annotation\"), type?, primaryNodeId?, candidates? }. Agent defaults: type assumption; designer defaults: type explanatory. Agent explicit rects are stored with a small page-isotropic comfort margin outside the target (Runtime expands ~1.2% of media width on left/right, matching page-pixel inset on top/bottom using surface aspect, clamped to the media box) — pass the tight node bounds; do not pre-pad. For Agent single-node semantics provide primaryNodeId or high-confidence candidates. Requires an active project — call create_or_open_project first. On validation failure returns a structured error and writes NO annotation row.",
+    inputSchema: {
+      surfaceArtifactId: z.string().optional(),
+      surfaceNodeId: z.string().optional(),
+      author: z.enum(["designer", "agent"]),
+      type: z
+        .enum([
+          "question",
+          "assumption",
+          "observed_fact",
+          "generalization_risk",
+          "explanatory"
+        ])
+        .optional(),
+      body: z.string().optional(),
+      rect: z
+        .object({
+          x: z.number(),
+          y: z.number(),
+          w: z.number(),
+          h: z.number()
+        })
+        .optional(),
+      point: z
+        .object({
+          x: z.number(),
+          y: z.number()
+        })
+        .optional(),
+      primaryNodeId: z.string().optional(),
+      candidates: z.array(z.unknown()).optional()
+    }
+  },
+  async (args) => {
+    try {
+      const rt = await ensureRuntime();
+      const res = await apiPost(rt.port, rt.token, "/api/region-annotation", {
+        surfaceArtifactId: args.surfaceArtifactId,
+        surfaceNodeId: args.surfaceNodeId,
+        author: args.author,
+        type: args.type,
+        body:
+          typeof args.body === "string" && args.body.trim().length > 0
+            ? args.body
+            : "Placeholder annotation",
+        rect: args.rect,
+        point: args.point,
+        primaryNodeId: args.primaryNodeId,
+        candidates: args.candidates
+      });
+      if (res.status === 404) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `create_region_annotation failed: the Runtime at ${rt.host}:${rt.port} returned HTTP 404 for /api/region-annotation — the running Runtime is STALE (built before this route existed). Fix ONE of: (a) npm run build, then restart the MCP host / Ikran Runtime so it serves the fresh build; or (b) run the MCP server in dev mode (drop --prod) so the route hot-reloads. Then retry.`
+            }
+          ],
+          structuredContent: {
+            ok: false,
+            error: "route_not_found",
+            detail: `HTTP 404 on /api/region-annotation (stale Runtime at ${rt.host}:${rt.port}; fix: npm run build + restart MCP host/runtime, or use dev mode)`,
+            route: "/api/region-annotation",
+            session: rt.token,
+            workbench_url: rt.url
+          }
+        };
+      }
+      if (res.status !== 200 || !res.body || !res.body.ok) {
+        const reason = (res.body && res.body.error) || `HTTP ${res.status}`;
+        return {
+          content: [
+            {
+              type: "text",
+              text: `create_region_annotation failed: ${reason}`
+            }
+          ],
+          structuredContent: {
+            ok: false,
+            error: (res.body && res.body.error) || "create_failed",
+            detail: reason,
+            session: rt.token,
+            workbench_url: rt.url
+          }
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Region annotation created: ${res.body.record.id}\nAuthor: ${res.body.record.author}\nType: ${res.body.record.type}\nSurface: ${res.body.record.surface_id || res.body.record.surface_artifact_id || res.body.record.surface_node_id || "(unresolved)"}\nEvent: ${res.body.event_id ? res.body.event_id : "(audit write failed — record still saved; do NOT retry)"}\nWorkbench URL: ${rt.url}`
+          }
+        ],
+        structuredContent: {
+          ok: true,
+          record: res.body.record,
+          event_id: res.body.event_id,
+          ...(res.body.audit_warning ? { audit_warning: res.body.audit_warning } : {}),
+          session: rt.token,
+          workbench_url: rt.url
+        }
+      };
+    } catch (err) {
+      return {
+        content: [
+          { type: "text", text: `create_region_annotation failed: ${err.message}` }
+        ],
+        structuredContent: {
+          ok: false,
+          error: "runtime_unavailable",
+          detail: err.message
+        }
+      };
+    }
+  }
+);
+
+// list_region_annotations — thin GET proxy for Agent polling / verification.
+mcp.registerTool(
+  "list_region_annotations",
+  {
+    description:
+      "List Runtime-owned Region Annotation records for the active Ikran project. No arguments. Requires an active project — call create_or_open_project first. Records are the source of truth; tldraw shapes are projections only."
+  },
+  async () => {
+    try {
+      const rt = await ensureRuntime();
+      const res = await apiGet(rt.port, rt.token, "/api/region-annotation");
+      if (res.status === 404) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `list_region_annotations failed: the Runtime at ${rt.host}:${rt.port} returned HTTP 404 for /api/region-annotation — the running Runtime is STALE. Fix: npm run build + restart MCP host/runtime, or use dev mode.`
+            }
+          ],
+          structuredContent: {
+            ok: false,
+            error: "route_not_found",
+            detail: `HTTP 404 on /api/region-annotation (stale Runtime at ${rt.host}:${rt.port})`,
+            route: "/api/region-annotation",
+            session: rt.token,
+            workbench_url: rt.url
+          }
+        };
+      }
+      if (res.status !== 200 || !res.body || !res.body.ok) {
+        const reason = (res.body && res.body.error) || `HTTP ${res.status}`;
+        return {
+          content: [
+            {
+              type: "text",
+              text: `list_region_annotations failed: ${reason}`
+            }
+          ],
+          structuredContent: {
+            ok: false,
+            error: (res.body && res.body.error) || "list_failed",
+            detail: reason,
+            session: rt.token,
+            workbench_url: rt.url
+          }
+        };
+      }
+      const records = Array.isArray(res.body.records) ? res.body.records : [];
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Region annotations: ${records.length}\nWorkbench URL: ${rt.url}`
+          }
+        ],
+        structuredContent: {
+          ok: true,
+          records,
+          session: rt.token,
+          workbench_url: rt.url
+        }
+      };
+    } catch (err) {
+      return {
+        content: [
+          { type: "text", text: `list_region_annotations failed: ${err.message}` }
+        ],
+        structuredContent: {
+          ok: false,
+          error: "runtime_unavailable",
+          detail: err.message
+        }
+      };
+    }
+  }
+);
+
 const transport = new StdioServerTransport();
 mcp
   .connect(transport)
   .then(() => {
-    console.error(`[ikran-mcp] ready (open_workbench, create_or_open_project, register_seed_reference, list_pending_seed_evidence, record_evidence_package, list_working_folders, setup_workspace, host=${host}, prod=${prod})`);
+    console.error(`[ikran-mcp] ready (open_workbench, create_or_open_project, register_seed_reference, list_pending_seed_evidence, record_evidence_package, create_region_annotation, list_region_annotations, list_working_folders, setup_workspace, host=${host}, prod=${prod})`);
   })
   .catch((err) => {
     console.error(`[ikran-mcp] failed to connect transport: ${err.message}`);

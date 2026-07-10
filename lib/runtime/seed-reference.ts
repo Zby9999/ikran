@@ -8,9 +8,14 @@
 // IMPORTANT — semantic boundary: this handler ONLY performs a LOCAL format
 // check on the Figma URL. It does NOT access Figma, does NOT fetch / oEmbed /
 // probe the link, and does NOT verify the file actually exists online. The
-// ORIGINAL URL is stored verbatim (never rewritten/normalized), per the
+// ORIGINAL URL is stored verbatim (never rewritten for display), per the
 // Issue 02/03 decision. Real Figma evidence ingestion is Agent-host-side
 // (Issue 02/05 `record_evidence_package`); Runtime stays zero-Figma-contact.
+//
+// Idempotency: identity is `fileKey + nodeId` parsed from the URL (ignoring
+// share `t=` and other query noise). Re-registering the same file+node returns
+// the existing row (`reused: true`) instead of inserting a duplicate — Figma
+// re-copied links change `t=` and would otherwise create multiple seeds.
 //
 // On validation failure the handler returns a structured error and writes NO
 // record and NO event (no half-written state).
@@ -59,6 +64,13 @@ export interface SeedReferenceRecord {
   registered_via: "ui" | "agent";
 }
 
+/** Local identity for idempotent seed registration (no network). */
+export interface FigmaSeedIdentity {
+  fileKey: string;
+  /** Normalized `node-id` with `:` separators; empty string if absent. */
+  nodeId: string;
+}
+
 export type SeedReferenceValidationReason =
   | "missing_figma_seed_reference"
   | "missing_original_design_intent"
@@ -77,6 +89,11 @@ export interface SeedReferenceResult {
    *  (source of truth) is still saved and the call still succeeds — callers must
    *  NOT retry on this (retrying would duplicate the record). */
   audit_warning?: "event_write_failed";
+  /**
+   * True when an existing seed with the same fileKey+nodeId was returned
+   * instead of inserting a new row (idempotent re-register).
+   */
+  reused?: true;
 }
 
 export interface SeedReferenceError {
@@ -85,6 +102,46 @@ export interface SeedReferenceError {
 }
 
 export type SeedReferenceResponse = SeedReferenceResult | SeedReferenceError;
+
+/**
+ * Parse fileKey + nodeId from a Figma design/file URL for local identity.
+ * Does not rewrite the stored URL — only used for dedupe matching.
+ * `node-id=0-81` and `node-id=0:81` normalize to the same `0:81`.
+ */
+export function parseFigmaSeedIdentity(
+  rawUrl: string
+): FigmaSeedIdentity | null {
+  let url: URL;
+  try {
+    url = new URL(rawUrl.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:") return null;
+  if (url.hostname !== "figma.com" && url.hostname !== "www.figma.com") {
+    return null;
+  }
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (
+    parts.length < 2 ||
+    (parts[0] !== "design" && parts[0] !== "file") ||
+    !parts[1]
+  ) {
+    return null;
+  }
+  const fileKey = parts[1];
+  const rawNode =
+    url.searchParams.get("node-id") ?? url.searchParams.get("nodeId") ?? "";
+  const nodeId = rawNode.trim().replace(/-/g, ":");
+  return { fileKey, nodeId };
+}
+
+export function figmaSeedIdentitiesEqual(
+  a: FigmaSeedIdentity,
+  b: FigmaSeedIdentity
+): boolean {
+  return a.fileKey === b.fileKey && a.nodeId === b.nodeId;
+}
 
 // Local, offline format check of the Figma URL. Does NOT touch the network.
 // Accepted: https URL on figma.com / www.figma.com with a /design/<key> or
@@ -122,6 +179,39 @@ export function validateSeedReferenceInput(
   return null;
 }
 
+function mapSeedRow(row: Record<string, unknown>): SeedReferenceRecord {
+  return {
+    id: String(row.id),
+    figma_seed_reference: String(row.figma_seed_reference),
+    original_design_intent: String(row.original_design_intent),
+    created_at: String(row.created_at),
+    registered_via: row.registered_via === "ui" ? "ui" : "agent"
+  };
+}
+
+function findSeedByIdentity(
+  projectPath: string,
+  identity: FigmaSeedIdentity
+): SeedReferenceRecord | null {
+  const db = openProjectDb(projectPath);
+  try {
+    const rows = db
+      .prepare("SELECT * FROM seed_references ORDER BY created_at ASC")
+      .all() as Array<Record<string, unknown>>;
+    for (const row of rows) {
+      const existing = parseFigmaSeedIdentity(
+        String(row.figma_seed_reference)
+      );
+      if (existing && figmaSeedIdentitiesEqual(existing, identity)) {
+        return mapSeedRow(row);
+      }
+    }
+    return null;
+  } finally {
+    closeProjectDb(db);
+  }
+}
+
 export function registerSeedReference(
   projectPath: string,
   input: SeedReferenceInput
@@ -129,6 +219,15 @@ export function registerSeedReference(
   const validationError = validateSeedReferenceInput(input);
   if (validationError) {
     return { ok: false, reason: validationError };
+  }
+
+  const identity = parseFigmaSeedIdentity(input.figmaSeedReference);
+  if (identity) {
+    const existing = findSeedByIdentity(projectPath, identity);
+    if (existing) {
+      // Idempotent: same file+node → return existing row (no second INSERT).
+      return { ok: true, record: existing, event_id: null, reused: true };
+    }
   }
 
   const registeredVia: "ui" | "agent" =
@@ -191,13 +290,7 @@ export function listSeedReferences(projectPath: string): SeedReferenceRecord[] {
     const rows = db
       .prepare("SELECT * FROM seed_references ORDER BY created_at ASC")
       .all() as Array<Record<string, unknown>>;
-    return rows.map((row) => ({
-      id: String(row.id),
-      figma_seed_reference: String(row.figma_seed_reference),
-      original_design_intent: String(row.original_design_intent),
-      created_at: String(row.created_at),
-      registered_via: row.registered_via === "ui" ? "ui" : "agent"
-    }));
+    return rows.map(mapSeedRow);
   } finally {
     closeProjectDb(db);
   }

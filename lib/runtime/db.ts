@@ -69,6 +69,26 @@ CREATE TABLE IF NOT EXISTS figma_evidence_surfaces (
   created_at TEXT NOT NULL
 );
 
+-- Region annotations (Issue 06): normalized rect on Evidence Surface screenshot
+-- media box (coordinate space A, 0–1). Anchored via surface_artifact_id and/or
+-- surface_node_id; surface_id is the resolved figma_evidence_surfaces.id when known.
+CREATE TABLE IF NOT EXISTS region_annotations (
+  id TEXT PRIMARY KEY,
+  surface_id TEXT NULL,
+  surface_artifact_id TEXT NULL,
+  surface_node_id TEXT NULL,
+  author TEXT NOT NULL,
+  type TEXT NOT NULL,
+  body TEXT NOT NULL,
+  rect_x REAL NOT NULL,
+  rect_y REAL NOT NULL,
+  rect_w REAL NOT NULL,
+  rect_h REAL NOT NULL,
+  primary_node_id TEXT NULL,
+  candidates_json TEXT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -76,6 +96,9 @@ CREATE INDEX IF NOT EXISTS idx_tasks_family ON tasks(family);
 CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
 CREATE INDEX IF NOT EXISTS idx_seed_references_created_at ON seed_references(created_at);
 CREATE INDEX IF NOT EXISTS idx_figma_evidence_surfaces_created_at ON figma_evidence_surfaces(created_at);
+CREATE INDEX IF NOT EXISTS idx_figma_evidence_surfaces_frame_node_id ON figma_evidence_surfaces(frame_node_id);
+CREATE INDEX IF NOT EXISTS idx_region_annotations_created_at ON region_annotations(created_at);
+CREATE INDEX IF NOT EXISTS idx_region_annotations_surface_id ON region_annotations(surface_id);
 `;
 
 export function openProjectDb(projectPath: string): DatabaseType {

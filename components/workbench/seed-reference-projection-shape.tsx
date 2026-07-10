@@ -34,7 +34,6 @@
 // hideResizeHandles, which also removes hit geometry). Unselected strokes are
 // #B980B9; selected deepens both to #731b73 (`.seed-ref-frame--selected`).
 
-import "tldraw/tldraw.css";
 import { useState, type SyntheticEvent } from "react";
 import {
   BaseBoxShapeUtil,
