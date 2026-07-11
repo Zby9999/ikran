@@ -126,9 +126,10 @@ Expected: the Agent calls `open_workbench` and returns a
 
 Confirm:
 
-- the shell renders (`Project set up...`, `Project Folder`, `Connect Your Agent`),
-- `Local runtime connected` (Runtime health),
-- the SSE connection stays alive (the connection-state helper stays green; the
+- the shell renders (`Project set up...`, `Runtime connected`, `Project Folder`,
+  `Start Building`),
+- `Runtime connected` confirms Runtime health,
+- the SSE connection stays alive (the Runtime row stays connected; the
   UI deliberately does not show "heartbeat" text).
 
 ## 4. Bad-token check (proves session enforcement)
@@ -174,7 +175,7 @@ Cursor:
   - URL host:port:
   - Embedded browser opened the shell?  [ ] yes  [ ] n/a
   - System-browser fallback opened the same URL?  [ ] yes  [ ] n/a
-  - Shell: "Local runtime connected"?  [ ] yes  [ ] no
+  - Shell: "Runtime connected"?  [ ] yes  [ ] no
   - Bad-token curl → 403?  [ ] yes ; real-token → 200?  [ ] yes
 Codex Desktop:
   - Tool discovered?  [ ] yes  [ ] no → open gap: ____ ; fallback used: ____

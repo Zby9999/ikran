@@ -11,17 +11,18 @@ import {
   type RegionAnnotationMeta,
   type RegionAnnotationShape
 } from "../region-annotation-shape";
+import { SEED_REFERENCE_PROJECTION_TYPE } from "../seed-reference-projection-shape";
 import {
-  SEED_REFERENCE_PROJECTION_TYPE,
-  type SeedReferenceProjectionMeta
-} from "../seed-reference-projection-shape";
+  isFigmaEvidenceSurfaceMeta,
+  isSeedReferenceProjectionShape,
+  seedReferenceMetaMatchesSurfaceId,
+  type SeedReferenceSurfaceShapeLike
+} from "../seed-reference-surface-match";
 import { displayRectForRegionAnnotation } from "@/lib/runtime/region-annotation-display";
 import type { RegionAnnotationRecord } from "@/lib/runtime/region-annotation";
 
-export type AnnotationSurfaceShapeLike = {
+export type AnnotationSurfaceShapeLike = SeedReferenceSurfaceShapeLike & {
   id: string;
-  type: string;
-  meta: unknown;
 };
 
 export type AnnotationPagePlacement = {
@@ -30,6 +31,8 @@ export type AnnotationPagePlacement = {
   meta: RegionAnnotationMeta;
   nextW: number;
   nextH: number;
+  /** Parent media-box width (page px) for proportional stroke/radius. */
+  surfaceMediaW: number;
 };
 
 export type AnnotationProjectionExisting = {
@@ -83,11 +86,11 @@ export function findSurfaceShapeForAnnotation<T extends AnnotationSurfaceShapeLi
   if (!surfaceId) return undefined;
 
   return shapes.find((shape) => {
-    if (shape.type !== SEED_REFERENCE_PROJECTION_TYPE) return false;
-    const meta = shape.meta as SeedReferenceProjectionMeta;
+    if (!isSeedReferenceProjectionShape(shape)) return false;
+    const meta = shape.meta;
     return (
-      meta.kind === "figma_evidence_surface" &&
-      (meta.surfaceRecordId === surfaceId || meta.runtimeRecordId === surfaceId)
+      isFigmaEvidenceSurfaceMeta(meta) &&
+      seedReferenceMetaMatchesSurfaceId(meta, surfaceId)
     );
   });
 }
@@ -138,7 +141,8 @@ export function computeAnnotationPagePlacement(
     author,
     meta,
     nextW: Math.max(1, pageRect.w),
-    nextH: Math.max(1, pageRect.h)
+    nextH: Math.max(1, pageRect.h),
+    surfaceMediaW: Math.max(0, mediaBox.w)
   };
 }
 
@@ -161,13 +165,14 @@ export function planAnnotationProjectionOps(
     const shapeId = shapeIdForRecordId(record.id);
     wantIds.add(shapeId);
     const current = existingById.get(shapeId);
-    const { pageRect, author, meta, nextW, nextH } = placement;
+    const { pageRect, author, meta, nextW, nextH, surfaceMediaW } = placement;
 
     if (current) {
       const propsChanged =
         current.props.w !== nextW ||
         current.props.h !== nextH ||
         current.props.author !== author ||
+        current.props.surfaceMediaW !== surfaceMediaW ||
         current.x !== pageRect.x ||
         current.y !== pageRect.y;
       const metaChanged = !annotationMetaEqual(current.meta, meta);
@@ -181,7 +186,8 @@ export function planAnnotationProjectionOps(
             w: nextW,
             h: nextH,
             author,
-            label: ""
+            label: "",
+            surfaceMediaW
           },
           ...(metaChanged ? { meta } : {})
         });
@@ -198,7 +204,8 @@ export function planAnnotationProjectionOps(
         w: nextW,
         h: nextH,
         author,
-        label: ""
+        label: "",
+        surfaceMediaW
       },
       meta
     });

@@ -1,4 +1,7 @@
-import { CheckIcon as PhosphorCheckIcon } from "@phosphor-icons/react";
+import {
+  CheckIcon as PhosphorCheckIcon,
+  CircleNotchIcon
+} from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 
 type IconTone = "gray" | "pink" | "blue" | "purple";
@@ -22,6 +25,18 @@ export function SettledCheckIcon() {
     <span className="settled-check" aria-hidden="true">
       <PhosphorCheckIcon size={8} weight="bold" />
     </span>
+  );
+}
+
+export function StepLoadingIcon({
+  tone = "pink"
+}: {
+  tone?: IconTone;
+}) {
+  return (
+    <IconBox tone={tone}>
+      <CircleNotchIcon className="step-loading-icon" size={14} weight="bold" />
+    </IconBox>
   );
 }
 

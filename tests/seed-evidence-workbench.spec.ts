@@ -68,8 +68,8 @@ async function captureToken(
     await route.continue();
   });
   await page.goto(baseURL + "/");
-  await expect(page.getByTestId("runtime-helper")).toContainText(
-    "Local runtime connected"
+  await expect(page.getByTestId("runtime-label")).toContainText(
+    "Runtime connected"
   );
   await page.unroute("**/api/**");
   if (!sessionToken) {
@@ -575,6 +575,26 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       await expect(projection).toHaveAttribute("data-kind", "figma_evidence_surface");
       await expect(projection.getByTestId("seed-reference-projection-title")).toHaveText(
         "Evidence Frame"
+      );
+
+      const figmaLink = projection.getByTestId(
+        "seed-reference-projection-figma-link"
+      );
+      await expect(figmaLink).toBeEnabled();
+      await figmaLink.hover();
+      await expect(
+        projection.getByTestId("seed-reference-projection-figma-hint")
+      ).toBeVisible();
+      await page.evaluate(() => {
+        window.open = ((url) => {
+          document.body.dataset.openedFigmaUrl = String(url);
+          return null;
+        }) as typeof window.open;
+      });
+      await figmaLink.click();
+      await expect(page.locator("body")).toHaveAttribute(
+        "data-opened-figma-url",
+        REAL_FIGMA_SEED_REFERENCE
       );
 
       const media = projection.getByTestId("seed-reference-projection-media");

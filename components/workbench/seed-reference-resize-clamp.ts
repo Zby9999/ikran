@@ -5,7 +5,7 @@ import type { TLResizeHandle } from "tldraw";
  * Matches `.seed-ref-frame` / `__header` / `__media` in seed-evidence-workbench.css.
  */
 export const SEED_REF_FRAME_CHROME_W = 10; // pad 4+4 + media border 1+1
-export const SEED_REF_FRAME_CHROME_H = 32; // pad top 2 + header 24 + pad bottom 4 + media border 1+1
+export const SEED_REF_FRAME_CHROME_H = 34; // pad top 4 + header 20 + gap 4 + media border 1+1 + pad bottom 4
 
 /** Cap the longer media edge in page pixels (downscale only; never upscale).
  *  Align with Figma MCP get_screenshot maxDimension guidance (4096). */

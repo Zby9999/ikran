@@ -50,8 +50,8 @@ test.describe("Ikran Issue 02/01 — Workbench URL opens the session shell", () 
     // page's same-origin /api/health request has fired, so the route above has
     // captured the startup token from its `x-ikran-session` header.
     await page.goto(baseURL + "/");
-    await expect(page.getByTestId("runtime-helper")).toContainText(
-      "Local runtime connected"
+    await expect(page.getByTestId("runtime-label")).toContainText(
+      "Runtime connected"
     );
 
     if (!sessionToken) {
@@ -75,11 +75,11 @@ test.describe("Ikran Issue 02/01 — Workbench URL opens the session shell", () 
 
     // Same-origin Runtime health + live SSE heartbeat, reached via the explicit
     // Workbench URL form.
-    await expect(page.getByTestId("runtime-helper")).toContainText(
-      "Local runtime connected"
+    await expect(page.getByTestId("runtime-label")).toContainText(
+      "Runtime connected"
     );
     await expect(page.getByTestId("runtime-service")).toHaveText("ikran-runtime");
-    await expect(page.getByTestId("runtime-helper")).not.toContainText(
+    await expect(page.getByTestId("runtime-label")).not.toContainText(
       "heartbeat"
     );
 

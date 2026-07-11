@@ -211,8 +211,8 @@ test.describe("Ikran Issue 02/01 — open_workbench MCP tool", () => {
 
         await page.goto(info1.url);
         await expect(page.getByText("Project set up...")).toBeVisible();
-        await expect(page.getByTestId("runtime-helper")).toContainText(
-          "Local runtime connected"
+        await expect(page.getByTestId("runtime-label")).toContainText(
+          "Runtime connected"
         );
         await expect(page.getByTestId("runtime-service")).toHaveText(
           "ikran-runtime"

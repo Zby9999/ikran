@@ -1,23 +1,20 @@
 "use client";
 
-// Project setup card — the designer's existing (Figma-owned) web design.
+// Project setup card — Figma-owned setup stack (Runtime + Project Folder).
 //
 // Data flows through the same-origin Ikran Runtime (`/api/health`,
-// `/api/events`, `/api/project`). Do not alter layout, icons, or styling here
-// without a Figma source.
+// `/api/events`, `/api/project`). Status copy lives inside each step row.
 //
 // Issue 02/02: the folder step no longer picks a folder. The working folder is
 // chosen before the conversation (the folder the user opened in the Agent
-// host), forwarded to the Runtime as IKRAN_CWD. So the step now auto-completes
-// when `.ikran` already exists, or offers a one-click "Initialize here" that
-// creates `.ikran` in that folder. The helper COPY was changed for this flow
-// (label + per-state text); the visual layout is unchanged. Final wording
-// should be confirmed against Figma by the designer.
+// host), forwarded to the Runtime as IKRAN_CWD. The step auto-completes when
+// `.ikran` already exists, or offers one-click Initialize when confirmation
+// is needed. Runtime reconnect remains clickable only when disconnected.
 
 import {
   DownloadIcon as PhosphorDownloadIcon
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { folderErrorMessage } from "../../lib/runtime/folder-error-message";
 import {
   subscribeRuntimeEvents,
@@ -28,7 +25,10 @@ import { FolderSelectStep, type FolderSelectVariant } from "./FolderSelectStep";
 import { activeIconGradients, IconGradients } from "./IconGradients";
 import { IconBox } from "./IconBox";
 import { SetupActionButton } from "./SetupActionButton";
-import { SetupStepButton } from "./SetupStepButton";
+import {
+  SetupStepButton,
+  type SetupStepVisual
+} from "./SetupStepButton";
 
 type Bootstrap = { session: string; service: string };
 
@@ -65,7 +65,7 @@ export function ProjectSetupCard({
   const [project, setProject] = useState<ProjectState>({ status: "idle" });
   const [cwdCandidate, setCwdCandidate] = useState<{
     path: string;
-    kind: "init" | "manual";
+    kind: "resume" | "init" | "manual";
   } | null>(null);
   const [showSeedWorkbench, setShowSeedWorkbench] = useState(false);
 
@@ -195,6 +195,8 @@ export function ProjectSetupCard({
         // Working folder has .ikran but is not the active binding -> bind it
         // (the cwd working folder is authoritative).
         if (candidate && candidate.kind === "resume") {
+          // Keep the path available if auto-bind fails so the same row can retry.
+          setCwdCandidate({ path: candidate.path, kind: candidate.kind });
           await bindFolder(candidate.path);
           return;
         }
@@ -239,33 +241,44 @@ export function ProjectSetupCard({
     await bindFolder(cwdCandidate.path);
   }
 
-  const runtimeHelper = useMemo(() => {
-    if (runtimeState === "connected") {
-      return "Local runtime connected";
-    }
-    if (runtimeState === "loading") {
-      return "Checking local runtime connection";
-    }
-    return <>Local runtime disconnected. Try again</>;
-  }, [runtimeState]);
-
   const folderReady = runtimeState === "connected";
   const buildingReady =
     runtimeState === "connected" && project.status === "bound";
 
+  const runtimeVisual: SetupStepVisual =
+    runtimeState === "connected"
+      ? "complete"
+      : runtimeState === "loading"
+        ? "loading"
+        : "error";
+
+  const runtimeLabel =
+    (
+      {
+        complete: "Runtime connected",
+        loading: "Loading...",
+        error: "Runtime disconnected",
+        default: "Runtime Setup"
+      } as const
+    )[runtimeVisual];
+
   const folderVariant: FolderSelectVariant =
     project.status === "bound"
       ? "complete"
-      : folderReady
-        ? "default"
-        : "inactive";
+      : project.status === "binding"
+        ? "loading"
+        : project.status === "error"
+          ? "error"
+          : folderReady
+            ? "default"
+            : "inactive";
 
-  const folderBusy = project.status === "binding";
-
+  // Retry after bind failure still needs a cwd candidate (same as Initialize).
   const folderActionDisabled =
     !folderReady ||
-    folderBusy ||
-    (project.status !== "bound" && !cwdCandidate);
+    project.status === "binding" ||
+    ((project.status === "idle" || project.status === "error") &&
+      !cwdCandidate);
 
   if (showSeedWorkbench && project.status === "bound") {
     return (
@@ -297,20 +310,11 @@ export function ProjectSetupCard({
                 />
               </IconBox>
             }
-            label={runtimeState === "loading" ? "Connecting..." : "Local Runtime"}
-            labelComplete={runtimeState === "connected"}
-            stepNumber={runtimeState === "connected" ? undefined : 1}
-            stepNumberActive
+            label={runtimeLabel}
+            visual={runtimeVisual}
+            stepNumber={runtimeVisual === "complete" ? undefined : 1}
             stepNumberTone="pink"
-            helper={renderRuntimeHelper(runtimeState, runtimeHelper)}
-            helperTone={
-              runtimeState === "connected"
-                ? "success"
-                : runtimeState === "disconnected"
-                  ? "error"
-                  : "default"
-            }
-            helperTestId="runtime-helper"
+            labelTestId="runtime-label"
             onClick={
               runtimeState === "disconnected" ? reconnectRuntime : undefined
             }
@@ -318,13 +322,8 @@ export function ProjectSetupCard({
           />
           <FolderSelectStep
             variant={folderVariant}
-            helper={renderFolderHelper(project, folderVariant, cwdCandidate)}
-            helperTone={
-              project.status === "bound"
-                ? "success"
-                : project.status === "error"
-                  ? "error"
-                  : "default"
+            folderName={
+              project.status === "bound" ? project.name : undefined
             }
             rowTestId="select-folder-button"
             onSelectFolder={handleInitialize}
@@ -346,45 +345,5 @@ export function ProjectSetupCard({
         {project.status === "bound" ? project.path : ""}
       </span>
     </main>
-  );
-}
-
-function renderFolderHelper(
-  project: ProjectState,
-  variant: FolderSelectVariant,
-  cwdCandidate: { path: string; kind: "init" | "manual" } | null
-) {
-  switch (project.status) {
-    case "bound":
-      return <>Complete! {project.path}</>;
-    case "binding":
-      return <>Initializing {project.path}...</>;
-    case "error":
-      return <>{project.message}</>;
-    default:
-      break;
-  }
-  // Not bound (idle).
-  if (variant === "inactive") {
-    return <>Connect the local runtime to bind a project folder.</>;
-  }
-  if (!cwdCandidate) {
-    return <>Open from Agent to bind folder.</>;
-  }
-  if (cwdCandidate.kind === "manual") {
-    return <>Initialize .ikran in this folder</>;
-  }
-  return <>Click to initialize the project folder</>;
-}
-
-function renderRuntimeHelper(state: RuntimeState, helper: ReactNode) {
-  if (state === "connected" || state === "disconnected") {
-    return helper;
-  }
-
-  return (
-    <>
-      Install a local runtime for agent - webapp <strong>connection</strong>
-    </>
   );
 }

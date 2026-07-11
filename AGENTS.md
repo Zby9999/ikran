@@ -30,3 +30,17 @@ Product and architecture details are in `IKRAN-MVP-PRD.zh-CN.md` and `issues/`.
 - Do **not** edit files under `workflow/` for Ikran Runtime / MCP / Workbench work.
 - Ikran Agent conventions belong in Ikran surfaces (e.g. MCP `instructions`, tool descriptions, `AGENTS.md`, `Issues 02/`, product docs) — not in `workflow/` Skills.
 - `workflow/` Skills may still inform design-agent methodology for this repository; treat them as foundation context for the project, not as Ikran MCP configuration.
+
+## Agent skills
+
+### Issue tracker
+
+Implementation issues live as markdown under `Issues 02/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default triage vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.

@@ -33,11 +33,11 @@ export interface NormalizedRect {
 
 /**
  * Inset from seed-reference-projection shape origin to media content box.
- * Left: pad 4 + media border 1. Top: pad 2 + header 24 + media border 1.
+ * Left: pad 4 + media border 1. Top: pad 4 + header 20 + gap 4 + media border 1.
  * Matches `SEED_REF_FRAME_CHROME_*` (left+right = W, top+bottom = H).
  */
 export const SEED_REF_MEDIA_INSET_X = 5;
-export const SEED_REF_MEDIA_INSET_Y = 27;
+export const SEED_REF_MEDIA_INSET_Y = 29;
 
 /** Tiny square side for point-click → marker (matches Runtime `POINT_SIDE`). */
 export const REGION_ANNOTATION_POINT_SIDE = 0.02;

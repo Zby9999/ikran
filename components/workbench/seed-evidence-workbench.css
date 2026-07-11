@@ -213,7 +213,8 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 2px 4px 4px;
+  gap: 4px;
+  padding: 4px;
   /* Unselected: both strokes #B980B9; selected deepens to #731b73. */
   border: 1px solid #b980b9;
   border-radius: 8px;
@@ -245,7 +246,7 @@
   align-items: center;
   justify-content: space-between;
   flex: 0 0 auto;
-  min-height: 24px;
+  min-height: 20px;
   width: 100%;
 }
 
@@ -264,54 +265,123 @@
   letter-spacing: -0.3px;
 }
 
-.seed-ref-frame__info-wrap {
+.seed-ref-frame__header-actions {
   position: relative;
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
+  display: flex;
+  align-items: center;
+  height: 20px;
 }
 
+.seed-ref-frame__figma-link-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+/* Figma Address hint (Figma 284:415) — fade + slide up on figma-link hover. */
+.seed-ref-frame__figma-hint-anchor {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  z-index: 2;
+  translate: -50% 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 160ms ease,
+    translate 160ms ease;
+}
+
+.seed-ref-frame__figma-link-wrap:hover:not(:has(.seed-ref-frame__figma-link:disabled))
+  .seed-ref-frame__figma-hint-anchor,
+.seed-ref-frame__figma-link-wrap:focus-within .seed-ref-frame__figma-hint-anchor {
+  opacity: 1;
+  translate: -50% 0;
+}
+
+.seed-ref-frame__figma-hint {
+  box-sizing: border-box;
+  display: block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #ffeeff;
+  color: #731b73;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: normal;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+}
+
+.seed-ref-frame__figma-link,
 .seed-ref-frame__info {
   box-sizing: border-box;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   margin: 0;
   padding: 0;
   border: none;
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
   color: #731b73;
   cursor: pointer;
   appearance: none;
 }
 
+.seed-ref-frame__figma-link:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.seed-ref-frame__figma-link:hover:not(:disabled),
+.seed-ref-frame__figma-link:focus-visible:not(:disabled),
+.seed-ref-frame__info:hover,
+.seed-ref-frame__info:focus-visible {
+  background: #bb70bb;
+}
+
+.seed-ref-frame__figma-icon,
 .seed-ref-frame__info-icon {
   display: block;
   pointer-events: none;
 }
 
-/* Description tip (Figma 227:130) — white, purple border, 10px text.
-   Parent `.seed-ref-frame__info-wrap` is only 24px wide; without max-content
-   the tip collapses to that width and CJK wraps one glyph per line (vertical).
-   Cap at 300px and wrap overflow (do not use nowrap). */
-.seed-ref-frame__tip {
+/* Description tip (Figma 227:130 / hover 227:246) — fade + slide up on show. */
+.seed-ref-frame__tip-anchor {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + var(--seed-ref-tip-gap, 10px));
   z-index: 2;
+  pointer-events: none;
+  animation: seed-ref-tip-enter 160ms ease forwards;
+}
+
+@keyframes seed-ref-tip-enter {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+.seed-ref-frame__tip {
   box-sizing: border-box;
   width: max-content;
   max-width: 300px;
   padding: 10px;
   border: 1px solid #731b73;
   border-radius: 8px;
-  background: #ffffff;
-  color: #000000;
+  background: #ffeeff;
+  color: #731b73;
   font-size: 10px;
   font-weight: 400;
-  line-height: normal;
+  line-height: 1.4;
   letter-spacing: -0.3px;
   white-space: normal;
   overflow-wrap: break-word;
@@ -392,31 +462,40 @@
   }
 }
 
-/* Region Annotation marker (Issue 06) — on-surface box only. */
+/* Region Annotation marker (Issue 06) — on-surface box only.
+   Stroke/radius are page-space CSS borders scaled with parent media width
+   (Figma ref: 1px / 8px at ~695px media; set inline). Camera zoom scales
+   them once with the html-layer. */
 .region-annotation-marker {
   box-sizing: border-box;
   display: block;
-  border-radius: 8px;
-  border-style: solid;
-  border-width: 1px;
   pointer-events: all;
+  overflow: visible;
 }
 
-.region-annotation-marker--designer {
+.region-annotation-marker__chrome {
+  box-sizing: border-box;
+  border-style: solid;
+  pointer-events: none;
+}
+
+.region-annotation-marker--designer .region-annotation-marker__chrome {
   border-color: #19d122;
   background: rgba(25, 209, 34, 0.05);
 }
 
-.region-annotation-marker--agent {
+.region-annotation-marker--agent .region-annotation-marker__chrome {
   border-color: #a5a5a5;
   background: rgba(165, 165, 165, 0.05);
 }
 
 /* Selected: raise fill opacity so the marker reads clearly (try 40%). */
-.region-annotation-marker--designer.region-annotation-marker--selected {
+.region-annotation-marker--designer.region-annotation-marker--selected
+  .region-annotation-marker__chrome {
   background: rgba(25, 209, 34, 0.4);
 }
 
-.region-annotation-marker--agent.region-annotation-marker--selected {
+.region-annotation-marker--agent.region-annotation-marker--selected
+  .region-annotation-marker__chrome {
   background: rgba(165, 165, 165, 0.4);
 }

@@ -164,8 +164,8 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
       await page.goto(runtime.baseURL + "/");
 
       // No silent auto-bind: the Initialize button is shown and bind has not run.
-      await expect(page.getByTestId("folder-helper")).toContainText(
-        "Click to initialize the project folder"
+      await expect(page.getByTestId("folder-label")).toContainText(
+        "Project Folder"
       );
       await expect(page.getByTestId("project-path")).toHaveText("");
       expect(pathsInclude(bind.paths(), dir)).toBe(false);
@@ -207,6 +207,65 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
     }
   });
 
+  test("failed `resume` auto-bind keeps the folder row retryable", async ({
+    page,
+    runtime
+  }) => {
+    const dir = mkdtempSync(path.join(tmpdir(), "ikran-cwd-ui-resume-retry-"));
+    const candidatePath = realPath(dir);
+    let attempts = 0;
+    try {
+      await page.route("**/api/project", (route) =>
+        route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: true,
+            project: null,
+            cwd_candidate: { path: candidatePath, kind: "resume" }
+          })
+        })
+      );
+      await page.route("**/api/project/bind", async (route) => {
+        attempts += 1;
+        if (attempts === 1) {
+          await route.fulfill({
+            status: 500,
+            contentType: "application/json",
+            body: JSON.stringify({ ok: false, error: "binding_failed" })
+          });
+          return;
+        }
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: true,
+            project: {
+              path: candidatePath,
+              name: path.basename(candidatePath)
+            }
+          })
+        });
+      });
+
+      await page.goto(runtime.baseURL + "/");
+      await expect.poll(() => attempts).toBe(1);
+      await expect(page.getByTestId("folder-label")).toHaveText(
+        "Folder bind failed"
+      );
+
+      const retry = page.getByRole("button", { name: /Folder bind failed/ });
+      await expect(retry).toBeEnabled();
+      await retry.click();
+
+      await expect.poll(() => attempts).toBe(2);
+      await expect(page.getByTestId("project-path")).toHaveText(candidatePath);
+    } finally {
+      await page.unroute("**/api/project").catch(() => {});
+      await page.unroute("**/api/project/bind").catch(() => {});
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("UI does NOT auto-bind a `manual` cwd; a one-click Initialize binds alongside", async ({ page, runtime }) => {
     const dir = mkdtempSync(path.join(tmpdir(), "ikran-cwd-ui-manual-"));
     writeFileSync(path.join(dir, "keep-me.txt"), "hi");
@@ -227,8 +286,8 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
       await page.goto(runtime.baseURL + "/");
 
       // No silent bind: the Initialize button is shown and bind has not run.
-      await expect(page.getByTestId("folder-helper")).toContainText(
-        "Initialize .ikran in this folder"
+      await expect(page.getByTestId("folder-label")).toContainText(
+        "Project Folder"
       );
       await expect(page.getByTestId("project-path")).toHaveText("");
       expect(existsSync(path.join(dir, ".ikran", "config.json"))).toBe(false);
@@ -259,8 +318,8 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
     });
 
     await page.goto(runtime.baseURL + "/");
-    await expect(page.getByTestId("runtime-helper")).toContainText(
-      "Local runtime connected"
+    await expect(page.getByTestId("runtime-label")).toContainText(
+      "Runtime connected"
     );
 
     if (!sessionToken) {

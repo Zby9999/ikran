@@ -75,8 +75,8 @@ async function captureToken(
     await route.continue();
   });
   await page.goto(baseURL + "/");
-  await expect(page.getByTestId("runtime-helper")).toContainText(
-    "Local runtime connected"
+  await expect(page.getByTestId("runtime-label")).toContainText(
+    "Runtime connected"
   );
   await page.unroute("**/api/**");
   if (!sessionToken) {

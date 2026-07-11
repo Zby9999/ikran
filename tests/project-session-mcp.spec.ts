@@ -196,12 +196,12 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
         // 8. Refresh recovery through an MCP-initiated binding (active = dirA).
         await page.goto(workbenchUrl);
         await expect(page.getByText("Project set up...")).toBeVisible();
-        await expect(page.getByTestId("runtime-helper")).toContainText(
-          "Local runtime connected"
+        await expect(page.getByTestId("runtime-label")).toContainText(
+          "Runtime connected"
         );
         await page.reload();
-        await expect(page.getByTestId("folder-helper")).toContainText(
-          `Complete! ${dirA}`
+        await expect(page.getByTestId("folder-label")).toContainText(
+          `/${path.basename(dirA)} connected`
         );
         await expect(page.getByTestId("project-path")).toHaveText(dirA);
       } finally {

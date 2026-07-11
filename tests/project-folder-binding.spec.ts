@@ -51,8 +51,8 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     });
 
     await page.goto(baseURL + "/");
-    await expect(page.getByTestId("runtime-helper")).toContainText(
-      "Local runtime connected"
+    await expect(page.getByTestId("runtime-label")).toContainText(
+      "Runtime connected"
     );
 
     if (!sessionToken) {
@@ -77,6 +77,7 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     expect(existsSync(`${testFolder}/.ikran/config.json`)).toBe(true);
     expect(existsSync(`${testFolder}/.ikran/ikran.db`)).toBe(true);
     const boundPath: string = bindBody.project.path;
+    const boundName: string = bindBody.project.name;
 
     // SQLite should contain the recorded events.
     const { DatabaseSync } = require("node:sqlite");
@@ -114,11 +115,8 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
 
     // Browser UI should also recover the binding after refresh.
     await page.reload();
-    await expect(page.getByTestId("folder-helper")).toContainText(
-      `Complete! ${boundPath}`
-    );
-    await expect(page.getByTestId("select-folder-button")).not.toContainText(
-      "Complete!"
+    await expect(page.getByTestId("folder-label")).toContainText(
+      `/${boundName} connected`
     );
     await expect(page.getByTestId("project-path")).toHaveText(boundPath);
     await expect(page.getByText("Connect Your Agent")).toHaveCount(0);
@@ -160,15 +158,15 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     );
 
     await page.reload();
-    await expect(page.getByTestId("folder-helper")).toContainText(
-      `Complete! ${boundPath}`
+    await expect(page.getByTestId("folder-label")).toContainText(
+      `/${boundName} connected`
     );
     await expect(startButton).toBeEnabled();
     await startButton.click();
     await expect(page.getByTestId("seed-workbench")).toBeVisible();
     await page.getByRole("button", { name: "Back to setup" }).click();
-    await expect(page.getByTestId("folder-helper")).toContainText(
-      `Complete! ${boundPath}`
+    await expect(page.getByTestId("folder-label")).toContainText(
+      `/${boundName} connected`
     );
 
     // Single-project-single-flow: binding a different folder fails closed.
@@ -202,8 +200,8 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     ).toBe(true);
 
     await page.reload();
-    await expect(page.getByTestId("folder-helper")).toContainText(
-      `Complete! ${boundPath}`
+    await expect(page.getByTestId("folder-label")).toContainText(
+      `/${boundName} connected`
     );
     await expect(page.getByTestId("project-path")).toHaveText(boundPath);
     await expect(page.getByRole("button", { name: "Start Building" })).toBeEnabled();
@@ -220,8 +218,8 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     });
 
     await page.goto(baseURL + "/");
-    await expect(page.getByTestId("runtime-helper")).toContainText(
-      "Local runtime connected"
+    await expect(page.getByTestId("runtime-label")).toContainText(
+      "Runtime connected"
     );
 
     if (!sessionToken) {

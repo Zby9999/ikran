@@ -22,7 +22,8 @@
 // Until then, seed-only projections show awaiting UX in the media area:
 // Agent-registered seeds keep a loading spinner; UI-registered seeds show
 // guidance to ask Agents for a Figma screenshot (no spinner).
-// URL is stored in props but NOT shown on the card.
+// The stored URL is exposed as a read-only "Open in Figma" action; Workbench
+// still has no seed URL / intent write entry.
 //
 // Default size: 380×520 — readable tall placeholder on the workbench canvas
 // (not the full Figma page aspect 695:1851, which would be ~380×1013).
@@ -46,7 +47,11 @@ import {
   useEditor,
   useValue
 } from "tldraw";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { SeedReferenceDescriptionTip } from "./seed-reference-description-tip";
+import { SeedRefFrameFigmaHint } from "./seed-ref-frame-figma-hint";
+import { SeedRefFrameFigmaIcon } from "./seed-ref-frame-figma-icon";
 import {
   SEED_REF_FRAME_CHROME_H,
   SEED_REF_FRAME_CHROME_W,
@@ -120,6 +125,12 @@ export const SEED_REFERENCE_PROJECTION_DEFAULT_H = 520;
 const FALLBACK_TITLE = "Figma seed";
 const FALLBACK_DESCRIPTION = "Description Place Holder";
 
+const seedRefFrameHeaderButtonClass = cn(
+  "size-5 min-h-0 min-w-0 shrink-0 rounded-[4px] border-0 bg-transparent p-0 shadow-none",
+  "focus-visible:border-0 focus-visible:ring-0 focus-visible:ring-offset-0",
+  "disabled:opacity-40"
+);
+
 function SeedReferenceProjectionFrame({
   shape
 }: {
@@ -128,6 +139,7 @@ function SeedReferenceProjectionFrame({
   const {
     w,
     h,
+    figmaSeedReference,
     originalDesignIntent,
     frameName,
     screenshotDataUrl,
@@ -155,6 +167,14 @@ function SeedReferenceProjectionFrame({
 
   const stopShapePointer = (event: SyntheticEvent) => {
     event.stopPropagation();
+  };
+
+  const figmaUrl = figmaSeedReference.trim();
+
+  const openFigmaLink = (event: SyntheticEvent) => {
+    stopShapePointer(event);
+    if (!figmaUrl) return;
+    window.open(figmaUrl, "_blank", "noopener,noreferrer");
   };
 
   const handleScreenshotLoad = (event: SyntheticEvent<HTMLImageElement>) => {
@@ -204,10 +224,29 @@ function SeedReferenceProjectionFrame({
         >
           {title}
         </p>
-        <div className="seed-ref-frame__info-wrap">
-          <button
+        <div className="seed-ref-frame__header-actions">
+          <div className="seed-ref-frame__figma-link-wrap">
+            <div className="seed-ref-frame__figma-hint-anchor" aria-hidden="true">
+              <SeedRefFrameFigmaHint />
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              className={cn(seedRefFrameHeaderButtonClass, "seed-ref-frame__figma-link")}
+              data-testid="seed-reference-projection-figma-link"
+              aria-label="Open in Figma"
+              disabled={!figmaUrl}
+              onPointerDown={stopShapePointer}
+              onMouseDown={stopShapePointer}
+              onClick={openFigmaLink}
+            >
+              <SeedRefFrameFigmaIcon />
+            </Button>
+          </div>
+          <Button
             type="button"
-            className="seed-ref-frame__info"
+            variant="ghost"
+            className={cn(seedRefFrameHeaderButtonClass, "seed-ref-frame__info")}
             data-testid="seed-reference-projection-info"
             aria-label="Description"
             aria-expanded={tipOpen}
@@ -242,7 +281,7 @@ function SeedReferenceProjectionFrame({
               />
               <circle cx="7" cy="4.5" r="0.7" fill="#731b73" />
             </svg>
-          </button>
+          </Button>
           {tipOpen ? <SeedReferenceDescriptionTip description={description} /> : null}
         </div>
       </div>

@@ -2,58 +2,59 @@
 
 import type { ReactNode } from "react";
 import { WorkbenchButton } from "@/components/workbench";
-import { SettledCheckIcon } from "./IconBox";
+import { SettledCheckIcon, StepLoadingIcon } from "./IconBox";
+import { stepLabelClassName } from "./step-label";
 import { useSquircle } from "./useSquircle";
 
-type HelperTone = "default" | "success" | "error";
-type StepNumberTone = "gray" | "pink" | "blue";
+export type SetupStepVisual = "default" | "loading" | "complete" | "error";
+export type StepNumberTone = "gray" | "pink" | "blue";
 
 export function SetupStepButton({
   icon,
   label,
-  helper,
+  visual,
   stepNumber,
-  stepNumberActive = false,
   stepNumberTone = "gray",
-  labelComplete = false,
-  helperTone = "default",
-  helperTestId,
   rowTestId,
+  labelTestId,
   onClick,
   disabled = false
 }: {
   icon: ReactNode;
   label: string;
-  helper: ReactNode;
+  visual: SetupStepVisual;
   stepNumber?: number;
-  stepNumberActive?: boolean;
   stepNumberTone?: StepNumberTone;
-  labelComplete?: boolean;
-  helperTone?: HelperTone;
-  helperTestId?: string;
   rowTestId?: string;
+  labelTestId?: string;
   onClick?: () => void;
   disabled?: boolean;
 }) {
   const rowRef = useSquircle<HTMLDivElement>(12);
   const buttonRowRef = useSquircle<HTMLButtonElement>(12);
-  const rowClassName = `step-row${labelComplete ? " step-row--settled" : ""}`;
+  const isComplete = visual === "complete";
+  const rowClassName = `step-row${isComplete ? " step-row--settled" : ""}`;
+  const numberToneClass =
+    stepNumberTone === "pink"
+      ? " active"
+      : stepNumberTone === "blue"
+        ? " number--blue"
+        : "";
 
   const rowContent = (
     <>
-      {icon}
+      {visual === "loading" ? <StepLoadingIcon tone="pink" /> : icon}
       <div className="step-fill">
-        <p className={`step-label ${labelComplete ? "complete" : ""}`}>
+        <p
+          className={stepLabelClassName(visual === "error")}
+          data-testid={labelTestId}
+        >
           {label}
         </p>
-        {labelComplete ? (
+        {isComplete ? (
           <SettledCheckIcon />
         ) : stepNumber !== undefined ? (
-          <span
-            className={`number ${stepNumberActive ? "active" : ""} ${
-              stepNumberTone === "blue" ? "number--blue" : ""
-            }`}
-          >
+          <span className={`number${numberToneClass}`}>
             {stepNumber}
           </span>
         ) : null}
@@ -65,7 +66,7 @@ export function SetupStepButton({
     <div className="step" aria-disabled={disabled || undefined}>
       {onClick ? (
         <WorkbenchButton
-          variant="setupRow"
+          variant={isComplete ? "setupRowSettled" : "setupRow"}
           data-testid={rowTestId}
           disabled={disabled}
           onClick={onClick}
@@ -74,16 +75,10 @@ export function SetupStepButton({
           {rowContent}
         </WorkbenchButton>
       ) : (
-        <div className={rowClassName} ref={rowRef}>
+        <div className={rowClassName} data-testid={rowTestId} ref={rowRef}>
           {rowContent}
         </div>
       )}
-      <p
-        className={`helper ${helperTone === "default" ? "" : helperTone}`}
-        data-testid={helperTestId}
-      >
-        {helper}
-      </p>
     </div>
   );
 }

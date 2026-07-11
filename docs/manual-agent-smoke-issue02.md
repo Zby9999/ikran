@@ -44,8 +44,9 @@ Agent host 会 spawn `bin/ikran-mcp.mjs`，它暴露四个工具：
   文件夹**。工作文件夹里已有 `.ikran` 时自动完成（resume）；否则提供一个一键
   **Initialize here**，在该文件夹里创建 `.ikran/`（空文件夹*或*与已有文件并存）。原生
   文件夹选择器和手动输入路径的 fallback 已移除；`inside-folder` 变体及其 "Use this folder
-  directly" 子按钮已移除。标签 `Select a Folder` → `Project Folder`；helper 文案按状态改写。
-  **视觉布局不变**（最终文案待设计师按 Figma 定稿）。
+  directly" 子按钮已移除。当前 Figma 对齐版把状态文案收进步骤行：`Runtime connected`、
+  `Project Folder`、`Loading...`、`Folder bind failed`、`/<folder-name> connected`。
+  绑定失败只显示简洁文案；resume 自动绑定失败后，文件夹行仍可点击重试。
 - 已移除：`app/api/project/select-folder/route.ts`、`lib/runtime/folder-picker.ts`（原生
   picker 没了）。`lib/runtime/cwd-candidate.ts` 的 `isAutoBindable` 现在只认 resume（空文件夹
   要等点击，不再静默 auto-bind）。
@@ -160,7 +161,7 @@ mkdir -p ~/ikran-smoke-empty-2
 
 预期：Agent 调用 `open_workbench` 并返回一个 `http://127.0.0.1:<port>/?session=<token>` URL。
 打开它（Cursor 内嵌浏览器，或复制到系统浏览器）。确认 shell 渲染出来并显示
-**`Local runtime connected`**。
+**`Runtime connected`**。
 
 然后**确认工作文件夹的发现**——让 Agent：
 
@@ -175,11 +176,11 @@ mkdir -p ~/ikran-smoke-empty-2
 
 文件夹步骤应当显示**你的工作文件夹**（`.../ikran-smoke-empty-1`）：
 
-- 如果那里已有 `.ikran` → 自动显示 **`Complete! .../ikran-smoke-empty-1`**；
-- 否则 → helper **`Click to initialize the project folder`**。
+- 如果那里已有 `.ikran` → 自动显示 **`/ikran-smoke-empty-1 connected`**；
+- 否则 → 显示可点击的 **`Project Folder`** 行。
 
 **方案 A——设计师点击（新 UX）：** 在 Workbench 里点 **Project Folder** 那一行。它会在工作
-文件夹里创建 `.ikran/` 并切到 **`Complete! .../ikran-smoke-empty-1`**。
+文件夹里创建 `.ikran/` 并切到 **`/ikran-smoke-empty-1 connected`**。
 
 **方案 B——Agent 绑定（不带 path，用 Roots 发现）：** 让 Agent：
 
@@ -187,7 +188,7 @@ mkdir -p ~/ikran-smoke-empty-2
 
 预期：Agent 调用 `create_or_open_project({})`（不带 path）→ server 通过 Roots 发现工作文件夹
 → 绑定 → 返回 project + session + Workbench URL。Workbench 随后显示
-**`Complete! .../ikran-smoke-empty-1`**。
+**`/ikran-smoke-empty-1 connected`**。
 
 （如果 Roots 不可用，Agent 显式传路径：`create_or_open_project({ path: "~/ikran-smoke-empty-1" })`。）
 
@@ -219,7 +220,7 @@ gap（issue 明确允许在失败时记录 open gap）。
 ### 4e. 刷新恢复绑定
 
 在 `ikran-smoke-empty-1` 已绑定的情况下，在浏览器里重载 Workbench URL。确认 setup card 自动显示
-**`Complete! .../ikran-smoke-empty-1`**——Runtime 在刷新后恢复了 project/session 状态（不重新
+**`/ikran-smoke-empty-1 connected`**——Runtime 在刷新后恢复了 project/session 状态（不重新
 bind，不产生 event 噪音）。
 
 ### 4f. 通过 `setup_workspace` 做通用引导（Roots 不可用时，或为了按项目持久化）
@@ -289,7 +290,7 @@ Workbench 启动方式： [ ] npm start (dev)  [ ] node bin/ikran.mjs --prod  [ 
 Cursor：
   - open_workbench 返回了 URL？  [ ] 是  [ ] 否（Agent 说没有工具）
   - URL host:port：
-  - 内嵌浏览器打开了 shell？显示 "Local runtime connected"？  [ ] 是  [ ] n/a
+  - 内嵌浏览器打开了 shell？显示 "Runtime connected"？  [ ] 是  [ ] n/a
   - 文件夹步骤显示了工作文件夹（Project Folder 行）？  [ ] 是  [ ] 否
   - 一键 Initialize（设计师点击）在工作文件夹里创建了 .ikran？  [ ] 是  [ ] n/a（用 Agent 绑定）
   - create_or_open_project({})（不带 path）绑定了发现的文件夹？
@@ -298,7 +299,7 @@ Cursor：
   - create_or_open_project({}) 返回了相同的 project/session？  [ ] 是  [ ] 否
   - create_or_open_project({ path: empty-2 }) -> project_mismatch（未切换）？  [ ] 是  [ ] 否（切换了——bug）
   - empty-2/.ikran 未被创建？  [ ] 是  [ ] 否（创建了——bug）
-  - 刷新恢复了绑定文件夹（Complete!，未重新 bind）？  [ ] 是  [ ] 否
+  - 刷新恢复了绑定文件夹（`/<folder-name> connected`，未重新 bind）？  [ ] 是  [ ] 否
   - setup_workspace({ path: pwd }) 返回了 cwd + IKRAN_STATE_DIR 片段？  [ ] 是  [ ] n/a
   - Agent 写了 .cursor/mcp.json + 重载 → 以后会话在此自动绑定？  [ ] 是  [ ] n/a
   - 错误 token curl /api/project -> 403？  [ ] 是 ；真 token -> 200？  [ ] 是

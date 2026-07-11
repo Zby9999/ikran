@@ -109,11 +109,12 @@ button {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 40px;
+  gap: 56px;
   padding-top: 12px;
   position: absolute;
   top: 40%;
   transform: translateY(-50%);
+  @apply select-none;
 }
 
 .copy {
@@ -136,13 +137,13 @@ button {
 .steps {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 32px;
 }
 
 .step {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
 }
 
 .step-row {
@@ -161,7 +162,8 @@ button {
 }
 
 .step-row--settled {
-  background: var(--surface-glow-settled);
+  /* Figma Complete uses the same surface glow as Default (not the old bottom-lit settled fill). */
+  background: var(--surface-glow);
 }
 
 .agent-row {
@@ -191,10 +193,26 @@ button {
   line-height: 1.2;
   color: var(--text);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .step-label.complete {
   color: var(--muted);
+}
+
+.step-label--error {
+  color: var(--danger);
+}
+
+@keyframes step-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.step-loading-icon {
+  animation: step-spin 0.8s linear infinite;
 }
 
 .step-fill {

@@ -25,8 +25,11 @@ import {
   type TLStateNodeConstructor
 } from "tldraw";
 import {
+  isFigmaEvidenceSurfaceMeta,
+  isSeedReferenceProjectionShape
+} from "./seed-reference-surface-match";
+import {
   SEED_REFERENCE_PROJECTION_TYPE,
-  type SeedReferenceProjectionMeta,
   type SeedReferenceProjectionShape
 } from "./seed-reference-projection-shape";
 import {
@@ -64,14 +67,11 @@ type DraftSession = {
 
 function isEvidenceSurfaceShape(
   shape: TLShape | undefined
-): shape is SeedReferenceProjectionShape {
-  if (!shape || shape.type !== SEED_REFERENCE_PROJECTION_TYPE) return false;
-  const meta = shape.meta as SeedReferenceProjectionMeta;
-  return (
-    meta.kind === "figma_evidence_surface" &&
-    typeof meta.surfaceRecordId === "string" &&
-    meta.surfaceRecordId.length > 0
-  );
+): shape is SeedReferenceProjectionShape & {
+  meta: { kind: "figma_evidence_surface"; surfaceRecordId: string };
+} {
+  if (!shape || !isSeedReferenceProjectionShape(shape)) return false;
+  return isFigmaEvidenceSurfaceMeta(shape.meta);
 }
 
 function pageBoundsForShape(
@@ -111,8 +111,7 @@ function hitMediaSurface(
     pagePoint.y <= mediaBox.y + mediaBox.h;
   if (!inside) return null;
 
-  const surfaceArtifactId = (hit.meta as SeedReferenceProjectionMeta)
-    .surfaceRecordId!;
+  const surfaceArtifactId = hit.meta.surfaceRecordId;
   return { shape: hit, mediaBox, surfaceArtifactId };
 }
 
@@ -181,7 +180,8 @@ export function createRegionAnnotationToolClass(
           w: 1,
           h: 1,
           author: "designer",
-          label: ""
+          label: "",
+          surfaceMediaW: hit.mediaBox.w
         },
         meta: {
           canvasRecordId: "region-annotation:draft",

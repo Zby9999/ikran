@@ -157,7 +157,7 @@ test.describe("annotationMetaEqual + planAnnotationProjectionOps", () => {
         id: "shape:region-annotation:ann-1",
         x: 0,
         y: 0,
-        props: { w: 10, h: 10, author: "designer", label: "" },
+        props: { w: 10, h: 10, author: "designer", label: "", surfaceMediaW: 100 },
         meta: {
           canvasRecordId: "region-annotation:ann-1",
           runtimeRecordId: "ann-1",
@@ -168,7 +168,7 @@ test.describe("annotationMetaEqual + planAnnotationProjectionOps", () => {
         id: "shape:draft",
         x: 1,
         y: 1,
-        props: { w: 1, h: 1, author: "designer", label: "" },
+        props: { w: 1, h: 1, author: "designer", label: "", surfaceMediaW: 100 },
         meta: {
           canvasRecordId: "region-annotation:draft",
           runtimeRecordId: "draft",
@@ -179,7 +179,7 @@ test.describe("annotationMetaEqual + planAnnotationProjectionOps", () => {
         id: "shape:stale",
         x: 2,
         y: 2,
-        props: { w: 5, h: 5, author: "designer", label: "" },
+        props: { w: 5, h: 5, author: "designer", label: "", surfaceMediaW: 100 },
         meta: {
           canvasRecordId: "region-annotation:stale",
           runtimeRecordId: "stale",
@@ -243,7 +243,7 @@ test.describe("annotationMetaEqual + planAnnotationProjectionOps", () => {
           id: "shape:region-annotation:ann-old",
           x: 10,
           y: 20,
-          props: { w: 30, h: 40, author: "designer", label: "" },
+          props: { w: 30, h: 40, author: "designer", label: "", surfaceMediaW: 100 },
           meta: {
             canvasRecordId: "region-annotation:ann-old",
             runtimeRecordId: "ann-old",
@@ -443,7 +443,8 @@ test.describe("shouldResyncAnnotationsForStoreChanges", () => {
           w: placement.nextW,
           h: placement.nextH,
           author: "designer",
-          label: ""
+          label: "",
+          surfaceMediaW: placement.surfaceMediaW
         },
         meta: placement.meta
       }
@@ -463,7 +464,8 @@ test.describe("shouldResyncAnnotationsForStoreChanges", () => {
           w: placement.nextW,
           h: placement.nextH,
           author: "designer",
-          label: ""
+          label: "",
+          surfaceMediaW: placement.surfaceMediaW
         }
       }
     ]);

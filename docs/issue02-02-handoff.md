@@ -54,8 +54,10 @@ the Agent host). So the folder step no longer picks a folder:
   **Initialize here** that creates `.ikran/` in that folder (empty *or* alongside
   existing files). The native folder picker and the manual path-input fallback
   were **removed**; the `inside-folder` variant + its "Use this folder directly"
-  sub-button were removed. Label `Select a Folder` → `Project Folder`; helper copy
-  changed per-state. **Visual layout unchanged** (final wording pending Figma).
+  sub-button were removed. The current Figma-aligned setup stack keeps status
+  copy inside each row: `Runtime connected`, `Project Folder`, `Loading...`,
+  `Folder bind failed`, and `/<folder-name> connected`. Bind failures deliberately
+  use concise user-facing copy; a failed resume auto-bind keeps the row retryable.
 - Removed `app/api/project/select-folder/route.ts` + `lib/runtime/folder-picker.ts`.
   `cwd-candidate.ts` `isAutoBindable` is now resume-only (an empty folder waits for
   the click, not a silent auto-bind).
@@ -63,7 +65,8 @@ the Agent host). So the folder step no longer picks a folder:
   projects, restart Ikran with the new folder as the workspace (the MCP server
   rediscovers it via Roots / `IKRAN_CWD` env). The HTTP `/api/project/bind` still
   switches (programmatic), but the UI does not expose it.
-- Tests updated: `cwd-auto-bind` (init → click; manual → click row; resume auto),
+- Tests updated: `cwd-auto-bind` (init → click; manual → click row; resume auto;
+  failed resume auto-bind → click retry),
   `ikran-runtime-health` (`Project Folder` label), `agent-switch` (removed the two
   picker-based folder-switch tests; kept agent-failure + duplicate-click),
   `project-session-mcp` (roots/list discovery + `list_working_folders` + the
@@ -232,8 +235,8 @@ over `StdioClientTransport` exactly like `tests/open-workbench-mcp.spec.ts`
 7. No-token enforcement at the HTTP boundary: `fetch GET /api/project` (no token) →
    403; `fetch POST /api/project/bind` (no token) → 403.
 8. Refresh recovery through an MCP-initiated binding: `page.goto(workbench_url)`
-   from step 6 (active = dirB) → assert shell renders + `Local runtime connected`;
-   `page.reload()` → assert `folder-helper` contains `Complete! {dirB}` and
+   from step 6 (active = dirB) → assert shell renders + `Runtime connected`;
+   `page.reload()` → assert `folder-label` contains `/<basename(dirB)> connected` and
    `project-path === dirB` (the UI recovers the binding the Agent set).
 9. Cleanup: `client.close()`, `killRecordedRuntime(stateDir)` (reuse the helper
    pattern from open-workbench-mcp.spec.ts), `rmSync` temp dirs + stateDir.
@@ -251,7 +254,7 @@ flow. Include:
    `<empty folder>`" (or "create or open the Ikran project for `<folder>`").
    Expect `open_workbench` → Workbench URL, then `create_or_open_project({ path })`
    → project bound. Open the URL, confirm the setup card shows the bound folder
-   (`Complete! <path>`).
+   (`/<folder-name> connected`).
 4. "See the same project/session": ask the Agent to "show the current Ikran
    project/session". Expect `create_or_open_project({})` (or the Agent's
    equivalent) returning the same project path + session.
