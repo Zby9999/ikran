@@ -6,117 +6,136 @@
 // module caused `ERR_DLOPEN_FAILED` 500s when the MCP host (Cursor/Codex)
 // spawned Ikran under a different Node than the one that installed the addon.
 //
-//
 // Each project has its own `.ikran/ikran.db` file. A fresh connection is opened
 // per call so the Runtime behaves correctly when the project folder (and its
 // database file) is recreated between runs — for example by tests or by a user
 // resetting a project.
+//
+// Schema evolution uses `PRAGMA user_version` (see `./migrations`). Existing
+// DBs without a version are treated as v0. Before applying migrations to an
+// existing non-empty DB, a deterministic `{ikran.db}.v{fromVersion}.bak`
+// snapshot is created (fail-closed on same-version conflict or I/O failure).
+// Brand-new DBs are not backed up.
 
 import { DatabaseSync } from "node:sqlite";
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, statSync } from "node:fs";
 import { getIkranDir, getProjectDbPath } from "./paths";
+import {
+  CURRENT_SCHEMA_VERSION,
+  applyPendingMigrations,
+  getUserVersion
+} from "./migrations";
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS events (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id TEXT NOT NULL UNIQUE,
-  type TEXT NOT NULL,
-  payload TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
+export { CURRENT_SCHEMA_VERSION } from "./migrations";
 
-CREATE TABLE IF NOT EXISTS projects (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  path TEXT NOT NULL UNIQUE,
-  name TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
+export function getProjectDbBackupPath(
+  projectPath: string,
+  fromVersion: number
+): string {
+  if (!Number.isInteger(fromVersion) || fromVersion < 0) {
+    throw new Error(`Invalid database backup source version: ${fromVersion}`);
+  }
+  return `${getProjectDbPath(projectPath)}.v${fromVersion}.bak`;
+}
 
-CREATE TABLE IF NOT EXISTS tasks (
-  id            TEXT PRIMARY KEY,          -- UUID (randomUUID)
-  family        TEXT NOT NULL,             -- TaskFamily whitelist value
-  payload_json  TEXT NOT NULL,             -- JSON.stringified TaskPayload
-  status        TEXT NOT NULL,             -- 'running' | 'done' | 'failed'
-  result_json   TEXT,                      -- JSON.stringified validated output (done only)
-  error_code    TEXT,                      -- 'timeout' | 'invalid_output' | 'abandoned' | 'adapter_error' (failed only)
-  error_message TEXT,
-  created_at    TEXT NOT NULL,             -- ISO 8601
-  updated_at    TEXT NOT NULL              -- ISO 8601
-);
+function isExistingNonEmptyDb(dbPath: string): boolean {
+  if (!existsSync(dbPath)) return false;
+  try {
+    return statSync(dbPath).size > 0;
+  } catch (err) {
+    throw new Error(
+      `Failed to stat project database before migration: ${dbPath}: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
+}
 
-CREATE TABLE IF NOT EXISTS seed_references (
-  id TEXT PRIMARY KEY,                  -- UUID (randomUUID)
-  figma_seed_reference TEXT NOT NULL,    -- original Figma URL, stored verbatim
-  original_design_intent TEXT NOT NULL,  -- designer's original design intent
-  created_at TEXT NOT NULL,              -- ISO 8601
-  registered_via TEXT NOT NULL DEFAULT 'agent'  -- 'ui' | 'agent' (awaiting UX)
-);
+/**
+ * Deterministic pre-migration backup. `VACUUM INTO` creates a transactionally
+ * consistent SQLite snapshot, including committed pages still resident in WAL.
+ * Fail-closed: existing backup path or snapshot failure aborts migration.
+ */
+export function backupProjectDbBeforeMigration(
+  projectPath: string,
+  fromVersion: number
+): string {
+  const dbPath = getProjectDbPath(projectPath);
+  const bakPath = getProjectDbBackupPath(projectPath, fromVersion);
 
-CREATE TABLE IF NOT EXISTS figma_evidence_surfaces (
-  id TEXT PRIMARY KEY,
-  seed_reference_id TEXT,
-  figma_seed_reference TEXT NOT NULL,
-  frame_node_id TEXT NOT NULL,
-  frame_name TEXT NOT NULL,
-  frame_bounds_json TEXT,
-  evidence_views_json TEXT NOT NULL,
-  screenshot_artifact_path TEXT,
-  screenshot_data_url TEXT,
-  design_signals_json TEXT,
-  surface_bounds_json TEXT,
-  created_at TEXT NOT NULL
-);
+  if (!isExistingNonEmptyDb(dbPath)) {
+    throw new Error(
+      `Refusing backup: project database is missing or empty: ${dbPath}`
+    );
+  }
 
--- Region annotations (Issue 06): normalized rect on Evidence Surface screenshot
--- media box (coordinate space A, 0–1). Anchored via surface_artifact_id and/or
--- surface_node_id; surface_id is the resolved figma_evidence_surfaces.id when known.
-CREATE TABLE IF NOT EXISTS region_annotations (
-  id TEXT PRIMARY KEY,
-  surface_id TEXT NULL,
-  surface_artifact_id TEXT NULL,
-  surface_node_id TEXT NULL,
-  author TEXT NOT NULL,
-  type TEXT NOT NULL,
-  body TEXT NOT NULL,
-  rect_x REAL NOT NULL,
-  rect_y REAL NOT NULL,
-  rect_w REAL NOT NULL,
-  rect_h REAL NOT NULL,
-  primary_node_id TEXT NULL,
-  candidates_json TEXT NULL,
-  created_at TEXT NOT NULL
-);
+  if (existsSync(bakPath)) {
+    throw new Error(
+      `Database migration backup already exists (refusing to overwrite): ${bakPath}`
+    );
+  }
 
-CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
-CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_family ON tasks(family);
-CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
-CREATE INDEX IF NOT EXISTS idx_seed_references_created_at ON seed_references(created_at);
-CREATE INDEX IF NOT EXISTS idx_figma_evidence_surfaces_created_at ON figma_evidence_surfaces(created_at);
-CREATE INDEX IF NOT EXISTS idx_figma_evidence_surfaces_frame_node_id ON figma_evidence_surfaces(frame_node_id);
-CREATE INDEX IF NOT EXISTS idx_region_annotations_created_at ON region_annotations(created_at);
-CREATE INDEX IF NOT EXISTS idx_region_annotations_surface_id ON region_annotations(surface_id);
-`;
+  const source = new DatabaseSync(dbPath);
+  try {
+    source.prepare("VACUUM INTO ?").run(bakPath);
+  } catch (err) {
+    throw new Error(
+      `Failed to create database migration backup at ${bakPath}: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  } finally {
+    closeProjectDb(source);
+  }
+
+  return bakPath;
+}
 
 export function openProjectDb(projectPath: string): DatabaseType {
-  const resolved = getProjectDbPath(projectPath);
+  const dbPath = getProjectDbPath(projectPath);
   mkdirSync(getIkranDir(projectPath), { recursive: true });
 
-  const db = new DatabaseSync(resolved);
-  db.exec(SCHEMA);
-  // Existing projects created before registered_via: add column (ignore if present).
-  try {
-    db.exec(
-      `ALTER TABLE seed_references ADD COLUMN registered_via TEXT NOT NULL DEFAULT 'agent'`
-    );
-  } catch {
-    // column already exists
+  const existedNonEmpty = isExistingNonEmptyDb(dbPath);
+
+  // Peek version while the file is closed so the backup is a clean snapshot.
+  let currentVersion = 0;
+  if (existedNonEmpty) {
+    const peek = new DatabaseSync(dbPath);
+    try {
+      currentVersion = getUserVersion(peek);
+    } finally {
+      closeProjectDb(peek);
+    }
+
+    if (currentVersion < CURRENT_SCHEMA_VERSION) {
+      backupProjectDbBeforeMigration(projectPath, currentVersion);
+    }
   }
-  db.exec("PRAGMA journal_mode = WAL");
-  return db;
+
+  const db = new DatabaseSync(dbPath);
+  try {
+    db.exec("PRAGMA foreign_keys = ON");
+    db.exec("PRAGMA journal_mode = WAL");
+
+    currentVersion = getUserVersion(db);
+    if (currentVersion < CURRENT_SCHEMA_VERSION) {
+      applyPendingMigrations(db, currentVersion);
+    }
+
+    // Defense in depth: every open connection must end at current version.
+    const after = getUserVersion(db);
+    if (after !== CURRENT_SCHEMA_VERSION) {
+      throw new Error(
+        `Database schema version mismatch after migration: expected ${CURRENT_SCHEMA_VERSION}, got ${after}`
+      );
+    }
+
+    return db;
+  } catch (err) {
+    closeProjectDb(db);
+    throw err;
+  }
 }
 
 export function closeProjectDb(db: DatabaseType): void {
@@ -127,14 +146,38 @@ export function closeProjectDb(db: DatabaseType): void {
   }
 }
 
+/**
+ * Run `fn` inside a single BEGIN/COMMIT on one project DB connection.
+ * On throw: ROLLBACK then rethrow. Connection is always closed.
+ */
+export function withProjectTransaction<T>(
+  projectPath: string,
+  fn: (db: DatabaseType) => T
+): T {
+  const db = openProjectDb(projectPath);
+  try {
+    db.exec("BEGIN");
+    try {
+      const result = fn(db);
+      db.exec("COMMIT");
+      return result;
+    } catch (err) {
+      try {
+        db.exec("ROLLBACK");
+      } catch {
+        // ignore rollback errors; original err is authoritative
+      }
+      throw err;
+    }
+  } finally {
+    closeProjectDb(db);
+  }
+}
+
 // Ensure a project's SQLite database exists with the current schema, then close
 // the connection immediately. Use this for one-shot initialization (e.g. project
 // binding) so we never leak a SQLite handle by forgetting to close it.
 export function initializeProjectDb(projectPath: string): void {
   const db = openProjectDb(projectPath);
-  try {
-    // Schema and WAL are applied inside openProjectDb; nothing else to do here.
-  } finally {
-    closeProjectDb(db);
-  }
+  closeProjectDb(db);
 }

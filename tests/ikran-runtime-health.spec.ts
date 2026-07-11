@@ -1,5 +1,5 @@
-import http from "node:http";
 import { expect, test } from "./fixtures";
+import { rawGet as httpGet } from "./helpers/http";
 
 // Ikran Issue 02/01 — Workbench URL + session shell.
 //
@@ -22,29 +22,8 @@ let baseURL = "http://localhost:3000";
 // Low-level GET with full header control (Node http). This lets us spoof
 // Host / Origin to prove the Runtime's same-origin + session enforcement
 // independently of the browser, which cannot override those forbidden headers.
-function rawGet(
-  headers: Record<string, string>
-): Promise<{ status: number; body: string }> {
-  return new Promise((resolve) => {
-    const req = http.request(
-      {
-        hostname: "127.0.0.1",
-        port,
-        path: "/api/health",
-        method: "GET",
-        headers
-      },
-      (res) => {
-        let body = "";
-        res.on("data", (chunk) => {
-          body += chunk;
-        });
-        res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
-      }
-    );
-    req.on("error", () => resolve({ status: 0, body: "" }));
-    req.end();
-  });
+function rawGet(headers: Record<string, string>) {
+  return httpGet(port, "/api/health", headers);
 }
 
 test.describe("Ikran Issue 02/01 — Workbench URL opens the session shell", () => {
@@ -91,7 +70,8 @@ test.describe("Ikran Issue 02/01 — Workbench URL opens the session shell", () 
     // the Workbench URL (the "copy to system browser" path works).
     await expect(page.getByText("Project set up...")).toBeVisible();
     await expect(page.getByText("Project Folder", { exact: true })).toBeVisible();
-    await expect(page.getByText("Connect Your Agent")).toBeVisible();
+    await expect(page.getByText("Connect Your Agent")).toHaveCount(0);
+    await expect(page.getByLabel("Agent choices")).toHaveCount(0);
 
     // Same-origin Runtime health + live SSE heartbeat, reached via the explicit
     // Workbench URL form.

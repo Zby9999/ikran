@@ -3,10 +3,7 @@
 // local copies. The .mjs is plain JS (allowJs:false ignores it at typecheck);
 // this .d.mts mirrors its exports. Keep in sync with the .mjs.
 //
-// Issue 02/01: Workbench URL + session shell, two-process coordinator +
-// env-token bridge (see ADR 0001 + docs/issue02-01-handoff.md).
-
-import type { ChildProcess } from "node:child_process";
+// Task 9: in-process HTTP host + owner-mode discovery (no Next child spawn).
 
 export function isLocalhostHost(host: string): boolean;
 
@@ -23,11 +20,14 @@ export function composeWorkbenchUrl(
 /** Path of the user-only reuse state file inside `stateDir`. */
 export function endpointFilePath(stateDir: string): string;
 
+export type RuntimeOwner = "mcp" | "standalone";
+
 export interface RuntimeEndpoint {
   host: string;
   port: number;
   token: string;
   pid: number;
+  owner?: RuntimeOwner | string;
   startedAt: string;
 }
 
@@ -37,11 +37,43 @@ export function readRuntimeEndpoint(stateDir: string): RuntimeEndpoint | null;
 /** Write the reuse state with user-only permissions (mode 0o600). */
 export function writeRuntimeEndpoint(
   stateDir: string,
-  info: { host: string; port: number; token: string; pid: number; startedAt?: string }
+  info: {
+    host: string;
+    port: number;
+    token: string;
+    pid: number;
+    owner: RuntimeOwner;
+    startedAt?: string;
+  }
 ): RuntimeEndpoint;
 
 /** Remove the reuse state file (best-effort). */
 export function removeRuntimeEndpoint(stateDir: string): void;
+
+/** Path of the cross-process first-start lock file inside `stateDir`. */
+export function startLockPath(stateDir: string): string;
+
+/**
+ * Atomically claim the start lock. Returns a random owner id on success, or
+ * null if another holder already owns the lock.
+ */
+export function tryAcquireStartLock(stateDir: string): string | null;
+
+/**
+ * Release the start lock only when `ownerId` still matches the on-disk lock
+ * (compare-and-delete; avoids ABA deletion of a newer holder's lock).
+ */
+export function releaseStartLock(stateDir: string, ownerId: string): void;
+
+/**
+ * Serialize discover → start → write across processes for one stateDir.
+ * Used by `openWorkbench` first-start claim; exported for tests.
+ */
+export function withRuntimeStartLock<T>(
+  stateDir: string,
+  fn: () => Promise<T> | T,
+  opts?: { timeoutMs?: number; pollMs?: number }
+): Promise<T>;
 
 /**
  * Probe whether a Runtime recorded in the reuse state is still alive AND still
@@ -53,9 +85,6 @@ export function probeRuntimeAlive(
   token: string,
   timeoutMs?: number
 ): Promise<boolean>;
-
-/** Locate the Next.js CLI (runnable via `node <path>`). Throws if missing. */
-export function resolveNextBin(cwd: string): string;
 
 /** Poll the public HTML shell (`/`) until 2xx. Rejects on timeout. */
 export function waitForReady(
@@ -75,6 +104,8 @@ export interface OpenWorkbenchOptions {
   /** Optional explicit port (--port / IKRAN_PORT). When set, a live endpoint on
    * a different port is treated as a conflict instead of being reused. */
   port?: number;
+  /** Who is requesting the surface. MCP fails closed on live standalone. */
+  owner: RuntimeOwner;
 }
 
 export interface OpenWorkbenchResult {
@@ -83,18 +114,23 @@ export interface OpenWorkbenchResult {
   port: number;
   token: string;
   pid: number;
-  /** true if a NEW Runtime was spawned (caller owns `child` and must tear it
-   *  down); false if a live Runtime was reused (caller must NOT kill it). */
+  /** true if THIS call started HTTP in-process; false if reused. */
   spawned: boolean;
-  child: ChildProcess | null;
+  /** true if caller owns lifecycle (close HTTP + clear endpoint on exit). */
+  owned: boolean;
+  close: (() => Promise<void>) | null;
+  /** Always null after Task 9 (no Next child). Kept for call-site compat. */
+  child: null;
 }
 
 /**
- * Reuse-or-spawn the local Ikran Runtime HTTP surface. When a live Runtime is
- * recorded in the reuse state, reuses it (unless the caller pinned a conflicting
- * port); otherwise spawns a Next HTTP surface as a child on an auto free port,
- * waits for readiness, writes the reuse state, and returns the Workbench URL.
+ * Reuse-or-start the local Ikran Runtime HTTP surface in-process.
+ * Never spawns a Next child.
  */
 export function openWorkbench(
   options: OpenWorkbenchOptions
 ): Promise<OpenWorkbenchResult>;
+
+export function closeHttpServer(): Promise<void>;
+export function getActiveHttpServer(): unknown;
+export function startHttpServer(opts: unknown): Promise<unknown>;

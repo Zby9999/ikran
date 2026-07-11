@@ -14,8 +14,9 @@
 //     distDir yields clean `./.next/e2e-build/...` references and no junk.
 //   - Under `.next/` so it's already gitignored and doesn't collide with the
 //     user's `npm run dev` (which uses `.next` directly).
-// The committed tsconfig.json + next-env.d.ts are still snapshot/restored in
-// globalSetup so they stay pristine.
+// Committed tsconfig.json + next-env.d.ts are snapshot/restored via
+// e2e-pristine.ts (real on-disk snapshot; next-env e2e-build refs sanitized
+// surgically before snapshot). No hardcoded full tsconfig copy.
 
 import path from "node:path";
 

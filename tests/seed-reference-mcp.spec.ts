@@ -7,7 +7,7 @@
 //
 // Coverage:
 // - success: MCP mock client registers; DB has a seed_references record;
-//   events.jsonl has seed_reference_registered; original URL stored verbatim.
+//   SQLite events has seed_reference_registered; original URL stored verbatim.
 // - validation failure: returns a structured error and writes NO record/event.
 // - fail closed: no active project -> no_active_project; missing session token
 //   at the HTTP boundary -> 403.
@@ -15,67 +15,49 @@
 // Mirrors tests/project-session-mcp.spec.ts: spawns its own Next HTTP surface
 // via the MCP server, runs against the shared e2e build in --prod mode.
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { expect, test } from "./fixtures";
-import { SHARED_BUILD_DIR } from "./e2e-constants";
+import {
+  killRecordedRuntime,
+  sc,
+  spawnMcpClient
+} from "./helpers/mcp";
 
-const MCP_BIN = path.join(process.cwd(), "bin", "ikran-mcp.mjs");
 const URL_RE = /^http:\/\/127\.0\.0\.1:\d+\/\?session=[a-f0-9]{32,}$/;
-
-function sc(res: unknown): Record<string, unknown> {
-  if (typeof res === "object" && res !== null) {
-    const r = res as { structuredContent?: unknown };
-    if (r.structuredContent && typeof r.structuredContent === "object") {
-      return r.structuredContent as Record<string, unknown>;
-    }
-  }
-  return {};
-}
-
-function killRecordedRuntime(stateDir: string) {
-  try {
-    const file = path.join(stateDir, "runtime-endpoint.json");
-    const ep = JSON.parse(readFileSync(file, "utf-8")) as { pid?: number };
-    if (ep && typeof ep.pid === "number") {
-      try {
-        process.kill(-ep.pid, "SIGKILL");
-      } catch {
-        /* already gone */
-      }
-    }
-  } catch {
-    /* no endpoint file */
-  }
-}
-
-async function spawnMcpClient(
-  stateDir: string
-): Promise<{ client: Client; transport: StdioClientTransport }> {
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [MCP_BIN, "--prod"],
-    env: {
-      ...process.env,
-      IKRAN_STATE_DIR: stateDir,
-      IKRAN_HOST: "127.0.0.1",
-      IKRAN_NEXT_DIST_DIR: SHARED_BUILD_DIR
-    },
-    stderr: "pipe"
-  });
-  const client = new Client(
-    { name: "ikran-e2e", version: "0.0.0" },
-    { capabilities: {} }
-  );
-  await client.connect(transport);
-  return { client, transport };
-}
 
 const VALID_FIGMA_URL =
   "https://www.figma.com/design/abc123/My-Design?node-id=1:2";
+
+function listDbEvents(
+  dir: string,
+  type?: string
+): Array<{ type: string; payload: Record<string, unknown> }> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(path.join(dir, ".ikran", "ikran.db"));
+  try {
+    const rows = (
+      type
+        ? db
+            .prepare(
+              "SELECT type, payload FROM events WHERE type = ? ORDER BY id ASC"
+            )
+            .all(type)
+        : db
+            .prepare("SELECT type, payload FROM events ORDER BY id ASC")
+            .all()
+    ) as Array<{ type: string; payload: string }>;
+    return rows.map((r) => ({
+      type: r.type,
+      payload: JSON.parse(r.payload) as Record<string, unknown>
+    }));
+  } finally {
+    db.close();
+  }
+}
 
 test.describe("Ikran Issue 02/03 — register_seed_reference MCP tool", () => {
   test(
@@ -144,19 +126,10 @@ test.describe("Ikran Issue 02/03 — register_seed_reference MCP tool", () => {
         expect(rows[0].original_design_intent).toBe(intent);
         db.close();
 
-        // events.jsonl contains seed_reference_registered.
-        const jsonl = readFileSync(
-          path.join(dir, ".ikran", "events.jsonl"),
-          "utf-8"
-        );
-        const eventLines = jsonl
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => JSON.parse(line) as { type: string; payload?: { seed_reference_id?: string } });
-        const seedEvent = eventLines.find((e) => e.type === "seed_reference_registered");
-        expect(seedEvent).toBeTruthy();
-        expect(seedEvent?.payload?.seed_reference_id).toBe(record.id);
+        // Canonical SQLite events contain seed_reference_registered.
+        const seedEvents = listDbEvents(dir, "seed_reference_registered");
+        expect(seedEvents.length).toBe(1);
+        expect(seedEvents[0].payload.seed_reference_id).toBe(record.id);
 
         // No Figma network contact: the test runs offline; if the handler had
         // fetched, it would have failed or hung. Success here proves local-only.
@@ -191,9 +164,7 @@ test.describe("Ikran Issue 02/03 — register_seed_reference MCP tool", () => {
         });
         expect(sc(create).ok).toBe(true);
 
-        const beforeJsonl = existsSync(path.join(dir, ".ikran", "events.jsonl"))
-          ? readFileSync(path.join(dir, ".ikran", "events.jsonl"), "utf-8")
-          : "";
+        const beforeSeedEvents = listDbEvents(dir, "seed_reference_registered");
 
         // Each invalid case returns a structured error.
         const cases: Array<{
@@ -248,7 +219,7 @@ test.describe("Ikran Issue 02/03 — register_seed_reference MCP tool", () => {
         }
 
         // No seed_references record was written, and no new
-        // seed_reference_registered event appeared in events.jsonl.
+        // seed_reference_registered event appeared in SQLite.
         const { DatabaseSync } = require("node:sqlite");
         const db = new DatabaseSync(path.join(dir, ".ikran", "ikran.db"));
         const count = (
@@ -259,15 +230,9 @@ test.describe("Ikran Issue 02/03 — register_seed_reference MCP tool", () => {
         expect(count).toBe(0);
         db.close();
 
-        const afterJsonl = readFileSync(
-          path.join(dir, ".ikran", "events.jsonl"),
-          "utf-8"
+        expect(listDbEvents(dir, "seed_reference_registered")).toEqual(
+          beforeSeedEvents
         );
-        expect(
-          afterJsonl.includes("seed_reference_registered")
-        ).toBe(false);
-        // events.jsonl is unchanged (only the bind events from before remain).
-        expect(afterJsonl).toBe(beforeJsonl);
       } finally {
         try {
           await client?.close();

@@ -8,13 +8,13 @@
 // Pointer contract (media box only — coordinate space A):
 //   - click → tiny page-square marker (normalized w=POINT_SIDE; h from media aspect)
 //   - press-drag → rectangle clamped to the Evidence Surface media area
-// On pointer up: POST /api/region-annotation with normalized rect +
-// author "designer" + surfaceArtifactId from the hit surface shape meta.
+// On pointer up: commit via the per-editor injected create handler (no module
+// global) with normalized rect + surfaceArtifactId from the hit surface meta.
 //
-// The tool never invents Runtime records — it only POSTs; projection sync
-// rebuilds shapes from GET poll / reload.
+// The tool never invents Runtime records — it only commits via the injected
+// Runtime mutation; projection sync rebuilds shapes from authoritative GET.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
 import {
   StateNode,
   createShapeId,
@@ -53,18 +53,6 @@ export type RegionAnnotationCreatePayload = {
 };
 
 type CreateHandler = (payload: RegionAnnotationCreatePayload) => void;
-
-/**
- * Bridge from the StateNode tool (no React closure) to the Workbench session
- * POST. Set while annotate mode is active; cleared on unmount / mode off.
- */
-let createHandler: CreateHandler | null = null;
-
-export function setRegionAnnotationCreateHandler(
-  handler: CreateHandler | null
-): void {
-  createHandler = handler;
-}
 
 type DraftSession = {
   surfaceShapeId: string;
@@ -139,141 +127,133 @@ function rectFromOriginCurrent(
   return { x, y, w, h };
 }
 
-class RegionAnnotationIdle extends StateNode {
-  static override id = "idle";
+type RegionAnnotationToolParent = StateNode & {
+  commitCreate: (payload: RegionAnnotationCreatePayload) => void;
+};
 
-  override onEnter() {
-    this.editor.setCursor({ type: "cross", rotation: 0 });
-  }
+/**
+ * Per-editor tool class factory. Closes over `getCreateHandler` so two Canvas
+ * instances never share a module-global handler registry.
+ */
+export function createRegionAnnotationToolClass(
+  getCreateHandler: () => CreateHandler | null
+): TLStateNodeConstructor {
+  class RegionAnnotationIdle extends StateNode {
+    static override id = "idle";
 
-  override onPointerDown(info: TLPointerEventInfo) {
-    if (info.button !== 0) return;
-    this.parent.transition("pointing", info);
-  }
-
-  override onCancel() {
-    this.editor.setCurrentTool("select");
-  }
-}
-
-class RegionAnnotationPointing extends StateNode {
-  static override id = "pointing";
-
-  private session: DraftSession | null = null;
-
-  override onEnter(_info: TLPointerEventInfo) {
-    const editor = this.editor;
-    const pagePoint = editor.inputs.getCurrentPagePoint();
-    const hit = hitMediaSurface(editor, pagePoint);
-    if (!hit) {
-      this.parent.transition("idle");
-      return;
+    override onEnter() {
+      this.editor.setCursor({ type: "cross", rotation: 0 });
     }
 
-    const draftShapeId = createShapeId();
-    const origin = { x: pagePoint.x, y: pagePoint.y };
-    // Start as a 1×1 draft; click completion expands via geometry helpers.
-    editor.createShape<RegionAnnotationShape>({
-      id: draftShapeId,
-      type: REGION_ANNOTATION_TYPE,
-      x: origin.x,
-      y: origin.y,
-      props: {
-        w: 1,
-        h: 1,
-        author: "designer",
-        label: ""
-      },
-      meta: {
-        canvasRecordId: "region-annotation:draft",
-        runtimeRecordId: "draft",
-        surfaceRecordId: hit.surfaceArtifactId
+    override onPointerDown(info: TLPointerEventInfo) {
+      if (info.button !== 0) return;
+      this.parent.transition("pointing", info);
+    }
+
+    override onCancel() {
+      this.editor.setCurrentTool("select");
+    }
+  }
+
+  class RegionAnnotationPointing extends StateNode {
+    static override id = "pointing";
+
+    private session: DraftSession | null = null;
+
+    override onEnter(_info: TLPointerEventInfo) {
+      const editor = this.editor;
+      const pagePoint = editor.inputs.getCurrentPagePoint();
+      const hit = hitMediaSurface(editor, pagePoint);
+      if (!hit) {
+        this.parent.transition("idle");
+        return;
       }
-    });
 
-    this.session = {
-      surfaceShapeId: String(hit.shape.id),
-      surfaceArtifactId: hit.surfaceArtifactId,
-      mediaBox: hit.mediaBox,
-      originPage: origin,
-      draftShapeId: String(draftShapeId)
-    };
-  }
+      const draftShapeId = createShapeId();
+      const origin = { x: pagePoint.x, y: pagePoint.y };
+      // Start as a 1×1 draft; click completion expands via geometry helpers.
+      editor.createShape<RegionAnnotationShape>({
+        id: draftShapeId,
+        type: REGION_ANNOTATION_TYPE,
+        x: origin.x,
+        y: origin.y,
+        props: {
+          w: 1,
+          h: 1,
+          author: "designer",
+          label: ""
+        },
+        meta: {
+          canvasRecordId: "region-annotation:draft",
+          runtimeRecordId: "draft",
+          surfaceRecordId: hit.surfaceArtifactId
+        }
+      });
 
-  override onPointerMove(_info: TLPointerEventInfo) {
-    const session = this.session;
-    if (!session) return;
-    const editor = this.editor;
-    const current = editor.inputs.getCurrentPagePoint();
-    const raw = rectFromOriginCurrent(session.originPage, current);
-    const clamped = clampPageRectToMediaBox(session.mediaBox, raw);
-    editor.updateShape<RegionAnnotationShape>({
-      id: session.draftShapeId as RegionAnnotationShape["id"],
-      type: REGION_ANNOTATION_TYPE,
-      x: clamped.x,
-      y: clamped.y,
-      props: { w: Math.max(1, clamped.w), h: Math.max(1, clamped.h) }
-    });
-  }
-
-  override onPointerUp(_info: TLPointerEventInfo) {
-    this.complete();
-  }
-
-  override onCancel() {
-    this.cancel();
-  }
-
-  override onInterrupt() {
-    this.cancel();
-  }
-
-  private cancel() {
-    const session = this.session;
-    this.session = null;
-    if (session) {
-      this.editor.deleteShape(
-        session.draftShapeId as RegionAnnotationShape["id"]
-      );
-    }
-    this.parent.transition("idle");
-  }
-
-  private complete() {
-    const session = this.session;
-    this.session = null;
-    if (!session) {
-      this.parent.transition("idle");
-      return;
+      this.session = {
+        surfaceShapeId: String(hit.shape.id),
+        surfaceArtifactId: hit.surfaceArtifactId,
+        mediaBox: hit.mediaBox,
+        originPage: origin,
+        draftShapeId: String(draftShapeId)
+      };
     }
 
-    const editor = this.editor;
-    const current = editor.inputs.getCurrentPagePoint();
-    const dx = current.x - session.originPage.x;
-    const dy = current.y - session.originPage.y;
-    const isClick =
-      Math.hypot(dx, dy) < CLICK_DRAG_THRESHOLD_PX;
-
-    let normalized: NormalizedRect;
-    if (isClick) {
-      const nx =
-        session.mediaBox.w > 0
-          ? (session.originPage.x - session.mediaBox.x) / session.mediaBox.w
-          : 0;
-      const ny =
-        session.mediaBox.h > 0
-          ? (session.originPage.y - session.mediaBox.y) / session.mediaBox.h
-          : 0;
-      normalized = expandNormalizedPointToRect(
-        { x: nx, y: ny },
-        session.mediaBox
-      );
-    } else {
+    override onPointerMove(_info: TLPointerEventInfo) {
+      const session = this.session;
+      if (!session) return;
+      const editor = this.editor;
+      const current = editor.inputs.getCurrentPagePoint();
       const raw = rectFromOriginCurrent(session.originPage, current);
       const clamped = clampPageRectToMediaBox(session.mediaBox, raw);
-      normalized = pageRectToNormalized(session.mediaBox, clamped);
-      // Degenerate drag → treat as point at origin.
-      if (normalized.w <= 0 || normalized.h <= 0) {
+      editor.updateShape<RegionAnnotationShape>({
+        id: session.draftShapeId as RegionAnnotationShape["id"],
+        type: REGION_ANNOTATION_TYPE,
+        x: clamped.x,
+        y: clamped.y,
+        props: { w: Math.max(1, clamped.w), h: Math.max(1, clamped.h) }
+      });
+    }
+
+    override onPointerUp(_info: TLPointerEventInfo) {
+      this.complete();
+    }
+
+    override onCancel() {
+      this.cancel();
+    }
+
+    override onInterrupt() {
+      this.cancel();
+    }
+
+    private cancel() {
+      const session = this.session;
+      this.session = null;
+      if (session) {
+        this.editor.deleteShape(
+          session.draftShapeId as RegionAnnotationShape["id"]
+        );
+      }
+      this.parent.transition("idle");
+    }
+
+    private complete() {
+      const session = this.session;
+      this.session = null;
+      if (!session) {
+        this.parent.transition("idle");
+        return;
+      }
+
+      const editor = this.editor;
+      const current = editor.inputs.getCurrentPagePoint();
+      const dx = current.x - session.originPage.x;
+      const dy = current.y - session.originPage.y;
+      const isClick = Math.hypot(dx, dy) < CLICK_DRAG_THRESHOLD_PX;
+
+      let normalized: NormalizedRect;
+      if (isClick) {
         const nx =
           session.mediaBox.w > 0
             ? (session.originPage.x - session.mediaBox.x) / session.mediaBox.w
@@ -286,96 +266,101 @@ class RegionAnnotationPointing extends StateNode {
           { x: nx, y: ny },
           session.mediaBox
         );
+      } else {
+        const raw = rectFromOriginCurrent(session.originPage, current);
+        const clamped = clampPageRectToMediaBox(session.mediaBox, raw);
+        normalized = pageRectToNormalized(session.mediaBox, clamped);
+        // Degenerate drag → treat as point at origin.
+        if (normalized.w <= 0 || normalized.h <= 0) {
+          const nx =
+            session.mediaBox.w > 0
+              ? (session.originPage.x - session.mediaBox.x) / session.mediaBox.w
+              : 0;
+          const ny =
+            session.mediaBox.h > 0
+              ? (session.originPage.y - session.mediaBox.y) / session.mediaBox.h
+              : 0;
+          normalized = expandNormalizedPointToRect(
+            { x: nx, y: ny },
+            session.mediaBox
+          );
+        }
       }
+
+      // Drop the local draft — Runtime record → projection sync owns the shape.
+      editor.deleteShape(session.draftShapeId as RegionAnnotationShape["id"]);
+
+      (this.parent as RegionAnnotationToolParent).commitCreate({
+        surfaceArtifactId: session.surfaceArtifactId,
+        rect: normalized
+      });
+
+      this.parent.transition("idle");
+    }
+  }
+
+  class RegionAnnotationTool extends StateNode {
+    static override id = REGION_ANNOTATION_TOOL_ID;
+    static override initial = "idle";
+    static override children(): TLStateNodeConstructor[] {
+      return [RegionAnnotationIdle, RegionAnnotationPointing];
     }
 
-    // Drop the local draft — Runtime record → projection sync owns the shape.
-    editor.deleteShape(session.draftShapeId as RegionAnnotationShape["id"]);
-
-    createHandler?.({
-      surfaceArtifactId: session.surfaceArtifactId,
-      rect: normalized
-    });
-
-    this.parent.transition("idle");
+    /** Pointing state commits through this instance method (per-editor closure). */
+    commitCreate(payload: RegionAnnotationCreatePayload): void {
+      getCreateHandler()?.(payload);
+    }
   }
-}
 
-/** tldraw StateNode tool — register via `<Tldraw tools={[...]} />`. */
-export class RegionAnnotationTool extends StateNode {
-  static override id = REGION_ANNOTATION_TOOL_ID;
-  static override initial = "idle";
-  static override children(): TLStateNodeConstructor[] {
-    return [RegionAnnotationIdle, RegionAnnotationPointing];
-  }
+  return RegionAnnotationTool;
 }
 
 /**
  * Keeps the editor on the annotate tool while `annotateMode` is true, and
- * wires the POST create handler for pointer-up commits.
+ * wires the create handler ref for pointer-up commits (Runtime client mutation).
  */
 export function RegionAnnotationToolController({
   annotateMode,
-  session,
-  onCreated
+  onCreate,
+  createHandlerRef
 }: {
   annotateMode: boolean;
-  session: string;
-  /** Called after a successful POST so the poll hook can reload immediately. */
-  onCreated?: () => void;
+  /** Injected Runtime mutation — must not fetch directly here. */
+  onCreate?: (payload: RegionAnnotationCreatePayload) => Promise<
+    { ok: true } | { ok: false; error: string }
+  >;
+  /** Per-Canvas ref closed over by the tool class factory. */
+  createHandlerRef: MutableRefObject<CreateHandler | null>;
 }) {
   const editor = useEditor();
-  const onCreatedRef = useRef(onCreated);
-  onCreatedRef.current = onCreated;
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
+  const onCreateRef = useRef(onCreate);
+  onCreateRef.current = onCreate;
 
   useEffect(() => {
     if (!annotateMode) {
-      setRegionAnnotationCreateHandler(null);
+      createHandlerRef.current = null;
       if (editor.getCurrentToolId() === REGION_ANNOTATION_TOOL_ID) {
         editor.setCurrentTool("select");
       }
       return;
     }
 
-    setRegionAnnotationCreateHandler((payload) => {
+    createHandlerRef.current = (payload) => {
       void (async () => {
-        try {
-          const response = await fetch("/api/region-annotation", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-ikran-session": sessionRef.current
-            },
-            body: JSON.stringify({
-              surfaceArtifactId: payload.surfaceArtifactId,
-              author: "designer",
-              body: "Placeholder annotation",
-              rect: payload.rect
-              // type omitted — Runtime defaults designer → explanatory
-            })
-          });
-          const data = (await response.json().catch(() => ({}))) as {
-            ok?: boolean;
-          };
-          if (response.ok && data.ok) {
-            onCreatedRef.current?.();
-          }
-        } catch {
-          // Swallow — poll will not show a failed create; designer can retry.
-        }
+        const mutate = onCreateRef.current;
+        if (!mutate) return;
+        await mutate(payload);
       })();
-    });
+    };
 
     if (editor.getCurrentToolId() !== REGION_ANNOTATION_TOOL_ID) {
       editor.setCurrentTool(REGION_ANNOTATION_TOOL_ID);
     }
 
     return () => {
-      setRegionAnnotationCreateHandler(null);
+      createHandlerRef.current = null;
     };
-  }, [annotateMode, editor]);
+  }, [annotateMode, editor, createHandlerRef]);
 
   return null;
 }

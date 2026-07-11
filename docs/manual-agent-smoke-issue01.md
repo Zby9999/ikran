@@ -1,5 +1,7 @@
 # Issue 02/01 — Manual Real-Agent Smoke Setup & Guide
 
+> **Historical（2026-07-10）：** 下文步骤仍反映当时的两进程 coordinator / spawn 入口细节。当前 Active 契约是 **一进程** Runtime（stdio MCP + custom Next HTTP/SSE，shared command kernel）。以 `IKRAN-MVP-PRD.zh-CN.md` 与 `docs/adr/0002-consolidate-runtime-and-research-records.md` 为准；本文件不批量重写。
+
 > You do the real Agent validation; this file is the setup + step-by-step guide.
 > Source of truth: `Issues 02/01-runtime-workbench-url-session-shell.md`,
 > `IKRAN-MVP-PRD.zh-CN.md`, `docs/adr/0001-pivot-to-agent-desktop-fusion.md`.

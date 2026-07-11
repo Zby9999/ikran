@@ -6,6 +6,10 @@
 
 此 slice 不要求真实 Figma evidence package，也不创建 Region Annotation 或 Question card。目标是完成“seed entry -> Runtime record -> tldraw projection”的端到端纵切。
 
+### 2026-07-10 后续架构收口
+
+本 issue 历史实现含 **Workbench EnterPanel seed 写入口** 与两进程拓扑说明；这些已被当前标准替代。当前 Active 契约：**Seed 纯 Agent-first**（仅 `register_seed_reference`）；Workbench **无** seed URL / intent 写入口；一进程 Runtime；tldraw 仍只投影 Runtime records。下文实现技术报告保留为历史原文，勿当作当前双入口仍有效。
+
 ## User stories covered
 
 - 5, 6, 9, 54, 55

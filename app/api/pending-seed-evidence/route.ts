@@ -1,17 +1,15 @@
 // GET /api/pending-seed-evidence
 //
-// Lists active-project `seed_references` that still need an Agent-declared
-// Evidence Surface screenshot (non-empty screenshot_data_url or
-// screenshot_artifact_path). Used by MCP `list_pending_seed_evidence` so the
-// Agent can fulfill UI-registered seeds without Runtime contacting Figma.
-//
-// Authorize + active project fail-closed. Oldest-first.
+// Thin HTTP adapter: authorize + active project + shared pending command.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { authorize } from "../../../lib/runtime/session";
-import { getActiveProjectState } from "../../../lib/runtime/project";
-import { listPendingSeedEvidence } from "../../../lib/runtime/pending-seed-evidence";
+import {
+  commandErrorHttpStatus,
+  listPendingSeedEvidenceCommand,
+  requireActiveProjectCommand
+} from "../../../lib/runtime/commands";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,14 +23,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const state = getActiveProjectState();
+  const state = requireActiveProjectCommand();
   if (!state.ok) {
     return NextResponse.json(
       { ok: false, error: state.reason },
-      { status: 400 }
+      { status: commandErrorHttpStatus(state.reason) }
     );
   }
 
-  const records = listPendingSeedEvidence(state.project.path);
-  return NextResponse.json({ ok: true, records });
+  const listed = listPendingSeedEvidenceCommand(state.project.path);
+  return NextResponse.json({ ok: true, records: listed.records });
 }

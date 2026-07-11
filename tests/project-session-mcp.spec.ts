@@ -12,84 +12,33 @@
 // (SHARED_BUILD_DIR) in --prod mode so the first call is fast (global-setup
 // builds once).
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { expect, test } from "./fixtures";
-import { SHARED_BUILD_DIR } from "./e2e-constants";
+import {
+  killRecordedRuntime,
+  sc,
+  spawnMcpClient
+} from "./helpers/mcp";
 
-const MCP_BIN = path.join(process.cwd(), "bin", "ikran-mcp.mjs");
 const URL_RE = /^http:\/\/127\.0\.0\.1:\d+\/\?session=[a-f0-9]{32,}$/;
-
-// Extract structuredContent from a CallToolResult as a loose record. The SDK
-// result is a rich union; narrow loosely from `unknown` so this compiles without
-// depending on the exact content-block type shape.
-function sc(res: unknown): Record<string, unknown> {
-  if (typeof res === "object" && res !== null) {
-    const r = res as { structuredContent?: unknown };
-    if (r.structuredContent && typeof r.structuredContent === "object") {
-      return r.structuredContent as Record<string, unknown>;
-    }
-  }
-  return {};
-}
 
 function projectPath(s: Record<string, unknown>): string {
   const project = s.project as { path?: string } | null | undefined;
   return project?.path ?? "";
 }
 
-// Kill a Runtime recorded in runtime-endpoint.json (best-effort group kill),
-// so a leaked MCP-spawned Next does not outlive the test.
-function killRecordedRuntime(stateDir: string) {
+/** Compare paths after resolving macOS /var → /private/var symlinks. */
+function samePath(a: string, b: string): boolean {
   try {
-    const file = path.join(stateDir, "runtime-endpoint.json");
-    const ep = JSON.parse(readFileSync(file, "utf-8")) as { pid?: number };
-    if (ep && typeof ep.pid === "number") {
-      try {
-        process.kill(-ep.pid, "SIGKILL");
-      } catch {
-        /* already gone */
-      }
-    }
+    return realpathSync(a) === realpathSync(b);
   } catch {
-    /* no endpoint file */
+    return path.resolve(a) === path.resolve(b);
   }
-}
-
-// Spawn the MCP server with a real stdio client. If `rootsProvider` is given,
-// the client declares the `roots` capability and responds to `roots/list` with
-// those roots (simulating Cursor exposing its workspace folders via MCP Roots).
-async function spawnMcpClient(
-  stateDir: string,
-  rootsProvider?: () => { uri: string; name?: string }[]
-): Promise<{ client: Client; transport: StdioClientTransport }> {
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [MCP_BIN, "--prod"],
-    env: {
-      ...process.env,
-      IKRAN_STATE_DIR: stateDir,
-      IKRAN_HOST: "127.0.0.1",
-      IKRAN_NEXT_DIST_DIR: SHARED_BUILD_DIR
-    },
-    stderr: "pipe"
-  });
-  const client = new Client(
-    { name: "ikran-e2e", version: "0.0.0" },
-    { capabilities: rootsProvider ? { roots: {} } : {} }
-  );
-  if (rootsProvider) {
-    client.setRequestHandler(ListRootsRequestSchema, async () => ({
-      roots: rootsProvider().map((r) => ({ uri: r.uri, name: r.name }))
-    }));
-  }
-  await client.connect(transport);
-  return { client, transport };
 }
 
 test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
@@ -101,26 +50,19 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
       const stateDir = mkdtempSync(path.join(tmpdir(), "ikran-mcp-proj-"));
       const dirA = mkdtempSync(path.join(tmpdir(), "ikran-proj-a-"));
       const dirB = mkdtempSync(path.join(tmpdir(), "ikran-proj-b-"));
+      // MCP child cwd ≠ active project so empty-args must return active, not
+      // treat discovered cwd as a bind target (regression for project_mismatch).
+      const launchCwd = mkdtempSync(path.join(tmpdir(), "ikran-mcp-launch-"));
       let client: Client | null = null;
       let transport: StdioClientTransport | null = null;
 
       try {
-        transport = new StdioClientTransport({
-          command: process.execPath,
-          args: [MCP_BIN, "--prod"],
-          env: {
-            ...process.env,
-            IKRAN_STATE_DIR: stateDir,
-            IKRAN_HOST: "127.0.0.1",
-            IKRAN_NEXT_DIST_DIR: SHARED_BUILD_DIR
-          },
-          stderr: "pipe"
+        const handle = await spawnMcpClient(stateDir, {
+          cwd: launchCwd,
+          env: { IKRAN_CWD: "" }
         });
-        client = new Client(
-          { name: "ikran-e2e", version: "0.0.0" },
-          { capabilities: {} }
-        );
-        await client.connect(transport);
+        client = handle.client;
+        transport = handle.transport;
 
         // 1. Both tools are discoverable.
         const tools = await client.listTools();
@@ -151,24 +93,20 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
         // .ikran basis was created.
         expect(existsSync(path.join(dirA, ".ikran", "config.json"))).toBe(true);
         expect(existsSync(path.join(dirA, ".ikran", "ikran.db"))).toBe(true);
-        expect(existsSync(path.join(dirA, ".ikran", "events.jsonl"))).toBe(true);
 
         // SQLite events table has the recorded events.
         const { DatabaseSync } = require("node:sqlite");
         const db = new DatabaseSync(path.join(dirA, ".ikran", "ikran.db"));
         const eventCount = db.prepare("SELECT COUNT(*) as c FROM events").get().c;
         expect(eventCount).toBeGreaterThanOrEqual(2);
-        db.close();
-
-        // events.jsonl contains project_created + folder_selected.
-        const jsonl = readFileSync(path.join(dirA, ".ikran", "events.jsonl"), "utf-8");
-        const types = jsonl
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => (JSON.parse(line) as { type: string }).type);
+        const types = (
+          db.prepare("SELECT type FROM events ORDER BY id ASC").all() as Array<{
+            type: string;
+          }>
+        ).map((r) => r.type);
         expect(types).toContain("project_created");
         expect(types).toContain("folder_selected");
+        db.close();
 
         // 3. OPEN idempotent: binding the SAME folder again succeeds (open).
         const reopen = await client.callTool({
@@ -192,19 +130,21 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
         expect(mismatchSc.active).toBe(dirA);
         expect(existsSync(path.join(dirB, ".ikran"))).toBe(false);
 
-        // 5. OPEN current (no path): read-only, returns the active project +
-        // the same session.
+        // 5. OPEN current (no path): returns the active project even when MCP
+        // cwd (launchCwd) differs from dirA — must NOT project_mismatch.
         const openCurrent = await client.callTool({
           name: "create_or_open_project",
           arguments: {}
         });
         const openSc = sc(openCurrent);
         expect(openSc.ok).toBe(true);
+        expect(openSc.error).toBeUndefined();
         expect(projectPath(openSc)).toBe(dirA);
+        expect(openSc.active_project).toBe(dirA);
         expect(openSc.session).toBe(token);
 
-        // 6. HTTP-side switch still works (the designer's path) and the MCP tool
-        // follows the SAME binding. Switch to dirB via the HTTP API directly.
+        // 6. HTTP bind also fail-closes on a different path (same Runtime
+        // binding as MCP — single-project-single-flow).
         const switchRes = await fetch(`http://127.0.0.1:${port}/api/project/bind`, {
           method: "POST",
           headers: {
@@ -214,30 +154,34 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
           },
           body: JSON.stringify({ path: dirB })
         });
-        expect(switchRes.status).toBe(200);
-        const switchBody = (await switchRes.json()) as { ok: boolean; project: { path: string } };
-        expect(switchBody.ok).toBe(true);
-        expect(switchBody.project.path).toBe(dirB);
+        expect(switchRes.status).toBe(409);
+        const switchBody = (await switchRes.json()) as {
+          ok: boolean;
+          error?: string;
+        };
+        expect(switchBody.ok).toBe(false);
+        expect(switchBody.error).toBe("project_mismatch");
+        expect(existsSync(path.join(dirB, ".ikran"))).toBe(false);
 
-        // The MCP tool now sees dirB (the shared binding) — OPEN idempotent.
-        const seeB = await client.callTool({
-          name: "create_or_open_project",
-          arguments: { path: dirB }
-        });
-        const seeBSc = sc(seeB);
-        expect(seeBSc.ok).toBe(true);
-        expect(projectPath(seeBSc)).toBe(dirB);
-
-        // Mismatch now goes the other way (active is dirB; requesting dirA fails).
-        const mismatch2 = await client.callTool({
+        // MCP still sees dirA (shared binding unchanged).
+        const seeA = await client.callTool({
           name: "create_or_open_project",
           arguments: { path: dirA }
+        });
+        const seeASc = sc(seeA);
+        expect(seeASc.ok).toBe(true);
+        expect(projectPath(seeASc)).toBe(dirA);
+
+        // Explicit path to dirB still mismatches while dirA is active.
+        const mismatch2 = await client.callTool({
+          name: "create_or_open_project",
+          arguments: { path: dirB }
         });
         const mismatch2Sc = sc(mismatch2);
         expect(mismatch2Sc.ok).toBe(false);
         expect(mismatch2Sc.error).toBe("project_mismatch");
-        expect(mismatch2Sc.active).toBe(dirB);
-        expect(mismatch2Sc.expected).toBe(dirA);
+        expect(mismatch2Sc.active).toBe(dirA);
+        expect(mismatch2Sc.expected).toBe(dirB);
 
         // 7. No-token requests are rejected at the HTTP boundary (403).
         const noTokenGet = await fetch(`http://127.0.0.1:${port}/api/project`);
@@ -249,8 +193,7 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
         });
         expect(noTokenBind.status).toBe(403);
 
-        // 8. Refresh recovery through an MCP-initiated binding (active = dirB):
-        // opening the Workbench URL and reloading recovers the bound project.
+        // 8. Refresh recovery through an MCP-initiated binding (active = dirA).
         await page.goto(workbenchUrl);
         await expect(page.getByText("Project set up...")).toBeVisible();
         await expect(page.getByTestId("runtime-helper")).toContainText(
@@ -258,9 +201,9 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
         );
         await page.reload();
         await expect(page.getByTestId("folder-helper")).toContainText(
-          `Complete! ${dirB}`
+          `Complete! ${dirA}`
         );
-        await expect(page.getByTestId("project-path")).toHaveText(dirB);
+        await expect(page.getByTestId("project-path")).toHaveText(dirA);
       } finally {
         try {
           await client?.close();
@@ -271,6 +214,7 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
         rmSync(stateDir, { recursive: true, force: true });
         rmSync(dirA, { recursive: true, force: true });
         rmSync(dirB, { recursive: true, force: true });
+        rmSync(launchCwd, { recursive: true, force: true });
       }
     }
   );
@@ -284,9 +228,11 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
       const dir = mkdtempSync(path.join(tmpdir(), "ikran-roots-ws-"));
       let client: Client | null = null;
       try {
-        const handle = await spawnMcpClient(stateDir, () => [
-          { uri: pathToFileURL(dir).href, name: "ikran-test-workspace" }
-        ]);
+        const handle = await spawnMcpClient(stateDir, {
+          rootsProvider: () => [
+            { uri: pathToFileURL(dir).href, name: "ikran-test-workspace" }
+          ]
+        });
         client = handle.client;
 
         const names = (await client.listTools()).tools.map((t) => t.name);
@@ -318,7 +264,6 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
         // .ikran created in the discovered workspace folder.
         expect(existsSync(path.join(dir, ".ikran", "config.json"))).toBe(true);
         expect(existsSync(path.join(dir, ".ikran", "ikran.db"))).toBe(true);
-        expect(existsSync(path.join(dir, ".ikran", "events.jsonl"))).toBe(true);
 
         // A second no-path call now OPENs idempotently (active == discovered).
         const reopened = await client.callTool({
@@ -341,14 +286,19 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
   );
 
   test(
-    "no roots, no env, no active -> create_or_open_project({}) returns no_working_folder; list_working_folders reports none",
+    "no roots, no IKRAN_CWD -> discover falls back to process.cwd(); create_or_open_project({}) binds that folder",
     async () => {
       test.setTimeout(150_000);
 
       const stateDir = mkdtempSync(path.join(tmpdir(), "ikran-mcp-noroots-"));
+      const launchCwd = mkdtempSync(path.join(tmpdir(), "ikran-mcp-launch-cwd-"));
       let client: Client | null = null;
       try {
-        const handle = await spawnMcpClient(stateDir); // no roots provider
+        const handle = await spawnMcpClient(stateDir, {
+          // Clear any parent IKRAN_CWD; no roots — discovery must use process.cwd().
+          env: { IKRAN_CWD: "" },
+          cwd: launchCwd
+        });
         client = handle.client;
 
         const list = await client.callTool({
@@ -357,16 +307,21 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
         });
         const listSc = sc(list);
         expect(listSc.ok).toBe(true);
-        expect(listSc.folder).toBeNull();
-        expect(listSc.source).toBe("none");
+        expect(samePath(String(listSc.folder), launchCwd)).toBe(true);
+        expect(listSc.source).toBe("cwd");
 
         const res = await client.callTool({
           name: "create_or_open_project",
           arguments: {}
         });
         const resSc = sc(res);
-        expect(resSc.ok).toBe(false);
-        expect(resSc.error).toBe("no_working_folder");
+        expect(resSc.ok).toBe(true);
+        expect(
+          samePath(
+            (resSc.project as { path?: string } | null)?.path ?? "",
+            launchCwd
+          )
+        ).toBe(true);
       } finally {
         try {
           await client?.close();
@@ -375,12 +330,13 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
         }
         killRecordedRuntime(stateDir);
         rmSync(stateDir, { recursive: true, force: true });
+        rmSync(launchCwd, { recursive: true, force: true });
       }
     }
   );
 
   test(
-    "setup_workspace({ path }) returns the per-project MCP config snippet (cwd + IKRAN_STATE_DIR); does not write a file",
+    "setup_workspace({ path }) returns the per-project MCP config snippet (cwd + IKRAN_CWD + IKRAN_STATE_DIR); does not write a file",
     async () => {
       const stateDir = mkdtempSync(path.join(tmpdir(), "ikran-mcp-setup-"));
       const dir = mkdtempSync(path.join(tmpdir(), "ikran-setup-ws-"));
@@ -409,7 +365,11 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
                 cwd: string;
                 command: string;
                 args: string[];
-                env: { IKRAN_HOST: string; IKRAN_STATE_DIR: string };
+                env: {
+                  IKRAN_HOST: string;
+                  IKRAN_CWD: string;
+                  IKRAN_STATE_DIR: string;
+                };
               };
             };
           }
@@ -419,6 +379,7 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
         expect(entry.args[0]).toBe(path.join(process.cwd(), "bin", "ikran-mcp.mjs"));
         expect(entry.args).toContain("--prod"); // spawned with --prod
         expect(entry.env.IKRAN_HOST).toBe("127.0.0.1");
+        expect(entry.env.IKRAN_CWD).toBe(dir);
         expect(entry.env.IKRAN_STATE_DIR).toBe(path.join(dir, ".ikran"));
 
         // The tool does NOT write the file (the Agent writes it).

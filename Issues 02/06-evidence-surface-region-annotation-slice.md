@@ -6,6 +6,10 @@
 
 此 slice 不做 Question card gate，只证明 anchored annotation record 是一等事实源。
 
+### 2026-07-10 后续架构收口
+
+当前 Active 契约补充（不改写下方原 AC 语义）：Annotation **持久化 raw semantic rect**；Agent **display padding** 在 Workbench projection 重算，不回写为语义事实；Evidence 使用 **current** lineage（`current_surface_id` / `superseded_by`）选择锚定表面。Annotation **类型/权限的新语义**属于下一 Issue，本 issue 原 AC（含类型为视觉辅助、不影响完成状态）保持不变。详见 PRD 与 ADR 0002。
+
 ## User stories covered
 
 - 10, 11, 12, 13, 14, 54, 56

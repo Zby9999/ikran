@@ -10,10 +10,9 @@
 // Production runtime code is unchanged; isolation lives entirely in the harness.
 //
 // Tests import { test, expect } from "./fixtures" and destructure `runtime`
-// ({ baseURL, port, stateDir }) when they need the worker's server. Tests that
-// don't reference `runtime` (e.g. pure unit tests of lib/* helpers) don't
-// trigger a server spawn — Playwright fixtures are lazy, and `runtime` is
-// worker-scoped so it's set up at most once per worker.
+// ({ baseURL, port, stateDir }) when they need the worker's server. Pure unit
+// tests live under tests/unit (Vitest) and are excluded from Playwright via
+// testIgnore — they never hit this fixture or globalSetup.
 
 import { test as base, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
@@ -32,13 +31,6 @@ export interface RuntimeHandle {
   /** Per-worker temp dir holding the isolated runtime-state.json. */
   stateDir: string;
 }
-
-/** Extra environment variables to inject into the worker's Runtime process.
- *  Overridable by downstream fixtures (e.g. the smoke fixture sets
- *  IKRAN_AGENT_CLI_COMMAND / IKRAN_AGENT_CLI_ARGS so the real_agent_smoke
- *  family spawns the fake local CLI). Defaults to {} so existing specs are
- *  unchanged. */
-export type RuntimeEnv = Record<string, string>;
 
 function pickFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -94,22 +86,9 @@ async function waitForRuntime(port: number, timeoutMs = 60_000): Promise<void> {
 // `runtime` is a WORKER-scoped fixture (one Ikran Runtime per worker). Per
 // Playwright's Fixtures typing, worker-scoped fixtures must be declared in the
 // `W` (second) generic of extend<T, W>, NOT in T — T only permits scope:'test'.
-// `runtimeEnv` is a worker-scoped, overridable fixture the `runtime` fixture
-// depends on: downstream fixtures (tests/smoke-fixtures.ts) override it to
-// inject extra env into the spawned Runtime without duplicating spawn logic.
-export const test = base.extend<
-  {},
-  { runtime: RuntimeHandle; runtimeEnv: RuntimeEnv }
->({
-  runtimeEnv: [
-    async ({}, use) => {
-      await use({});
-    },
-    { scope: "worker" }
-  ],
-
+export const test = base.extend<{}, { runtime: RuntimeHandle }>({
   runtime: [
-    async ({ runtimeEnv }, use) => {
+    async ({}, use) => {
       const port = await pickFreePort();
       const stateDir = mkdtempSync(path.join(tmpdir(), "ikran-e2e-w-"));
       const nextBin = path.join(process.cwd(), "node_modules", ".bin", "next");
@@ -120,7 +99,6 @@ export const test = base.extend<
         {
           env: {
             ...process.env,
-            ...runtimeEnv,
             IKRAN_STATE_DIR: stateDir,
             IKRAN_NEXT_DIST_DIR: SHARED_BUILD_DIR
           },

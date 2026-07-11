@@ -1,8 +1,9 @@
-import http from "node:http";
 import { expect, test } from "./fixtures";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { projectPathsMatch } from "../lib/runtime/project";
+import { rawGet as httpGet, rawPost as httpPost } from "./helpers/http";
 
 let port = 3000;
 let baseURL = "http://localhost:3000";
@@ -13,59 +14,12 @@ function rawPost(
   route: string,
   body: unknown,
   headers: Record<string, string>
-): Promise<{ status: number; body: string }> {
-  return new Promise((resolve) => {
-    const json = JSON.stringify(body);
-    const req = http.request(
-      {
-        hostname: "127.0.0.1",
-        port,
-        path: route,
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(json),
-          ...headers
-        }
-      },
-      (res) => {
-        let body = "";
-        res.on("data", (chunk) => {
-          body += chunk;
-        });
-        res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
-      }
-    );
-    req.on("error", () => resolve({ status: 0, body: "" }));
-    req.write(json);
-    req.end();
-  });
+) {
+  return httpPost(port, route, body, headers);
 }
 
-function rawGet(
-  route: string,
-  headers: Record<string, string>
-): Promise<{ status: number; body: string }> {
-  return new Promise((resolve) => {
-    const req = http.request(
-      {
-        hostname: "127.0.0.1",
-        port,
-        path: route,
-        method: "GET",
-        headers
-      },
-      (res) => {
-        let body = "";
-        res.on("data", (chunk) => {
-          body += chunk;
-        });
-        res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
-      }
-    );
-    req.on("error", () => resolve({ status: 0, body: "" }));
-    req.end();
-  });
+function rawGet(route: string, headers: Record<string, string>) {
+  return httpGet(port, route, headers);
 }
 
 test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", () => {
@@ -115,14 +69,14 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     expect(bindResult.status).toBe(200);
     const bindBody = JSON.parse(bindResult.body);
     expect(bindBody.ok).toBe(true);
-    expect(bindBody.project.path).toBe(testFolder);
+    expect(projectPathsMatch(bindBody.project.path, testFolder)).toBe(true);
     expect(bindBody.events.project_created).toBeDefined();
     expect(bindBody.events.folder_selected).toBeDefined();
 
     // .ikran metadata should exist.
     expect(existsSync(`${testFolder}/.ikran/config.json`)).toBe(true);
     expect(existsSync(`${testFolder}/.ikran/ikran.db`)).toBe(true);
-    expect(existsSync(`${testFolder}/.ikran/events.jsonl`)).toBe(true);
+    const boundPath: string = bindBody.project.path;
 
     // SQLite should contain the recorded events.
     const { DatabaseSync } = require("node:sqlite");
@@ -132,24 +86,21 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
       .all()
       .map((row: { name: string }) => row.name);
     expect(tables).toContain("events");
+    expect(tables).not.toContain("tasks");
     const eventCount = db.prepare("SELECT COUNT(*) as c FROM events").get().c;
     expect(eventCount).toBeGreaterThanOrEqual(2);
+    const types = (
+      db.prepare("SELECT type FROM events ORDER BY id ASC").all() as Array<{
+        type: string;
+      }>
+    ).map((r) => r.type);
+    expect(types).toContain("project_created");
+    expect(types).toContain("folder_selected");
     db.close();
 
     // Config should contain the project path.
     const config = JSON.parse(readFileSync(`${testFolder}/.ikran/config.json`, "utf-8"));
-    expect(config.path).toBe(testFolder);
-
-    // events.jsonl should contain project_created and folder_selected.
-    const eventsJsonl = readFileSync(`${testFolder}/.ikran/events.jsonl`, "utf-8");
-    const events = eventsJsonl
-      .trim()
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => JSON.parse(line));
-    const types = events.map((e) => e.type);
-    expect(types).toContain("project_created");
-    expect(types).toContain("folder_selected");
+    expect(projectPathsMatch(config.path, testFolder)).toBe(true);
 
     // Active project endpoint should recover the binding after refresh.
     const activeResult = await rawGet("/api/project", {
@@ -159,38 +110,25 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     expect(activeResult.status).toBe(200);
     const activeBody = JSON.parse(activeResult.body);
     expect(activeBody.ok).toBe(true);
-    expect(activeBody.project.path).toBe(testFolder);
+    expect(projectPathsMatch(activeBody.project.path, testFolder)).toBe(true);
 
     // Browser UI should also recover the binding after refresh.
     await page.reload();
     await expect(page.getByTestId("folder-helper")).toContainText(
-      `Complete! ${testFolder}`
+      `Complete! ${boundPath}`
     );
     await expect(page.getByTestId("select-folder-button")).not.toContainText(
       "Complete!"
     );
-    await expect(page.getByTestId("project-path")).toHaveText(testFolder);
-    await expect(page.getByRole("button", { name: "Codex" })).toBeEnabled();
-    await expect(page.getByRole("button", { name: "Cursor" })).toBeEnabled();
-    await expect(page.getByRole("button", { name: "Claude Code" })).toBeEnabled();
+    await expect(page.getByTestId("project-path")).toHaveText(boundPath);
+    await expect(page.getByText("Connect Your Agent")).toHaveCount(0);
+    await expect(page.getByLabel("Agent choices")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Codex" })).toHaveCount(0);
 
     const startButton = page.getByRole("button", { name: "Start Building" });
-    await expect(startButton).toBeDisabled();
-    await page.getByRole("button", { name: "Codex" }).click();
-    await expect(page.getByTestId("agent-helper")).toContainText("Codex connected");
     await expect(startButton).toBeEnabled();
 
-    const mismatchResult = await rawPost(
-      "/api/agent/connect",
-      { agent: "codex", projectPath: "/tmp/not-the-active-project" },
-      { host: `localhost:${port}`, "x-ikran-session": token }
-    );
-    expect(mismatchResult.status).toBe(409);
-    expect(JSON.parse(mismatchResult.body).error).toBe("project_mismatch");
-
-    await page.reload();
-    await expect(page.getByTestId("agent-helper")).toContainText("Codex connected");
-    await expect(startButton).toBeEnabled();
+    expect(activeBody.connected_agent).toBeUndefined();
 
     const persistedConfig = JSON.parse(
       readFileSync(`${testFolder}/.ikran/config.json`, "utf-8")
@@ -215,36 +153,60 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
       host: `localhost:${port}`,
       "x-ikran-session": token
     });
-    expect(JSON.parse(activeAfterRebind.body).connected_agent).toBe("codex");
+    const activeAfterRebindBody = JSON.parse(activeAfterRebind.body);
+    expect(activeAfterRebindBody.connected_agent).toBeUndefined();
+    expect(projectPathsMatch(activeAfterRebindBody.project.path, testFolder)).toBe(
+      true
+    );
 
     await page.reload();
-    await expect(page.getByTestId("agent-helper")).toContainText("Codex connected");
+    await expect(page.getByTestId("folder-helper")).toContainText(
+      `Complete! ${boundPath}`
+    );
     await expect(startButton).toBeEnabled();
+    await startButton.click();
+    await expect(page.getByTestId("seed-workbench")).toBeVisible();
+    await page.getByRole("button", { name: "Back to setup" }).click();
+    await expect(page.getByTestId("folder-helper")).toContainText(
+      `Complete! ${boundPath}`
+    );
 
+    // Single-project-single-flow: binding a different folder fails closed.
+    // Do NOT switch; do NOT create .ikran on the rejected path.
     otherFolder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-other-"));
     const bindOtherResult = await rawPost(
       "/api/project/bind",
       { path: otherFolder },
       { host: `localhost:${port}`, "x-ikran-session": token }
     );
-    expect(bindOtherResult.status).toBe(200);
-    expect(JSON.parse(bindOtherResult.body).project.path).toBe(otherFolder);
-    expect(
-      JSON.parse(readFileSync(`${otherFolder}/.ikran/config.json`, "utf-8"))
-        .connected_agent
-    ).toBeUndefined();
+    expect(bindOtherResult.status).toBe(409);
+    const bindOtherBody = JSON.parse(bindOtherResult.body);
+    expect(bindOtherBody.ok).toBe(false);
+    expect(bindOtherBody.error).toBe("project_mismatch");
+    expect(existsSync(`${otherFolder}/.ikran`)).toBe(false);
 
     const folderAConfig = JSON.parse(
       readFileSync(`${testFolder}/.ikran/config.json`, "utf-8")
     );
     expect(folderAConfig.connected_agent).toBeUndefined();
+    expect(projectPathsMatch(folderAConfig.path, testFolder)).toBe(true);
+
+    const activeAfterMismatch = await rawGet("/api/project", {
+      host: `localhost:${port}`,
+      "x-ikran-session": token
+    });
+    const activeAfterMismatchBody = JSON.parse(activeAfterMismatch.body);
+    expect(activeAfterMismatchBody.ok).toBe(true);
+    expect(
+      projectPathsMatch(activeAfterMismatchBody.project.path, testFolder)
+    ).toBe(true);
 
     await page.reload();
     await expect(page.getByTestId("folder-helper")).toContainText(
-      `Complete! ${otherFolder}`
+      `Complete! ${boundPath}`
     );
-    await expect(page.getByTestId("agent-helper")).toContainText("Codex connected");
-    await expect(startButton).toBeEnabled();
+    await expect(page.getByTestId("project-path")).toHaveText(boundPath);
+    await expect(page.getByRole("button", { name: "Start Building" })).toBeEnabled();
   });
 
   test("rejects invalid project folders", async ({ page }) => {

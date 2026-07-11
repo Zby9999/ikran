@@ -5,13 +5,21 @@
 // Runtime-global `~/.ikran/runtime-state.json` pointer). The Browser UI never
 // touches the filesystem directly.
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync, realpathSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  realpathSync
+} from "node:fs";
 import { stat, access } from "node:fs/promises";
 import path from "node:path";
-import type { AgentId } from "./agent-types";
-import { isAgentId } from "./agent-connect";
 import { logEvent, type EventPayload } from "./events";
 import { initializeProjectDb } from "./db";
+import {
+  fileLockPath,
+  withFileLock
+} from "./file-lock.mjs";
 import {
   getArtifactsDir,
   getExportDir,
@@ -28,9 +36,10 @@ export interface ProjectConfig {
   updated_at: string;
 }
 
+// Extra keys in an older runtime-state.json (legacy agent-connection fields)
+// are ignored — load/write only care about active_project / last_updated.
 export interface RuntimeState {
   active_project?: string;
-  connected_agent?: AgentId;
   last_updated?: string;
 }
 
@@ -88,17 +97,75 @@ export interface BindResult {
 export interface BindError {
   ok: false;
   reason: string;
+  /** Present when reason is `project_mismatch` — the path that won the bind. */
+  active?: string;
+  /** Present when reason is `project_mismatch` — the path this call requested. */
+  expected?: string;
 }
 
 export type BindResponse = BindResult | BindError;
 
+/**
+ * Cross-process exclusive lock for bind check-and-set.
+ *
+ * An in-process Promise queue is not enough: MCP and HTTP can run as separate
+ * Node processes sharing the same `IKRAN_STATE_DIR` / `runtime-state.json`.
+ * Without a filesystem lock, two processes can both observe "no active", both
+ * return `ok: true`, and leave the pointer pointing at only one of them —
+ * the other caller falsely believes it owns the Runtime.
+ *
+ * Uses the shared `file-lock.mjs` model (same as Runtime start lock):
+ * O_EXCL + random ownerId + corrupt grace + compare-and-delete release.
+ */
+const PROJECT_BIND_LOCK_FILE = "project-bind.lock";
+
+export function bindLockPath(stateDir: string = RUNTIME_STATE_DIR): string {
+  return fileLockPath(stateDir, PROJECT_BIND_LOCK_FILE);
+}
+
+/**
+ * Serialize bind across processes (and within one process via the file lock).
+ * Losers wait, then re-enter so they re-read `runtime-state.json` and fail
+ * closed with `project_mismatch` when another path already won.
+ */
+export async function withProjectBindLock<T>(
+  fn: () => Promise<T>,
+  {
+    stateDir = RUNTIME_STATE_DIR,
+    timeoutMs = 60_000,
+    pollMs = 50
+  }: { stateDir?: string; timeoutMs?: number; pollMs?: number } = {}
+): Promise<T> {
+  return withFileLock(bindLockPath(stateDir), fn, {
+    timeoutMs,
+    pollMs,
+    label: "project bind"
+  });
+}
+
 export async function bindProjectFolder(folderPath: string): Promise<BindResponse> {
+  return withProjectBindLock(() => bindProjectFolderLocked(folderPath));
+}
+
+async function bindProjectFolderLocked(folderPath: string): Promise<BindResponse> {
   const validation = await validateProjectFolder(folderPath);
   if (!validation.ok) {
     return { ok: false, reason: validation.reason };
   }
 
   const resolved = path.resolve(folderPath);
+
+  // Atomic check-and-set: refuse to switch away from an already-active project.
+  const active = getActiveProject();
+  if (active && !projectPathsMatch(active, resolved)) {
+    return {
+      ok: false,
+      reason: "project_mismatch",
+      active,
+      expected: resolved
+    };
+  }
+
   const now = new Date().toISOString();
   const existing = loadProjectConfig(resolved);
 
@@ -162,30 +229,52 @@ function writeRuntimeState(state: RuntimeState): void {
   writeFileSync(RUNTIME_STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
 }
 
-export function getRuntimeConnectedAgent(): AgentId | null {
-  const agent = loadRuntimeState().connected_agent;
-  if (agent && isAgentId(agent)) {
-    return agent;
-  }
-  return null;
-}
-
-export function setRuntimeConnectedAgent(agent: AgentId): void {
-  const state = loadRuntimeState();
-  writeRuntimeState({
-    ...state,
-    connected_agent: agent,
-    last_updated: new Date().toISOString()
-  });
-}
-
 export function setActiveProject(folderPath: string): void {
-  const state = loadRuntimeState();
+  // Persist only known fields so legacy agent-connection keys are dropped on
+  // the next write without a dedicated migration.
   writeRuntimeState({
-    ...state,
     active_project: path.resolve(folderPath),
     last_updated: new Date().toISOString()
   });
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+/**
+ * Fail-closed parse of `.ikran/config.json`.
+ * Requires the known schema and that `config.path` matches the folder being
+ * opened (resolved real-path equality). Tampered or malformed configs return
+ * null so callers never redirect the session via a forged `path`.
+ */
+export function parseProjectConfig(
+  raw: unknown,
+  folderPath: string
+): ProjectConfig | null {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const obj = raw as Record<string, unknown>;
+  if (
+    !isNonEmptyString(obj.path) ||
+    !isNonEmptyString(obj.name) ||
+    !isNonEmptyString(obj.created_at) ||
+    !isNonEmptyString(obj.updated_at)
+  ) {
+    return null;
+  }
+  if (!projectPathsMatch(obj.path, folderPath)) {
+    return null;
+  }
+  // Return the opened folder's resolved path — never the (possibly differently
+  // spelled) string from disk, even when realpaths match.
+  return {
+    path: path.resolve(folderPath),
+    name: obj.name,
+    created_at: obj.created_at,
+    updated_at: obj.updated_at
+  };
 }
 
 export function loadProjectConfig(folderPath: string): ProjectConfig | null {
@@ -194,7 +283,8 @@ export function loadProjectConfig(folderPath: string): ProjectConfig | null {
     return null;
   }
   try {
-    return JSON.parse(readFileSync(configPath, "utf-8")) as ProjectConfig;
+    const raw: unknown = JSON.parse(readFileSync(configPath, "utf-8"));
+    return parseProjectConfig(raw, folderPath);
   } catch {
     return null;
   }
@@ -205,9 +295,13 @@ export function getActiveProjectState(): { ok: true; project: ProjectConfig } | 
   if (!active) {
     return { ok: false, reason: "no_active_project" };
   }
+  if (!existsSync(getProjectConfigPath(active))) {
+    return { ok: false, reason: "missing_config" };
+  }
   const config = loadProjectConfig(active);
   if (!config) {
-    return { ok: false, reason: "missing_config" };
+    // File exists but schema/path checks failed — fail closed.
+    return { ok: false, reason: "invalid_config" };
   }
   return { ok: true, project: config };
 }

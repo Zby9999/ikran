@@ -11,8 +11,16 @@ export const PORT = Number(process.env.IKRAN_PORT || 3000);
 
 // Hostnames that count as "local" for same-origin / localhost enforcement.
 // Any other hostname (e.g. a rebinding domain) must be rejected fail-closed.
+// Node's URL.hostname may keep IPv6 brackets (`[::1]`); strip before compare.
 const LOCALHOST_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 
+function stripHostBrackets(hostname: string): string {
+  if (hostname.startsWith("[") && hostname.endsWith("]") && hostname.includes(":")) {
+    return hostname.slice(1, -1);
+  }
+  return hostname;
+}
+
 export function isLocalhostHostname(hostname: string): boolean {
-  return LOCALHOST_HOSTNAMES.has(hostname);
+  return LOCALHOST_HOSTNAMES.has(stripHostBrackets(hostname));
 }

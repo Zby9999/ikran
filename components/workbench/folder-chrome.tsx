@@ -22,7 +22,7 @@ export type FolderChromeExtraction = {
 export type FolderChromeProps = {
   folderName: string;
   onBack: () => void;
-  /** Omit or pass null to hide the Extraction row (EnterPanel visible). */
+  /** Omit or pass null to hide the Extraction row (empty / single-row folder). */
   extraction?: FolderChromeExtraction | null;
 };
 

@@ -19,3 +19,8 @@ teach/
 
 # Git worktrees (local isolation)
 .worktrees/
+
+# Local IDE / runtime state (machine paths, SQLite research data, session endpoints)
+.cursor/
+.ikran/
+**/ikran.db

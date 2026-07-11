@@ -6,6 +6,10 @@
 
 这个 slice 必须用真实 Figma seed page 做一次 Agent host 验证；mock 只能证明 schema 和 UI 路径，不允许掩盖真实接入失败。
 
+### 2026-07-10 后续架构收口
+
+本 issue 历史正文与完成报告中的 **Workbench plus / EnterPanel 双入口 seed**、`registered_via: ui|agent` awaiting UX 分源等表述已被当前标准替代。当前 Active 契约：**Seed 纯 Agent-first**；Workbench 无 seed URL/intent 写入口；Evidence append-only + `superseded_by` / `current_surface_id`；canonical `file_key` / `node_id`；`record_evidence_package` 创建 Figma surface（无独立 `create_evidence_surface`）。**真实 Figma smoke 无本仓库可追溯完成证据，下方 Real Agent 两项改回未验证**；自动化路径仍视为完成。详见 PRD 与 ADR 0002。下文历史报告保留原文。
+
 ## User stories covered
 
 - 8, 9, 12, 64, 65
@@ -23,11 +27,11 @@
 
 ## Real Agent validation
 
-- [x] 使用真实 Agent host + 已配置 Figma MCP + 真实 Figma seed page 生成最小 evidence package。
-- [x] Agent 通过 Ikran tool 声明 package，Runtime 创建 Figma Evidence Surface。
+- [ ] 使用真实 Agent host + 已配置 Figma MCP + 真实 Figma seed page 生成最小 evidence package。（**未验证**：无本仓库可追溯的真实 Figma smoke 证据。）
+- [ ] Agent 通过 Ikran tool 声明 package，Runtime 创建 Figma Evidence Surface。（**未验证**：同上；自动化 MCP/HTTP/Workbench 路径已覆盖，不代替真实 Figma。）
 - [ ] 如果 Figma MCP 不可用、权限不足或截图/结构化证据缺失，必须记录 open gap 和缺失 evidence view。
 
-> Real Agent 步骤与失败分类：`docs/manual-agent-smoke-issue05.md`（本会话未跑真实 Figma MCP，故上方三项保持未勾选）。
+> Real Agent 步骤与失败分类：`docs/manual-agent-smoke-issue05.md`。真实 Figma MCP 两项保持未勾选；勿将自动化完成误读为真实 Figma smoke 完成。
 
 
 
@@ -61,7 +65,7 @@
 
 ## 完成报告（要点）
 
-- **状态**：Issue 05 自动化路径完成（schema / persist / MCP / Workbench 投影 / pending seed evidence）。Real Agent + 真实 Figma MCP 三项仍待手动签收（见 `docs/manual-agent-smoke-issue05.md`）。
+- **状态**：Issue 05 **自动化路径完成**（schema / persist / MCP / Workbench 投影 / pending seed evidence）。**Real Agent + 真实 Figma MCP 两项未验证**（无本仓库可追溯完成证据；见上方 Real Agent validation 与 `docs/manual-agent-smoke-issue05.md`）。自动化完成 ≠ 真实 Figma smoke 完成。
 - **本轮收尾（UX + 审计加固）**：
   - **Awaiting UX 分源**：`seed_references.registered_via`（`ui` | `agent`）。UI EnterPanel 显示引导文案（无 spinner）；Agent `register_seed_reference` 显示 loading 圆圈。
   - **截图角点缩放**：有截图时放大上限为自然像素 + chrome；缩小仍可；无截图自由缩放。
@@ -69,4 +73,3 @@
   - **Surface 选择**：同 seed 多 surface 时「有截图 → 较新 → 显式 link → id」；URL fallback 不抢其他 seed 的显式 surface。
   - `dataUrl` **边界**：仅允许 `data:image/(png|jpeg|jpg|webp|gif);base64,...`，拒绝 https 等外链。
 - **关键文件**：`lib/runtime/{seed-reference,evidence-package,db}.ts`、`find-surface-for-seed.ts`、`seed-reference-resize-clamp.ts`、`seed-reference-description-tip.tsx`、`app/api/artifacts/`、Workbench 投影与 e2e/unit 测试、smoke / Issue 文档。
-

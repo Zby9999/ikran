@@ -1,14 +1,14 @@
 // POST /api/project/bind
 //
-// Binds Ikran to a local project folder. Validates the path, creates the
-// project-local `.ikran/` metadata (config, SQLite, JSONL events), records the
-// initial semantic events, and updates the Runtime-global active project
-// pointer.
+// Thin HTTP adapter: authorize + shared bindProjectCommand.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { authorize } from "../../../../lib/runtime/session";
-import { bindProjectFolder } from "../../../../lib/runtime/project";
+import {
+  bindProjectCommand,
+  commandErrorHttpStatus
+} from "../../../../lib/runtime/commands";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,22 +28,22 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json(
       { ok: false, error: "invalid_json" },
-      { status: 400 }
+      { status: commandErrorHttpStatus("invalid_json") }
     );
   }
 
   if (!body.path || typeof body.path !== "string") {
     return NextResponse.json(
       { ok: false, error: "missing_path" },
-      { status: 400 }
+      { status: commandErrorHttpStatus("missing_path") }
     );
   }
 
-  const result = await bindProjectFolder(body.path);
+  const result = await bindProjectCommand(body.path);
   if (!result.ok) {
     return NextResponse.json(
       { ok: false, error: result.reason },
-      { status: 400 }
+      { status: commandErrorHttpStatus(result.reason) }
     );
   }
 

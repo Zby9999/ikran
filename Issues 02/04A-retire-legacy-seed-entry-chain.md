@@ -6,6 +6,10 @@
 
 此 slice 的目标是退役旧 UI/task/mock 入口，而不是实现下一阶段真实 Figma evidence ingestion。`record_evidence_package`、Figma Evidence Surface record、Region Annotation、Question Card 仍属于后续 issue。
 
+### 2026-07-10 后续架构收口
+
+本 issue 完成报告中「保留通用 `/api/tasks`、task-runner、mock/cli adapter」等过渡表述已被当前标准替代。当前 Active 契约：无 AgentAdapter / `/api/tasks` / fake Agent connection / mock product families 产品路径；Seed 纯 Agent-first；一进程 + direct command kernel。下文实现技术报告保留为历史原文。
+
 ## User stories covered
 
 - 5, 6, 54, 55

@@ -1,5 +1,7 @@
 # Issue 02/03 — 真实 Agent 手动冒烟测试：`register_seed_reference`
 
+> **Historical（2026-07-10）：** 下文仍描述当时的 MCP→HTTP loopback、`route_not_found` 诊断，以及 record/event **非同事务 / best-effort audit**。当前 Active 契约：一进程 + direct command kernel（MCP 不 loopback HTTP）；record + event 同 SQLite 事务；SQLite events canonical。以 PRD 与 ADR 0002 为准；本文件不批量重写。
+
 > 真实 Agent 验证由你手动完成；本文件是设置步骤与逐项引导。
 > 产品事实源：`Issues 02/03-semantic-mcp-tool-boundary-mock-client.md`、
 > `IKRAN-MVP-PRD.zh-CN.md`。前置：`docs/manual-agent-smoke-issue02.md`（项目绑定）。

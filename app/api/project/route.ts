@@ -1,22 +1,11 @@
 // GET /api/project
 //
-// Returns the currently bound active project (if any) and the cwd project
-// candidate (if `IKRAN_CWD` was forwarded by the launcher). The Browser UI
-// uses this to recover state after a refresh and to auto-bind the folder the
-// designer launched Ikran from (Issue 2 supplement).
-//
-// When there is no active project the response is still 200 with `project:
-// null` so the UI can read `cwd_candidate` without a separate 404 path.
+// Thin HTTP adapter: authorize + shared getProjectStateCommand.
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authorize } from "../../../lib/runtime/session";
-import {
-  getActiveProjectState,
-  getRuntimeConnectedAgent,
-  projectPathsMatch
-} from "../../../lib/runtime/project";
-import { getCwdCandidate } from "../../../lib/runtime/cwd-candidate";
+import { getProjectStateCommand } from "../../../lib/runtime/commands";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,21 +19,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const cwdCandidate = await getCwdCandidate();
-
-  const state = getActiveProjectState();
-  const project = state.ok ? state.project : null;
-  const connected_agent = getRuntimeConnectedAgent();
-  const cwd_matches_active =
-    project && cwdCandidate
-      ? projectPathsMatch(cwdCandidate.path, project.path)
-      : false;
-
+  const state = await getProjectStateCommand();
   return NextResponse.json({
     ok: true,
-    project,
-    connected_agent,
-    cwd_candidate: cwdCandidate,
-    cwd_matches_active
+    project: state.project,
+    cwd_candidate: state.cwd_candidate,
+    cwd_matches_active: state.cwd_matches_active
   });
 }

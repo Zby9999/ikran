@@ -6,15 +6,24 @@
 // URL format rules mirror seed-reference.ts local checks (https + figma.com +
 // /design|/file path). Original URL strings are kept verbatim when present.
 //
-// Record vs event semantics (same as seed-reference): the surface row is the
-// SOURCE OF TRUTH; `evidence_package_recorded` is a best-effort AUDIT log.
 // On validation / resolve failure: `invalid_output` event + structured error,
 // NO surface row.
+//
+// Record + `evidence_package_recorded` are written atomically. Event write
+// failure rolls back the surface row and returns `ok: false` / `db_error`.
 
 import { randomUUID } from "node:crypto";
+import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
-import { openProjectDb, closeProjectDb } from "./db";
-import { logEvent } from "./events";
+import type { DatabaseSync as DatabaseType } from "node:sqlite";
+import { openProjectDb, closeProjectDb, withProjectTransaction } from "./db";
+import { emitRecordEvent } from "./record-bus";
+import { logEvent, logEventOnDb } from "./events";
+import {
+  parseFigmaSeedIdentity,
+  figmaSeedIdentitiesEqual,
+  normalizeFigmaNodeId
+} from "./figma-identity";
 
 export type EvidenceViewStatus = "available" | "missing";
 
@@ -28,6 +37,8 @@ export interface EvidencePackageFrameBounds {
 export interface EvidencePackageFrame {
   nodeId: string;
   name: string;
+  /** Optional; when present must match the seed's canonical file_key. */
+  fileKey?: string;
   bounds?: EvidencePackageFrameBounds;
 }
 
@@ -223,6 +234,9 @@ export function validateEvidencePackage(
     nodeId: frameObj.nodeId,
     name: frameObj.name
   };
+  if (isNonEmptyString(frameObj.fileKey)) {
+    frame.fileKey = frameObj.fileKey;
+  }
 
   if (frameObj.bounds !== undefined) {
     if (frameObj.bounds === null || typeof frameObj.bounds !== "object") {
@@ -397,7 +411,7 @@ export function validateEvidencePackage(
 
 export interface FigmaEvidenceSurfaceRecord {
   id: string;
-  seed_reference_id: string | null;
+  seed_reference_id: string;
   figma_seed_reference: string;
   frame_node_id: string;
   frame_name: string;
@@ -408,12 +422,15 @@ export interface FigmaEvidenceSurfaceRecord {
   design_signals_json: string | null;
   surface_bounds_json: string | null;
   created_at: string;
+  /** Next declaration in append-only lineage; null for current tip. */
+  superseded_by: string | null;
 }
 
 export type EvidencePackageRecordReason =
   | EvidencePackageValidationReason
   | "seed_reference_not_found"
   | "seed_reference_mismatch"
+  | "frame_node_mismatch"
   | "artifact_path_escape"
   | "db_error"
   | string;
@@ -421,10 +438,8 @@ export type EvidencePackageRecordReason =
 export interface EvidencePackageRecordResult {
   ok: true;
   record: FigmaEvidenceSurfaceRecord;
-  /** Audit event id, or null when the best-effort audit write failed. */
-  event_id: string | null;
-  /** Present iff the best-effort audit event could not be written. */
-  audit_warning?: "event_write_failed";
+  /** Canonical audit event id (always a string on success). */
+  event_id: string;
 }
 
 export interface EvidencePackageRecordError {
@@ -453,9 +468,48 @@ function logInvalidOutput(
   }
 }
 
+/** True when `candidate` is strictly inside `root` (not equal, not outside). */
+function isStrictlyInsideRoot(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return (
+    relative !== "" &&
+    relative !== ".." &&
+    !relative.startsWith(".." + path.sep) &&
+    !path.isAbsolute(relative)
+  );
+}
+
+/**
+ * Realpath a path that may not exist yet: realpath the deepest existing
+ * ancestor, then rejoin the missing basename chain. Fail-closed on errors.
+ */
+function realpathMaybeMissing(candidate: string): string | null {
+  const missing: string[] = [];
+  let cursor = candidate;
+  while (!existsSync(cursor)) {
+    const parent = path.dirname(cursor);
+    if (parent === cursor) {
+      return null;
+    }
+    missing.unshift(path.basename(cursor));
+    cursor = parent;
+  }
+  let realExisting: string;
+  try {
+    realExisting = realpathSync(cursor);
+  } catch {
+    return null;
+  }
+  return missing.length === 0
+    ? realExisting
+    : path.resolve(realExisting, ...missing);
+}
+
 /**
  * Ensure a project-relative artifact path stays under project root.
- * Does NOT require the file to exist yet (Agent may declare before write).
+ * Lexical resolve first, then realpath (including symlink targets) so
+ * symlink escapes fail closed. Does NOT require the file to exist yet
+ * (Agent may declare before write) — missing tails use realpath(parent)+basename.
  * Exported so GET /api/artifacts can reuse the same escape check.
  */
 export function assertArtifactPathInProject(
@@ -464,19 +518,33 @@ export function assertArtifactPathInProject(
 ): "artifact_path_escape" | null {
   const projectRoot = path.resolve(projectPath);
   const resolved = path.resolve(projectRoot, artifactPath);
-  const relative = path.relative(projectRoot, resolved);
-  if (
-    relative === "" ||
-    relative === ".." ||
-    relative.startsWith(".." + path.sep) ||
-    path.isAbsolute(relative)
-  ) {
+
+  // Lexical containment (also rejects the project root itself as an artifact).
+  if (!isStrictlyInsideRoot(projectRoot, resolved)) {
     return "artifact_path_escape";
   }
+
+  let projectReal: string;
+  try {
+    projectReal = realpathSync(projectRoot);
+  } catch {
+    // Project root must be resolvable; fail closed.
+    return "artifact_path_escape";
+  }
+
+  const realFinal = realpathMaybeMissing(resolved);
+  if (realFinal === null || !isStrictlyInsideRoot(projectReal, realFinal)) {
+    return "artifact_path_escape";
+  }
+
   return null;
 }
 
-/** Resolve a project-relative artifact path; null if escape or empty. */
+/**
+ * Resolve a project-relative artifact path to a contained absolute path;
+ * null if empty or escape (including symlink escape). When the target
+ * exists, returns its realpath so GET reads cannot follow a link out.
+ */
 export function resolveProjectArtifactPath(
   projectPath: string,
   artifactPath: string
@@ -487,24 +555,165 @@ export function resolveProjectArtifactPath(
   if (assertArtifactPathInProject(projectPath, artifactPath) !== null) {
     return null;
   }
-  return path.resolve(projectPath, artifactPath);
+  const resolved = path.resolve(path.resolve(projectPath), artifactPath);
+  return realpathMaybeMissing(resolved) ?? resolved;
 }
 
-function lookupSeedReferenceUrl(
-  projectPath: string,
+function lookupSeedById(
+  db: DatabaseType,
   seedReferenceId: string
-): string | null {
-  const db = openProjectDb(projectPath);
-  try {
-    const row = db
-      .prepare(
-        "SELECT figma_seed_reference FROM seed_references WHERE id = ?"
-      )
-      .get(seedReferenceId) as { figma_seed_reference: string } | undefined;
-    return row?.figma_seed_reference ?? null;
-  } finally {
-    closeProjectDb(db);
+): {
+  id: string;
+  figma_seed_reference: string;
+  file_key: string;
+  node_id: string;
+  current_surface_id: string | null;
+} | null {
+  const row = db
+    .prepare(
+      `SELECT id, figma_seed_reference, file_key, node_id, current_surface_id
+       FROM seed_references WHERE id = ?`
+    )
+    .get(seedReferenceId) as
+    | {
+        id: string;
+        figma_seed_reference: string;
+        file_key: string;
+        node_id: string;
+        current_surface_id: string | null;
+      }
+    | undefined;
+  return row ?? null;
+}
+
+function lookupSeedByIdentity(
+  db: DatabaseType,
+  fileKey: string,
+  nodeId: string
+): {
+  id: string;
+  figma_seed_reference: string;
+  file_key: string;
+  node_id: string;
+  current_surface_id: string | null;
+} | null {
+  const row = db
+    .prepare(
+      `SELECT id, figma_seed_reference, file_key, node_id, current_surface_id
+       FROM seed_references WHERE file_key = ? AND node_id = ?`
+    )
+    .get(fileKey, nodeId) as
+    | {
+        id: string;
+        figma_seed_reference: string;
+        file_key: string;
+        node_id: string;
+        current_surface_id: string | null;
+      }
+    | undefined;
+  return row ?? null;
+}
+
+/**
+ * Resolve package input to a unique seed. Compares canonical identity when both
+ * URL and seed id are present (different `t=` allowed).
+ */
+function resolveEvidenceSeed(
+  db: DatabaseType,
+  pkg: NormalizedEvidencePackage
+):
+  | {
+      ok: true;
+      seedId: string;
+      figmaSeedReference: string;
+      fileKey: string;
+      nodeId: string;
+      previousCurrentSurfaceId: string | null;
+    }
+  | { ok: false; reason: "seed_reference_not_found" | "seed_reference_mismatch" } {
+  const hasUrl = pkg.figmaSeedReference !== undefined;
+  const hasSeedId = pkg.seedReferenceId !== undefined;
+
+  if (hasSeedId && !hasUrl) {
+    const seed = lookupSeedById(db, pkg.seedReferenceId!);
+    if (!seed) {
+      return { ok: false, reason: "seed_reference_not_found" };
+    }
+    return {
+      ok: true,
+      seedId: seed.id,
+      figmaSeedReference: seed.figma_seed_reference,
+      fileKey: seed.file_key,
+      nodeId: seed.node_id,
+      previousCurrentSurfaceId: seed.current_surface_id
+    };
   }
+
+  if (hasUrl && !hasSeedId) {
+    const identity = parseFigmaSeedIdentity(pkg.figmaSeedReference!);
+    if (!identity) {
+      return { ok: false, reason: "seed_reference_not_found" };
+    }
+    const seed = lookupSeedByIdentity(db, identity.fileKey, identity.nodeId);
+    if (!seed) {
+      return { ok: false, reason: "seed_reference_not_found" };
+    }
+    return {
+      ok: true,
+      seedId: seed.id,
+      // Keep declared URL verbatim (may differ in t= from seed row).
+      figmaSeedReference: pkg.figmaSeedReference!,
+      fileKey: seed.file_key,
+      nodeId: seed.node_id,
+      previousCurrentSurfaceId: seed.current_surface_id
+    };
+  }
+
+  // Both provided: load by id, compare canonical identity (not raw URL).
+  const seed = lookupSeedById(db, pkg.seedReferenceId!);
+  if (!seed) {
+    return { ok: false, reason: "seed_reference_not_found" };
+  }
+  const urlIdentity = parseFigmaSeedIdentity(pkg.figmaSeedReference!);
+  if (!urlIdentity) {
+    return { ok: false, reason: "seed_reference_mismatch" };
+  }
+  if (
+    !figmaSeedIdentitiesEqual(urlIdentity, {
+      fileKey: seed.file_key,
+      nodeId: seed.node_id
+    })
+  ) {
+    return { ok: false, reason: "seed_reference_mismatch" };
+  }
+  return {
+    ok: true,
+    seedId: seed.id,
+    figmaSeedReference: pkg.figmaSeedReference!,
+    fileKey: seed.file_key,
+    nodeId: seed.node_id,
+    previousCurrentSurfaceId: seed.current_surface_id
+  };
+}
+
+/**
+ * Frame must declare the seed's canonical node. Optional frame.fileKey must
+ * match seed file identity when present. Fail closed — do not record.
+ */
+function assertFrameMatchesSeed(
+  pkg: NormalizedEvidencePackage,
+  seed: { fileKey: string; nodeId: string }
+): { ok: true } | { ok: false; reason: "frame_node_mismatch" } {
+  if (normalizeFigmaNodeId(pkg.frame.nodeId) !== seed.nodeId) {
+    return { ok: false, reason: "frame_node_mismatch" };
+  }
+  if (
+    pkg.frame.fileKey !== undefined &&
+    pkg.frame.fileKey !== seed.fileKey
+  ) {
+    return { ok: false, reason: "frame_node_mismatch" };
+  }
+  return { ok: true };
 }
 
 export function recordEvidencePackage(
@@ -518,35 +727,6 @@ export function recordEvidencePackage(
   }
 
   const pkg = validated.package;
-
-  // Resolve figma_seed_reference: prefer URL when present; look up seed id when needed.
-  let figmaSeedReference: string;
-  let seedReferenceId: string | null =
-    pkg.seedReferenceId !== undefined ? pkg.seedReferenceId : null;
-
-  if (pkg.figmaSeedReference !== undefined) {
-    figmaSeedReference = pkg.figmaSeedReference;
-    // If id also provided, verify it exists and URL matches (fail closed).
-    if (seedReferenceId !== null) {
-      const lookedUp = lookupSeedReferenceUrl(projectPath, seedReferenceId);
-      if (lookedUp === null) {
-        logInvalidOutput(projectPath, "seed_reference_not_found");
-        return { ok: false, reason: "seed_reference_not_found" };
-      }
-      if (lookedUp !== figmaSeedReference) {
-        logInvalidOutput(projectPath, "seed_reference_mismatch");
-        return { ok: false, reason: "seed_reference_mismatch" };
-      }
-    }
-  } else {
-    // Only seedReferenceId — must resolve URL from seed_references.
-    const lookedUp = lookupSeedReferenceUrl(projectPath, seedReferenceId!);
-    if (lookedUp === null) {
-      logInvalidOutput(projectPath, "seed_reference_not_found");
-      return { ok: false, reason: "seed_reference_not_found" };
-    }
-    figmaSeedReference = lookedUp;
-  }
 
   // Path-escape check only — file need not exist yet.
   let screenshotArtifactPath: string | null = null;
@@ -566,76 +746,155 @@ export function recordEvidencePackage(
     screenshotDataUrl = pkg.screenshot.dataUrl;
   }
 
-  const record: FigmaEvidenceSurfaceRecord = {
-    id: randomUUID(),
-    seed_reference_id: seedReferenceId,
-    figma_seed_reference: figmaSeedReference,
-    frame_node_id: pkg.frame.nodeId,
-    frame_name: pkg.frame.name,
-    frame_bounds_json: pkg.frame.bounds
-      ? JSON.stringify(pkg.frame.bounds)
-      : null,
-    evidence_views_json: JSON.stringify(pkg.evidenceViews),
-    screenshot_artifact_path: screenshotArtifactPath,
-    screenshot_data_url: screenshotDataUrl,
-    design_signals_json: pkg.designSignals
-      ? JSON.stringify(pkg.designSignals)
-      : null,
-    surface_bounds_json: pkg.surfaceBounds
-      ? JSON.stringify(pkg.surfaceBounds)
-      : null,
-    created_at: new Date().toISOString()
-  };
+  const surfaceId = randomUUID();
+  const createdAt = new Date().toISOString();
 
-  const db = openProjectDb(projectPath);
   try {
-    const stmt = db.prepare(
-      `INSERT INTO figma_evidence_surfaces (
-        id, seed_reference_id, figma_seed_reference,
-        frame_node_id, frame_name, frame_bounds_json,
-        evidence_views_json, screenshot_artifact_path, screenshot_data_url,
-        design_signals_json, surface_bounds_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    stmt.run(
-      record.id,
-      record.seed_reference_id,
-      record.figma_seed_reference,
-      record.frame_node_id,
-      record.frame_name,
-      record.frame_bounds_json,
-      record.evidence_views_json,
-      record.screenshot_artifact_path,
-      record.screenshot_data_url,
-      record.design_signals_json,
-      record.surface_bounds_json,
-      record.created_at
-    );
-  } catch {
-    return { ok: false, reason: "db_error" };
-  } finally {
-    closeProjectDb(db);
-  }
+    const result = withProjectTransaction(projectPath, (db) => {
+      const resolved = resolveEvidenceSeed(db, pkg);
+      if (!resolved.ok) {
+        const err = new Error(`EVIDENCE_RESOLVE:${resolved.reason}`);
+        (err as Error & { evidenceReason: string }).evidenceReason =
+          resolved.reason;
+        throw err;
+      }
 
-  // Audit log (best-effort): record already committed as source of truth.
-  let event_id: string | null = null;
-  let audit_warning: "event_write_failed" | undefined;
-  try {
-    const event = logEvent(projectPath, "evidence_package_recorded", {
-      surface_id: record.id,
-      seed_reference_id: record.seed_reference_id,
-      figma_seed_reference: record.figma_seed_reference,
-      frame_node_id: record.frame_node_id,
-      frame_name: record.frame_name
+      const frameMatch = assertFrameMatchesSeed(pkg, {
+        fileKey: resolved.fileKey,
+        nodeId: resolved.nodeId
+      });
+      if (!frameMatch.ok) {
+        const err = new Error(`EVIDENCE_RESOLVE:${frameMatch.reason}`);
+        (err as Error & { evidenceReason: string }).evidenceReason =
+          frameMatch.reason;
+        throw err;
+      }
+
+      const record: FigmaEvidenceSurfaceRecord = {
+        id: surfaceId,
+        seed_reference_id: resolved.seedId,
+        figma_seed_reference: resolved.figmaSeedReference,
+        frame_node_id: pkg.frame.nodeId,
+        frame_name: pkg.frame.name,
+        frame_bounds_json: pkg.frame.bounds
+          ? JSON.stringify(pkg.frame.bounds)
+          : null,
+        evidence_views_json: JSON.stringify(pkg.evidenceViews),
+        screenshot_artifact_path: screenshotArtifactPath,
+        screenshot_data_url: screenshotDataUrl,
+        design_signals_json: pkg.designSignals
+          ? JSON.stringify(pkg.designSignals)
+          : null,
+        surface_bounds_json: pkg.surfaceBounds
+          ? JSON.stringify(pkg.surfaceBounds)
+          : null,
+        created_at: createdAt,
+        superseded_by: null
+      };
+
+      db.prepare(
+        `INSERT INTO figma_evidence_surfaces (
+          id, seed_reference_id, figma_seed_reference,
+          frame_node_id, frame_name, frame_bounds_json,
+          evidence_views_json, screenshot_artifact_path, screenshot_data_url,
+          design_signals_json, surface_bounds_json, created_at, superseded_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`
+      ).run(
+        record.id,
+        record.seed_reference_id,
+        record.figma_seed_reference,
+        record.frame_node_id,
+        record.frame_name,
+        record.frame_bounds_json,
+        record.evidence_views_json,
+        record.screenshot_artifact_path,
+        record.screenshot_data_url,
+        record.design_signals_json,
+        record.surface_bounds_json,
+        record.created_at
+      );
+
+      if (resolved.previousCurrentSurfaceId) {
+        const advanceTip = db
+          .prepare(
+            `UPDATE figma_evidence_surfaces
+             SET superseded_by = ?
+             WHERE id = ? AND superseded_by IS NULL`
+          )
+          .run(record.id, resolved.previousCurrentSurfaceId);
+        if (advanceTip.changes !== 1) {
+          throw new Error(
+            `Evidence lineage conflict: expected current surface ${resolved.previousCurrentSurfaceId} to be an unsuperseded tip`
+          );
+        }
+      }
+
+      const advanceCurrent =
+        resolved.previousCurrentSurfaceId === null
+          ? db
+              .prepare(
+                `UPDATE seed_references
+                 SET current_surface_id = ?
+                 WHERE id = ? AND current_surface_id IS NULL`
+              )
+              .run(record.id, resolved.seedId)
+          : db
+              .prepare(
+                `UPDATE seed_references
+                 SET current_surface_id = ?
+                 WHERE id = ? AND current_surface_id = ?`
+              )
+              .run(
+                record.id,
+                resolved.seedId,
+                resolved.previousCurrentSurfaceId
+              );
+      if (advanceCurrent.changes !== 1) {
+        throw new Error(
+          `Evidence current pointer conflict for seed ${resolved.seedId}`
+        );
+      }
+
+      const event = logEventOnDb(db, "evidence_package_recorded", {
+        surface_id: record.id,
+        seed_reference_id: record.seed_reference_id,
+        figma_seed_reference: record.figma_seed_reference,
+        frame_node_id: record.frame_node_id,
+        frame_name: record.frame_name
+      });
+
+      return { ok: true as const, record, event_id: event.event_id };
     });
-    event_id = event.event_id;
-  } catch {
-    audit_warning = "event_write_failed";
-  }
 
-  const result: EvidencePackageRecordResult = { ok: true, record, event_id };
-  if (audit_warning) result.audit_warning = audit_warning;
-  return result;
+    if (result.ok) {
+      emitRecordEvent({
+        kind: "evidence",
+        action: "created",
+        id: result.record.id,
+        projectPath: path.resolve(projectPath)
+      });
+    }
+
+    return result;
+  } catch (err) {
+    const reason =
+      err instanceof Error &&
+      typeof (err as Error & { evidenceReason?: string }).evidenceReason ===
+        "string"
+        ? (err as Error & { evidenceReason: string }).evidenceReason
+        : err instanceof Error && err.message.startsWith("EVIDENCE_RESOLVE:")
+          ? err.message.slice("EVIDENCE_RESOLVE:".length)
+          : null;
+    if (
+      reason === "seed_reference_not_found" ||
+      reason === "seed_reference_mismatch" ||
+      reason === "frame_node_mismatch"
+    ) {
+      logInvalidOutput(projectPath, reason);
+      return { ok: false, reason };
+    }
+    return { ok: false, reason: "db_error" };
+  }
 }
 
 export function listFigmaEvidenceSurfaces(

@@ -2,6 +2,11 @@
 
 **Status:** accepted（2026-07-07）
 
+> **Superseded in part by [ADR 0002](./0002-consolidate-runtime-and-research-records.md)（2026-07-10）。**
+> 本 ADR 的产品转向（Agent host + 传统 MCP + HTTP Workbench + tldraw、退役无头 CLI）仍然有效。
+> 下列**实现细节**已被 ADR 0002 收口替代，阅读时勿当作当前 Active 契约：两进程 coordinator 作为目标拓扑、MCP 经 HTTP loopback、保留 mock AgentAdapter / task lifecycle 作为产品路径、Workbench 双入口 seed、`create_evidence_surface` 独立工具、JSONL 与 SQLite 双写事实源表述、以及「一进程两表面仍是 follow-up」等后续工作项表述。
+> 下文保留为历史决策原文，不改写为仿佛当时已是当前架构。
+
 ## 背景 / 动机
 
 PRD 原方案是 `npx ikran` 开自己浏览器的独立本地 app，Runtime spawn 无头 CLI Agent（Codex/Cursor/Claude）。2026-07-06 的真实接入 smoke（`.plans/issue04/REAL_AGENT_SMOKE.md`）证明这条路作为产品太重：无头 CLI 要逐 agent 配 Figma MCP config + token + 权限 + 视觉模型；`agent` 挂起、`claude -p` 要交互授权或撞 "model does not support image input"、`agent --yolo` 诚实 blocked。本质是"看起来依赖更小、实则仍依附于其他 Agent，且集成费力不讨好"。

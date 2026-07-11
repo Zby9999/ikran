@@ -4,8 +4,12 @@
 //
 // Rules:
 // - Only when Annotate mode is OFF (select tool).
-// - Only `author === "designer"` (green). Agent (grey) markers are never deleted.
-// - Runtime is source of truth: DELETE /api/region-annotation?id=… then drop local.
+// - Only `author === "designer"` (green) on the user path. Agent (grey)
+//   markers are never deleted by keyboard/UI.
+// - Authoritative projection sync may remove Agent / stale markers via
+//   tldraw `mergeRemoteChanges` (beforeDelete source `"remote"`).
+// - Runtime is source of truth: HTTP DELETE must succeed before local remove.
+// - Failure keeps the marker and surfaces a structured error via the mutation.
 
 import { useEffect, useRef } from "react";
 import { useEditor, type TLShape, type TLShapeId } from "tldraw";
@@ -13,6 +17,7 @@ import {
   REGION_ANNOTATION_TYPE,
   type RegionAnnotationShape
 } from "./region-annotation-shape";
+import { allowRegionAnnotationDelete } from "./region-annotation-delete-guard";
 
 function asRegionAnnotation(
   shape: TLShape
@@ -23,38 +28,48 @@ function asRegionAnnotation(
 
 /**
  * Keyboard + beforeDelete guards for designer markers. Mount inside `<Tldraw>`.
+ *
+ * User-initiated deletes: Agent markers blocked; designer requires Runtime HTTP.
+ * Authoritative projection deletes (store source `"remote"`) are allowed.
  */
 export function RegionAnnotationDeleteController({
   annotateMode,
-  session,
-  onDeleted
+  onDelete
 }: {
   annotateMode: boolean;
-  session: string;
-  /** Optimistic local remove after a designer marker is deleted. */
-  onDeleted?: (annotationId: string) => void;
+  /** Injected Runtime mutation — HTTP success required before shape remove. */
+  onDelete?: (
+    annotationId: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const editor = useEditor();
   const annotateModeRef = useRef(annotateMode);
   annotateModeRef.current = annotateMode;
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
-  const onDeletedRef = useRef(onDeleted);
-  onDeletedRef.current = onDeleted;
+  const onDeleteRef = useRef(onDelete);
+  onDeleteRef.current = onDelete;
 
-  // Block deletes while Annotate is on (except drafts), and always block Agent.
+  // Block user deletes while Annotate is on (except drafts), and always block
+  // Agent on the user path. Projection sync uses mergeRemoteChanges so source
+  // is "remote" and can clean up Agent / stale markers.
   useEffect(() => {
-    return editor.sideEffects.registerBeforeDeleteHandler("shape", (shape) => {
-      const marker = asRegionAnnotation(shape as TLShape);
-      if (!marker) return;
-      const rid = marker.meta.runtimeRecordId;
-      const isDraft =
-        !rid || rid === "draft" || String(rid).startsWith("draft");
-      if (isDraft) return;
-      if (marker.props.author !== "designer") return false;
-      if (annotateModeRef.current) return false;
-      return;
-    });
+    return editor.sideEffects.registerBeforeDeleteHandler(
+      "shape",
+      (shape, source) => {
+        const marker = asRegionAnnotation(shape as TLShape);
+        if (!marker) return;
+        if (
+          !allowRegionAnnotationDelete({
+            author: marker.props.author,
+            runtimeRecordId: marker.meta.runtimeRecordId,
+            source,
+            annotateMode: annotateModeRef.current
+          })
+        ) {
+          return false;
+        }
+        return;
+      }
+    );
   }, [editor]);
 
   useEffect(() => {
@@ -75,34 +90,30 @@ export function RegionAnnotationDeleteController({
       event.preventDefault();
       event.stopPropagation();
 
-      const ids: TLShapeId[] = [];
-      const runtimeIds: string[] = [];
+      const targets: Array<{ shapeId: TLShapeId; annotationId: string }> = [];
       for (const marker of designerMarkers) {
         const rid = marker.meta.runtimeRecordId;
         if (!rid || rid === "draft" || String(rid).startsWith("draft")) continue;
-        ids.push(marker.id);
-        runtimeIds.push(rid);
+        targets.push({ shapeId: marker.id, annotationId: rid });
       }
-      if (ids.length === 0) return;
+      if (targets.length === 0) return;
 
-      editor.deleteShapes(ids);
+      const mutate = onDeleteRef.current;
+      if (!mutate) return;
 
-      for (const annotationId of runtimeIds) {
-        onDeletedRef.current?.(annotationId);
-        void (async () => {
-          try {
-            await fetch(
-              `/api/region-annotation?id=${encodeURIComponent(annotationId)}`,
-              {
-                method: "DELETE",
-                headers: { "x-ikran-session": sessionRef.current }
-              }
-            );
-          } catch {
-            // Poll restores if Runtime still has the row.
+      void (async () => {
+        const removed: TLShapeId[] = [];
+        for (const target of targets) {
+          const result = await mutate(target.annotationId);
+          if (result.ok) {
+            removed.push(target.shapeId);
           }
-        })();
-      }
+          // On failure: keep marker; mutation sets Workbench error state.
+        }
+        if (removed.length > 0) {
+          editor.deleteShapes(removed);
+        }
+      })();
     };
 
     const container = editor.getContainer();

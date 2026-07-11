@@ -1,10 +1,9 @@
-import http from "node:http";
 import { expect, test } from "./fixtures";
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync
@@ -13,33 +12,27 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { getCwdCandidate } from "../lib/runtime/cwd-candidate";
 import { projectPathsMatch } from "../lib/runtime/project";
+import { rawGet as httpGet } from "./helpers/http";
 
 let port = 3000;
 
-function rawGet(
-  route: string,
-  headers: Record<string, string>
-): Promise<{ status: number; body: string }> {
-  return new Promise((resolve) => {
-    const req = http.request(
-      {
-        hostname: "127.0.0.1",
-        port,
-        path: route,
-        method: "GET",
-        headers
-      },
-      (res) => {
-        let body = "";
-        res.on("data", (chunk) => {
-          body += chunk;
-        });
-        res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
-      }
-    );
-    req.on("error", () => resolve({ status: 0, body: "" }));
-    req.end();
-  });
+function rawGet(route: string, headers: Record<string, string>) {
+  return httpGet(port, route, headers);
+}
+
+/** Normalize for macOS `/var` ↔ `/private/var` (and symlink) path equality. */
+function realPath(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+function pathsInclude(paths: (string | undefined)[], expected: string): boolean {
+  return paths.some(
+    (p) => typeof p === "string" && projectPathsMatch(p, expected)
+  );
 }
 
 // A /api/project/bind mock that records the requested path and returns a bound
@@ -48,6 +41,7 @@ function rawGet(
 // files). Real `.ikran/` creation is already covered by
 // project-folder-binding.spec.ts.
 function mockBind(page: import("@playwright/test").Page, dir: string) {
+  const canonical = realPath(dir);
   const requested: { path?: string }[] = [];
   void page.route("**/api/project/bind", async (route) => {
     requested.push(route.request().postDataJSON() as { path?: string });
@@ -55,14 +49,15 @@ function mockBind(page: import("@playwright/test").Page, dir: string) {
       contentType: "application/json",
       body: JSON.stringify({
         ok: true,
-        project: { path: dir, name: path.basename(dir) },
+        project: { path: canonical, name: path.basename(canonical) },
         events: { project_created: "e1", folder_selected: "e2" }
       })
     });
   });
   return {
     requested,
-    paths: () => requested.map((r) => r.path)
+    paths: () => requested.map((r) => r.path),
+    displayPath: canonical
   };
 }
 
@@ -78,7 +73,7 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
       process.env.IKRAN_CWD = dir;
       const candidate = await getCwdCandidate();
       expect(candidate).not.toBeNull();
-      expect(candidate!.path).toBe(dir);
+      expect(projectPathsMatch(candidate!.path, dir)).toBe(true);
       expect(candidate!.kind).toBe("init");
     } finally {
       delete process.env.IKRAN_CWD;
@@ -154,13 +149,14 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "ikran-cwd-ui-init-"));
     try {
       const bind = mockBind(page, dir);
+      const candidatePath = realPath(dir);
       await page.route("**/api/project", (route) =>
         route.fulfill({
           contentType: "application/json",
           body: JSON.stringify({
             ok: true,
             project: null,
-            cwd_candidate: { path: dir, kind: "init" }
+            cwd_candidate: { path: candidatePath, kind: "init" }
           })
         })
       );
@@ -172,12 +168,12 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
         "Click to initialize the project folder"
       );
       await expect(page.getByTestId("project-path")).toHaveText("");
-      expect(bind.paths()).not.toContain(dir);
+      expect(pathsInclude(bind.paths(), dir)).toBe(false);
 
       // One click on the folder row binds the cwd candidate.
       await page.getByTestId("select-folder-button").click();
-      await expect.poll(() => bind.paths()).toContainEqual(dir);
-      await expect(page.getByTestId("project-path")).toHaveText(dir);
+      await expect.poll(() => pathsInclude(bind.paths(), dir)).toBe(true);
+      await expect(page.getByTestId("project-path")).toHaveText(bind.displayPath);
     } finally {
       await page.unroute("**/api/project");
       await page.unroute("**/api/project/bind").catch(() => {});
@@ -189,20 +185,21 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "ikran-cwd-ui-resume-"));
     try {
       const bind = mockBind(page, dir);
+      const candidatePath = realPath(dir);
       await page.route("**/api/project", (route) =>
         route.fulfill({
           contentType: "application/json",
           body: JSON.stringify({
             ok: true,
             project: null,
-            cwd_candidate: { path: dir, kind: "resume" }
+            cwd_candidate: { path: candidatePath, kind: "resume" }
           })
         })
       );
 
       await page.goto(runtime.baseURL + "/");
-      await expect.poll(() => bind.paths()).toContainEqual(dir);
-      await expect(page.getByTestId("project-path")).toHaveText(dir);
+      await expect.poll(() => pathsInclude(bind.paths(), dir)).toBe(true);
+      await expect(page.getByTestId("project-path")).toHaveText(bind.displayPath);
     } finally {
       await page.unroute("**/api/project");
       await page.unroute("**/api/project/bind").catch(() => {});
@@ -215,13 +212,14 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
     writeFileSync(path.join(dir, "keep-me.txt"), "hi");
     try {
       const bind = mockBind(page, dir);
+      const candidatePath = realPath(dir);
       await page.route("**/api/project", (route) =>
         route.fulfill({
           contentType: "application/json",
           body: JSON.stringify({
             ok: true,
             project: null,
-            cwd_candidate: { path: dir, kind: "manual" }
+            cwd_candidate: { path: candidatePath, kind: "manual" }
           })
         })
       );
@@ -234,12 +232,12 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
       );
       await expect(page.getByTestId("project-path")).toHaveText("");
       expect(existsSync(path.join(dir, ".ikran", "config.json"))).toBe(false);
-      expect(bind.paths()).not.toContain(dir);
+      expect(pathsInclude(bind.paths(), dir)).toBe(false);
 
       // One click on the folder row binds (creating .ikran alongside keep-me.txt).
       await page.getByTestId("select-folder-button").click();
-      await expect.poll(() => bind.paths()).toContainEqual(dir);
-      await expect(page.getByTestId("project-path")).toHaveText(dir);
+      await expect.poll(() => pathsInclude(bind.paths(), dir)).toBe(true);
+      await expect(page.getByTestId("project-path")).toHaveText(bind.displayPath);
     } finally {
       await page.unroute("**/api/project");
       await page.unroute("**/api/project/bind").catch(() => {});

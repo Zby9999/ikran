@@ -3,8 +3,9 @@
 // Serves Agent-declared evidence screenshots (and other project-local
 // artifacts) to the Workbench. Auth: same authorize() as other privileged
 // routes (localhost + session header or ?session=). Path must stay under the
-// active project root (reuse evidence-package escape check). Runtime never
-// fetches Figma — only reads files the Agent already wrote into the project.
+// active project root — resolveProjectArtifactPath applies lexical + realpath
+// containment so symlink escapes fail closed. Runtime never fetches Figma —
+// only reads files the Agent already wrote into the project.
 
 import { readFileSync, existsSync, statSync } from "node:fs";
 import path from "node:path";
@@ -13,6 +14,7 @@ import { NextResponse } from "next/server";
 import { authorize } from "../../../../lib/runtime/session";
 import { getActiveProjectState } from "../../../../lib/runtime/project";
 import { resolveProjectArtifactPath } from "../../../../lib/runtime/evidence-package";
+import { commandErrorHttpStatus } from "../../../../lib/runtime/commands";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,7 +49,7 @@ export async function GET(
   if (!state.ok) {
     return NextResponse.json(
       { ok: false, error: state.reason },
-      { status: 400 }
+      { status: commandErrorHttpStatus(state.reason) }
     );
   }
 
@@ -55,7 +57,7 @@ export async function GET(
   if (!Array.isArray(segments) || segments.length === 0) {
     return NextResponse.json(
       { ok: false, error: "missing_path" },
-      { status: 400 }
+      { status: commandErrorHttpStatus("missing_path") }
     );
   }
 
@@ -65,7 +67,7 @@ export async function GET(
     if (!seg || seg === "." || seg === "..") {
       return NextResponse.json(
         { ok: false, error: "artifact_path_escape" },
-        { status: 400 }
+        { status: commandErrorHttpStatus("artifact_path_escape") }
       );
     }
   }
@@ -75,14 +77,14 @@ export async function GET(
   if (absolute === null) {
     return NextResponse.json(
       { ok: false, error: "artifact_path_escape" },
-      { status: 400 }
+      { status: commandErrorHttpStatus("artifact_path_escape") }
     );
   }
 
   if (!existsSync(absolute)) {
     return NextResponse.json(
       { ok: false, error: "not_found" },
-      { status: 404 }
+      { status: commandErrorHttpStatus("not_found") }
     );
   }
 
@@ -92,13 +94,13 @@ export async function GET(
   } catch {
     return NextResponse.json(
       { ok: false, error: "not_found" },
-      { status: 404 }
+      { status: commandErrorHttpStatus("not_found") }
     );
   }
   if (!st.isFile()) {
     return NextResponse.json(
       { ok: false, error: "not_a_file" },
-      { status: 400 }
+      { status: commandErrorHttpStatus("not_a_file") }
     );
   }
 
@@ -108,7 +110,7 @@ export async function GET(
   } catch {
     return NextResponse.json(
       { ok: false, error: "read_failed" },
-      { status: 500 }
+      { status: commandErrorHttpStatus("read_failed") }
     );
   }
 

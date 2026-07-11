@@ -11,67 +11,20 @@
 // Mirrors tests/seed-reference-mcp.spec.ts: spawns its own Next HTTP surface
 // via the MCP server against the shared e2e build in --prod mode.
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { expect, test } from "./fixtures";
-import { SHARED_BUILD_DIR } from "./e2e-constants";
-
-const MCP_BIN = path.join(process.cwd(), "bin", "ikran-mcp.mjs");
+import {
+  killRecordedRuntime,
+  sc,
+  spawnMcpClient
+} from "./helpers/mcp";
 
 /** Valid-format Figma URL that is NOT a real reachable file — success proves no fetch. */
 const FAKE_FIGMA_URL =
   "https://www.figma.com/design/NOTAREALFILEKEY000/Issue05-E2E-Fake?node-id=9:9";
-
-function sc(res: unknown): Record<string, unknown> {
-  if (typeof res === "object" && res !== null) {
-    const r = res as { structuredContent?: unknown };
-    if (r.structuredContent && typeof r.structuredContent === "object") {
-      return r.structuredContent as Record<string, unknown>;
-    }
-  }
-  return {};
-}
-
-function killRecordedRuntime(stateDir: string) {
-  try {
-    const file = path.join(stateDir, "runtime-endpoint.json");
-    const ep = JSON.parse(readFileSync(file, "utf-8")) as { pid?: number };
-    if (ep && typeof ep.pid === "number") {
-      try {
-        process.kill(-ep.pid, "SIGKILL");
-      } catch {
-        /* already gone */
-      }
-    }
-  } catch {
-    /* no endpoint file */
-  }
-}
-
-async function spawnMcpClient(
-  stateDir: string
-): Promise<{ client: Client; transport: StdioClientTransport }> {
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [MCP_BIN, "--prod"],
-    env: {
-      ...process.env,
-      IKRAN_STATE_DIR: stateDir,
-      IKRAN_HOST: "127.0.0.1",
-      IKRAN_NEXT_DIST_DIR: SHARED_BUILD_DIR
-    },
-    stderr: "pipe"
-  });
-  const client = new Client(
-    { name: "ikran-e2e", version: "0.0.0" },
-    { capabilities: {} }
-  );
-  await client.connect(transport);
-  return { client, transport };
-}
 
 function countSurfaces(dir: string): number {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -116,13 +69,21 @@ function readSurfaceRows(dir: string): Array<{
 function readEventLines(
   dir: string
 ): Array<{ type: string; payload?: Record<string, unknown> }> {
-  const file = path.join(dir, ".ikran", "events.jsonl");
-  if (!existsSync(file)) return [];
-  return readFileSync(file, "utf-8")
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as { type: string; payload?: Record<string, unknown> });
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(path.join(dir, ".ikran", "ikran.db"));
+  try {
+    return (
+      db
+        .prepare("SELECT type, payload FROM events ORDER BY id ASC")
+        .all() as Array<{ type: string; payload: string }>
+    ).map((r) => ({
+      type: r.type,
+      payload: JSON.parse(r.payload) as Record<string, unknown>
+    }));
+  } finally {
+    db.close();
+  }
 }
 
 test.describe("Ikran Issue 05 — record_evidence_package MCP tool", () => {
@@ -307,7 +268,7 @@ test.describe("Ikran Issue 05 — record_evidence_package MCP tool", () => {
       expect(listBody.ok).toBe(true);
       expect(listBody.records.map((x) => x.id)).toContain(record.id);
 
-      // events.jsonl contains evidence_package_recorded.
+      // Canonical SQLite events contain evidence_package_recorded.
       const events = readEventLines(dir);
       const recorded = events.find((e) => e.type === "evidence_package_recorded");
       expect(recorded).toBeTruthy();

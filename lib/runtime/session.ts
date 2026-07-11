@@ -13,22 +13,20 @@
 // startup) always gets a fresh token — matching the PRD's "startup-level"
 // intent without writing to the filesystem.
 //
-// Env override (Issue 02/01): when `IKRAN_SESSION_TOKEN` is set in the
-// environment, the Runtime uses THAT token instead of generating one. This is
-// how a coordinator process (the `bin/ikran.mjs` launcher or the
-// `bin/ikran-mcp.mjs` MCP server) supplies the startup-level session token so
-// it can compose the canonical Workbench URL `http://127.0.0.1:{port}/?session={token}`
-// and hand it back to the Agent / designer. The token is held in memory only
-// (env -> process memory via this module); this module never persists it to
-// disk. When the env is unset (e.g. the existing e2e harness spawns `next start`
-// directly), a token is generated exactly as before, so existing tests are
-// unchanged.
+// Env override (startup injection): when `IKRAN_SESSION_TOKEN` is set before
+// the Runtime HTTP surface prepares, that token is used instead of generating
+// one. The in-process host (`lib/runtime/http-server.mjs`) sets this in the
+// same Node process so it can compose the Workbench URL
+// `http://127.0.0.1:{port}/?session={token}`. This is NOT a cross-process
+// env-token bridge — Task 9 hosts MCP stdio and HTTP in one process. The env
+// override remains for test/harness compatibility (e.g. fixtures that start
+// Next without going through http-server.mjs). When unset, a token is generated
+// as before.
 //
-// Architecture note: this is the "two-process coordinator + env-token bridge"
-// tracer bullet from ADR 0001. The one-process consolidation — where the MCP
-// tool handlers share in-memory record state with the HTTP API in a single
-// custom Next server — is deliberate follow-up work for Issue 02/03 (ADR
-// "后续工作项 #2"). Do not collapse this into one process here.
+// Same-process close→restart: the HTTP host may mint a new token and rewrite
+// `IKRAN_SESSION_TOKEN`. The live env token always wins over a stale
+// `globalThis` cache; `invalidateSessionTokenCache()` / host close clears the
+// cache so validation matches the new Workbench URL.
 
 import { randomBytes } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -36,18 +34,36 @@ import { isLocalhostHostname } from "./config";
 
 const GLOBAL = globalThis as unknown as { __IKRAN_SESSION_TOKEN?: string };
 
-function readOrCreateToken(): string {
-  if (GLOBAL.__IKRAN_SESSION_TOKEN) {
-    return GLOBAL.__IKRAN_SESSION_TOKEN;
+/** Clear the in-memory session token cache (e.g. HTTP host close). */
+export function invalidateSessionTokenCache(): void {
+  delete GLOBAL.__IKRAN_SESSION_TOKEN;
+}
+
+/**
+ * Adopt the live HTTP host token into env + cache. Called when the in-process
+ * host starts (or restarts) so `getSessionToken` / `isValidSession` match the
+ * Workbench URL immediately.
+ */
+export function adoptSessionToken(token: string): void {
+  if (typeof token !== "string" || token.length === 0) {
+    throw new Error("session token must be a non-empty string");
   }
-  // A coordinator process (the launcher or the MCP server) may supply the
-  // startup-level session token via env so it can compose the Workbench URL.
-  // Honor it when present and non-empty; otherwise generate one (the existing
-  // e2e path that spawns `next start` directly, with no env override).
+  process.env.IKRAN_SESSION_TOKEN = token;
+  GLOBAL.__IKRAN_SESSION_TOKEN = token;
+}
+
+function readOrCreateToken(): string {
+  // Live HTTP host token (env) wins over a stale globalThis cache so
+  // same-process close→restart stays consistent with the Workbench URL.
   const envToken = process.env.IKRAN_SESSION_TOKEN;
   if (typeof envToken === "string" && envToken.length > 0) {
-    GLOBAL.__IKRAN_SESSION_TOKEN = envToken;
+    if (GLOBAL.__IKRAN_SESSION_TOKEN !== envToken) {
+      GLOBAL.__IKRAN_SESSION_TOKEN = envToken;
+    }
     return envToken;
+  }
+  if (GLOBAL.__IKRAN_SESSION_TOKEN) {
+    return GLOBAL.__IKRAN_SESSION_TOKEN;
   }
   GLOBAL.__IKRAN_SESSION_TOKEN = randomBytes(32).toString("hex");
   return GLOBAL.__IKRAN_SESSION_TOKEN;

@@ -6,6 +6,10 @@
 
 这个 slice 要证明新的产品入口成立：用户不再通过独立 `npx ikran` 产品路径进入，而是让 Agent 返回 Workbench URL。URL 可在任意浏览器打开，理想路径是 Agent host 嵌入式浏览器。
 
+### 2026-07-10 后续架构收口
+
+本 issue 完成报告中的**两进程 coordinator + env-token bridge**、以及「真·一进程两表面是 deliberate follow-up」等表述已被当前标准替代。当前 Active 契约：Runtime **一进程**承载 stdio MCP + custom Next HTTP/SSE；MCP/HTTP 共享 command kernel，MCP 不 loopback HTTP。详见 `IKRAN-MVP-PRD.zh-CN.md` 与 `docs/adr/0002-consolidate-runtime-and-research-records.md`。下文完成报告保留为历史原文。
+
 ## User stories covered
 
 - 1, 2, 3, 4, 51, 52

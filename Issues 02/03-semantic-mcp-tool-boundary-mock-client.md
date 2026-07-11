@@ -6,6 +6,10 @@
 
 此 slice 至少覆盖 `open_workbench`、`create_or_open_project`、`register_seed_reference`，并为后续 `record_evidence_package`、`create_region_annotation`、`record_artifact_written` 等工具保留统一 handler 形状。
 
+### 2026-07-10 后续架构收口
+
+本 issue 完成报告中的**两进程 + HTTP proxy**、record/event **非同事务 / best-effort audit**、以及保留 mock adapter / task-runner 等过渡表述已被当前标准替代。当前 Active 契约：一进程 + direct command kernel（MCP 不 loopback HTTP）；record + event 同 SQLite 事务；SQLite events canonical、JSONL 为 derived export；无 AgentAdapter / `/api/tasks` / mock product families 产品路径，测试仅保留 deterministic MCP client / test doubles。详见 PRD 与 ADR 0002。下文实现技术报告保留为历史原文。
+
 ## User stories covered
 
 - 51, 53, 56, 57, 64, 65

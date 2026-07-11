@@ -1,10 +1,10 @@
 // List seed_references that still need an Agent-declared Evidence Surface
 // screenshot (UI-initiated Agent evidence capture).
 //
-// A seed is pending when there is NO `figma_evidence_surfaces` row linked by
-// `seed_reference_id` or matching `figma_seed_reference` that has a usable
-// screenshot (`screenshot_data_url` or `screenshot_artifact_path` non-empty
-// after trim). Matches Workbench awaiting-evidence projection rules.
+// A seed is pending when its `current_surface_id` is null, or the current
+// surface has no usable screenshot (`screenshot_data_url` /
+// `screenshot_artifact_path` empty after trim). Historical superseded surfaces
+// are ignored — only the current pointer matters.
 //
 // Pure local SQLite — zero Figma network.
 
@@ -18,7 +18,7 @@ export type PendingSeedEvidenceRecord = Pick<
 >;
 
 /**
- * Seeds for `projectPath` with no usable screenshot surface yet.
+ * Seeds for `projectPath` whose current surface lacks a usable screenshot.
  * Oldest-first (`created_at ASC`).
  */
 export function listPendingSeedEvidence(
@@ -30,17 +30,12 @@ export function listPendingSeedEvidence(
       .prepare(
         `SELECT sr.id, sr.figma_seed_reference, sr.original_design_intent, sr.created_at
          FROM seed_references sr
-         WHERE NOT EXISTS (
-           SELECT 1 FROM figma_evidence_surfaces fes
-           WHERE (
-             fes.seed_reference_id = sr.id
-             OR fes.figma_seed_reference = sr.figma_seed_reference
-           )
-           AND (
-             (fes.screenshot_data_url IS NOT NULL AND TRIM(fes.screenshot_data_url) != '')
-             OR (fes.screenshot_artifact_path IS NOT NULL AND TRIM(fes.screenshot_artifact_path) != '')
-           )
-         )
+         LEFT JOIN figma_evidence_surfaces fes ON fes.id = sr.current_surface_id
+         WHERE sr.current_surface_id IS NULL
+            OR (
+              (fes.screenshot_data_url IS NULL OR TRIM(fes.screenshot_data_url) = '')
+              AND (fes.screenshot_artifact_path IS NULL OR TRIM(fes.screenshot_artifact_path) = '')
+            )
          ORDER BY sr.created_at ASC`
       )
       .all() as unknown as PendingSeedEvidenceRecord[];

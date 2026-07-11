@@ -11,45 +11,35 @@
 // shift into [0, 1−POINT_SIDE] so the full square stays on the media box.
 //
 // Agent region comfort margin: Agent-authored **explicit** rects (not point-
-// clicks) are expanded by a **page-isotropic** padding derived from
-// AGENT_REGION_MARGIN (fraction of media width) so left/right and top/bottom
-// gaps match in page pixels on tall/wide screenshots. Applied at create time
-// using surface frame/surface bounds when available; then clamped to the media
-// box. Designer rects are stored as drawn (no auto-margin).
+// clicks) are stored as the validated raw rect (`geometry_version = v2_raw`).
+// Page-isotropic padding is applied at Workbench display time — see
+// `region-annotation-display.ts`. Legacy rows (`v1_padded`) already include
+// create-time padding and must not be padded again.
 //
 // Anchor: at least one of `surfaceArtifactId` (figma_evidence_surfaces.id) or
 // `surfaceNodeId` (Figma frame_node_id). Resolution:
 // - artifact id → must exist; if node id also given, frame_node_id must match
-// - node id only → exactly one surface with that frame_node_id; 0 →
-//   surface_not_found; >1 → surface_ambiguous (fail closed)
+// - node id only → exactly one *current tip* surface with that frame_node_id
+//   (joined via seed_references.current_surface_id); historical superseded
+//   rows are ignored. 0 tips → surface_not_found; >1 tips → surface_ambiguous
+//   (fail closed)
 //
 // Author defaults for type: designer → explanatory; agent → assumption.
 //
-// Record vs event: the `region_annotations` row is SOURCE OF TRUTH;
-// `annotation_created` is a best-effort AUDIT log (same pattern as
-// seed-reference / evidence-package).
+// Record + `annotation_created` are written atomically. Event write failure
+// rolls back the annotation row and returns `ok: false` / `db_error`.
 
 import { randomUUID } from "node:crypto";
-import { openSync, readSync, closeSync, existsSync } from "node:fs";
-import { openProjectDb, closeProjectDb } from "./db";
-import { logEvent } from "./events";
-import { resolveProjectArtifactPath } from "./evidence-package";
+import path from "node:path";
+import { openProjectDb, closeProjectDb, withProjectTransaction } from "./db";
+import { emitRecordEvent } from "./record-bus";
+import { logEventOnDb } from "./events";
+import type {
+  RegionAnnotationGeometryVersion
+} from "./region-annotation-display";
 
 /** Normalized side length for point-click → tiny square (coordinate space A). */
 export const POINT_SIDE = 0.02;
-
-/**
- * Horizontal comfort padding as a fraction of media **width**. Vertical
- * padding is derived so page-pixel gaps match (`my = mx * mediaW / mediaH`).
- * Equal normalized sides on a tall frame made top/bottom look much larger.
- */
-export const AGENT_REGION_MARGIN = 0.012;
-
-/** Optional media box size (any positive units) for isotropic page padding. */
-export interface AgentRegionMediaSize {
-  w: number;
-  h: number;
-}
 
 export type RegionAnnotationAuthor = "designer" | "agent";
 
@@ -100,8 +90,8 @@ export interface RegionAnnotationInput {
 
 export interface RegionAnnotationRecord {
   id: string;
-  /** Resolved figma_evidence_surfaces.id when known. */
-  surface_id: string | null;
+  /** Resolved figma_evidence_surfaces.id (NOT NULL after schema v4). */
+  surface_id: string;
   surface_artifact_id: string | null;
   surface_node_id: string | null;
   author: RegionAnnotationAuthor;
@@ -114,6 +104,8 @@ export interface RegionAnnotationRecord {
   primary_node_id: string | null;
   candidates_json: string | null;
   created_at: string;
+  geometry_version: RegionAnnotationGeometryVersion;
+  from_point: boolean;
 }
 
 export type RegionAnnotationValidationReason =
@@ -138,10 +130,8 @@ export type RegionAnnotationErrorReason =
 export interface RegionAnnotationResult {
   ok: true;
   record: RegionAnnotationRecord;
-  /** Audit event id, or null when the best-effort audit write failed. */
-  event_id: string | null;
-  /** Present iff the best-effort audit event could not be written. */
-  audit_warning?: "event_write_failed";
+  /** Canonical audit event id (always a string on success). */
+  event_id: string;
 }
 
 export interface RegionAnnotationError {
@@ -191,36 +181,6 @@ export function expandPointToRect(
   return { x, y, w: POINT_SIDE, h: POINT_SIDE };
 }
 
-/**
- * Expand an Agent region rect with page-isotropic comfort padding, then clamp
- * to the unit media box.
- *
- * `AGENT_REGION_MARGIN` is the normalized **horizontal** inset (fraction of
- * media width). When `mediaSize` is provided, vertical inset is
- * `margin * mediaW / mediaH` so top/bottom page pixels match left/right.
- * Without media size, falls back to equal normalized insets (legacy).
- */
-export function expandAgentRegionRect(
-  rect: RegionAnnotationRect,
-  mediaSize?: AgentRegionMediaSize
-): RegionAnnotationRect {
-  const mx = AGENT_REGION_MARGIN;
-  let my = AGENT_REGION_MARGIN;
-  if (mediaSize && mediaSize.w > 0 && mediaSize.h > 0) {
-    my = (mx * mediaSize.w) / mediaSize.h;
-  }
-  const left = Math.max(0, rect.x - mx);
-  const top = Math.max(0, rect.y - my);
-  const right = Math.min(1, rect.x + rect.w + mx);
-  const bottom = Math.min(1, rect.y + rect.h + my);
-  return {
-    x: left,
-    y: top,
-    w: Math.max(0, right - left),
-    h: Math.max(0, bottom - top)
-  };
-}
-
 function defaultTypeForAuthor(
   author: RegionAnnotationAuthor
 ): RegionAnnotationType {
@@ -236,7 +196,7 @@ export interface NormalizedRegionAnnotationInput {
   rect: RegionAnnotationRect;
   /**
    * True when geometry came from a point-click (or zero-area rect). Agent
-   * comfort margin is skipped for these tiny markers.
+   * comfort margin is skipped for these tiny markers at display time.
    */
   fromPoint: boolean;
   primaryNodeId?: string;
@@ -373,145 +333,6 @@ export function validateRegionAnnotationInput(
 interface SurfaceRow {
   id: string;
   frame_node_id: string;
-  frame_bounds_json: string | null;
-  surface_bounds_json: string | null;
-  screenshot_artifact_path: string | null;
-  screenshot_data_url: string | null;
-}
-
-/** Parse positive w/h from frame_bounds or surface_bounds JSON when present. */
-export function mediaSizeFromSurfaceBounds(
-  frameBoundsJson: string | null | undefined,
-  surfaceBoundsJson: string | null | undefined
-): AgentRegionMediaSize | undefined {
-  for (const raw of [frameBoundsJson, surfaceBoundsJson]) {
-    if (!raw || typeof raw !== "string") continue;
-    try {
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const w = parsed.width;
-      const h = parsed.height;
-      if (
-        typeof w === "number" &&
-        typeof h === "number" &&
-        Number.isFinite(w) &&
-        Number.isFinite(h) &&
-        w > 0 &&
-        h > 0
-      ) {
-        return { w, h };
-      }
-    } catch {
-      // ignore malformed JSON
-    }
-  }
-  return undefined;
-}
-
-/**
- * Read PNG/JPEG pixel size from a buffer (header only). Used when surface
- * bounds are missing so Agent margin can still be page-isotropic.
- */
-export function mediaSizeFromImageBuffer(
-  buf: Buffer
-): AgentRegionMediaSize | undefined {
-  if (buf.length < 24) return undefined;
-  // PNG: 8-byte signature + IHDR length/type + width/height
-  if (
-    buf[0] === 0x89 &&
-    buf[1] === 0x50 &&
-    buf[2] === 0x4e &&
-    buf[3] === 0x47
-  ) {
-    if (buf.toString("ascii", 12, 16) !== "IHDR") return undefined;
-    const w = buf.readUInt32BE(16);
-    const h = buf.readUInt32BE(20);
-    if (w > 0 && h > 0) return { w, h };
-    return undefined;
-  }
-  // JPEG: scan for SOF0/SOF2 marker
-  if (buf[0] === 0xff && buf[1] === 0xd8) {
-    let i = 2;
-    while (i + 9 < buf.length) {
-      if (buf[i] !== 0xff) {
-        i += 1;
-        continue;
-      }
-      const marker = buf[i + 1];
-      if (marker === 0xd9 || marker === 0xda) break;
-      const len = buf.readUInt16BE(i + 2);
-      if (len < 2) break;
-      // SOF0 / SOF2 (baseline / progressive)
-      if (marker === 0xc0 || marker === 0xc2) {
-        const h = buf.readUInt16BE(i + 5);
-        const w = buf.readUInt16BE(i + 7);
-        if (w > 0 && h > 0) return { w, h };
-        return undefined;
-      }
-      i += 2 + len;
-    }
-  }
-  return undefined;
-}
-
-export function mediaSizeFromScreenshotDataUrl(
-  dataUrl: string | null | undefined
-): AgentRegionMediaSize | undefined {
-  if (!dataUrl || typeof dataUrl !== "string") return undefined;
-  const m = /^data:image\/(?:png|jpeg|jpg);base64,(.+)$/i.exec(dataUrl.trim());
-  if (!m) return undefined;
-  try {
-    return mediaSizeFromImageBuffer(Buffer.from(m[1], "base64"));
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Prefer declared frame/surface bounds; fall back to screenshot pixel size.
- */
-export function resolveAgentRegionMediaSize(
-  projectPath: string,
-  surface: Pick<
-    SurfaceRow,
-    | "frame_bounds_json"
-    | "surface_bounds_json"
-    | "screenshot_artifact_path"
-    | "screenshot_data_url"
-  >
-): AgentRegionMediaSize | undefined {
-  const fromBounds = mediaSizeFromSurfaceBounds(
-    surface.frame_bounds_json,
-    surface.surface_bounds_json
-  );
-  if (fromBounds) return fromBounds;
-
-  const fromDataUrl = mediaSizeFromScreenshotDataUrl(
-    surface.screenshot_data_url
-  );
-  if (fromDataUrl) return fromDataUrl;
-
-  if (surface.screenshot_artifact_path) {
-    const abs = resolveProjectArtifactPath(
-      projectPath,
-      surface.screenshot_artifact_path
-    );
-    if (abs && existsSync(abs)) {
-      try {
-        // Header only — first 64KB is enough for PNG IHDR / JPEG SOF.
-        const fd = openSync(abs, "r");
-        try {
-          const buf = Buffer.alloc(65536);
-          const n = readSync(fd, buf, 0, 65536, 0);
-          return mediaSizeFromImageBuffer(buf.subarray(0, n));
-        } finally {
-          closeSync(fd);
-        }
-      } catch {
-        return undefined;
-      }
-    }
-  }
-  return undefined;
 }
 
 function resolveSurfaceAnchor(
@@ -526,9 +347,7 @@ function resolveSurfaceAnchor(
     if (surfaceArtifactId) {
       const row = db
         .prepare(
-          `SELECT id, frame_node_id, frame_bounds_json, surface_bounds_json,
-                  screenshot_artifact_path, screenshot_data_url
-           FROM figma_evidence_surfaces WHERE id = ?`
+          `SELECT id, frame_node_id FROM figma_evidence_surfaces WHERE id = ?`
         )
         .get(surfaceArtifactId) as unknown as SurfaceRow | undefined;
       if (!row) {
@@ -540,12 +359,14 @@ function resolveSurfaceAnchor(
       return { ok: true, surface: row };
     }
 
-    // node id only — fail closed on 0 or >1 matches
+    // node id only — restrict to current tip surfaces (seed.current_surface_id),
+    // not all historical rows for the frame. Fail closed on 0 or >1 tip matches.
     const rows = db
       .prepare(
-        `SELECT id, frame_node_id, frame_bounds_json, surface_bounds_json,
-                screenshot_artifact_path, screenshot_data_url
-         FROM figma_evidence_surfaces WHERE frame_node_id = ?`
+        `SELECT fes.id, fes.frame_node_id
+         FROM figma_evidence_surfaces fes
+         INNER JOIN seed_references sr ON sr.current_surface_id = fes.id
+         WHERE fes.frame_node_id = ?`
       )
       .all(surfaceNodeId!) as unknown as SurfaceRow[];
     if (rows.length === 0) {
@@ -558,6 +379,36 @@ function resolveSurfaceAnchor(
   } finally {
     closeProjectDb(db);
   }
+}
+
+function mapAnnotationRow(row: Record<string, unknown>): RegionAnnotationRecord {
+  const geometryRaw = row.geometry_version;
+  const geometry_version: RegionAnnotationGeometryVersion =
+    geometryRaw === "v1_padded" ? "v1_padded" : "v2_raw";
+  return {
+    id: String(row.id),
+    surface_id: String(row.surface_id),
+    surface_artifact_id:
+      row.surface_artifact_id == null
+        ? null
+        : String(row.surface_artifact_id),
+    surface_node_id:
+      row.surface_node_id == null ? null : String(row.surface_node_id),
+    author: row.author === "designer" ? "designer" : "agent",
+    type: String(row.type) as RegionAnnotationType,
+    body: String(row.body),
+    rect_x: Number(row.rect_x),
+    rect_y: Number(row.rect_y),
+    rect_w: Number(row.rect_w),
+    rect_h: Number(row.rect_h),
+    primary_node_id:
+      row.primary_node_id == null ? null : String(row.primary_node_id),
+    candidates_json:
+      row.candidates_json == null ? null : String(row.candidates_json),
+    created_at: String(row.created_at),
+    geometry_version,
+    from_point: Number(row.from_point) === 1
+  };
 }
 
 export function createRegionAnnotation(
@@ -583,12 +434,8 @@ export function createRegionAnnotation(
   const surfaceArtifactId = normalized.surfaceArtifactId ?? surface.id;
   const surfaceNodeId = normalized.surfaceNodeId ?? surface.frame_node_id;
 
-  // Agent explicit regions: page-isotropic comfort margin using surface aspect.
-  let rect = normalized.rect;
-  if (normalized.author === "agent" && !normalized.fromPoint) {
-    const mediaSize = resolveAgentRegionMediaSize(projectPath, surface);
-    rect = expandAgentRegionRect(rect, mediaSize);
-  }
+  // Store validated raw rect; Agent padding is display-time only (v2_raw).
+  const rect = normalized.rect;
 
   const record: RegionAnnotationRecord = {
     id: randomUUID(),
@@ -607,60 +454,58 @@ export function createRegionAnnotation(
       normalized.candidates !== undefined
         ? JSON.stringify(normalized.candidates)
         : null,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    geometry_version: "v2_raw",
+    from_point: normalized.fromPoint
   };
 
-  const db = openProjectDb(projectPath);
   try {
-    const stmt = db.prepare(
-      `INSERT INTO region_annotations (
-        id, surface_id, surface_artifact_id, surface_node_id,
-        author, type, body,
-        rect_x, rect_y, rect_w, rect_h,
-        primary_node_id, candidates_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    stmt.run(
-      record.id,
-      record.surface_id,
-      record.surface_artifact_id,
-      record.surface_node_id,
-      record.author,
-      record.type,
-      record.body,
-      record.rect_x,
-      record.rect_y,
-      record.rect_w,
-      record.rect_h,
-      record.primary_node_id,
-      record.candidates_json,
-      record.created_at
-    );
+    const event = withProjectTransaction(projectPath, (db) => {
+      db.prepare(
+        `INSERT INTO region_annotations (
+          id, surface_id, surface_artifact_id, surface_node_id,
+          author, type, body,
+          rect_x, rect_y, rect_w, rect_h,
+          primary_node_id, candidates_json, created_at,
+          geometry_version, from_point
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        record.id,
+        record.surface_id,
+        record.surface_artifact_id,
+        record.surface_node_id,
+        record.author,
+        record.type,
+        record.body,
+        record.rect_x,
+        record.rect_y,
+        record.rect_w,
+        record.rect_h,
+        record.primary_node_id,
+        record.candidates_json,
+        record.created_at,
+        record.geometry_version,
+        record.from_point ? 1 : 0
+      );
+      return logEventOnDb(db, "annotation_created", {
+        annotation_id: record.id,
+        surface_id: record.surface_id,
+        surface_artifact_id: record.surface_artifact_id,
+        surface_node_id: record.surface_node_id,
+        author: record.author,
+        type: record.type
+      });
+    });
+    emitRecordEvent({
+      kind: "annotation",
+      action: "created",
+      id: record.id,
+      projectPath: path.resolve(projectPath)
+    });
+    return { ok: true, record, event_id: event.event_id };
   } catch {
     return { ok: false, reason: "db_error" };
-  } finally {
-    closeProjectDb(db);
   }
-
-  let event_id: string | null = null;
-  let audit_warning: "event_write_failed" | undefined;
-  try {
-    const event = logEvent(projectPath, "annotation_created", {
-      annotation_id: record.id,
-      surface_id: record.surface_id,
-      surface_artifact_id: record.surface_artifact_id,
-      surface_node_id: record.surface_node_id,
-      author: record.author,
-      type: record.type
-    });
-    event_id = event.event_id;
-  } catch {
-    audit_warning = "event_write_failed";
-  }
-
-  const result: RegionAnnotationResult = { ok: true, record, event_id };
-  if (audit_warning) result.audit_warning = audit_warning;
-  return result;
 }
 
 export type RegionAnnotationDeleteReason =
@@ -697,6 +542,12 @@ export function deleteRegionAnnotation(
       return { ok: false, reason: "not_deletable" };
     }
     db.prepare("DELETE FROM region_annotations WHERE id = ?").run(id);
+    emitRecordEvent({
+      kind: "annotation",
+      action: "deleted",
+      id,
+      projectPath: path.resolve(projectPath)
+    });
     return { ok: true, id };
   } catch {
     return { ok: false, reason: "db_error" };
@@ -714,28 +565,7 @@ export function listRegionAnnotations(
     const rows = db
       .prepare("SELECT * FROM region_annotations ORDER BY created_at ASC")
       .all() as Array<Record<string, unknown>>;
-    return rows.map((row) => ({
-      id: String(row.id),
-      surface_id: row.surface_id == null ? null : String(row.surface_id),
-      surface_artifact_id:
-        row.surface_artifact_id == null
-          ? null
-          : String(row.surface_artifact_id),
-      surface_node_id:
-        row.surface_node_id == null ? null : String(row.surface_node_id),
-      author: row.author === "designer" ? "designer" : "agent",
-      type: String(row.type) as RegionAnnotationType,
-      body: String(row.body),
-      rect_x: Number(row.rect_x),
-      rect_y: Number(row.rect_y),
-      rect_w: Number(row.rect_w),
-      rect_h: Number(row.rect_h),
-      primary_node_id:
-        row.primary_node_id == null ? null : String(row.primary_node_id),
-      candidates_json:
-        row.candidates_json == null ? null : String(row.candidates_json),
-      created_at: String(row.created_at)
-    }));
+    return rows.map(mapAnnotationRow);
   } finally {
     closeProjectDb(db);
   }

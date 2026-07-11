@@ -1,5 +1,7 @@
 # Issue 02/05 — 真实 Agent 手动冒烟：`record_evidence_package`
 
+> **Historical（2026-07-10）：** 下文仍描述当时的 **Workbench plus / EnterPanel 双入口 seed** 与 UI/Agent awaiting 分源步骤。当前 Active 契约已改为 **Seed 纯 Agent-first**（Workbench 无 seed URL/intent 写入口）；以 `IKRAN-MVP-PRD.zh-CN.md`、ADR 0002 与 `Issues 02/05-…` 顶部收口说明为准。本文件不批量重写，仅作历史手动 smoke 指引。真实 Figma smoke **仍未验证**。
+
 > 真实 Agent + 真实 Figma MCP 验证由你手动完成；本文件是前置条件、步骤与失败分类。
 > 产品事实源：`Issues 02/05-agent-host-figma-evidence-declaration.md`。
 > 前置：`docs/manual-agent-smoke-issue03.md`（`register_seed_reference`）+ Issue 02/04 Workbench。
@@ -14,22 +16,22 @@ Mock / Playwright 只能证明 schema、MCP 代理与 UI 投影路径；**不能
 
 这些约定写在 **Ikran MCP**（`bin/ikran-mcp.mjs` 的 server `instructions` 与相关 tool descriptions）里，由 Agent 在同一会话中遵守。它们**不是** Figma 插件默认值，也**不**编码在 `workflow/` Skills 中（见 `AGENTS.md` → Workflow vs Ikran MCP）。
 
-1. **截图清晰度：`maxDimension: 4096`**  
+1. **截图清晰度：`maxDimension: 4096`**
    Agent 调用 host Figma MCP `get_screenshot` 时必须传 **`maxDimension: 4096`**（产品默认约定）。Figma MCP 自身默认常为 `1024`，大 frame 会被压糊；Workbench 按截图像素投影，长边显示上限同为 4096。不要依赖插件默认。
 
-2. **两条 seed 注册路径，同一 pending 工作**  
+2. **两条 seed 注册路径，同一 pending 工作**（Historical；当前仅 Agent `register_seed_reference`）
    设计师可通过 **Workbench plus / EnterPanel**（HTTP `POST /api/seed-reference`）**或** Agent `register_seed_reference` 注册 seed。两条路径写入同一 `seed_references` 事实；尚无截图 Evidence Surface 的 seed 都是 **pending Agent evidence work**。
 
-3. **Seed → evidence 编排（含 UI 发起）— AUTO-EXECUTE**  
-   - Agent 路径：`register_seed_reference` 成功后**不是终点**——同一会话内立刻 Figma `get_screenshot`（4096）→ `record_evidence_package`。  
-   - **UI 路径 / 打开 Workbench 后**：`open_workbench` / `list_pending_seed_evidence` 会返回 `pending_seed_evidence` 与 `fulfill_now`。对**每一条** pending seed：Figma MCP `get_screenshot`（`maxDimension: 4096`）→ Ikran `record_evidence_package`。  
-   - **禁止询问**：发现 pending 时不得回复「如果需要，我可以继续」；必须在同一 turn 直接执行。  
+3. **Seed → evidence 编排（含 UI 发起）— AUTO-EXECUTE**
+   - Agent 路径：`register_seed_reference` 成功后**不是终点**——同一会话内立刻 Figma `get_screenshot`（4096）→ `record_evidence_package`。
+   - **UI 路径 / 打开 Workbench 后**：`open_workbench` / `list_pending_seed_evidence` 会返回 `pending_seed_evidence` 与 `fulfill_now`。对**每一条** pending seed：Figma MCP `get_screenshot`（`maxDimension: 4096`）→ Ikran `record_evidence_package`。
+   - **禁止询问**：发现 pending 时不得回复「如果需要，我可以继续」；必须在同一 turn 直接执行。
    - **Host 限制**：UI 加号无法打断空闲 Agent；需要 Agent **下一轮**调用 Ikran（如 `open_workbench` / `list_pending_seed_evidence`）才能捡起 pending。
 
-4. **Workbench awaiting UX（按注册来源区分）**  
+4. **Workbench awaiting UX（按注册来源区分）**
    Seed 已注册、尚无带截图的 Evidence Surface 时：
-   - **UI / EnterPanel**（`registered_via: ui`）：投影显示**引导文案**（请设计师让 Agents 调取 Figma screenshot），**不**显示加载圆圈。  
-   - **Agent**（`registered_via: agent`）：投影显示 **loading 圆圈**，等待同一会话内 Agent 继续截图。  
+   - **UI / EnterPanel**（`registered_via: ui`）：投影显示**引导文案**（请设计师让 Agents 调取 Figma screenshot），**不**显示加载圆圈。
+   - **Agent**（`registered_via: agent`）：投影显示 **loading 圆圈**，等待同一会话内 Agent 继续截图。
    `record_evidence_package` 写入截图后，awaiting 结束并显示图像。
 
 ## 0. 前置条件

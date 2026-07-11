@@ -20,7 +20,6 @@ const workbenchButtonVariants = cva(workbenchPressable, {
         "step-row step-row--settled step-row-button min-h-10 w-full appearance-none border-0 bg-transparent p-0 text-left font-inherit text-inherit shadow-none hover:bg-transparent",
       agentChip: "agent-option",
       primaryAction: "action",
-      enterPanelSubmit: "enter-panel__submit",
       subtlePill: "use-folder-directly"
     }
   },
