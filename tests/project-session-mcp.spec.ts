@@ -195,16 +195,27 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
         expect(noTokenBind.status).toBe(403);
 
         // 8. Refresh recovery through an MCP-initiated binding (active = dirA).
+        // workbench_url includes view=workbench, so a bound session opens the
+        // Seed Evidence Workbench (not the setup card).
         await page.goto(workbenchUrl);
-        await expect(page.getByText("Project set up...")).toBeVisible();
-        await expect(page.getByTestId("runtime-label")).toContainText(
-          "Runtime connected"
+        await expect(page.getByTestId("seed-workbench")).toBeVisible();
+        await expect(page.getByTestId("seed-workbench")).toContainText(
+          path.basename(dirA)
         );
         await page.reload();
-        await expect(page.getByTestId("folder-label")).toContainText(
-          `/${path.basename(dirA)} connected`
+        await expect(page.getByTestId("seed-workbench")).toBeVisible();
+        await expect(page.getByTestId("seed-workbench")).toContainText(
+          path.basename(dirA)
         );
-        await expect(page.getByTestId("project-path")).toHaveText(dirA);
+        // Bound project remains readable via the HTTP session surface.
+        const rebound = await fetch(`http://127.0.0.1:${port}/api/project`, {
+          headers: { "x-ikran-session": token }
+        });
+        expect(rebound.status).toBe(200);
+        const reboundBody = (await rebound.json()) as {
+          project?: { path?: string };
+        };
+        expect(samePath(reboundBody.project?.path ?? "", dirA)).toBe(true);
       } finally {
         try {
           await client?.close();

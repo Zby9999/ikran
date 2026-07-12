@@ -17,7 +17,7 @@ export type FolderSelectVariant =
 const FOLDER_LABELS: Record<Exclude<FolderSelectVariant, "complete">, string> =
   {
     inactive: "Project Folder",
-    default: "Project Folder",
+    default: "Click to bind",
     loading: "Loading...",
     error: "Folder bind failed"
   };

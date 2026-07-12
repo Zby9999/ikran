@@ -15,7 +15,7 @@ export async function connectFigmaForTests(
     "/api/figma-connection",
     { token: "figd_ok_e2e" },
     {
-      host: `localhost:${port}`,
+      host: `127.0.0.1:${port}`,
       "x-ikran-session": sessionToken,
       "content-type": "application/json"
     }

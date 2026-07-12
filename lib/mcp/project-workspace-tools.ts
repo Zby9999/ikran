@@ -9,7 +9,6 @@ import {
   requireActiveProjectCommand,
   setupWorkspaceInputShape
 } from "../runtime/commands";
-import { pendingFulfillmentDirective } from "./pending-directive";
 import {
   pendingSeedRecords,
   type RegisterIkranToolsDeps
@@ -26,7 +25,7 @@ export function registerProjectWorkspaceTools(
     "open_workbench",
     {
       description:
-        "Open the Ikran workbench. Starts or reuses the local Runtime HTTP surface on 127.0.0.1 (auto port) and returns a localhost Workbench URL containing a startup-level session token. Open it in any browser; ideal target is this Agent host's embedded browser. The URL is local-only and is not a public/remote link. Prefer the Agent-first sequence (create_or_open_project → register_seed_reference → Figma screenshot → record_evidence_package) BEFORE handing the Workbench URL to the designer. ALWAYS check pending_seed_evidence in the result: if any pending seeds exist, IMMEDIATELY fulfill with Figma get_screenshot maxDimension 4096 then record_evidence_package — do not treat an open URL with pending evidence as a completed loop, and do not ask the user for permission."
+        "Open the Ikran workbench. Starts or reuses the local Runtime HTTP surface on 127.0.0.1 (auto port) and returns a localhost Workbench URL containing a startup-level session token. Open it in any browser; ideal target is this Agent host's embedded browser. The URL is local-only and is not a public/remote link. Active seed capture is Runtime-owned (ADR 0003): ensure Figma Connection via the Workbench gate, then use add_seed_reference (same command as Workbench paste) — do not orchestrate host Figma screenshots for ingestion. May include historical pending_seed_evidence rows for awareness only."
     },
     async () => {
       const rt = await ensureRuntime();
@@ -34,13 +33,12 @@ export function registerProjectWorkspaceTools(
       const pending = active.ok
         ? pendingSeedRecords(active.project.path)
         : [];
-      const directive = pendingFulfillmentDirective(pending);
       const baseText = `Ikran Workbench URL:\n${rt.url}\n\nLocal-only. Open in any browser (ideal: this Agent host's embedded browser).`;
       return {
         content: [
           {
             type: "text" as const,
-            text: directive ? `${baseText}\n\n${directive}` : baseText
+            text: baseText
           }
         ],
         structuredContent: {
@@ -49,13 +47,7 @@ export function registerProjectWorkspaceTools(
           port: rt.port,
           session: rt.token,
           reused: !rt.spawned,
-          pending_seed_evidence: pending,
-          ...(pending.length > 0
-            ? {
-                action_required: "fulfill_pending_seed_evidence",
-                fulfill_now: true
-              }
-            : {})
+          pending_seed_evidence: pending
         }
       };
     }

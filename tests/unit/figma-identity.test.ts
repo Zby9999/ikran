@@ -2,9 +2,13 @@
 
 import { test, expect } from "vitest";
 import {
-  parseFigmaSeedIdentity,
+  extractFigmaDesignUrl,
   figmaSeedIdentitiesEqual,
-  normalizeFigmaNodeId
+  hasFigmaDesignOrFilePath,
+  isFigmaDesignUrl,
+  isFigmaHostname,
+  normalizeFigmaNodeId,
+  parseFigmaSeedIdentity
 } from "../../lib/runtime/figma-identity";
 
 test.describe("figma-identity (canonical)", () => {
@@ -44,5 +48,25 @@ test.describe("figma-identity (canonical)", () => {
     expect(
       parseFigmaSeedIdentity("https://www.figma.com/proto/AbCdEf/X")
     ).toBeNull();
+  });
+
+  test("shared host / path helpers match parse dialect", () => {
+    expect(isFigmaHostname("figma.com")).toBe(true);
+    expect(isFigmaHostname("www.figma.com")).toBe(true);
+    expect(isFigmaHostname("api.figma.com")).toBe(false);
+    expect(hasFigmaDesignOrFilePath("/design/AbCd/File")).toBe(true);
+    expect(hasFigmaDesignOrFilePath("/file/AbCd/File")).toBe(true);
+    expect(hasFigmaDesignOrFilePath("/proto/AbCd/File")).toBe(false);
+  });
+
+  test("isFigmaDesignUrl / extractFigmaDesignUrl cover design + file only", () => {
+    const design = "https://www.figma.com/design/AbCd/File?node-id=1-2";
+    const file = "https://www.figma.com/file/AbCd/File?node-id=1-2";
+    expect(isFigmaDesignUrl(design)).toBe(true);
+    expect(extractFigmaDesignUrl(`paste ${design} here`)).toBe(design);
+    expect(extractFigmaDesignUrl(file)).toBe(file);
+    expect(isFigmaDesignUrl("https://www.figma.com/proto/AbCd/File")).toBe(
+      false
+    );
   });
 });

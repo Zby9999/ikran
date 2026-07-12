@@ -1,16 +1,13 @@
-// Semantic MCP tool boundary handler: register_seed_reference.
+// Legacy register-without-capture — historical compatibility seed row writer.
 //
-// Records a Figma seed reference and the designer's original design intent as
-// Runtime-owned research source-of-truth. This is the minimal semantic tool
-// boundary (Issue 02/03): an Agent changes Runtime records through a semantic
-// intent tool, NOT through raw exec / headless CLI / canvas geometry.
+// `registerSeedReference` is an idempotent local writer: format-check the Figma
+// URL, store the seed row + event, no Figma API contact. Kept for older MCP /
+// HTTP `register_seed_reference` callers and migration-era rows.
 //
-// IMPORTANT — semantic boundary: this handler ONLY performs a LOCAL format
-// check on the Figma URL. It does NOT access Figma, does NOT fetch / oEmbed /
-// probe the link, and does NOT verify the file actually exists online. The
-// ORIGINAL URL is stored verbatim (never rewritten for display), per the
-// Issue 02/03 decision. Real Figma evidence ingestion is Agent-host-side
-// (Issue 02/05 `record_evidence_package`); Runtime stays zero-Figma-contact.
+// Active Seed Reference ingestion (ADR 0003 / Issue 05A) is NOT this module.
+// Prefer `addSeedReference` in `seed-capture.ts` (Workbench paste + Agent
+// `add_seed_reference`): requires Figma Connection, captures positional
+// evidence, and writes seed + surface atomically.
 //
 // Idempotency: identity is `fileKey + nodeId` parsed from the URL (ignoring
 // share `t=` and other query noise). Re-registering the same file+node returns
@@ -33,6 +30,10 @@ import { emitRecordEvent } from "./record-bus";
 import path from "node:path";
 import { logEventOnDb } from "./events";
 import {
+  mapSeedRow,
+  lookupSeedRegisteredEventId
+} from "./seed-row-map";
+import {
   parseFigmaSeedIdentity,
   figmaSeedIdentitiesEqual,
   type FigmaSeedIdentity
@@ -44,7 +45,11 @@ export { parseFigmaSeedIdentity, figmaSeedIdentitiesEqual };
 export interface SeedReferenceInput {
   /** Raw Figma URL, stored verbatim. */
   figmaSeedReference: string;
-  /** Designer's original design intent (free text). */
+  /**
+   * Optional Reference Note (CONTEXT). Persisted in the historical SQLite
+   * column `original_design_intent` — name kept for migration compatibility;
+   * Active capture passes this as `referenceNote`.
+   */
   originalDesignIntent: string;
   /**
    * Who registered the seed. Controls Workbench awaiting UX:
@@ -76,6 +81,10 @@ export interface SeedReferenceRecord {
   id: string;
   /** The original figmaSeedReference input, stored verbatim (not rewritten). */
   figma_seed_reference: string;
+  /**
+   * Reference Note (CONTEXT). Column name `original_design_intent` is
+   * historical; Active API uses `referenceNote` on write.
+   */
   original_design_intent: string;
   created_at: string;
   /** `ui` | `agent` — who registered; missing/legacy treated as agent. */
@@ -152,37 +161,11 @@ export function validateSeedReferenceInput(
   return null;
 }
 
-function mapSeedRow(row: Record<string, unknown>): SeedReferenceRecord {
-  return {
-    id: String(row.id),
-    figma_seed_reference: String(row.figma_seed_reference),
-    original_design_intent: String(row.original_design_intent),
-    created_at: String(row.created_at),
-    registered_via: row.registered_via === "ui" ? "ui" : "agent",
-    file_key: String(row.file_key ?? ""),
-    node_id: String(row.node_id ?? ""),
-    current_surface_id:
-      typeof row.current_surface_id === "string" &&
-      row.current_surface_id.trim().length > 0
-        ? row.current_surface_id
-        : null
-  };
-}
-
 function lookupSeedEventId(
   db: DatabaseType,
   seedReferenceId: string
 ): string | null {
-  const eventRow = db
-    .prepare(
-      `SELECT event_id FROM events
-       WHERE type = 'seed_reference_registered'
-         AND json_extract(payload, '$.seed_reference_id') = ?
-       ORDER BY created_at ASC, id ASC
-       LIMIT 1`
-    )
-    .get(seedReferenceId) as { event_id: string } | undefined;
-  return eventRow?.event_id ?? null;
+  return lookupSeedRegisteredEventId(db, seedReferenceId);
 }
 
 export function registerSeedReference(
@@ -305,5 +288,79 @@ export function listSeedReferences(projectPath: string): SeedReferenceRecord[] {
     return rows.map(mapSeedRow);
   } finally {
     closeProjectDb(db);
+  }
+}
+
+export type SeedReferenceDeleteReason = "not_found" | "db_error";
+
+export type SeedReferenceDeleteResponse =
+  | { ok: true; id: string }
+  | { ok: false; reason: SeedReferenceDeleteReason };
+
+/**
+ * Delete a Seed Reference and cascade its Evidence Surfaces + annotations.
+ *
+ * Required so designer canvas Delete is Runtime-backed: local-only tldraw
+ * deletes revive on the next projection sync (e.g. paste another frame).
+ * FK order: annotations → clear current_surface_id → surfaces → seed.
+ */
+export function deleteSeedReference(
+  projectPath: string,
+  seedId: string
+): SeedReferenceDeleteResponse {
+  if (typeof seedId !== "string" || seedId.trim().length === 0) {
+    return { ok: false, reason: "not_found" };
+  }
+  const id = seedId.trim();
+
+  try {
+    const result = withProjectTransaction(projectPath, (db) => {
+      const row = db
+        .prepare("SELECT id FROM seed_references WHERE id = ?")
+        .get(id) as { id: string } | undefined;
+      if (!row) {
+        return { ok: false as const, reason: "not_found" as const };
+      }
+
+      const surfaceIds = (
+        db
+          .prepare(
+            `SELECT id FROM figma_evidence_surfaces WHERE seed_reference_id = ?`
+          )
+          .all(id) as Array<{ id: string }>
+      ).map((s) => s.id);
+
+      if (surfaceIds.length > 0) {
+        const placeholders = surfaceIds.map(() => "?").join(", ");
+        db.prepare(
+          `DELETE FROM region_annotations WHERE surface_id IN (${placeholders})`
+        ).run(...surfaceIds);
+      }
+
+      db.prepare(
+        `UPDATE seed_references SET current_surface_id = NULL WHERE id = ?`
+      ).run(id);
+
+      db.prepare(
+        `DELETE FROM figma_evidence_surfaces WHERE seed_reference_id = ?`
+      ).run(id);
+
+      db.prepare(`DELETE FROM seed_references WHERE id = ?`).run(id);
+
+      return { ok: true as const, id };
+    });
+
+    if (result.ok) {
+      emitRecordEvent({
+        kind: "seed",
+        action: "deleted",
+        id: result.id,
+        projectPath: path.resolve(projectPath)
+      });
+    }
+
+    return result;
+  } catch {
+    return { ok: false, reason: "db_error" };
   }
 }

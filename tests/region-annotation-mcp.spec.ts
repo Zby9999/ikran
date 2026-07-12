@@ -1,12 +1,15 @@
 // Ikran Issue 06 — `create_region_annotation` MCP tool (HTTP + MCP wiring).
 //
 // Coverage (always):
-// - listTools: create_region_annotation + list_region_annotations registered
+// - listTools: create_region_annotation + list_region_annotations registered;
+//   Active seed tools present; legacy Agent evidence tools absent
 //
 // Full create/list e2e (success + invalid) is gated on
 // `lib/runtime/region-annotation.ts` existing in the build. When that Runtime
 // foundation file is mid-flight / missing, those cases are skipped with a note
 // so this wiring slice can land independently.
+//
+// Surface setup uses Active path: Figma connection mock + add_seed_reference.
 
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,6 +21,7 @@ import {
   sc,
   spawnMcpClient
 } from "./helpers/mcp";
+import { connectFigmaForTests } from "./helpers/figma-connection";
 
 const RUNTIME_MODULE = path.join(
   process.cwd(),
@@ -26,11 +30,16 @@ const RUNTIME_MODULE = path.join(
   "region-annotation.ts"
 );
 
-/** Valid-format Figma URL that is NOT a real reachable file — success proves no fetch. */
-const FAKE_FIGMA_URL =
+const MOCK_FIGMA_URL =
   "https://www.figma.com/design/NOTAREALFILEKEY000/Issue06-E2E-Fake?node-id=9:9";
 
 const RUNTIME_READY = existsSync(RUNTIME_MODULE);
+
+const LEGACY_SEED_TOOLS = [
+  "register_seed_reference",
+  "list_pending_seed_evidence",
+  "record_evidence_package"
+] as const;
 
 function readEventLines(
   dir: string
@@ -65,7 +74,11 @@ test.describe("Ikran Issue 06 — create_region_annotation MCP tool", () => {
       const names = (await client.listTools()).tools.map((t) => t.name);
       expect(names).toContain("create_region_annotation");
       expect(names).toContain("list_region_annotations");
-      expect(names).toContain("record_evidence_package");
+      expect(names).toContain("add_seed_reference");
+      expect(names).toContain("get_figma_connection_status");
+      for (const legacy of LEGACY_SEED_TOOLS) {
+        expect(names).not.toContain(legacy);
+      }
     } finally {
       if (client) {
         try {
@@ -108,28 +121,19 @@ test.describe("Ikran Issue 06 — create_region_annotation MCP tool", () => {
       const port = Number(workbenchUrl.match(/127\.0\.0\.1:(\d+)\//)?.[1]);
       expect(port).toBeGreaterThan(0);
 
-      const seedRes = await client.callTool({
-        name: "register_seed_reference",
-        arguments: {
-          figmaSeedReference: FAKE_FIGMA_URL,
-          originalDesignIntent: "Issue 06 MCP e2e: fake file, no Figma contact."
-        }
-      });
-      expect(sc(seedRes).ok).toBe(true);
-      const seedRecord = sc(seedRes).record as { id: string };
+      await connectFigmaForTests(port, token);
 
-      const surfaceRes = await client.callTool({
-        name: "record_evidence_package",
+      const seedRes = await client.callTool({
+        name: "add_seed_reference",
         arguments: {
-          figmaSeedReference: FAKE_FIGMA_URL,
-          seedReferenceId: seedRecord.id,
-          frame: { nodeId: "9:9", name: "Fake Checkout" },
-          evidenceViews: { rawData: "available", screenshot: "missing" }
+          figmaSeedReference: MOCK_FIGMA_URL,
+          referenceNote: "Issue 06 MCP e2e: mock capture"
         }
       });
-      const surfaceSc = sc(surfaceRes);
-      expect(surfaceSc.ok).toBe(true);
-      const surface = surfaceSc.record as { id: string; frame_node_id: string };
+      const seedSc = sc(seedRes);
+      expect(seedSc.ok).toBe(true);
+      const surface = seedSc.surface as { id: string; frame_node_id: string };
+      expect(surface.id).toBeTruthy();
 
       const annRes = await client.callTool({
         name: "create_region_annotation",

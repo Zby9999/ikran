@@ -1,28 +1,55 @@
 // Task 10: HTTP and MCP share the command kernel — invalid payloads must
 // surface the SAME domain reason. Shared Zod transport schemas must accept
 // those payloads so the MCP SDK does not reject before domain validation.
+//
+// Active seed path uses addSeedReferenceCommand (+ Figma Connection). Legacy
+// registerSeedReference / recordEvidencePackage commands remain for historical
+// HTTP/readers but are not Active MCP tools.
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { initializeProjectDb } from "../../lib/runtime/db";
 import {
   parseCommandInput,
   registerSeedReferenceInputSchema,
   registerSeedReferenceInputShape,
   recordEvidencePackageInputSchema,
-  createRegionAnnotationInputSchema
+  createRegionAnnotationInputSchema,
+  addSeedReferenceInputSchema,
+  addSeedReferenceInputShape
 } from "../../lib/runtime/commands/schemas";
 import {
   registerSeedReferenceCommand,
   recordEvidencePackageCommand,
-  createRegionAnnotationCommand
+  createRegionAnnotationCommand,
+  addSeedReferenceCommand
 } from "../../lib/runtime/commands";
+import {
+  createMemoryFigmaCredentialStore,
+  resetFigmaCredentialStoreForTests,
+  setFigmaCredentialStoreForTests
+} from "../../lib/runtime/figma-credential-store";
+import {
+  resetFigmaApiClientForTests,
+  setFigmaApiClientForTests,
+  createMockFigmaApiClient
+} from "../../lib/runtime/figma-api";
 
 const tmpDirs: string[] = [];
 
+beforeEach(() => {
+  resetFigmaCredentialStoreForTests();
+  resetFigmaApiClientForTests();
+  // Isolate from macOS Keychain / env — gate-closed cases must see empty store.
+  setFigmaCredentialStoreForTests(createMemoryFigmaCredentialStore());
+  setFigmaApiClientForTests(createMockFigmaApiClient());
+});
+
 afterEach(() => {
+  resetFigmaCredentialStoreForTests();
+  resetFigmaApiClientForTests();
   for (const d of tmpDirs.splice(0)) {
     rmSync(d, { recursive: true, force: true });
   }
@@ -35,16 +62,31 @@ function freshProject(): string {
   return dir;
 }
 
+async function connectMockFigma(): Promise<void> {
+  const store = createMemoryFigmaCredentialStore();
+  await store.set("figd_ok_unit");
+  setFigmaCredentialStoreForTests(store);
+  setFigmaApiClientForTests(createMockFigmaApiClient());
+}
+
 describe("HTTP/MCP command parity — shared domain reasons", () => {
   test("shared parser rejects structural errors as invalid_params", () => {
-    const parsed = parseCommandInput(registerSeedReferenceInputSchema, {
-      figmaSeedReference: 42,
-      originalDesignIntent: "intent"
+    const parsed = parseCommandInput(addSeedReferenceInputSchema, {
+      figmaSeedReference: 42
     });
     expect(parsed).toMatchObject({ ok: false, reason: "invalid_params" });
   });
 
-  test("Agent seed schema does not expose registeredVia", () => {
+  test("Active add_seed_reference schema does not expose registeredVia / initiator", () => {
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        addSeedReferenceInputShape,
+        "registeredVia"
+      )
+    ).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(addSeedReferenceInputShape, "initiator")
+    ).toBe(false);
     expect(
       Object.prototype.hasOwnProperty.call(
         registerSeedReferenceInputShape,
@@ -53,7 +95,59 @@ describe("HTTP/MCP command parity — shared domain reasons", () => {
     ).toBe(false);
   });
 
-  test("seed: transport schema accepts domain-invalid payloads; command reason matches", () => {
+  test("Active seed-capture: gate closed + URL reasons match", async () => {
+    const projectPath = freshProject();
+    const schema = addSeedReferenceInputSchema;
+
+    const closed = await addSeedReferenceCommand(projectPath, {
+      figmaSeedReference:
+        "https://www.figma.com/design/abc123/X?node-id=1:2"
+    });
+    expect(closed.ok).toBe(false);
+    if (!closed.ok) expect(closed.reason).toBe("figma_connection_required");
+
+    await connectMockFigma();
+
+    const cases: Array<{ payload: Record<string, unknown>; reason: string }> = [
+      {
+        payload: { figmaSeedReference: "" },
+        reason: "missing_figma_seed_reference"
+      },
+      {
+        payload: {
+          figmaSeedReference: "http://www.figma.com/design/abc/X?node-id=1:2"
+        },
+        reason: "invalid_figma_url"
+      },
+      {
+        payload: {
+          figmaSeedReference: "https://example.com/design/abc/X?node-id=1:2"
+        },
+        reason: "not_figma_host"
+      },
+      {
+        payload: {
+          figmaSeedReference: "https://www.figma.com/other/abc/X?node-id=1:2"
+        },
+        reason: "not_figma_design_path"
+      },
+      {
+        payload: {
+          figmaSeedReference: "https://www.figma.com/design/abc123/Checkout"
+        },
+        reason: "missing_node_id"
+      }
+    ];
+
+    for (const c of cases) {
+      expect(schema.safeParse(c.payload).success, c.reason).toBe(true);
+      const result = await addSeedReferenceCommand(projectPath, c.payload);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe(c.reason);
+    }
+  });
+
+  test("legacy seed: transport schema accepts domain-invalid payloads; command reason matches", () => {
     const projectPath = freshProject();
     const schema = registerSeedReferenceInputSchema;
 
@@ -100,7 +194,7 @@ describe("HTTP/MCP command parity — shared domain reasons", () => {
     }
   });
 
-  test("evidence: transport schema accepts domain-invalid payloads; command reason matches", () => {
+  test("legacy evidence: transport schema accepts domain-invalid payloads; command reason matches", () => {
     const projectPath = freshProject();
     const schema = recordEvidencePackageInputSchema;
 
@@ -200,8 +294,10 @@ describe("HTTP/MCP command parity — shared domain reasons", () => {
 });
 
 describe("MCP direct command — no loopback fetch", () => {
-  test("registerSeedReferenceCommand succeeds with fetch disabled; list sees record", async () => {
+  test("addSeedReferenceCommand succeeds with fetch disabled; list sees record", async () => {
     const projectPath = freshProject();
+    await connectMockFigma();
+
     const originalFetch = globalThis.fetch;
     let fetchCalls = 0;
     globalThis.fetch = (async (..._args: unknown[]) => {
@@ -210,11 +306,11 @@ describe("MCP direct command — no loopback fetch", () => {
     }) as typeof fetch;
 
     try {
-      const result = registerSeedReferenceCommand(projectPath, {
+      const result = await addSeedReferenceCommand(projectPath, {
         figmaSeedReference:
           "https://www.figma.com/design/parityKey001/NoLoop?node-id=3:4",
-        originalDesignIntent: "parity no-loopback",
-        registeredVia: "agent"
+        referenceNote: "parity no-loopback",
+        initiator: "agent"
       });
       expect(result.ok).toBe(true);
       expect(fetchCalls).toBe(0);
@@ -227,6 +323,7 @@ describe("MCP direct command — no loopback fetch", () => {
       if (listed.ok) {
         expect(listed.records.length).toBe(1);
         expect(listed.records[0].figma_seed_reference).toContain("parityKey001");
+        expect(listed.records[0].current_surface_id).toBeTruthy();
       }
     } finally {
       globalThis.fetch = originalFetch;

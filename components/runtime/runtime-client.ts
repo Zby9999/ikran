@@ -392,10 +392,36 @@ export function createWorkbenchDataClient(
     return { ok: true };
   };
 
+  const deleteSeedReference = async (
+    seedId: string
+  ): Promise<RuntimeMutationResult> => {
+    const result = await fetchJson(
+      fetcher,
+      `/api/seed-reference?id=${encodeURIComponent(seedId)}`,
+      session,
+      { method: "DELETE" }
+    );
+    if (!result.ok) {
+      return reportMutationError(
+        (typeof result.data.error === "string" && result.data.error) ||
+          "delete_seed_failed"
+      );
+    }
+
+    const reloaded = await loadAll();
+    if (!reloaded.ok) {
+      return reportMutationError(
+        `delete_succeeded_reload_failed:${reloaded.error}`
+      );
+    }
+    return { ok: true };
+  };
+
   return {
     loadAll,
     createAnnotation,
     deleteAnnotation,
+    deleteSeedReference,
     getFigmaConnection: async (): Promise<
       | { ok: true; connected: false }
       | {

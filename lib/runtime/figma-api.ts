@@ -64,8 +64,10 @@ function resolveBaseUrl(): string {
 }
 
 function authHeaders(token: string): HeadersInit {
+  // Personal access tokens must use X-Figma-Token (not Authorization Bearer).
+  // https://developers.figma.com/docs/rest-api/personal-access-tokens/
   return {
-    Authorization: `Bearer ${token}`,
+    "X-Figma-Token": token,
     Accept: "application/json"
   };
 }
@@ -81,42 +83,90 @@ type RawNode = {
   children?: RawNode[];
 };
 
+function parseAbsoluteBounds(box: unknown): AbsoluteBounds | null {
+  if (!box || typeof box !== "object") return null;
+  const b = box as AbsoluteBounds;
+  if (
+    typeof b.x !== "number" ||
+    typeof b.y !== "number" ||
+    typeof b.width !== "number" ||
+    typeof b.height !== "number"
+  ) {
+    return null;
+  }
+  if (!(b.width > 0) || !(b.height > 0)) return null;
+  return { x: b.x, y: b.y, width: b.width, height: b.height };
+}
+
+/**
+ * Minimum positional index for structural overlay: every indexed node needs
+ * id/name/type; the capture root also needs positive absolute bounds.
+ * Incomplete children fail closed — never skip or invent UNKNOWN.
+ */
 function walkNodes(
   node: RawNode,
   parentId: string | null,
   depth: number,
   out: FigmaPositionalNode[]
-): void {
-  if (typeof node.id !== "string" || typeof node.name !== "string") return;
-  const type = typeof node.type === "string" ? node.type : "UNKNOWN";
-  const visible = node.visible !== false;
-  const box = node.absoluteBoundingBox;
+): boolean {
+  if (typeof node.id !== "string" || !node.id.trim()) return false;
+  if (typeof node.name !== "string") return false;
+  if (typeof node.type !== "string" || !node.type.trim()) return false;
+
+  const bounds = parseAbsoluteBounds(node.absoluteBoundingBox);
+  if (depth === 0 && !bounds) return false;
+
   out.push({
     id: node.id,
     parentId,
     name: node.name,
-    type,
+    type: node.type,
     depth,
-    visible,
-    bounds:
-      box &&
-      typeof box.x === "number" &&
-      typeof box.y === "number" &&
-      typeof box.width === "number" &&
-      typeof box.height === "number"
-        ? {
-            x: box.x,
-            y: box.y,
-            width: box.width,
-            height: box.height
-          }
-        : null
+    visible: node.visible !== false,
+    bounds
   });
-  if (Array.isArray(node.children)) {
-    for (const child of node.children) {
-      walkNodes(child, node.id, depth + 1, out);
-    }
+
+  if (node.children === undefined) return true;
+  if (!Array.isArray(node.children)) return false;
+  for (const child of node.children) {
+    if (!child || typeof child !== "object") return false;
+    if (!walkNodes(child, node.id, depth + 1, out)) return false;
   }
+  return true;
+}
+
+const PNG_SIGNATURE = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a
+]);
+
+function isPngBuffer(buf: Buffer): boolean {
+  return buf.length >= 8 && buf.subarray(0, 8).equals(PNG_SIGNATURE);
+}
+
+function isJpegBuffer(buf: Buffer): boolean {
+  return (
+    buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff
+  );
+}
+
+/** Fail closed unless MIME is image/* and bytes match a decodable image magic. */
+function resolveScreenshotMime(
+  contentTypeHeader: string | null,
+  buf: Buffer
+): string | null {
+  if (buf.byteLength === 0) return null;
+  const raw = contentTypeHeader?.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (raw && !raw.startsWith("image/")) return null;
+
+  if (isPngBuffer(buf)) {
+    if (!raw || raw === "image/png" || raw === "image/x-png") return "image/png";
+    return null;
+  }
+  if (isJpegBuffer(buf)) {
+    if (!raw || raw === "image/jpeg" || raw === "image/jpg") return "image/jpeg";
+    return null;
+  }
+  return null;
 }
 
 function mapStatusReason(
@@ -204,9 +254,11 @@ export function createFigmaApiClient(
         }
 
         const positional: FigmaPositionalNode[] = [];
-        walkNodes(document, null, 0, positional);
+        if (!walkNodes(document, null, 0, positional)) {
+          return { ok: false, reason: "malformed_figma_response" };
+        }
         const root = positional[0];
-        if (!root) {
+        if (!root || !root.bounds) {
           return { ok: false, reason: "malformed_figma_response" };
         }
 
@@ -233,11 +285,13 @@ export function createFigmaApiClient(
           return { ok: false, reason: "screenshot_missing" };
         }
         const buf = Buffer.from(await imgRes.arrayBuffer());
-        if (buf.byteLength === 0) {
+        const mime = resolveScreenshotMime(
+          imgRes.headers.get("content-type"),
+          buf
+        );
+        if (!mime) {
           return { ok: false, reason: "screenshot_missing" };
         }
-        const contentType = imgRes.headers.get("content-type") || "image/png";
-        const mime = contentType.split(";")[0]?.trim() || "image/png";
         const screenshotDataUrl = `data:${mime};base64,${buf.toString("base64")}`;
 
         const bounds = root.bounds;
@@ -251,9 +305,7 @@ export function createFigmaApiClient(
               bounds
             },
             nodes: positional,
-            surfaceBounds: bounds
-              ? { width: bounds.width, height: bounds.height }
-              : { width: 0, height: 0 }
+            surfaceBounds: { width: bounds.width, height: bounds.height }
           }
         };
       } catch {
@@ -265,8 +317,10 @@ export function createFigmaApiClient(
 
 /** Deterministic double for e2e / harness — never hits the real Figma network. */
 export function createMockFigmaApiClient(): FigmaApiClient {
-  const TINY_PNG =
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  // 320×240 solid PNG so Workbench onLoad resize stays large enough for
+  // region-annotation gesture e2e (media bounding box > 100px).
+  const MOCK_FRAME_PNG =
+    "data:image/png;base64,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";
   return {
     async validateToken(token) {
       if (token.startsWith("figd_ok")) {
@@ -281,7 +335,7 @@ export function createMockFigmaApiClient(): FigmaApiClient {
       return {
         ok: true,
         capture: {
-          screenshotDataUrl: TINY_PNG,
+          screenshotDataUrl: MOCK_FRAME_PNG,
           frame: {
             nodeId,
             name: "Mock Frame",
@@ -306,25 +360,34 @@ export function createMockFigmaApiClient(): FigmaApiClient {
 }
 
 let override: FigmaApiClient | null = null;
-let cached: FigmaApiClient | null = null;
+let liveCached: FigmaApiClient | null = null;
+
+const GLOBAL = globalThis as unknown as {
+  __IKRAN_FIGMA_API_MOCK?: FigmaApiClient;
+};
 
 export function setFigmaApiClientForTests(client: FigmaApiClient | null): void {
   override = client;
-  cached = null;
+  liveCached = null;
+  delete GLOBAL.__IKRAN_FIGMA_API_MOCK;
 }
 
 export function resetFigmaApiClientForTests(): void {
   override = null;
-  cached = null;
+  liveCached = null;
+  delete GLOBAL.__IKRAN_FIGMA_API_MOCK;
 }
 
 export function getFigmaApiClient(): FigmaApiClient {
   if (override) return override;
-  if (cached) return cached;
   if (process.env.IKRAN_FIGMA_API_MODE === "mock") {
-    cached = createMockFigmaApiClient();
-    return cached;
+    // Share mock across Next/MCP module forks (same as credential store).
+    if (!GLOBAL.__IKRAN_FIGMA_API_MOCK) {
+      GLOBAL.__IKRAN_FIGMA_API_MOCK = createMockFigmaApiClient();
+    }
+    return GLOBAL.__IKRAN_FIGMA_API_MOCK;
   }
-  cached = createFigmaApiClient();
-  return cached;
+  if (liveCached) return liveCached;
+  liveCached = createFigmaApiClient();
+  return liveCached;
 }

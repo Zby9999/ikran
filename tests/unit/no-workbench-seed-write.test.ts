@@ -44,7 +44,9 @@ test.describe("architecture — Workbench seed write entry removed", () => {
     expect(hookText).toMatch(/\breload\b/);
     expect(hookText).toMatch(/\bcreateAnnotation\b/);
     expect(hookText).toMatch(/\bdeleteAnnotation\b/);
+    expect(hookText).toMatch(/\bdeleteSeedReference\b/);
     expect(hookText).toMatch(/\bcaptureSeedReference\b/);
+    expect(clientText).toMatch(/method:\s*["']DELETE["']/);
   });
 
   test("production Workbench sources do not import enter-panel", () => {

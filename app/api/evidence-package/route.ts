@@ -1,6 +1,10 @@
 // GET / POST /api/evidence-package
 //
 // Thin HTTP adapter: authorize + active project + shared evidence commands.
+// Active Agent evidence writes are retired (Issue 05D / ADR 0003). New Figma
+// Surfaces are created only via Runtime seed capture (POST /api/seed-capture
+// or POST /api/seed-reference → addSeedReferenceCommand). GET remains for
+// reading historical Evidence Surfaces.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -8,9 +12,6 @@ import { authorize } from "../../../lib/runtime/session";
 import {
   commandErrorHttpStatus,
   listEvidenceSurfacesCommand,
-  parseCommandInput,
-  recordEvidencePackageInputSchema,
-  recordEvidencePackageCommand,
   requireActiveProjectCommand
 } from "../../../lib/runtime/commands";
 
@@ -47,47 +48,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: unknown;
+  // Drain body so clients that POST JSON are not left with a hung connection.
   try {
-    body = await request.json();
+    await request.json();
   } catch {
-    return NextResponse.json(
-      { ok: false, error: "invalid_json" },
-      { status: commandErrorHttpStatus("invalid_json") }
-    );
+    /* invalid / empty body — still retired */
   }
 
-  const parsed = parseCommandInput(recordEvidencePackageInputSchema, body);
-  if (!parsed.ok) {
-    return NextResponse.json(
-      { ok: false, error: parsed.reason },
-      { status: commandErrorHttpStatus(parsed.reason) }
-    );
-  }
-
-  const state = requireActiveProjectCommand();
-  if (!state.ok) {
-    return NextResponse.json(
-      { ok: false, error: state.reason },
-      { status: commandErrorHttpStatus(state.reason) }
-    );
-  }
-
-  const result = recordEvidencePackageCommand(
-    state.project.path,
-    parsed.data
+  return NextResponse.json(
+    { ok: false, error: "endpoint_retired" },
+    { status: commandErrorHttpStatus("endpoint_retired") }
   );
-
-  if (!result.ok) {
-    return NextResponse.json(
-      { ok: false, error: result.reason },
-      { status: commandErrorHttpStatus(result.reason) }
-    );
-  }
-
-  return NextResponse.json({
-    ok: true,
-    record: result.record,
-    event_id: result.event_id
-  });
 }

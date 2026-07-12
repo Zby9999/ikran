@@ -1,7 +1,7 @@
-// Canonical Figma seed identity — parse / normalize / equality.
+// Canonical Figma seed identity — parse / normalize / equality + URL shape.
 //
-// DB-free module so migrations and seed-reference can share the same rules
-// without creating migrations ↔ db ↔ seed-reference import cycles.
+// DB-free module so migrations, seed-capture, seed-reference, and Workbench
+// paste guards share the same host/path rules without UI ↔ Runtime cycles.
 
 export interface FigmaSeedIdentity {
   fileKey: string;
@@ -12,6 +12,36 @@ export interface FigmaSeedIdentity {
 /** Normalize a raw Figma node-id query value (`0-81` → `0:81`). */
 export function normalizeFigmaNodeId(raw: string): string {
   return raw.trim().replace(/-/g, ":");
+}
+
+export function isFigmaHostname(hostname: string): boolean {
+  return hostname === "figma.com" || hostname === "www.figma.com";
+}
+
+/** True for `/design/<fileKey>/…` or `/file/<fileKey>/…` selection paths. */
+export function hasFigmaDesignOrFilePath(pathname: string): boolean {
+  const parts = pathname.split("/").filter(Boolean);
+  return (
+    parts.length >= 2 &&
+    (parts[0] === "design" || parts[0] === "file") &&
+    Boolean(parts[1])
+  );
+}
+
+/**
+ * Find a Figma design/file selection URL inside free text (clipboard paste).
+ * Same host + path dialect as parseFigmaSeedIdentity (design|file only).
+ */
+const FIGMA_DESIGN_URL_IN_TEXT =
+  /https:\/\/(?:www\.)?figma\.com\/(?:design|file)\/[^\s]+/i;
+
+export function extractFigmaDesignUrl(text: string): string | null {
+  const match = text.match(FIGMA_DESIGN_URL_IN_TEXT);
+  return match ? match[0] : null;
+}
+
+export function isFigmaDesignUrl(text: string): boolean {
+  return extractFigmaDesignUrl(text) != null;
 }
 
 /**
@@ -29,17 +59,9 @@ export function parseFigmaSeedIdentity(
     return null;
   }
   if (url.protocol !== "https:") return null;
-  if (url.hostname !== "figma.com" && url.hostname !== "www.figma.com") {
-    return null;
-  }
+  if (!isFigmaHostname(url.hostname)) return null;
+  if (!hasFigmaDesignOrFilePath(url.pathname)) return null;
   const parts = url.pathname.split("/").filter(Boolean);
-  if (
-    parts.length < 2 ||
-    (parts[0] !== "design" && parts[0] !== "file") ||
-    !parts[1]
-  ) {
-    return null;
-  }
   const fileKey = parts[1];
   const rawNode =
     url.searchParams.get("node-id") ?? url.searchParams.get("nodeId") ?? "";

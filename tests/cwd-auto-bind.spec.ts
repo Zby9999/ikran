@@ -165,7 +165,7 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
 
       // No silent auto-bind: the Initialize button is shown and bind has not run.
       await expect(page.getByTestId("folder-label")).toContainText(
-        "Project Folder"
+        "Click to bind"
       );
       await expect(page.getByTestId("project-path")).toHaveText("");
       expect(pathsInclude(bind.paths(), dir)).toBe(false);
@@ -287,7 +287,7 @@ test.describe("Ikran Issue 2 supplement — cwd auto-bind", () => {
 
       // No silent bind: the Initialize button is shown and bind has not run.
       await expect(page.getByTestId("folder-label")).toContainText(
-        "Project Folder"
+        "Click to bind"
       );
       await expect(page.getByTestId("project-path")).toHaveText("");
       expect(existsSync(path.join(dir, ".ikran", "config.json"))).toBe(false);

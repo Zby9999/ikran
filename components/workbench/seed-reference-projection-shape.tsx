@@ -123,7 +123,7 @@ export const SEED_REFERENCE_PROJECTION_DEFAULT_W = 380;
 export const SEED_REFERENCE_PROJECTION_DEFAULT_H = 520;
 
 const FALLBACK_TITLE = "Figma seed";
-const FALLBACK_DESCRIPTION = "Description Place Holder";
+const FALLBACK_DESCRIPTION = "No description yet";
 
 const seedRefFrameHeaderButtonClass = cn(
   "size-5 min-h-0 min-w-0 shrink-0 rounded-[4px] border-0 bg-transparent p-0 shadow-none",

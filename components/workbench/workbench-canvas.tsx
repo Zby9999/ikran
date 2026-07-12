@@ -21,11 +21,17 @@ import {
   type RegionAnnotationCreatePayload
 } from "./region-annotation-tool";
 import { RegionAnnotationDeleteController } from "./region-annotation-delete";
+import { SeedReferenceDeleteController } from "./seed-reference-delete";
 import { SeedSelectionForegroundOverlayUtil } from "./seed-selection-foreground-overlay";
 import { WORKBENCH_CANVAS_COMPONENTS } from "./workbench-canvas-grid";
 import { SeedProjectionSync } from "./projection/seed-projection-sync";
 import { RegionAnnotationProjectionSync } from "./projection/region-annotation-projection-sync";
-import { artifactScreenshotUrl } from "./projection/seed-projection";
+import {
+  artifactScreenshotUrl,
+  type InFlightSeedCapture
+} from "./projection/seed-projection";
+import { WORKBENCH_EMBED_DEFINITIONS } from "./workbench-embeds";
+import { FigmaEmbedPasteGuard } from "./figma-embed-paste-guard";
 import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 import type { FigmaEvidenceSurfaceRecord } from "@/lib/runtime/evidence-package";
 import type { RegionAnnotationRecord } from "@/lib/runtime/region-annotation";
@@ -46,9 +52,11 @@ export function WorkbenchCanvas({
   surfaces = [],
   annotations = [],
   session,
+  inFlightCaptures = [],
   annotateMode = false,
   onCreateAnnotation,
-  onDeleteAnnotation
+  onDeleteAnnotation,
+  onDeleteSeedReference
 }: {
   records: SeedReferenceRecord[];
   surfaces?: FigmaEvidenceSurfaceRecord[];
@@ -56,6 +64,8 @@ export function WorkbenchCanvas({
   annotations?: RegionAnnotationRecord[];
   /** Startup session token — required to load artifactPath screenshots via /api/artifacts. */
   session: string;
+  /** In-flight paste captures — spinner frames until Runtime responds. */
+  inFlightCaptures?: InFlightSeedCapture[];
   /** FolderChrome Annotate toggle — switches the custom region-annotation tool. */
   annotateMode?: boolean;
   /** Designer POST create via Runtime client (no direct fetch in the tool). */
@@ -66,6 +76,10 @@ export function WorkbenchCanvas({
   /** Designer DELETE via Runtime client — only remove after HTTP success. */
   onDeleteAnnotation?: (
     annotationId: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Designer DELETE seed frame via Runtime — only remove after HTTP success. */
+  onDeleteSeedReference?: (
+    seedId: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const createHandlerRef = useRef<
@@ -88,15 +102,18 @@ export function WorkbenchCanvas({
   return (
     <Tldraw
       hideUi
+      embeds={WORKBENCH_EMBED_DEFINITIONS}
       shapeUtils={SHAPE_UTILS}
       tools={tools}
       components={WORKBENCH_CANVAS_COMPONENTS}
       overlayUtils={OVERLAY_UTILS}
     >
+      <FigmaEmbedPasteGuard />
       <SeedProjectionSync
         records={records}
         surfaces={surfaces}
         session={session}
+        inFlightCaptures={inFlightCaptures}
       />
       <RegionAnnotationProjectionSync annotations={annotations} />
       <RegionAnnotationToolController
@@ -108,6 +125,7 @@ export function WorkbenchCanvas({
         annotateMode={annotateMode}
         onDelete={onDeleteAnnotation}
       />
+      <SeedReferenceDeleteController onDelete={onDeleteSeedReference} />
     </Tldraw>
   );
 }

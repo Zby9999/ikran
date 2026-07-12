@@ -42,9 +42,35 @@ export type SeedProjectionTarget = {
 
 export type SeedProjectionExisting = {
   id: string;
+  /** Page-space origin — local geometry, never written back to Runtime. */
+  x: number;
+  y: number;
   props: SeedReferenceProjectionShape["props"];
   meta: SeedReferenceProjectionMeta;
 };
+
+/** Axis-aligned bounds used only for create-time collision packing. */
+export type SeedProjectionBounds = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+/** Gap between newly placed projections and occupied bounds. */
+export const SEED_PROJECTION_LAYOUT_GAP = 60;
+
+export const SEED_PROJECTION_LAYOUT_ORIGIN_X = 120;
+export const SEED_PROJECTION_LAYOUT_ORIGIN_Y = 140;
+
+/**
+ * Footprint reserved for creates (and for existing shapes that have not yet
+ * loaded natural screenshot size). Placeholder 380×520 underestimates real
+ * frames after onLoad resize; packing with this reserve keeps siblings from
+ * overlapping by default for typical Evidence Surface screenshots.
+ */
+export const SEED_PROJECTION_LAYOUT_RESERVE_W = 720;
+export const SEED_PROJECTION_LAYOUT_RESERVE_H = 960;
 
 export type SeedProjectionCreateOp = {
   type: "create";
@@ -111,7 +137,10 @@ function projectionSize(_surface: FigmaEvidenceSurfaceRecord | null): {
   };
 }
 
-/** Default 4-column grid placement for newly created seed shapes. */
+/**
+ * Legacy index grid (placeholder stride). Prefer
+ * `findNonOverlappingSeedProjectionLayout` for create-time placement.
+ */
 export function defaultSeedProjectionLayout(index: number): {
   x: number;
   y: number;
@@ -119,9 +148,134 @@ export function defaultSeedProjectionLayout(index: number): {
   const column = index % 4;
   const row = Math.floor(index / 4);
   return {
-    x: 120 + column * 420,
-    y: 140 + row * 560
+    x: SEED_PROJECTION_LAYOUT_ORIGIN_X + column * 420,
+    y: SEED_PROJECTION_LAYOUT_ORIGIN_Y + row * 560
   };
+}
+
+/** True when two rects overlap or sit closer than `gap` on either axis. */
+export function seedProjectionBoundsOverlap(
+  a: SeedProjectionBounds,
+  b: SeedProjectionBounds,
+  gap: number = SEED_PROJECTION_LAYOUT_GAP
+): boolean {
+  return !(
+    a.x + a.w + gap <= b.x ||
+    b.x + b.w + gap <= a.x ||
+    a.y + a.h + gap <= b.y ||
+    b.y + b.h + gap <= a.y
+  );
+}
+
+/**
+ * Packing size for collision checks. Uses natural/current size when known;
+ * otherwise reserves space large enough that post-load screenshot resize
+ * usually still clears the default gap.
+ */
+export function seedProjectionLayoutFootprint(
+  w: number,
+  h: number,
+  opts?: { hasNaturalSize?: boolean }
+): { w: number; h: number } {
+  if (opts?.hasNaturalSize) {
+    return { w, h };
+  }
+  return {
+    w: Math.max(w, SEED_PROJECTION_LAYOUT_RESERVE_W),
+    h: Math.max(h, SEED_PROJECTION_LAYOUT_RESERVE_H)
+  };
+}
+
+/** Occupied packing rect for an existing projection shape. */
+export function seedProjectionOccupiedBounds(
+  shape: Pick<SeedProjectionExisting, "x" | "y" | "props">
+): SeedProjectionBounds {
+  const hasNaturalSize =
+    shape.props.naturalMediaW > 0 && shape.props.naturalMediaH > 0;
+  const footprint = seedProjectionLayoutFootprint(
+    shape.props.w,
+    shape.props.h,
+    { hasNaturalSize }
+  );
+  return {
+    x: shape.x,
+    y: shape.y,
+    w: footprint.w,
+    h: footprint.h
+  };
+}
+
+/**
+ * Find top-left for a new `w`×`h` rect that clears `occupied` by `gap`.
+ * Packs toward the top-left: try origin, then right of / below each occupied
+ * rect; fall back to past the rightmost edge.
+ */
+export function findNonOverlappingSeedProjectionLayout(
+  occupied: SeedProjectionBounds[],
+  w: number,
+  h: number,
+  gap: number = SEED_PROJECTION_LAYOUT_GAP
+): { x: number; y: number } {
+  const origin = {
+    x: SEED_PROJECTION_LAYOUT_ORIGIN_X,
+    y: SEED_PROJECTION_LAYOUT_ORIGIN_Y
+  };
+  if (occupied.length === 0) return origin;
+
+  const candidates: Array<{ x: number; y: number }> = [origin];
+  for (const o of occupied) {
+    candidates.push({ x: o.x + o.w + gap, y: o.y });
+    candidates.push({ x: o.x, y: o.y + o.h + gap });
+    candidates.push({ x: o.x + o.w + gap, y: origin.y });
+    candidates.push({ x: origin.x, y: o.y + o.h + gap });
+  }
+  candidates.sort((a, b) => a.y - b.y || a.x - b.x);
+
+  for (const c of candidates) {
+    const next: SeedProjectionBounds = { x: c.x, y: c.y, w, h };
+    if (!occupied.some((o) => seedProjectionBoundsOverlap(next, o, gap))) {
+      return c;
+    }
+  }
+
+  const maxRight = Math.max(
+    ...occupied.map((o) => o.x + o.w),
+    SEED_PROJECTION_LAYOUT_ORIGIN_X
+  );
+  return { x: maxRight + gap, y: origin.y };
+}
+
+/** Optimistic frame while Runtime `/api/seed-capture` is in flight (paste UX).
+ *  Ephemeral Workbench UI only — not a persisted "pending Seed Reference". */
+export type InFlightSeedCapture = {
+  id: string;
+  figmaSeedReference: string;
+};
+
+export function buildInFlightSeedProjectionTargets(
+  inFlight: InFlightSeedCapture[]
+): SeedProjectionTarget[] {
+  return inFlight.map((p) => {
+    const size = projectionSize(null);
+    return {
+      shapeKey: `inflight-capture:${p.id}`,
+      canvasRecordId: `inflight-capture:${p.id}`,
+      figmaSeedReference: p.figmaSeedReference,
+      originalDesignIntent: "",
+      frameName: "Capturing…",
+      screenshotDataUrl: "",
+      hasScreenshotArtifact: false,
+      awaitingEvidence: true,
+      awaitingUx: "spinner" as const,
+      w: size.w,
+      h: size.h,
+      meta: {
+        canvasRecordId: `inflight-capture:${p.id}`,
+        runtimeRecordId: p.id,
+        kind: "seed_reference_projection" as const
+      }
+    };
+  });
 }
 
 export function buildSeedProjectionTargets(
@@ -244,6 +398,8 @@ export function seedProjectionMetaEqual(
 /**
  * Plan create/update/delete ops for seed-reference-projection shapes.
  * `shapeIdForKey` maps target.shapeKey → tldraw shape id string.
+ * Geometry is assigned only on create (collision-aware); updates never move
+ * shapes the designer has already positioned.
  */
 export function planSeedProjectionOps(
   targets: SeedProjectionTarget[],
@@ -252,11 +408,15 @@ export function planSeedProjectionOps(
 ): SeedProjectionOp[] {
   const ops: SeedProjectionOp[] = [];
   const existingById = new Map(existing.map((s) => [s.id, s]));
-  const wantIds = new Set<string>();
+  const wantIds = new Set(targets.map((t) => shapeIdForKey(t.shapeKey)));
+  // Only shapes that will remain occupy space for create packing (deletes free
+  // their slots in the same plan pass).
+  const occupied: SeedProjectionBounds[] = existing
+    .filter((s) => wantIds.has(s.id))
+    .map(seedProjectionOccupiedBounds);
 
-  targets.forEach((target, index) => {
+  for (const target of targets) {
     const shapeId = shapeIdForKey(target.shapeKey);
-    wantIds.add(shapeId);
     const current = existingById.get(shapeId);
 
     if (current) {
@@ -284,10 +444,23 @@ export function planSeedProjectionOps(
           ...(metaChanged ? { meta: target.meta } : {})
         });
       }
-      return;
+      continue;
     }
 
-    const layout = defaultSeedProjectionLayout(index);
+    const footprint = seedProjectionLayoutFootprint(target.w, target.h, {
+      hasNaturalSize: false
+    });
+    const layout = findNonOverlappingSeedProjectionLayout(
+      occupied,
+      footprint.w,
+      footprint.h
+    );
+    occupied.push({
+      x: layout.x,
+      y: layout.y,
+      w: footprint.w,
+      h: footprint.h
+    });
     ops.push({
       type: "create",
       id: shapeId,
@@ -308,7 +481,7 @@ export function planSeedProjectionOps(
       },
       meta: target.meta
     });
-  });
+  }
 
   for (const shape of existing) {
     if (!wantIds.has(shape.id)) {

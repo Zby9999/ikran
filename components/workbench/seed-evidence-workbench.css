@@ -705,19 +705,3 @@
 .figma-verification-panel__enter:active {
   transform: translateY(1px);
 }
-
-.seed-workbench__paste-error {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  z-index: 40;
-  transform: translateX(-50%);
-  max-width: min(420px, calc(100vw - 32px));
-  padding: 10px 14px;
-  border-radius: 8px;
-  background: #3d3d3d;
-  color: #ffffff;
-  font-size: 13px;
-  letter-spacing: -0.39px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-}

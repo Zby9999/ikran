@@ -10,9 +10,12 @@ import { useId, useState, type FormEvent } from "react";
 import { SquircleChrome } from "./squircle-chrome";
 import { SmallIconButton } from "./small-icon-button";
 import { FigmaLogoMark } from "./icons/figma-logo-mark";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 export const FIGMA_TOKEN_HELP_URL =
-  "https://www.figma.com/developers/api#access-tokens";
+  "https://developers.figma.com/docs/rest-api/personal-access-tokens/";
 
 export type FigmaVerificationPanelPhase =
   | "empty"
@@ -98,9 +101,13 @@ export function FigmaVerificationPanel({
 
       <form className="figma-verification-panel__form" onSubmit={handleSubmit}>
         <label className="figma-verification-panel__field" htmlFor={inputId}>
-          <input
+          <Input
             id={inputId}
-            className="figma-verification-panel__input"
+            className={cn(
+              "figma-verification-panel__input",
+              "h-6 rounded-none border-0 bg-transparent px-0 py-0 text-[13px] shadow-none",
+              "focus-visible:border-0 focus-visible:ring-0 disabled:cursor-default disabled:bg-transparent disabled:opacity-100"
+            )}
             type="password"
             autoComplete="off"
             spellCheck={false}
@@ -148,14 +155,15 @@ export function FigmaVerificationPanel({
         ) : null}
 
         {showEnter ? (
-          <button
+          <Button
             type="button"
+            variant="ghost"
             className="figma-verification-panel__enter"
             onClick={onEnterCanvas}
             data-testid="figma-enter-canvas"
           >
             Enter Canvas
-          </button>
+          </Button>
         ) : null}
       </form>
     </SquircleChrome>

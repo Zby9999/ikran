@@ -16,7 +16,7 @@ const test = base.extend<{ folder: string }>({
 });
 
 const VALID_FIGMA =
-  "https://www.figma.com/design/AbCdEf/Checkout?node-id=1:2";
+  "https://www.figma.com/design/AbCdEfGh/Mock?node-id=1-2";
 
 function rawPost(
   route: string,
@@ -151,11 +151,14 @@ test.describe("Task 11 — SSE record invalidation", () => {
     const sse = await openSse(runtime.port, token);
     const recordPromise = sse.waitForRecord();
 
+    const { connectFigmaForTests } = await import("./helpers/figma-connection");
+    await connectFigmaForTests(runtime.port, token);
+
     const seed = await rawPost(
       "/api/seed-reference",
       {
         figmaSeedReference: VALID_FIGMA,
-        originalDesignIntent: "sse record bus"
+        referenceNote: "sse record bus"
       },
       { "x-ikran-session": token },
       runtime.port
@@ -187,33 +190,21 @@ test.describe("Task 11 — SSE record invalidation", () => {
       runtime.port
     );
 
-    const seedRes = await rawPost(
-      "/api/seed-reference",
-      {
-        figmaSeedReference: VALID_FIGMA,
-        originalDesignIntent: "mutation failure"
-      },
-      { "x-ikran-session": token },
-      runtime.port
-    );
-    const seedId = (JSON.parse(seedRes.body).record as { id: string }).id;
+    const { connectFigmaForTests } = await import("./helpers/figma-connection");
+    await connectFigmaForTests(runtime.port, token);
 
-    const evidenceRes = await rawPost(
-      "/api/evidence-package",
+    const captureRes = await rawPost(
+      "/api/seed-capture",
       {
         figmaSeedReference: VALID_FIGMA,
-        seedReferenceId: seedId,
-        frame: { nodeId: "1:2", name: "Frame" },
-        evidenceViews: { rawData: "available", screenshot: "available" },
-        screenshot: {
-          dataUrl:
-            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-        }
+        referenceNote: "mutation failure"
       },
       { "x-ikran-session": token },
       runtime.port
     );
-    const surfaceId = (JSON.parse(evidenceRes.body).record as { id: string }).id;
+    expect(captureRes.status).toBe(200);
+    const surfaceId = (JSON.parse(captureRes.body).surface as { id: string })
+      .id;
 
     const annRes = await rawPost(
       "/api/region-annotation",
@@ -232,7 +223,6 @@ test.describe("Task 11 — SSE record invalidation", () => {
     await expect(page.getByTestId("project-path")).toHaveText(/.+/, {
       timeout: 15000
     });
-    const { connectFigmaForTests } = await import("./helpers/figma-connection");
     await connectFigmaForTests(runtime.port, token);
     await page.getByRole("button", { name: "Start Building" }).click();
     await expect(page.getByTestId("seed-workbench")).toBeVisible();

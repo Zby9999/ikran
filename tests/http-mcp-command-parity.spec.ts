@@ -2,6 +2,10 @@
 // MCP tools must surface identical domain reasons for type-correct invalid
 // payloads. The MCP child runs with global fetch disabled; successful semantic
 // writes plus immediate HTTP GET visibility prove no loopback fetch is used.
+//
+// Active seed path: HTTP `/api/seed-capture` ↔ MCP `add_seed_reference`
+// (Figma Connection Gate + mock API). Legacy register/record tools are not
+// part of the Active MCP surface.
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,6 +19,7 @@ import {
   spawnMcpClient
 } from "./helpers/mcp";
 import { rawGet, rawPost } from "./helpers/http";
+import { connectFigmaForTests } from "./helpers/figma-connection";
 
 type JsonBody = Record<string, unknown>;
 
@@ -63,33 +68,32 @@ test("HTTP and MCP share schemas + domain reasons; MCP writes without fetch", as
     };
 
     const tools = await client.listTools();
+    const toolNames = tools.tools.map((t) => t.name);
+    expect(toolNames).toContain("add_seed_reference");
+    expect(toolNames).toContain("get_figma_connection_status");
+    expect(toolNames).not.toContain("register_seed_reference");
+    expect(toolNames).not.toContain("record_evidence_package");
+    expect(toolNames).not.toContain("list_pending_seed_evidence");
+
     const seedTool = tools.tools.find(
-      (tool) => tool.name === "register_seed_reference"
+      (tool) => tool.name === "add_seed_reference"
     );
     const seedProperties =
       (seedTool?.inputSchema?.properties as Record<string, unknown>) ?? {};
     expect(seedProperties.registeredVia).toBeUndefined();
+    expect(seedProperties.initiator).toBeUndefined();
+    expect(seedProperties.originalDesignIntent).toBeUndefined();
 
     const cases = [
       {
-        route: "/api/seed-reference",
-        tool: "register_seed_reference",
+        route: "/api/seed-capture",
+        tool: "add_seed_reference",
         payload: {
-          figmaSeedReference: "https://example.com/design/abc/X",
-          originalDesignIntent: "intent"
+          figmaSeedReference: "https://example.com/design/abc/X?node-id=1:2"
         },
-        reason: "not_figma_host"
-      },
-      {
-        route: "/api/evidence-package",
-        tool: "record_evidence_package",
-        payload: {
-          figmaSeedReference:
-            "https://www.figma.com/design/abc123/Parity?node-id=1:2",
-          frame: { nodeId: "1:2", name: "Frame" },
-          evidenceViews: { rawData: "invalid", screenshot: "available" }
-        },
-        reason: "invalid_evidence_views"
+        // Gate checked before URL validation when disconnected.
+        reason: "figma_connection_required",
+        httpStatus: 403
       },
       {
         route: "/api/region-annotation",
@@ -99,7 +103,8 @@ test("HTTP and MCP share schemas + domain reasons; MCP writes without fetch", as
           body: "No surface",
           rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
         },
-        reason: "missing_surface_anchor"
+        reason: "missing_surface_anchor",
+        httpStatus: 400
       }
     ] as const;
 
@@ -110,7 +115,7 @@ test("HTTP and MCP share schemas + domain reasons; MCP writes without fetch", as
         contract.payload,
         headers
       );
-      expect(http.status, contract.tool).toBe(400);
+      expect(http.status, contract.tool).toBe(contract.httpStatus);
       expect(parse(http.body).error, contract.tool).toBe(contract.reason);
 
       const mcp = await client.callTool({
@@ -120,13 +125,32 @@ test("HTTP and MCP share schemas + domain reasons; MCP writes without fetch", as
       expect(sc(mcp).error, contract.tool).toBe(contract.reason);
     }
 
+    await connectFigmaForTests(port, token);
+
+    // After connect, same bad host surfaces the domain URL reason on both sides.
+    const badHostPayload = {
+      figmaSeedReference: "https://example.com/design/abc/X?node-id=1:2"
+    };
+    const httpBadHost = await rawPost(
+      port,
+      "/api/seed-capture",
+      badHostPayload,
+      headers
+    );
+    expect(httpBadHost.status).toBe(400);
+    expect(parse(httpBadHost.body).error).toBe("not_figma_host");
+    const mcpBadHost = await client.callTool({
+      name: "add_seed_reference",
+      arguments: badHostPayload
+    });
+    expect(sc(mcpBadHost).error).toBe("not_figma_host");
+
     // Structural errors are transport errors, consistently named by HTTP.
     const structural = await rawPost(
       port,
-      "/api/seed-reference",
+      "/api/seed-capture",
       {
-        figmaSeedReference: 42,
-        originalDesignIntent: "intent"
+        figmaSeedReference: 42
       },
       headers
     );
@@ -134,17 +158,17 @@ test("HTTP and MCP share schemas + domain reasons; MCP writes without fetch", as
     expect(parse(structural.body).error).toBe("invalid_params");
 
     // MCP child has global fetch=throw from the preload. This semantic write
-    // succeeds and the ordinary browser HTTP route sees it immediately.
+    // succeeds (mock Figma API) and the ordinary browser HTTP route sees it.
     const goodUrl =
       "https://www.figma.com/design/noFetchParity001/Screen?node-id=7:8";
-    const registered = await client.callTool({
-      name: "register_seed_reference",
+    const captured = await client.callTool({
+      name: "add_seed_reference",
       arguments: {
         figmaSeedReference: goodUrl,
-        originalDesignIntent: "No-loopback contract"
+        referenceNote: "No-loopback contract"
       }
     });
-    expect(sc(registered).ok).toBe(true);
+    expect(sc(captured).ok).toBe(true);
 
     const listed = await rawGet(port, "/api/seed-reference", headers);
     expect(listed.status).toBe(200);
@@ -154,6 +178,37 @@ test("HTTP and MCP share schemas + domain reasons; MCP writes without fetch", as
     expect(records.some((record) => record.figma_seed_reference === goodUrl)).toBe(
       true
     );
+
+    // Active HTTP seed-reference uses the same capture kernel; evidence-package
+    // POST is retired (Issue 05D).
+    const seedRefCapture = await rawPost(
+      port,
+      "/api/seed-reference",
+      {
+        figmaSeedReference:
+          "https://www.figma.com/design/paritySeedRef002/Screen?node-id=3:4"
+      },
+      headers
+    );
+    expect(seedRefCapture.status).toBe(200);
+    expect(parse(seedRefCapture.body).ok).toBe(true);
+
+    const evidenceRetired = await rawPost(
+      port,
+      "/api/evidence-package",
+      {
+        figmaSeedReference: goodUrl,
+        frame: { nodeId: "7:8", name: "Frame" },
+        evidenceViews: { rawData: "available", screenshot: "available" },
+        screenshot: {
+          dataUrl:
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        }
+      },
+      headers
+    );
+    expect(evidenceRetired.status).toBe(410);
+    expect(parse(evidenceRetired.body).error).toBe("endpoint_retired");
   } finally {
     try {
       await client?.close();

@@ -99,29 +99,41 @@ function createKeychainFigmaCredentialStore(): FigmaCredentialStore {
 }
 
 let override: FigmaCredentialStore | null = null;
-let cached: FigmaCredentialStore | null = null;
+let keychainCached: FigmaCredentialStore | null = null;
+
+// One-process Runtime: Next route bundles and MCP/tsx may load this module
+// twice. Keep the memory adapter on globalThis so HTTP connect and MCP tools
+// share Gate state (do not cache memory on a module-local binding).
+const GLOBAL = globalThis as unknown as {
+  __IKRAN_FIGMA_CREDENTIAL_MEMORY?: FigmaCredentialStore;
+};
 
 export function setFigmaCredentialStoreForTests(
   store: FigmaCredentialStore | null
 ): void {
   override = store;
-  cached = null;
+  keychainCached = null;
+  delete GLOBAL.__IKRAN_FIGMA_CREDENTIAL_MEMORY;
 }
 
 export function resetFigmaCredentialStoreForTests(): void {
   override = null;
-  cached = null;
+  keychainCached = null;
+  delete GLOBAL.__IKRAN_FIGMA_CREDENTIAL_MEMORY;
 }
 
 export function getFigmaCredentialStore(): FigmaCredentialStore {
   if (override) return override;
-  if (cached) return cached;
 
   if (process.env.IKRAN_FIGMA_CREDENTIAL_STORE === "memory") {
-    cached = createMemoryFigmaCredentialStore();
-    return cached;
+    if (!GLOBAL.__IKRAN_FIGMA_CREDENTIAL_MEMORY) {
+      GLOBAL.__IKRAN_FIGMA_CREDENTIAL_MEMORY =
+        createMemoryFigmaCredentialStore();
+    }
+    return GLOBAL.__IKRAN_FIGMA_CREDENTIAL_MEMORY;
   }
 
-  cached = createKeychainFigmaCredentialStore();
-  return cached;
+  if (keychainCached) return keychainCached;
+  keychainCached = createKeychainFigmaCredentialStore();
+  return keychainCached;
 }

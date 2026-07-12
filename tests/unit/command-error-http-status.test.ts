@@ -18,6 +18,10 @@ describe("commandErrorHttpStatus", () => {
     expect(commandErrorHttpStatus("not_found")).toBe(404);
   });
 
+  test("maps endpoint_retired to 410", () => {
+    expect(commandErrorHttpStatus("endpoint_retired")).toBe(410);
+  });
+
   test("maps client / validation / fail-closed domain reasons to 400", () => {
     const clientReasons = [
       "invalid_json",

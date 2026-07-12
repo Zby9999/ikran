@@ -1,4 +1,4 @@
-// GET / POST /api/figma-connection — installation-scoped Figma Connection Gate.
+// GET / POST / DELETE /api/figma-connection — installation-scoped Figma Connection Gate.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -6,8 +6,10 @@ import { authorize } from "../../../lib/runtime/session";
 import {
   commandErrorHttpStatus,
   connectFigmaCommand,
+  connectFigmaInputSchema,
   disconnectFigmaCommand,
-  getFigmaConnectionStatusCommand
+  getFigmaConnectionStatusCommand,
+  parseCommandInput
 } from "../../../lib/runtime/commands";
 
 export const runtime = "nodejs";
@@ -45,14 +47,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const token =
-    body !== null &&
-    typeof body === "object" &&
-    typeof (body as Record<string, unknown>).token === "string"
-      ? (body as Record<string, unknown>).token
-      : "";
+  const parsed = parseCommandInput(connectFigmaInputSchema, body);
+  if (!parsed.ok) {
+    return NextResponse.json(
+      { ok: false, error: parsed.reason },
+      { status: commandErrorHttpStatus(parsed.reason) }
+    );
+  }
 
-  const result = await connectFigmaCommand(token);
+  const result = await connectFigmaCommand(parsed.data.token);
   if (!result.ok) {
     return NextResponse.json(
       { ok: false, error: result.reason },

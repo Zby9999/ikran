@@ -117,6 +117,9 @@ export async function spawnMcpClient(
       IKRAN_STATE_DIR: stateDir,
       IKRAN_HOST: "127.0.0.1",
       IKRAN_NEXT_DIST_DIR: SHARED_BUILD_DIR,
+      // Issue 05A/05D: MCP e2e never touches real Keychain / Figma network.
+      IKRAN_FIGMA_CREDENTIAL_STORE: "memory",
+      IKRAN_FIGMA_API_MODE: "mock",
       ...env
     },
     stderr: "pipe"

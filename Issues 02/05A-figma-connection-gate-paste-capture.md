@@ -14,25 +14,36 @@
 
 ## Acceptance criteria — automated
 
-- [x] 无 active Figma Connection 时，Workbench 显示连接面板且 canvas 不接受交互；在 canvas 粘贴 Figma link 显示明确的未连接错误。
-- [x] 无连接时 Workbench paste 与 Agent `add_seed_reference` 请求都 fail closed；SQLite 中不新增 Seed Reference、Evidence Surface 或成功事件。（历史 `register_seed_reference` 仍可用至 05D 退役。）
+- [x] 无 active Figma Connection 时，Workbench 显示连接面板且 canvas 不接受交互；在 canvas 粘贴 Figma link 显示明确的未连接错误。（Playwright: `gate closed: canvas paste shows disconnected error` + HTTP fail-closed。）
+- [x] 无连接时 Workbench paste 与 Agent `add_seed_reference` 请求都 fail closed；SQLite 中不新增 Seed Reference、Evidence Surface 或成功事件。
 - [x] 无效 PAT 不能打开 Connection Gate，不能进入 credential store，错误响应和 UI 不回显 token。
 - [x] 有效 PAT 通过只读 Figma API 请求验证后打开 Connection Gate；Runtime/API/MCP 只能暴露连接状态和非敏感 account identity，不能返回 token。验证成功后按 Figma 309:400 显示 Enter Canvas；点击后解锁画布。
 - [x] credential store 通过可注入 adapter 测试；PAT 不出现在项目 SQLite、`.ikran`、artifact、event payload、日志或 research export fixture 中。
 - [x] Gate 打开后粘贴有效 selection link，Runtime 获取指定 node 的 screenshot 和最低 positional index（node id/parent id/name/type/depth/visibility/bounds），并创建可见 Figma Evidence Surface；index 足以支持后续 structural overlay，但不包含完整 implementation context。
 - [x] Seed Reference、initial positional evidence、Evidence Surface 和成功事件在同一事务边界提交；任一步失败时四者均不提交。
-- [x] 无效 URL、缺少 `node-id`、403、404、429、截图缺失和 malformed Figma response 都产生可操作错误，且不留下半成品记录。
+- [x] 无效 URL、缺少 `node-id`、403、404、429、截图缺失和 malformed Figma response 都产生可操作错误，且不留下半成品记录。（unit: `tests/unit/seed-capture.test.ts` — `not_found` / `forbidden` / `rate_limited` / `screenshot_missing` / `malformed_figma_response` / `invalid_figma_url` / `missing_node_id`；各断言无 seed + no surface。）
 - [x] Workbench 通过现有 SSE/projection 路径显示成功 capture，不要求页面 reload，也不要求活跃 Agent。
-- [x] one-process Playwright + HTTP 测试使用 deterministic Figma API 与 credential-store doubles，覆盖 gate closed、connect success/failure、capture success 和 no-half-written-state；capture failure / half-written 另有 unit 覆盖。MCP `add_seed_reference` 已注册，纵切 e2e 留给 05B/05D。
+- [x] one-process Playwright + HTTP 测试使用 deterministic Figma API 与 credential-store doubles，覆盖 gate closed、connect success/failure、capture success 和 no-half-written-state（capture `not_found` after gate open → empty seed-reference / no surface）；error-matrix 细项另有 unit 覆盖。Active MCP seed tools 现仅为 `get_figma_connection_status` + `add_seed_reference`（legacy register/list_pending/record 已不再注册）；纵切 e2e 留给 05B/05D。
 
 ## Acceptance criteria — real Figma / real macOS
 
-- [ ] 在真实 macOS Keychain 中保存一个真实、只读 Figma PAT；验证 Ikran 重启后 connection 仍可用，但测试记录和命令输出不打印 secret。
-- [ ] 使用无效 PAT 实测连接失败，并确认无 Keychain credential、无项目记录残留。
-- [ ] 在没有 Agent 参与的情况下粘贴一个真实 Figma selection link；Workbench 显示与该 node 对应的真实截图，且 Seed Reference / Surface / event 可回连。
-- [ ] 使用当前 PAT 无权访问的真实或受控 Figma source 实测 fail closed；不产生 Seed Reference 或成功研究事实。
-- [ ] 真实验证报告明确记录 Figma plan/seat、API 结果、通过项与 open gaps，并与 deterministic automated 结果分列。
+- [x] 在真实 macOS Keychain 中保存一个真实、只读 Figma PAT；验证 Ikran 重启后 connection 仍可用，但测试记录和命令输出不打印 secret。
+- [x] 使用无效 PAT 实测连接失败，并确认无 Keychain credential、无项目记录残留。
+- [x] 在没有 Agent 参与的情况下粘贴一个真实 Figma selection link；Workbench 显示与该 node 对应的真实截图，且 Seed Reference / Surface / event 可回连。
+- [x] 使用当前 PAT 无权访问的真实或受控 Figma source 实测 fail closed；不产生 Seed Reference 或成功研究事实。
+- [x] 真实验证报告明确记录 Figma plan/seat、API 结果、通过项与 open gaps，并与 deterministic automated 结果分列。
 
 ## Blocked by
 
 - None — current repository already contains the historical Issue 05 automated projection baseline; ADR 0003 supersedes its unfinished Agent-host ingestion smoke.
+
+## Comments
+
+### 2026-07-12 — code-review follow-ups / human directives
+
+- **Human-requested copy (not autonomous design):** `FolderSelectStep` label `Project Folder` → `Click to bind`，以及 Seed frame 空态文案 `No description yet`，均为产品方主动要求，不按「无 Figma cite」回退。
+- **Real Figma / macOS ACs:** 产品方已在真实 Keychain + 真实 Figma 上手动验证；上表 real AC 全部勾选。
+- **Out-of-issue work landed in the same tree (explicitly requested, not 05A scope creep):** Seed Reference 删除（Workbench + `DELETE /api/seed-reference`），以及 05D 相关 Active 路径退役（MCP instructions / `POST /api/evidence-package` → `410`）。详见 `05D-retire-agent-evidence-real-smoke.md`。
+- **Open design debt:** canvas paste 失败提示（`workbench-paste-error`）尚无独立的 Figma error-state node；当前最小 `role="alert"` 文案（无自定义 toast chrome / 定位样式）已经设计方 review 并确认，可作为现阶段实现，待设计师补 reference 后再对齐视觉。
+- **2026-07-12 code-review follow-ups applied:** screenshot MIME+magic fail-closed；positional index 最低有效性（禁止 UNKNOWN / 静默跳过畸形子节点）；unit 测试注入空 memory credential store 隔离 Keychain；token 输入改用 shadcn `Input`；paste 逻辑抽到 `useFigmaPasteCapture`。
+- **Shipped:** 上述 follow-ups 与同树的 Seed delete / 05D Active 写入口退役一并提交并推送到 `main`；`npm run check` 已通过。

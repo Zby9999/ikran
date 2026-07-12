@@ -12,8 +12,9 @@
 
 ## Acceptance criteria — automated
 
-- [ ] MCP tool discovery 不再暴露 `list_pending_seed_evidence` 或 Agent-supplied `record_evidence_package`；instructions 不再要求 Agent 截图、轮询 pending seed 或声明 Figma evidence。
-- [ ] Active HTTP/Workbench/MCP seed flow 全部走 shared Runtime capture command；不存在可绕过 Figma Connection Gate 写入新 Figma Surface 的产品 endpoint。
+- [x] MCP tool discovery 不再暴露 `list_pending_seed_evidence`、`register_seed_reference` 或 Agent-supplied `record_evidence_package`；Active seed MCP 仅为 `get_figma_connection_status` + `add_seed_reference`。
+- [x] MCP instructions 不再要求 Agent 截图、轮询 pending seed 或声明 Figma evidence（与 Active 工具面一致）。（`IKRAN_MCP_INSTRUCTIONS` + `open_workbench` 已改为 Runtime capture / Connection Gate；`pending-directive` 已删除。）
+- [x] Active HTTP/Workbench/MCP seed flow 全部走 shared Runtime capture command；不存在可绕过 Figma Connection Gate 写入新 Figma Surface 的产品 endpoint。（`POST /api/seed-reference` → `addSeedReferenceCommand`；`POST /api/evidence-package` → `410 endpoint_retired`；GET 仍可读历史 Surface。）
 - [ ] 生产源与 Active tests 不再依赖 awaiting-Agent screenshot orchestration、`registered_via` 分源 loading 或 Agent-provided screenshot payload。
 - [ ] 历史已完成 Seed Reference/Evidence Surface/annotation 数据仍可读取、投影和导出；迁移不重写历史 initiator/provenance。
 - [ ] 历史只有 pending reference、没有成功 evidence 的记录不被视为成功 positional evidence，不进入成功研究 export。
@@ -34,3 +35,10 @@
 ## Blocked by
 
 - `06-evidence-surface-region-annotation-slice.md`
+
+## Comments
+
+### 2026-07-12 — concurrent with 05A (human-requested)
+
+- 与 05A 工作区同树推进：Active MCP/HTTP 退役 Agent-supplied evidence 写入口（含 `POST /api/evidence-package` → `410 endpoint_retired`、MCP instructions / `pending-directive` 清理）为产品方单独要求，不是 05A 范围膨胀。Seed Reference 删除能力同属单独要求，实现落在 Runtime/Workbench，不计入本 issue 的 remaining AC。
+- **Shipped (partial):** 上表已勾选的 Active MCP/HTTP 退役项已随 05A follow-up 提交推送到 `main`；其余 automated / real smoke AC 仍待继续。

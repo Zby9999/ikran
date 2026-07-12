@@ -9,7 +9,8 @@ export {
 
 export {
   registerSeedReferenceCommand,
-  listSeedReferencesCommand
+  listSeedReferencesCommand,
+  deleteSeedReferenceCommand
 } from "./seed-reference";
 
 export { addSeedReferenceCommand } from "./seed-capture";

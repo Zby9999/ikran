@@ -1,9 +1,11 @@
 // Shared seed-reference commands — single source for HTTP + MCP.
 
 import {
+  deleteSeedReference,
   listSeedReferences,
   registerSeedReference,
   resolveHttpRegisteredVia,
+  type SeedReferenceDeleteResponse,
   type SeedReferenceErrorReason,
   type SeedReferenceRecord,
   type SeedReferenceResponse
@@ -14,6 +16,13 @@ export type RegisterSeedCommandResult =
   | { ok: false; reason: SeedReferenceErrorReason | "ui_registration_disabled" };
 
 /**
+ * Historical / fixture-only seed writer (no Figma capture).
+ *
+ * Active product path is `addSeedReferenceCommand` (Workbench paste +
+ * MCP `add_seed_reference`). This command remains for unit fixtures and
+ * migration-era compatibility tests — it is not registered on Active MCP
+ * and Active HTTP POST routes no longer call it.
+ *
  * Register a seed. `registeredVia` policy:
  * - HTTP callers should pass `enforceHttpVia: true` (rejects ui).
  * - MCP always registers as agent (default).
@@ -59,4 +68,11 @@ export function listSeedReferencesCommand(
   projectPath: string
 ): ListSeedReferencesCommandResult {
   return { ok: true, records: listSeedReferences(projectPath) };
+}
+
+export function deleteSeedReferenceCommand(
+  projectPath: string,
+  id: string
+): SeedReferenceDeleteResponse {
+  return deleteSeedReference(projectPath, id);
 }

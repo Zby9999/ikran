@@ -19,11 +19,8 @@ const test = base.extend<{ folder: string }>({
   }
 });
 
-const REAL_FIGMA_SEED_REFERENCE =
-  "https://www.figma.com/design/FSgnAj1yrNlgDCt4V4wTfa/recursive-design-agent?node-id=177-426&t=RC4FGd8KwNfX6uqP-11";
-
-const SCREENSHOT_PNG =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAADwCAIAAAD+Tyo8AAACFklEQVR42u3TQQEAAAjEMMC/58MCP7KkVbDtmQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwGzOIAAHY2h1OAAAAAElFTkSuQmCC";
+const MOCK_FIGMA_URL =
+  "https://www.figma.com/design/AbCdEfGh/Mock?node-id=1-2";
 
 type AnnotationRecord = {
   id: string;
@@ -143,32 +140,19 @@ async function seedEvidenceSurface({
   token: string;
   port: number;
 }): Promise<string> {
-  const seedRes = await rawPost(
-    "/api/seed-reference",
+  const { connectFigmaForTests } = await import("./helpers/figma-connection");
+  await connectFigmaForTests(port, token);
+  const captureRes = await rawPost(
+    "/api/seed-capture",
     {
-      figmaSeedReference: REAL_FIGMA_SEED_REFERENCE,
-      originalDesignIntent: "Issue 06 designer gesture annotation."
+      figmaSeedReference: MOCK_FIGMA_URL,
+      referenceNote: "Issue 06 designer gesture annotation."
     },
     { "x-ikran-session": token },
     port
   );
-  expect(seedRes.status).toBe(200);
-  const seedId = (JSON.parse(seedRes.body).record as { id: string }).id;
-
-  const evidenceRes = await rawPost(
-    "/api/evidence-package",
-    {
-      figmaSeedReference: REAL_FIGMA_SEED_REFERENCE,
-      seedReferenceId: seedId,
-      frame: { nodeId: "177:426", name: "Evidence Frame" },
-      evidenceViews: { rawData: "available", screenshot: "available" },
-      screenshot: { dataUrl: SCREENSHOT_PNG }
-    },
-    { "x-ikran-session": token },
-    port
-  );
-  expect(evidenceRes.status).toBe(200);
-  return (JSON.parse(evidenceRes.body).record as { id: string }).id;
+  expect(captureRes.status).toBe(200);
+  return (JSON.parse(captureRes.body).surface as { id: string }).id;
 }
 
 async function openSeededWorkbench({
@@ -267,32 +251,10 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     const token = await captureToken(page, runtime.baseURL);
     await bindFolder(token, folder, runtime.port);
 
-    const seedRes = await rawPost(
-      "/api/seed-reference",
-      {
-        figmaSeedReference: REAL_FIGMA_SEED_REFERENCE,
-        originalDesignIntent: "Issue 06 region annotation workbench."
-      },
-      { "x-ikran-session": token },
-      runtime.port
-    );
-    expect(seedRes.status).toBe(200);
-    const seedId = (JSON.parse(seedRes.body).record as { id: string }).id;
-
-    const evidenceRes = await rawPost(
-      "/api/evidence-package",
-      {
-        figmaSeedReference: REAL_FIGMA_SEED_REFERENCE,
-        seedReferenceId: seedId,
-        frame: { nodeId: "177:426", name: "Evidence Frame" },
-        evidenceViews: { rawData: "available", screenshot: "available" },
-        screenshot: { dataUrl: SCREENSHOT_PNG }
-      },
-      { "x-ikran-session": token },
-      runtime.port
-    );
-    expect(evidenceRes.status).toBe(200);
-    const surfaceId = (JSON.parse(evidenceRes.body).record as { id: string }).id;
+    const surfaceId = await seedEvidenceSurface({
+      token,
+      port: runtime.port
+    });
 
     await page.reload();
     await enterWorkbench(page, { port: runtime.port, sessionToken: token });
