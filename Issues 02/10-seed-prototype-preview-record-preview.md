@@ -6,6 +6,10 @@
 
 此 slice 要证明 Ikran 使用真实交互 preview，而不是截图历史。
 
+### 2026-07-12 Seed collection reconstruction
+
+Seed reconstruction prototype 应消费已经完成 Alignment 的 Seed Reference collection 与 design-system source；如果多个 References 表达不同页面/组件，prototype run metadata 必须记录使用了哪些 Reference/evidence versions，不能只链接一个隐式 seed。详见当前 PRD 与 ADR 0003。
+
 ## User stories covered
 
 - 33, 34, 35, 36
@@ -15,6 +19,7 @@
 - [ ] Agent 可声明 prototype code artifact。
 - [ ] Runtime 启动或检测本地 dev server，并记录 preview readiness。
 - [ ] `record_preview` 创建或更新 prototype run 与 Prototype Evidence Surface。
+- [ ] Seed reconstruction prototype run 记录所使用的 Seed Reference ids / evidence versions 与 design-system version。
 - [ ] Workbench 在 tldraw 中显示 Prototype Evidence Surface。
 - [ ] Prototype Evidence Surface 使用 live iframe preview。
 - [ ] Focus mode 能打开 preview URL。

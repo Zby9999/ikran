@@ -3,7 +3,7 @@
 // Spawns `bin/ikran-mcp.mjs` (stdio MCP), drives it with a real MCP client,
 // calls `open_workbench`, and proves:
 //   - the tool is discoverable (listTools);
-//   - it returns a `http://127.0.0.1:{port}/?session={token}` URL;
+//   - it returns a `http://127.0.0.1:{port}/?session={token}&view=workbench` URL;
 //   - opening that URL in a browser renders the shell + Runtime health + SSE;
 //   - a second call REUSES the already-running Runtime (same url, reused=true);
 //   - the privileged /api/* surface still rejects a missing token (403);
@@ -25,7 +25,8 @@ import {
   spawnMcpClient
 } from "./helpers/mcp";
 
-const URL_RE = /^http:\/\/127\.0\.0\.1:\d+\/\?session=[a-f0-9]{32,}$/;
+const URL_RE =
+  /^http:\/\/127\.0\.0\.1:\d+\/\?session=[a-f0-9]{32,}&view=workbench$/;
 
 function resultInfo(res: unknown): { url: string; reused: boolean } {
   let url = "";
@@ -43,7 +44,7 @@ function resultInfo(res: unknown): { url: string; reused: boolean } {
         const text = (c as { type?: string; text?: unknown }).text;
         if (typeof text === "string") {
           const m = text.match(
-            /http:\/\/127\.0\.0\.1:\d+\/\?session=[a-f0-9]{32,}/
+            /http:\/\/127\.0\.0\.1:\d+\/\?session=[a-f0-9]{32,}(?:&view=workbench)?/
           );
           if (m) {
             url = m[0];

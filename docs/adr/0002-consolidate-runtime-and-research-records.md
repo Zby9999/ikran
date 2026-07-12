@@ -2,6 +2,8 @@
 
 **Status:** accepted（2026-07-10）
 
+> **Superseded in part by [ADR 0003](./0003-runtime-owned-figma-positional-evidence.md)（2026-07-12）。** Agent-first Seed、Workbench 无 seed write entry、Runtime 零 Figma 接触及 Agent-supplied Figma evidence 不再是 Active 契约；一进程、direct command kernel、SQLite canonical、append-only Evidence 与其余研究记录契约继续有效。
+
 ## 背景 / 动机
 
 ADR 0001 完成了产品转向：Ikran 不再 spawn 无头 CLI Agent，而是作为 Agent host 的 MCP + HTTP Workbench 融合表面。随后若干 tracer-bullet issue（Workbench URL、project binding、语义 MCP、tldraw seed、evidence declaration、annotation）在迁移过程中留下了过渡实现与过渡文档：

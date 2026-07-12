@@ -4,6 +4,7 @@
 
 > **Superseded in part by [ADR 0002](./0002-consolidate-runtime-and-research-records.md)（2026-07-10）。**
 > 本 ADR 的产品转向（Agent host + 传统 MCP + HTTP Workbench + tldraw、退役无头 CLI）仍然有效。
+> **Figma 接触面与 Seed entry 又被 [ADR 0003](./0003-runtime-owned-figma-positional-evidence.md)（2026-07-12）部分取代：** Runtime 现在通过安装级 Figma Connection 直接摄取 positional evidence；Workbench paste 与 Agent tool 共用 Seed Reference 入口；实现级 context 仍留在宿主 Figma MCP。
 > 下列**实现细节**已被 ADR 0002 收口替代，阅读时勿当作当前 Active 契约：两进程 coordinator 作为目标拓扑、MCP 经 HTTP loopback、保留 mock AgentAdapter / task lifecycle 作为产品路径、Workbench 双入口 seed、`create_evidence_surface` 独立工具、JSONL 与 SQLite 双写事实源表述、以及「一进程两表面仍是 follow-up」等后续工作项表述。
 > 下文保留为历史决策原文，不改写为仿佛当时已是当前架构。
 

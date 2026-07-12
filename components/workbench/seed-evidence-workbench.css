@@ -60,14 +60,16 @@
   overflow: hidden;
 }
 
-/* Folder chip — single-row (empty) or Extraction two-row (Figma 255:184). */
+/* Folder chip — single-row (empty) or Extraction two-row (Figma 255:184).
+   Figma 134:406 surface is 48px (12px pad + 24px row + 12px pad); squircle
+   chrome adds 2px rings (1px shell + 1px white) → 52px outer shell. */
 .seed-workbench__folder {
   position: fixed;
   top: 16px;
   left: 16px;
   z-index: 30;
   width: 270px;
-  height: 48px;
+  height: 52px;
 }
 
 .seed-workbench__folder--extraction {
@@ -109,6 +111,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 16px;
 }
 
 .seed-workbench__folder-actions {

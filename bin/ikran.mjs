@@ -5,7 +5,7 @@
 // picks an auto free port + startup-level session token, and prints the
 // canonical Workbench URL:
 //
-//   http://127.0.0.1:{port}/?session={token}
+//   http://127.0.0.1:{port}/?session={token}&view=workbench
 //
 // Per Issue 02/01, the Workbench URL returned by the Agent (via the
 // `open_workbench` MCP tool) is the product entry. This standalone launcher

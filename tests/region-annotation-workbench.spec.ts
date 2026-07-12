@@ -187,6 +187,49 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     rmSync(path.join(runtime.stateDir, "runtime-state.json"), { force: true });
   });
 
+  // Regression: Agent tools return workbench_url; opening/reloading that URL must
+  // NOT bounce the designer back to Project Setup (ephemeral showSeedWorkbench).
+  test("reloading Workbench URL after Start Building stays on seed canvas", async ({
+    page,
+    runtime,
+    folder
+  }) => {
+    await openSeededWorkbench({ page, runtime, folder });
+    await expect(page.getByTestId("seed-workbench")).toBeVisible();
+
+    // Agent create_region_annotation / open_workbench reopens the Workbench URL.
+    await page.reload();
+
+    await expect(page.getByTestId("seed-workbench")).toBeVisible({
+      timeout: 15_000
+    });
+    await expect(
+      page.getByRole("button", { name: "Start Building" })
+    ).toHaveCount(0);
+  });
+
+  test("MCP Workbench URL with view=workbench opens seed canvas when bound", async ({
+    page,
+    runtime,
+    folder
+  }) => {
+    const token = await captureToken(page, runtime.baseURL);
+    await bindFolder(token, folder, runtime.port);
+    await seedEvidenceSurface({ token, port: runtime.port });
+
+    // Same shape as composeWorkbenchUrl / create_region_annotation workbench_url.
+    await page.goto(
+      `${runtime.baseURL}/?session=${encodeURIComponent(token)}&view=workbench`
+    );
+
+    await expect(page.getByTestId("seed-workbench")).toBeVisible({
+      timeout: 15_000
+    });
+    await expect(
+      page.getByRole("button", { name: "Start Building" })
+    ).toHaveCount(0);
+  });
+
   test("Annotate toggle + Agent annotation projects as marker via SSE", async ({
     page,
     runtime,

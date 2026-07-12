@@ -29,8 +29,16 @@ import {
   SetupStepButton,
   type SetupStepVisual
 } from "./SetupStepButton";
+import {
+  setWorkbenchViewInUrl
+} from "./workbench-view";
 
-type Bootstrap = { session: string; service: string };
+type Bootstrap = {
+  session: string;
+  service: string;
+  /** From `?view=workbench` — restore Seed Evidence Workbench after reload. */
+  openWorkbench?: boolean;
+};
 
 type RuntimeState = "loading" | "connected" | "disconnected";
 
@@ -67,7 +75,21 @@ export function ProjectSetupCard({
     path: string;
     kind: "resume" | "init" | "manual";
   } | null>(null);
-  const [showSeedWorkbench, setShowSeedWorkbench] = useState(false);
+  // Persist via `?view=workbench` so Agent reopen/reload of the Workbench URL
+  // does not bounce the designer back to Project Setup.
+  const [showSeedWorkbench, setShowSeedWorkbench] = useState(
+    () => bootstrap.openWorkbench === true
+  );
+
+  const enterSeedWorkbench = useCallback(() => {
+    setWorkbenchViewInUrl(true);
+    setShowSeedWorkbench(true);
+  }, []);
+
+  const leaveSeedWorkbench = useCallback(() => {
+    setWorkbenchViewInUrl(false);
+    setShowSeedWorkbench(false);
+  }, []);
 
   const checkHealth = useCallback(async () => {
     setRuntimeState("loading");
@@ -285,7 +307,7 @@ export function ProjectSetupCard({
       <SeedEvidenceWorkbench
         session={bootstrap.session}
         folderName={project.name}
-        onBack={() => setShowSeedWorkbench(false)}
+        onBack={leaveSeedWorkbench}
       />
     );
   }
@@ -334,7 +356,7 @@ export function ProjectSetupCard({
         <SetupActionButton
           label="Start Building"
           disabled={!buildingReady}
-          onClick={() => setShowSeedWorkbench(true)}
+          onClick={enterSeedWorkbench}
         />
       </section>
 

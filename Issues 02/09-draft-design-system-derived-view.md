@@ -6,6 +6,10 @@
 
 此 slice 应覆盖 Design principle、Visual language、Token、Layout、Component、Interaction 六部分如何进入 design-system candidate/source，而不引入 Content 必答门。
 
+### 2026-07-12 Seed Reference collection input
+
+Design-system source 必须链接到完成 Alignment 的 Seed Reference collection、项目级 Design Language Description、相关 Reference Notes 与 evidence versions，不能继续假设只有一个 seed page。详见当前 PRD 与 ADR 0003。
+
 ## User stories covered
 
 - 23, 24, 25, 26, 27, 28, 29, 30, 31, 32
@@ -23,7 +27,7 @@
 
 ## Real Agent validation
 
-- [ ] 真实 Agent 基于真实 seed evidence 和已回答 alignment questions 写入最小 design-system source artifact。
+- [ ] 真实 Agent 基于至少两个 Runtime-captured Seed References、项目级 Description 和已回答 alignment questions 写入最小 design-system source artifact。
 - [ ] Agent 声明 artifact 后，Workbench 显示至少一个 foundation 和一个 component summary。
 
 ## Likely difficulties for Agent

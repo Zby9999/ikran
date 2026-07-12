@@ -1,10 +1,10 @@
 # Ikran MVP Issues 02
 
-来源：`IKRAN-MVP-PRD.zh-CN.md`，并对照旧 `issues/` 重排。PRD 是唯一产品标准；issue 执行不需要读取其他设计记录。当前架构收口见 `docs/adr/0002-consolidate-runtime-and-research-records.md`。
+来源：`IKRAN-MVP-PRD.zh-CN.md`，并对照旧 `issues/` 重排。PRD 是唯一产品标准；issue 执行不需要读取其他设计记录。当前架构收口见 ADR 0002 与 ADR 0003。
 
 这些 issue 是 tracer-bullet vertical slices，覆盖从历史项目状态迁移到 Agent host + MCP + Workbench URL + tldraw 产品形态。每个阶段都有真实 Agent 接入点，不把真实验证集中到项目末尾。
 
-历史完成报告保留原文；若实现细节已被后续架构收口替代，以 PRD + ADR 0002 与各 issue 顶部的「2026-07-10 后续架构收口」说明为准，不要把旧报告读成当前 Active 契约。
+历史完成报告保留原文；若实现细节已被后续架构收口替代，以 PRD + ADR 0002/0003 与各 issue 顶部的后续架构收口说明为准，不要把旧报告读成当前 Active 契约。
 
 ## 依赖顺序
 
@@ -14,6 +14,10 @@
 4. `04-tldraw-workbench-shell-seed-entry.md` - tldraw Workbench Shell 替换 React Flow Seed Entry
 4A. `04A-retire-legacy-seed-entry-chain.md` - Retire Legacy Seed Entry Chain
 5. `05-agent-host-figma-evidence-declaration.md` - Agent-Host Figma Evidence Declaration
+5A. `05A-figma-connection-gate-paste-capture.md` - Figma Connection Gate 与 Paste-to-Surface
+5B. `05B-seed-reference-collection-agent-parity.md` - Seed Reference Collection 与 Agent Parity
+5C. `05C-evidence-refresh-figma-context-handoff.md` - Evidence Refresh 与 Figma Context Handoff
+5D. `05D-retire-agent-evidence-real-smoke.md` - 退役 Agent-Supplied Evidence 与真实转型 Smoke
 6. `06-evidence-surface-region-annotation-slice.md` - Evidence Surface 与 Region Annotation Vertical Slice
 7. `07-design-intent-alignment-six-part-gate.md` - 六部分 Design Intent Alignment Gate
 8. `08-source-artifact-declaration-validation.md` - Source Artifact Declaration 与三类校验
@@ -26,17 +30,22 @@
 15. `15-research-event-export-undeclared-artifact-guard.md` - Research Event Export 与 Undeclared Artifact Guard
 16. `16-staged-full-workflow-smoke-harness.md` - Staged Full Workflow Smoke Harness
 
-Issue 01–06 的历史实现与完成报告已存在；阅读时先看各文件顶部的架构收口说明。Issue 07–16 同步的是目标与验收，不表示已实现完成。
+ADR 0003 转型的实际 frontier 是：`05A → 05B → 05C → 06 → 05D → 07`。05C 先交付 structural overlay、refresh correspondence 与 context lookup；Issue 06 再建立持久 surface/node/region Annotation 和 stale warning；05D 完成 legacy contract 后，Issue 07 才进入正式 Alignment gate。
+
+Issue 01–05 与 Issue 06 的既有代码/历史材料已存在；阅读时先看各文件顶部的架构收口说明。Issue 05A–05D 与 07–16 同步的是目标与验收，不表示已实现完成。
 
 ## 全局约束
 
 - Ikran Runtime 是**一进程**两 surface：stdio MCP + custom Next HTTP/SSE Workbench；MCP 与 HTTP 共享 command kernel，MCP 不 loopback HTTP。
 - Workbench URL 可在任意浏览器打开，理想环境是 Agent host 的嵌入式浏览器。
 - Runtime 只绑定 localhost，Workbench URL 使用启动级 session token。
-- Ikran Runtime 零 Figma 接触；Figma ingestion 在 Agent host 的 Figma MCP 中发生。
-- Seed 纯 Agent-first；Workbench 无 seed URL / intent 写入口。
+- Runtime 通过安装级 Figma Connection 只捕获 positional evidence；实现级 Figma context 由 Agent 按需通过宿主 Figma MCP读取。
+- 未连接时显示 Figma Connection Panel 并锁定画布；MVP 使用 PAT + macOS Keychain，OAuth/多账户为 Future Work。
+- Seed Reference 支持 Workbench paste 与 Agent tool 双 initiator，共享 command、canonical identity 与原子 capture；一个项目可有多个同设计语言 References。
 - tldraw shape 只是 canvas record 投影；Runtime semantic records 是事实源。
-- Evidence append-only，经 lineage（`superseded_by` / `current_surface_id`）表达当前证据；seed 使用 canonical `file_key` / `node_id`。
+- Evidence append-only，经 lineage（`superseded_by` / `current_surface_id`）表达当前证据；Seed Reference 使用 canonical `file_key` / normalized `node_id`，重复提交不重复创建，显式 Refresh 才追加版本。
+- Figma screenshot 使用 positional node index 投影 structural overlay；默认选择语义节点，Vector/Path 通过 drill-down；hover/selection 是 ephemeral，提交后的 surface/node/region target 才是研究事实。
+- Node Annotation 锚定 captured evidence version；Refresh 无对应 node 时标记 stale 并提示设计师，不自动迁移或删除。
 - Record + event 同 SQLite 事务；SQLite events canonical，JSONL 为可重建 derived export。
 - Agent 只能通过语义 MCP tools 改变研究事实源；无 raw exec，无单独 geometry tool。
 - 无 AgentAdapter / `/api/tasks` / fake Agent connection / mock product families 产品路径；测试仅用 deterministic MCP client / test doubles。

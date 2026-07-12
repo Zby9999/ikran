@@ -26,7 +26,8 @@ import {
   spawnMcpClient
 } from "./helpers/mcp";
 
-const URL_RE = /^http:\/\/127\.0\.0\.1:\d+\/\?session=[a-f0-9]{32,}$/;
+const URL_RE =
+  /^http:\/\/127\.0\.0\.1:\d+\/\?session=[a-f0-9]{32,}&view=workbench$/;
 
 const VALID_FIGMA_URL =
   "https://www.figma.com/design/abc123/My-Design?node-id=1:2";

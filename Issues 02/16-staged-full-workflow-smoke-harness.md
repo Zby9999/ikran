@@ -2,13 +2,17 @@
 
 ## What to build
 
-创建汇总性的 staged full workflow smoke harness。它不是把真实验证推迟到最后，而是收集并复跑每个阶段已经存在的真实 Agent 接入点：Workbench URL、project binding、MCP tool discovery、Figma evidence declaration、Region Annotation、Design Intent Alignment、source artifact declaration、design-system view、preview、prototype region context、rule update、新 prototype 和 export。
+创建汇总性的 staged full workflow smoke harness。它不是把真实验证推迟到最后，而是收集并复跑每个阶段已经存在的真实接入点：Workbench URL、project binding、Figma Connection Gate、Runtime-owned Figma capture、Seed Reference dual initiator/dedupe/refresh、Agent Figma MCP context handoff、Region Annotation、Design Intent Alignment、source artifact declaration、design-system view、preview、prototype region context、rule update、新 prototype和 export。
 
 完成后，应能说明每个阶段是否有真实 Agent 通过、是否只有 automated/mock 通过、是否存在 host/Figma/schema/open gap。本 issue 同步目标与验收；**不声称已实现完成**。
 
 ### 2026-07-10 后续架构收口
 
 分层测试：Vitest unit + Playwright MCP/HTTP/Workbench 边界；one-process / direct MCP（无 HTTP loopback）自动化 smoke；无全局 `pkill`。完整递归成功门槛与 Issue 15 / PRD 一致。报告必须区分 **automated** 与 **real**（真实 Agent host / 真实 Figma）；Issue 05 真实 Figma 在无证据前不得标为 real pass。详见 PRD 与 ADR 0002。
+
+### 2026-07-12 Runtime-owned Figma smoke
+
+Figma 阶段以 05D 的真实转型 smoke 为基础：真实 PAT/Keychain、无 Agent paste capture、Agent `add_seed_reference`、canonical dedupe、explicit Refresh、annotation candidates 与宿主 Figma MCP implementation-context handoff 必须分项报告。旧 Issue 05 Agent-supplied package smoke 不再是 Active 成功标准。详见 PRD 与 ADR 0003。
 
 ## User stories covered
 
@@ -18,6 +22,7 @@
 
 - [ ] Smoke harness 列出每个阶段的真实 Agent validation checklist，并并列 automated checklist。
 - [ ] Automated 层覆盖：Vitest unit、Playwright MCP/HTTP/Workbench 边界、one-process / direct MCP smoke；不使用全局 `pkill`。
+- [ ] Automated Figma 纵切覆盖：gate → connect double → paste capture → multi Reference → Agent add → duplicate reuse → annotation candidates → Refresh lineage；凭证与 Figma API 使用 deterministic doubles。
 - [ ] Cursor 作为优先真实 host 跑通可用阶段。
 - [ ] Codex Desktop 尝试至少 MCP tool discovery；若失败，记录具体 open gap 和 fallback。
 - [ ] Harness 能引用每阶段产生的 smoke event、log 或 manual note。
@@ -29,8 +34,8 @@
 ## Real Agent validation
 
 - [ ] 复跑每个阶段的最小真实 Agent 接入点。
-- [ ] 至少包含真实 Figma seed evidence、真实 source artifact declaration、真实 preview、真实 export 四类证据（与 automated 分列）。
-- [ ] 真实 Figma 无证据时保持 not attempted / blocked，不继承 Issue 05 自动化完成状态。
+- [ ] 至少包含真实 PAT/Keychain connection、真实 Runtime Figma capture、真实 Agent Figma MCP handoff、真实 source artifact declaration、真实 preview、真实 export 六类证据（与 automated 分列）。
+- [ ] 真实 Figma 或真实 Agent handoff 无证据时保持 not attempted / blocked，不继承 Issue 05/05A–05D 的 automated 完成状态。
 
 ## Likely difficulties for Agent
 
@@ -47,7 +52,7 @@
 
 ## Blocked by
 
-- `05-agent-host-figma-evidence-declaration.md`
+- `05D-retire-agent-evidence-real-smoke.md`
 - `07-design-intent-alignment-six-part-gate.md`
 - `09-draft-design-system-derived-view.md`
 - `10-seed-prototype-preview-record-preview.md`

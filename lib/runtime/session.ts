@@ -17,7 +17,7 @@
 // the Runtime HTTP surface prepares, that token is used instead of generating
 // one. The in-process host (`lib/runtime/http-server.mjs`) sets this in the
 // same Node process so it can compose the Workbench URL
-// `http://127.0.0.1:{port}/?session={token}`. This is NOT a cross-process
+// `http://127.0.0.1:{port}/?session={token}&view=workbench`. This is NOT a cross-process
 // env-token bridge — Task 9 hosts MCP stdio and HTTP in one process. The env
 // override remains for test/harness compatibility (e.g. fixtures that start
 // Next without going through http-server.mjs). When unset, a token is generated

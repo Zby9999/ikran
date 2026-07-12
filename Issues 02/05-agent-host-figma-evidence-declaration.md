@@ -10,6 +10,10 @@
 
 本 issue 历史正文与完成报告中的 **Workbench plus / EnterPanel 双入口 seed**、`registered_via: ui|agent` awaiting UX 分源等表述已被当前标准替代。当前 Active 契约：**Seed 纯 Agent-first**；Workbench 无 seed URL/intent 写入口；Evidence append-only + `superseded_by` / `current_surface_id`；canonical `file_key` / `node_id`；`record_evidence_package` 创建 Figma surface（无独立 `create_evidence_surface`）。**真实 Figma smoke 无本仓库可追溯完成证据，下方 Real Agent 两项改回未验证**；自动化路径仍视为完成。详见 PRD 与 ADR 0002。下文历史报告保留原文。
 
+### 2026-07-12 Runtime-owned Figma ingestion 转型
+
+本 issue 的 Agent-host screenshot/declaration 路径又被 ADR 0003 与当前 PRD 取代：Runtime 通过安装级 Figma Connection 直接捕获 positional evidence；Workbench paste 与 Agent `add_seed_reference` 共享 command；`list_pending_seed_evidence` / Agent-supplied `record_evidence_package` 退出 Active 工具面。下方 unchecked Real Agent validation 继续保留为历史未验证事实，但不再是新产品路径的 blocker；真实转型验收由 05A–05D 承担。历史完成报告不改写。
+
 ## User stories covered
 
 - 8, 9, 12, 64, 65

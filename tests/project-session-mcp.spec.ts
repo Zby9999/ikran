@@ -25,7 +25,8 @@ import {
   spawnMcpClient
 } from "./helpers/mcp";
 
-const URL_RE = /^http:\/\/127\.0\.0\.1:\d+\/\?session=[a-f0-9]{32,}$/;
+const URL_RE =
+  /^http:\/\/127\.0\.0\.1:\d+\/\?session=[a-f0-9]{32,}&view=workbench$/;
 
 function projectPath(s: Record<string, unknown>): string {
   const project = s.project as { path?: string } | null | undefined;

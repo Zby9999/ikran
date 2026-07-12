@@ -16,6 +16,10 @@
 
 研究 export **入选**要求完整成功递归；**内容**为整条成功链路（含闭环前成功阶段）。排除：失败请求、失败标注、草稿、取消、Open Gap、canvas layout、未声明 source artifact。运维调试仍可保留失败日志；它们不是研究事实。SQLite events canonical；导出中的 JSONL 为 derived。成功语义记录与 Agent annotation raw region 可回放。详见 PRD 与 ADR 0002。
 
+### 2026-07-12 Figma capture provenance
+
+成功研究链路必须记录 Seed Reference initiator、successful positional-evidence capture、evidence lineage/versions 与 Agent-confirmed primary node linkage。PAT、Keychain metadata、失败 capture、403/404/429 和未成功提交的 link 不进入 research export。详见 PRD 与 ADR 0003。
+
 ## User stories covered
 
 - 46, 47, 48, 49, 50
@@ -27,9 +31,11 @@
 - [ ] 达标后的 export 包含整条成功语义链路（含闭环完成前的 seed / evidence / annotation / alignment / DS v1 / 第一次原型等），不是只导出终点。
 - [ ] 最小导出包含 `events.jsonl`、`project-summary.json`、`alignment-questions.json`、`designer-answers.json`、`prototype-runs.json`、`rule-update-proposals.json`、`artifacts-index.json`。
 - [ ] Export 保留 Evidence Surface、Region Annotation、Question card、answer、prototype run、rule proposal、artifact 的 linkage；成功 annotation raw semantic region 可回放。
+- [ ] Export 保留每个 Seed Reference 的 canonical identity、initiator、successful capture、evidence lineage/current version 与 confirmed primary node linkage，但不包含 PAT 或可恢复凭证的信息。
 - [ ] 低层 pan/zoom/hover/keystroke 与 canvas layout 不作为 research events 导出。
 - [ ] 未声明 source artifact 不进入 artifact index 或 export。
 - [ ] 失败请求、失败标注、草稿、取消、Open Gap 不进入研究事实导出（可另有运维/调试记录，但不冒充研究成功语义）。
+- [ ] 失败 Figma capture、未提交 link、连接错误和限流不进入成功研究事实导出。
 - [ ] Workbench 提供最小 export action 和 completion status。
 - [ ] 测试覆盖：达标项目导出含早期成功阶段；未达门槛拒绝/跳过；真实 Agent 声明 artifact export；未声明 artifact guard。
 
@@ -55,6 +61,7 @@
 ## Blocked by
 
 - `07-design-intent-alignment-six-part-gate.md`
+- `05D-retire-agent-evidence-real-smoke.md`
 - `08-source-artifact-declaration-validation.md`
 - `10-seed-prototype-preview-record-preview.md`
 - `12-rule-update-proposal-confirm-cancel.md`

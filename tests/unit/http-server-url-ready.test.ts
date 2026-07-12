@@ -34,19 +34,19 @@ afterEach(async () => {
 describe("http-server host URL composition", () => {
   test("composeWorkbenchUrl encodes session and uses host:port form", () => {
     expect(composeWorkbenchUrl("127.0.0.1", 54321, "deadbeef")).toBe(
-      "http://127.0.0.1:54321/?session=deadbeef"
+      "http://127.0.0.1:54321/?session=deadbeef&view=workbench"
     );
     expect(composeWorkbenchUrl("127.0.0.1", 54321, "a b/c")).toBe(
-      "http://127.0.0.1:54321/?session=a%20b%2Fc"
+      "http://127.0.0.1:54321/?session=a%20b%2Fc&view=workbench"
     );
   });
 
   test("composeWorkbenchUrl brackets IPv6 localhost", () => {
     expect(composeWorkbenchUrl("::1", 54321, "deadbeef")).toBe(
-      "http://[::1]:54321/?session=deadbeef"
+      "http://[::1]:54321/?session=deadbeef&view=workbench"
     );
     expect(composeWorkbenchUrl("[::1]", 54321, "deadbeef")).toBe(
-      "http://[::1]:54321/?session=deadbeef"
+      "http://[::1]:54321/?session=deadbeef&view=workbench"
     );
   });
 
@@ -76,6 +76,7 @@ describe("http-server host URL composition", () => {
     expect(stripHostBrackets(parsed.hostname)).toBe("::1");
     expect(parsed.port).toBe("54321");
     expect(parsed.searchParams.get("session")).toBe("abc");
+    expect(parsed.searchParams.get("view")).toBe("workbench");
   });
 });
 
