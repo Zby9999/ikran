@@ -10,10 +10,17 @@ export {
 export {
   registerSeedReferenceCommand,
   listSeedReferencesCommand,
-  deleteSeedReferenceCommand
+  deleteSeedReferenceCommand,
+  updateSeedReferenceNoteCommand
 } from "./seed-reference";
 
 export { addSeedReferenceCommand } from "./seed-capture";
+
+export {
+  getProjectReadinessCommand,
+  getDesignLanguageDescriptionCommand,
+  setDesignLanguageDescriptionCommand
+} from "./project-readiness";
 
 export {
   getFigmaConnectionStatusCommand,
@@ -45,6 +52,10 @@ export {
   createRegionAnnotationInputShape,
   addSeedReferenceInputSchema,
   addSeedReferenceInputShape,
+  updateSeedReferenceNoteInputSchema,
+  updateSeedReferenceNoteInputShape,
+  setDesignLanguageDescriptionInputSchema,
+  setDesignLanguageDescriptionInputShape,
   connectFigmaInputSchema,
   connectFigmaInputShape,
   createOrOpenProjectInputShape,

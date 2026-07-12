@@ -297,6 +297,59 @@ export type SeedReferenceDeleteResponse =
   | { ok: true; id: string }
   | { ok: false; reason: SeedReferenceDeleteReason };
 
+export type SeedReferenceNoteUpdateResponse =
+  | { ok: true; record: SeedReferenceRecord }
+  | { ok: false; reason: "not_found" | "db_error" };
+
+/**
+ * Save, modify, or clear a Seed Reference's optional Reference Note.
+ * Does not change canonical identity (`file_key` / `node_id`) or initiator.
+ */
+export function updateSeedReferenceNote(
+  projectPath: string,
+  input: { id: string; referenceNote?: string }
+): SeedReferenceNoteUpdateResponse {
+  const id = typeof input.id === "string" ? input.id.trim() : "";
+  if (!id) {
+    return { ok: false, reason: "not_found" };
+  }
+  const referenceNote =
+    typeof input.referenceNote === "string" ? input.referenceNote : "";
+
+  try {
+    const result = withProjectTransaction(projectPath, (db) => {
+      const existing = db
+        .prepare(`SELECT * FROM seed_references WHERE id = ?`)
+        .get(id) as Record<string, unknown> | undefined;
+      if (!existing) {
+        return { ok: false as const, reason: "not_found" as const };
+      }
+
+      db.prepare(
+        `UPDATE seed_references SET original_design_intent = ? WHERE id = ?`
+      ).run(referenceNote, id);
+
+      const row = db
+        .prepare(`SELECT * FROM seed_references WHERE id = ?`)
+        .get(id) as Record<string, unknown>;
+      return { ok: true as const, record: mapSeedRow(row) };
+    });
+
+    if (result.ok) {
+      emitRecordEvent({
+        kind: "seed",
+        action: "updated",
+        id: result.record.id,
+        projectPath: path.resolve(projectPath)
+      });
+    }
+
+    return result;
+  } catch {
+    return { ok: false, reason: "db_error" };
+  }
+}
+
 /**
  * Delete a Seed Reference and cascade its Evidence Surfaces + annotations.
  *

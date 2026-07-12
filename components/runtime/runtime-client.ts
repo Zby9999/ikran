@@ -164,7 +164,7 @@ export type WorkbenchRuntimeSnapshot = {
 };
 
 export type RuntimeMutationResult =
-  | { ok: true }
+  | { ok: true; reused?: boolean; seedId?: string }
   | { ok: false; error: string };
 
 type RuntimeFetch = (
@@ -485,13 +485,28 @@ export function createWorkbenchDataClient(
             "seed_capture_failed"
         );
       }
+      const reused = result.data.reused === true;
+      const record =
+        result.data.record !== null &&
+        typeof result.data.record === "object" &&
+        !Array.isArray(result.data.record)
+          ? (result.data.record as Record<string, unknown>)
+          : null;
+      const seedId =
+        typeof record?.id === "string" && record.id.length > 0
+          ? record.id
+          : undefined;
       const reloaded = await loadAll();
       if (!reloaded.ok) {
         return reportMutationError(
           `capture_succeeded_reload_failed:${reloaded.error}`
         );
       }
-      return { ok: true };
+      return {
+        ok: true,
+        ...(reused ? { reused: true } : {}),
+        ...(seedId ? { seedId } : {})
+      };
     },
     dispose() {
       active = false;

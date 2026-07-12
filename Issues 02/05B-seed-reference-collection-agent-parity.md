@@ -1,6 +1,6 @@
 # 05B — Seed Reference Collection 与 Agent Parity
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 ## What to build
 
@@ -14,16 +14,16 @@
 
 ## Acceptance criteria — automated
 
-- [ ] 一个项目可成功添加至少三个不同 canonical `file_key + normalized node_id` 的 Seed References，并为每条投影独立 Frame/evidence lineage。
-- [ ] URL 中 `node-id` 的 `-`/`:`/percent-encoding 差异、`t=` 与其他非身份 query 不制造重复 Reference。
-- [ ] 重复 Workbench paste 返回/reuses 原 record id、Surface lineage 和 Frame；数据库计数不增长，Workbench 聚焦已有 Frame。
-- [ ] Agent `add_seed_reference` 与 Workbench paste 调用同一 command kernel；相同输入除 initiator 外产生相同 canonical record、capture 和错误语义。
-- [ ] Agent 添加的新 Reference 通过 SSE 出现在已打开的 Workbench，不要求 refresh。
-- [ ] Runtime 记录真实 initiator（designer/agent）；重复提交不重写第一次成功 capture 的 initiator 事实。
-- [ ] 项目只保存一个 Design Language Description；更新 Description 不复制到每条 Seed Reference record。
-- [ ] 每条 Seed Reference 可保存、修改或清除独立的 Reference Note，不影响其他 References 或 canonical identity。
-- [ ] Description 为空不阻塞 capture、projection、annotation；Runtime readiness/precondition 明确返回 `description_missing`，供 Issue 07 的正式 Alignment gate 消费。填写非空 Description 后该 precondition 消失。
-- [ ] tests 覆盖多 Reference、双 initiator parity、URL canonicalization、duplicate focus、Description readiness 与 Note isolation；本 issue 不伪装已实现 Issue 07 的 Alignment UI。
+- [x] 一个项目可成功添加至少三个不同 canonical `file_key + normalized node_id` 的 Seed References，并为每条投影独立 Frame/evidence lineage。
+- [x] URL 中 `node-id` 的 `-`/`:`/percent-encoding 差异、`t=` 与其他非身份 query 不制造重复 Reference。
+- [x] 重复 Workbench paste 返回/reuses 原 record id、Surface lineage 和 Frame；数据库计数不增长，Workbench 聚焦已有 Frame。
+- [x] Agent `add_seed_reference` 与 Workbench paste 调用同一 command kernel；相同输入除 initiator 外产生相同 canonical record、capture 和错误语义。
+- [x] Agent 添加的新 Reference 通过 SSE 出现在已打开的 Workbench，不要求 refresh。
+- [x] Runtime 记录真实 initiator（designer/agent）；重复提交不重写第一次成功 capture 的 initiator 事实。
+- [x] 项目只保存一个 Design Language Description；更新 Description 不复制到每条 Seed Reference record。
+- [x] 每条 Seed Reference 可保存、修改或清除独立的 Reference Note，不影响其他 References 或 canonical identity。
+- [x] Description 为空不阻塞 capture、projection、annotation；Runtime readiness/precondition 明确返回 `description_missing`，供 Issue 07 的正式 Alignment gate 消费。填写非空 Description 后该 precondition 消失。
+- [x] tests 覆盖多 Reference、双 initiator parity、URL canonicalization、duplicate focus、Description readiness 与 Note isolation；本 issue 不伪装已实现 Issue 07 的 Alignment UI。
 
 ## Acceptance criteria — real Figma / real Agent
 
@@ -36,3 +36,12 @@
 ## Blocked by
 
 - `05A-figma-connection-gate-paste-capture.md`
+
+## Comments
+
+### 2026-07-12 — automated path complete
+
+- **Shipped (automated):** multi-Reference capture + independent lineage; URL canonicalization (`-`/`:`/`%3A`/`t=`); duplicate paste reuse + Workbench Frame focus; shared `addSeedReference` kernel; initiator preservation (`registered_via`); project-level Design Language Description in SQLite `project_meta` (schema v6); `GET|PATCH /api/project/readiness` with `description_missing`; per-seed Note via `PATCH /api/seed-reference` + MCP `update_seed_reference_note`; MCP `get_project_readiness` / `set_design_language_description`.
+- **UI scope:** Description/Note **edit** surfaces not invented — no Figma reference for those inputs. Runtime/HTTP/MCP write paths are available; Frame tip still displays Reference Note (historical `original_design_intent`). Duplicate focus uses select+zoom (behavior AC), no custom toast chrome.
+- **Real Figma / Agent ACs:** left unchecked for human smoke.
+- **Verification:** `npm run check` passed (unit + Playwright).

@@ -1,9 +1,10 @@
-// GET / POST / DELETE /api/seed-reference
+// GET / POST / DELETE / PATCH /api/seed-reference
 //
 // Thin HTTP adapter: authorize + active project + shared seed commands.
 // Active POST writes go through Runtime capture (Figma Connection Gate +
 // atomic Seed + Evidence Surface) — same kernel as /api/seed-capture and
 // MCP add_seed_reference. Initiator is always "agent" on this route.
+// PATCH updates optional Reference Note only (Issue 05B).
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -13,7 +14,10 @@ import {
   commandErrorHttpStatus,
   deleteSeedReferenceCommand,
   listSeedReferencesCommand,
-  requireActiveProjectCommand
+  parseCommandInput,
+  requireActiveProjectCommand,
+  updateSeedReferenceNoteCommand,
+  updateSeedReferenceNoteInputSchema
 } from "../../../lib/runtime/commands";
 
 export const runtime = "nodejs";
@@ -57,6 +61,52 @@ export async function POST(request: NextRequest) {
       return null;
     }
   });
+}
+
+export async function PATCH(request: NextRequest) {
+  const auth = authorize(request);
+  if (!auth.ok) {
+    return NextResponse.json(
+      { ok: false, error: auth.reason },
+      { status: auth.status }
+    );
+  }
+
+  const state = requireActiveProjectCommand();
+  if (!state.ok) {
+    return NextResponse.json(
+      { ok: false, error: state.reason },
+      { status: commandErrorHttpStatus(state.reason) }
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "invalid_json" },
+      { status: commandErrorHttpStatus("invalid_json") }
+    );
+  }
+
+  const parsed = parseCommandInput(updateSeedReferenceNoteInputSchema, body);
+  if (!parsed.ok) {
+    return NextResponse.json(
+      { ok: false, error: parsed.reason },
+      { status: commandErrorHttpStatus(parsed.reason) }
+    );
+  }
+
+  const result = updateSeedReferenceNoteCommand(state.project.path, parsed.data);
+  if (!result.ok) {
+    return NextResponse.json(
+      { ok: false, error: result.reason },
+      { status: commandErrorHttpStatus(result.reason) }
+    );
+  }
+
+  return NextResponse.json({ ok: true, record: result.record });
 }
 
 export async function DELETE(request: NextRequest) {

@@ -55,11 +55,12 @@ export function SeedEvidenceWorkbench({
   const showGate = gateStatus !== "open" || !canvasEntered;
   const canvasLocked = showGate;
 
-  const { pasteError, inFlightCaptures } = useFigmaPasteCapture({
-    canvasLocked,
-    gateOpen: gateStatus === "open",
-    captureSeedReference
-  });
+  const { pasteError, inFlightCaptures, focusSeedId, clearFocusSeedId } =
+    useFigmaPasteCapture({
+      canvasLocked,
+      gateOpen: gateStatus === "open",
+      captureSeedReference
+    });
 
   useEffect(() => {
     let cancelled = false;
@@ -145,6 +146,8 @@ export function SeedEvidenceWorkbench({
           annotations={annotations}
           session={session}
           inFlightCaptures={inFlightCaptures}
+          focusSeedId={focusSeedId}
+          onFocusSeedApplied={clearFocusSeedId}
           annotateMode={annotateMode && !canvasLocked}
           onCreateAnnotation={createAnnotation}
           onDeleteAnnotation={deleteAnnotation}

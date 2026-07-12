@@ -32,6 +32,7 @@ import {
 } from "./projection/seed-projection";
 import { WORKBENCH_EMBED_DEFINITIONS } from "./workbench-embeds";
 import { FigmaEmbedPasteGuard } from "./figma-embed-paste-guard";
+import { FocusSeedProjectionController } from "./focus-seed-projection-controller";
 import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 import type { FigmaEvidenceSurfaceRecord } from "@/lib/runtime/evidence-package";
 import type { RegionAnnotationRecord } from "@/lib/runtime/region-annotation";
@@ -53,6 +54,8 @@ export function WorkbenchCanvas({
   annotations = [],
   session,
   inFlightCaptures = [],
+  focusSeedId = null,
+  onFocusSeedApplied,
   annotateMode = false,
   onCreateAnnotation,
   onDeleteAnnotation,
@@ -66,6 +69,9 @@ export function WorkbenchCanvas({
   session: string;
   /** In-flight paste captures — spinner frames until Runtime responds. */
   inFlightCaptures?: InFlightSeedCapture[];
+  /** Duplicate paste: focus existing Frame for this Seed Reference id. */
+  focusSeedId?: string | null;
+  onFocusSeedApplied?: () => void;
   /** FolderChrome Annotate toggle — switches the custom region-annotation tool. */
   annotateMode?: boolean;
   /** Designer POST create via Runtime client (no direct fetch in the tool). */
@@ -114,6 +120,11 @@ export function WorkbenchCanvas({
         surfaces={surfaces}
         session={session}
         inFlightCaptures={inFlightCaptures}
+      />
+      <FocusSeedProjectionController
+        seedId={focusSeedId}
+        projectionEpoch={records.length + surfaces.length}
+        onFocused={onFocusSeedApplied}
       />
       <RegionAnnotationProjectionSync annotations={annotations} />
       <RegionAnnotationToolController

@@ -5,8 +5,10 @@ import {
   listSeedReferences,
   registerSeedReference,
   resolveHttpRegisteredVia,
+  updateSeedReferenceNote,
   type SeedReferenceDeleteResponse,
   type SeedReferenceErrorReason,
+  type SeedReferenceNoteUpdateResponse,
   type SeedReferenceRecord,
   type SeedReferenceResponse
 } from "../seed-reference";
@@ -75,4 +77,15 @@ export function deleteSeedReferenceCommand(
   id: string
 ): SeedReferenceDeleteResponse {
   return deleteSeedReference(projectPath, id);
+}
+
+export function updateSeedReferenceNoteCommand(
+  projectPath: string,
+  input: { id: unknown; referenceNote?: unknown }
+): SeedReferenceNoteUpdateResponse {
+  return updateSeedReferenceNote(projectPath, {
+    id: typeof input.id === "string" ? input.id : "",
+    referenceNote:
+      typeof input.referenceNote === "string" ? input.referenceNote : ""
+  });
 }

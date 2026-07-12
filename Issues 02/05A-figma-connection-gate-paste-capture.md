@@ -23,7 +23,7 @@
 - [x] Seed Reference、initial positional evidence、Evidence Surface 和成功事件在同一事务边界提交；任一步失败时四者均不提交。
 - [x] 无效 URL、缺少 `node-id`、403、404、429、截图缺失和 malformed Figma response 都产生可操作错误，且不留下半成品记录。（unit: `tests/unit/seed-capture.test.ts` — `not_found` / `forbidden` / `rate_limited` / `screenshot_missing` / `malformed_figma_response` / `invalid_figma_url` / `missing_node_id`；各断言无 seed + no surface。）
 - [x] Workbench 通过现有 SSE/projection 路径显示成功 capture，不要求页面 reload，也不要求活跃 Agent。
-- [x] one-process Playwright + HTTP 测试使用 deterministic Figma API 与 credential-store doubles，覆盖 gate closed、connect success/failure、capture success 和 no-half-written-state（capture `not_found` after gate open → empty seed-reference / no surface）；error-matrix 细项另有 unit 覆盖。Active MCP seed tools 现仅为 `get_figma_connection_status` + `add_seed_reference`（legacy register/list_pending/record 已不再注册）；纵切 e2e 留给 05B/05D。
+- [x] one-process Playwright + HTTP 测试使用 deterministic Figma API 与 credential-store doubles，覆盖 gate closed、connect success/failure、capture success 和 no-half-written-state（capture `not_found` after gate open → empty seed-reference / no surface）；error-matrix 细项另有 unit 覆盖。Active MCP seed tools 现为 `get_figma_connection_status` + `add_seed_reference` + Issue 05B readiness/Description/Note tools；legacy register/list_pending/record 已不再注册；纵切 e2e 见 05B/05D。
 
 ## Acceptance criteria — real Figma / real macOS
 

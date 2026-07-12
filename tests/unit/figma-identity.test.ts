@@ -37,6 +37,17 @@ test.describe("figma-identity (canonical)", () => {
     expect(normalizeFigmaNodeId(" 1-2 ")).toBe("1:2");
   });
 
+  test("percent-encoded node-id decodes before normalize", () => {
+    const encoded = parseFigmaSeedIdentity(
+      "https://www.figma.com/design/AbCdEf/X?node-id=0%3A81&t=share"
+    );
+    const dashed = parseFigmaSeedIdentity(
+      "https://www.figma.com/design/AbCdEf/X?node-id=0-81"
+    );
+    expect(encoded).toEqual({ fileKey: "AbCdEf", nodeId: "0:81" });
+    expect(figmaSeedIdentitiesEqual(encoded!, dashed!)).toBe(true);
+  });
+
   test("rejects non-figma / invalid URLs", () => {
     expect(parseFigmaSeedIdentity("not-a-url")).toBeNull();
     expect(

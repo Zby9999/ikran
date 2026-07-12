@@ -5,7 +5,7 @@ import type { InFlightSeedCapture } from "./projection/seed-projection";
 import { extractFigmaDesignUrl, isMalformedFigmaPaste } from "./workbench-embeds";
 
 type CaptureResult =
-  | { ok: true }
+  | { ok: true; reused?: boolean; seedId?: string }
   | { ok: false; error: string };
 
 const PASTE_ERROR_BY_REASON: Record<string, string> = {
@@ -25,7 +25,8 @@ const PASTE_ERROR_BY_REASON: Record<string, string> = {
 
 /**
  * Window-level Figma paste capture: gate rejection, optimistic in-flight
- * frames, and fail-closed alert copy (no invented toast chrome).
+ * frames, duplicate focus request, and fail-closed alert copy (no invented
+ * toast chrome).
  */
 export function useFigmaPasteCapture(opts: {
   canvasLocked: boolean;
@@ -34,12 +35,16 @@ export function useFigmaPasteCapture(opts: {
 }): {
   pasteError: string | null;
   inFlightCaptures: InFlightSeedCapture[];
+  /** Seed id to focus after duplicate paste; cleared by Workbench once applied. */
+  focusSeedId: string | null;
+  clearFocusSeedId: () => void;
 } {
   const { canvasLocked, gateOpen, captureSeedReference } = opts;
   const [pasteError, setPasteError] = useState<string | null>(null);
   const [inFlightCaptures, setInFlightCaptures] = useState<
     InFlightSeedCapture[]
   >([]);
+  const [focusSeedId, setFocusSeedId] = useState<string | null>(null);
   const pasteErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -52,6 +57,10 @@ export function useFigmaPasteCapture(opts: {
     setPasteError(message);
     if (pasteErrorTimer.current) clearTimeout(pasteErrorTimer.current);
     pasteErrorTimer.current = setTimeout(() => setPasteError(null), 4000);
+  }, []);
+
+  const clearFocusSeedId = useCallback(() => {
+    setFocusSeedId(null);
   }, []);
 
   const handlePaste = useCallback(
@@ -95,6 +104,8 @@ export function useFigmaPasteCapture(opts: {
             PASTE_ERROR_BY_REASON[result.error] ??
               "Could not capture that Figma link. Check the URL and try again."
           );
+        } else if (result.reused && result.seedId) {
+          setFocusSeedId(result.seedId);
         }
       } finally {
         setInFlightCaptures((prev) =>
@@ -113,5 +124,5 @@ export function useFigmaPasteCapture(opts: {
     return () => window.removeEventListener("paste", onPaste, true);
   }, [handlePaste]);
 
-  return { pasteError, inFlightCaptures };
+  return { pasteError, inFlightCaptures, focusSeedId, clearFocusSeedId };
 }

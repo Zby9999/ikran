@@ -530,17 +530,24 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(5);
+        expect(CURRENT_SCHEMA_VERSION).toBe(6);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
             "events",
             "projects",
+            "project_meta",
             "seed_references",
             "figma_evidence_surfaces",
             "region_annotations"
           ])
         );
+        const meta = db
+          .prepare(
+            `SELECT design_language_description AS d FROM project_meta WHERE singleton = 1`
+          )
+          .get() as { d: string } | undefined;
+        expect(meta?.d).toBe("");
         const cols = seedColumns(db);
         expect(cols).toEqual(
           expect.arrayContaining([
@@ -630,7 +637,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       const db = openProjectDb(dir);
       try {
-        expect(userVersion(db)).toBe(5);
+        expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
         expect(tableNames(db)).not.toContain("tasks");
         const seeds = db
           .prepare(
@@ -680,7 +687,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       const db = openProjectDb(dir);
       try {
-        expect(userVersion(db)).toBe(5);
+        expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
         const rows = db
           .prepare(
             `SELECT id, file_key, node_id, figma_seed_reference
@@ -997,7 +1004,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       const db = openProjectDb(dir);
       try {
-        expect(userVersion(db)).toBe(5);
+        expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
         const surfaces = db
           .prepare(
             `SELECT id, seed_reference_id, superseded_by
@@ -1260,7 +1267,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       const db = openProjectDb(dir);
       try {
-        expect(userVersion(db)).toBe(5);
+        expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
         const cols = (
           db.prepare("PRAGMA table_info(region_annotations)").all() as Array<{
             name: string;

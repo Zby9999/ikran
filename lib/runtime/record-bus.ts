@@ -7,7 +7,7 @@
 import { EventEmitter } from "node:events";
 
 export type RecordBusKind = "seed" | "evidence" | "annotation";
-export type RecordBusAction = "created" | "deleted";
+export type RecordBusAction = "created" | "updated" | "deleted";
 
 export type RecordBusEvent = {
   kind: RecordBusKind;

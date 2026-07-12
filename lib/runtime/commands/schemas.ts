@@ -111,6 +111,24 @@ export const addSeedReferenceInputShape = {
 
 export const addSeedReferenceInputSchema = z.object(addSeedReferenceInputShape);
 
+export const updateSeedReferenceNoteInputShape = {
+  id: z.string(),
+  /** Pass "" to clear. Field is required so omit does not silently wipe the note. */
+  referenceNote: z.string()
+} as const;
+
+export const updateSeedReferenceNoteInputSchema = z.object(
+  updateSeedReferenceNoteInputShape
+);
+
+export const setDesignLanguageDescriptionInputShape = {
+  designLanguageDescription: z.string()
+} as const;
+
+export const setDesignLanguageDescriptionInputSchema = z.object(
+  setDesignLanguageDescriptionInputShape
+);
+
 export const connectFigmaInputShape = {
   token: z.string()
 } as const;

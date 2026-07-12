@@ -4,7 +4,7 @@ import { expect, test as base } from "./fixtures";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { rawGet as httpGet, rawPost as httpPost, rawDelete as httpDelete } from "./helpers/http";
+import { rawGet as httpGet, rawPost as httpPost, rawDelete as httpDelete, rawPatch as httpPatch } from "./helpers/http";
 import { connectFigmaForTests } from "./helpers/figma-connection";
 
 const test = base.extend<{ folder: string }>({
@@ -402,4 +402,144 @@ test("deleting a seed frame stays gone after pasting another", async ({
   expect(records).toHaveLength(1);
   expect(records[0]?.id).not.toBe(firstId);
   expect(records[0]?.figma_seed_reference).toContain("node-id=3-4");
+});
+
+test("05B: three pastes project three frames; duplicate paste reuses and focuses", async ({
+  page,
+  runtime,
+  folder
+}) => {
+  const token = await captureToken(page, runtime.baseURL);
+  await bindFolder(token, folder, runtime.port);
+  await ensureGateOpen(page, runtime, token);
+
+  const urls = [
+    "https://www.figma.com/design/AbCdEfGh/Mock?node-id=1-1",
+    "https://www.figma.com/design/AbCdEfGh/Mock?node-id=2-2",
+    "https://www.figma.com/design/OtherKey/Mock?node-id=3-3"
+  ];
+
+  const pasteUrl = async (url: string) => {
+    await page.evaluate((u) => {
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", {
+        value: {
+          getData: (type: string) => (type === "text/plain" ? u : "")
+        }
+      });
+      window.dispatchEvent(event);
+    }, url);
+  };
+
+  for (let i = 0; i < urls.length; i++) {
+    await pasteUrl(urls[i]);
+    await expect(page.getByTestId("seed-reference-projection")).toHaveCount(
+      i + 1,
+      { timeout: 15000 }
+    );
+    await expect(
+      page.getByTestId("seed-reference-projection-screenshot")
+    ).toHaveCount(i + 1, { timeout: 15000 });
+  }
+
+  const listed = await httpGet(runtime.port, "/api/seed-reference", {
+    host: `localhost:${runtime.port}`,
+    "x-ikran-session": token
+  });
+  const records = JSON.parse(listed.body).records as Array<{
+    id: string;
+    node_id: string;
+  }>;
+  expect(records).toHaveLength(3);
+  const firstId = records.find((r) => r.node_id === "1:1")?.id;
+  expect(firstId).toBeTruthy();
+
+  // Click another frame so selection is not already on the duplicate target.
+  await page
+    .locator(
+      `[data-testid="seed-reference-projection"][data-seed-record-id]:not([data-seed-record-id="${firstId}"])`
+    )
+    .first()
+    .click();
+
+  await pasteUrl(
+    "https://www.figma.com/design/AbCdEfGh/Mock?node-id=1:1&t=noise"
+  );
+
+  await expect(page.getByTestId("seed-reference-projection")).toHaveCount(3);
+  await expect(
+    page.getByTestId("seed-reference-projection-screenshot")
+  ).toHaveCount(3);
+  const after = await httpGet(runtime.port, "/api/seed-reference", {
+    host: `localhost:${runtime.port}`,
+    "x-ikran-session": token
+  });
+  expect(JSON.parse(after.body).records).toHaveLength(3);
+
+  const focused = page.locator(
+    `[data-testid="seed-reference-projection"][data-seed-record-id="${firstId}"]`
+  );
+  await expect(focused).toHaveAttribute("data-selected", "true", {
+    timeout: 5000
+  });
+});
+
+test("05B: readiness reports description_missing until Description is set", async ({
+  page,
+  runtime,
+  folder
+}) => {
+  const token = await captureToken(page, runtime.baseURL);
+  await bindFolder(token, folder, runtime.port);
+  await connectFigmaForTests(runtime.port, token);
+
+  const empty = await httpGet(runtime.port, "/api/project/readiness", {
+    host: `localhost:${runtime.port}`,
+    "x-ikran-session": token
+  });
+  expect(empty.status).toBe(200);
+  expect(JSON.parse(empty.body)).toMatchObject({
+    ok: true,
+    preconditions: ["description_missing"],
+    designLanguageDescription: ""
+  });
+
+  // Capture still works with empty Description.
+  const capture = await httpPost(
+    runtime.port,
+    "/api/seed-capture",
+    {
+      figmaSeedReference:
+        "https://www.figma.com/design/AbCdEfGh/Mock?node-id=1-2"
+    },
+    {
+      host: `localhost:${runtime.port}`,
+      "x-ikran-session": token,
+      "content-type": "application/json"
+    }
+  );
+  expect(capture.status).toBe(200);
+
+  const patch = await httpPatch(
+    runtime.port,
+    "/api/project/readiness",
+    {
+      designLanguageDescription: "Shared editorial language"
+    },
+    {
+      host: `localhost:${runtime.port}`,
+      "x-ikran-session": token
+    }
+  );
+  expect(patch.status).toBe(200);
+  const patched = JSON.parse(patch.body);
+  expect(patched.ok).toBe(true);
+  expect(patched.preconditions).toEqual([]);
+  expect(patched.designLanguageDescription).toBe("Shared editorial language");
+
+  const ready = await httpGet(runtime.port, "/api/project/readiness", {
+    host: `localhost:${runtime.port}`,
+    "x-ikran-session": token
+  });
+  expect(JSON.parse(ready.body).preconditions).toEqual([]);
 });

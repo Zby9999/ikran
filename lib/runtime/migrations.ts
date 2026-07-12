@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -577,6 +577,22 @@ CREATE TABLE region_annotations_v4 (
         `ALTER TABLE figma_evidence_surfaces
          ADD COLUMN positional_nodes_json TEXT`
       );
+    }
+  },
+  {
+    version: 6,
+    up(db) {
+      // Project-scoped Design Language Description (Issue 05B) — one row.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS project_meta (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  design_language_description TEXT NOT NULL DEFAULT ''
+);
+`);
+      db.prepare(
+        `INSERT OR IGNORE INTO project_meta (singleton, design_language_description)
+         VALUES (1, '')`
+      ).run();
     }
   }
 ];

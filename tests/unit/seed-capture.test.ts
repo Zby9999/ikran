@@ -220,3 +220,129 @@ test("reuse returns real seed_reference_registered event_id", async () => {
   expect(second.event_id).toBe(first.event_id);
   expect(second.event_id).not.toBe(second.record.id);
 });
+
+test("three distinct canonical refs get independent surfaces and lineages", async () => {
+  await withConnectedStore();
+
+  const urls = [
+    "https://www.figma.com/design/AbCdEf/X?node-id=1-1",
+    "https://www.figma.com/design/AbCdEf/X?node-id=2-2",
+    "https://www.figma.com/design/OtherKey/Y?node-id=3-3"
+  ];
+  const results = [];
+  for (const url of urls) {
+    const result = await addSeedReference(projectDir, {
+      figmaSeedReference: url,
+      initiator: "ui"
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    results.push(result);
+  }
+
+  const seeds = listSeedReferences(projectDir);
+  const surfaces = listFigmaEvidenceSurfaces(projectDir);
+  expect(seeds).toHaveLength(3);
+  expect(surfaces).toHaveLength(3);
+
+  const identities = new Set(seeds.map((s) => `${s.file_key}|${s.node_id}`));
+  expect(identities).toEqual(
+    new Set(["AbCdEf|1:1", "AbCdEf|2:2", "OtherKey|3:3"])
+  );
+
+  const surfaceIds = new Set(surfaces.map((s) => s.id));
+  expect(surfaceIds.size).toBe(3);
+  for (const result of results) {
+    expect(result.record.current_surface_id).toBe(result.surface.id);
+    expect(surfaceIds.has(result.surface.id)).toBe(true);
+  }
+});
+
+test("duplicate submit preserves first initiator and does not grow the collection", async () => {
+  await withConnectedStore();
+
+  const first = await addSeedReference(projectDir, {
+    figmaSeedReference:
+      "https://www.figma.com/design/AbCdEf/X?node-id=0-81&t=first",
+    referenceNote: "keep-me",
+    initiator: "ui"
+  });
+  expect(first.ok).toBe(true);
+  if (!first.ok) return;
+  expect(first.record.registered_via).toBe("ui");
+
+  const duplicate = await addSeedReference(projectDir, {
+    figmaSeedReference:
+      "https://www.figma.com/design/AbCdEf/X?node-id=0:81&t=other",
+    referenceNote: "must-not-overwrite",
+    initiator: "agent"
+  });
+  expect(duplicate.ok).toBe(true);
+  if (!duplicate.ok) return;
+  expect(duplicate.reused).toBe(true);
+  expect(duplicate.record.id).toBe(first.record.id);
+  expect(duplicate.record.registered_via).toBe("ui");
+  expect(duplicate.record.original_design_intent).toBe("keep-me");
+  expect(duplicate.surface.id).toBe(first.surface.id);
+  expect(listSeedReferences(projectDir)).toHaveLength(1);
+  expect(listFigmaEvidenceSurfaces(projectDir)).toHaveLength(1);
+});
+
+test("ui and agent first captures differ only by initiator for the same URL", async () => {
+  await withConnectedStore();
+
+  const uiDir = mkdtempSync(path.join(tmpdir(), "ikran-capture-ui-"));
+  const agentDir = mkdtempSync(path.join(tmpdir(), "ikran-capture-agent-"));
+  try {
+    const url =
+      "https://www.figma.com/design/AbCdEf/X?node-id=9-9&t=share";
+    const ui = await addSeedReference(uiDir, {
+      figmaSeedReference: url,
+      referenceNote: "same-note",
+      initiator: "ui"
+    });
+    const agent = await addSeedReference(agentDir, {
+      figmaSeedReference: url,
+      referenceNote: "same-note",
+      initiator: "agent"
+    });
+    expect(ui.ok && agent.ok).toBe(true);
+    if (!ui.ok || !agent.ok) return;
+
+    expect(ui.record.file_key).toBe(agent.record.file_key);
+    expect(ui.record.node_id).toBe(agent.record.node_id);
+    expect(ui.record.original_design_intent).toBe(
+      agent.record.original_design_intent
+    );
+    expect(ui.surface.frame_name).toBe(agent.surface.frame_name);
+    expect(ui.record.registered_via).toBe("ui");
+    expect(agent.record.registered_via).toBe("agent");
+  } finally {
+    rmSync(uiDir, { recursive: true, force: true });
+    rmSync(agentDir, { recursive: true, force: true });
+  }
+});
+
+test("percent-encoded node-id canonicalizes to the same Reference", async () => {
+  await withConnectedStore();
+
+  const first = await addSeedReference(projectDir, {
+    figmaSeedReference:
+      "https://www.figma.com/design/AbCdEf/X?node-id=0%3A81",
+    initiator: "agent"
+  });
+  expect(first.ok).toBe(true);
+  if (!first.ok) return;
+  expect(first.record.node_id).toBe("0:81");
+
+  const second = await addSeedReference(projectDir, {
+    figmaSeedReference:
+      "https://www.figma.com/design/AbCdEf/X?node-id=0-81",
+    initiator: "ui"
+  });
+  expect(second.ok).toBe(true);
+  if (!second.ok) return;
+  expect(second.reused).toBe(true);
+  expect(second.record.id).toBe(first.record.id);
+  expect(listSeedReferences(projectDir)).toHaveLength(1);
+});

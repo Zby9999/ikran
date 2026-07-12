@@ -71,6 +71,9 @@ test("HTTP and MCP share schemas + domain reasons; MCP writes without fetch", as
     const toolNames = tools.tools.map((t) => t.name);
     expect(toolNames).toContain("add_seed_reference");
     expect(toolNames).toContain("get_figma_connection_status");
+    expect(toolNames).toContain("get_project_readiness");
+    expect(toolNames).toContain("set_design_language_description");
+    expect(toolNames).toContain("update_seed_reference_note");
     expect(toolNames).not.toContain("register_seed_reference");
     expect(toolNames).not.toContain("record_evidence_package");
     expect(toolNames).not.toContain("list_pending_seed_evidence");
