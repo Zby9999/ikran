@@ -232,8 +232,14 @@ test.describe("Task 11 — SSE record invalidation", () => {
     await expect(page.getByTestId("project-path")).toHaveText(/.+/, {
       timeout: 15000
     });
+    const { connectFigmaForTests } = await import("./helpers/figma-connection");
+    await connectFigmaForTests(runtime.port, token);
     await page.getByRole("button", { name: "Start Building" }).click();
     await expect(page.getByTestId("seed-workbench")).toBeVisible();
+    await expect(page.getByTestId("seed-workbench")).toHaveAttribute(
+      "data-figma-gate",
+      "open"
+    );
 
     const marker = page.getByTestId("region-annotation").first();
     await expect(marker).toHaveAttribute("data-runtime-record-id", annotationId);

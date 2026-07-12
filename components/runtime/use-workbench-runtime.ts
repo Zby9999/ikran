@@ -252,6 +252,33 @@ export function useWorkbenchRuntime(session: string) {
     []
   );
 
+  const getFigmaConnection = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client) {
+      return { ok: false as const, error: "runtime_client_unavailable" };
+    }
+    return client.getFigmaConnection();
+  }, []);
+
+  const connectFigma = useCallback(async (token: string) => {
+    const client = clientRef.current;
+    if (!client) {
+      return { ok: false as const, error: "runtime_client_unavailable" };
+    }
+    return client.connectFigma(token);
+  }, []);
+
+  const captureSeedReference = useCallback(
+    async (figmaSeedReference: string): Promise<MutationResult> => {
+      const client = clientRef.current;
+      if (!client) {
+        return { ok: false, error: "runtime_client_unavailable" };
+      }
+      return client.captureSeedReference(figmaSeedReference);
+    },
+    []
+  );
+
   return {
     seeds,
     surfaces,
@@ -260,6 +287,9 @@ export function useWorkbenchRuntime(session: string) {
     error,
     reload,
     createAnnotation,
-    deleteAnnotation
+    deleteAnnotation,
+    getFigmaConnection,
+    connectFigma,
+    captureSeedReference
   };
 }

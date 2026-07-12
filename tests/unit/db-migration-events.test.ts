@@ -530,7 +530,7 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(4);
+        expect(CURRENT_SCHEMA_VERSION).toBe(5);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
@@ -630,7 +630,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       const db = openProjectDb(dir);
       try {
-        expect(userVersion(db)).toBe(4);
+        expect(userVersion(db)).toBe(5);
         expect(tableNames(db)).not.toContain("tasks");
         const seeds = db
           .prepare(
@@ -680,7 +680,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       const db = openProjectDb(dir);
       try {
-        expect(userVersion(db)).toBe(4);
+        expect(userVersion(db)).toBe(5);
         const rows = db
           .prepare(
             `SELECT id, file_key, node_id, figma_seed_reference
@@ -997,7 +997,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       const db = openProjectDb(dir);
       try {
-        expect(userVersion(db)).toBe(4);
+        expect(userVersion(db)).toBe(5);
         const surfaces = db
           .prepare(
             `SELECT id, seed_reference_id, superseded_by
@@ -1260,7 +1260,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       const db = openProjectDb(dir);
       try {
-        expect(userVersion(db)).toBe(4);
+        expect(userVersion(db)).toBe(5);
         const cols = (
           db.prepare("PRAGMA table_info(region_annotations)").all() as Array<{
             name: string;

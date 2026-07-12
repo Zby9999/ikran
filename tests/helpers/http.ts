@@ -74,3 +74,30 @@ export function rawPost(
     req.end();
   });
 }
+
+export function rawDelete(
+  port: number,
+  route: string,
+  headers: Record<string, string> = {}
+): Promise<HttpResult> {
+  return new Promise((resolve) => {
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path: route,
+        method: "DELETE",
+        headers
+      },
+      (res) => {
+        let body = "";
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
+      }
+    );
+    req.on("error", () => resolve({ status: 0, body: "" }));
+    req.end();
+  });
+}

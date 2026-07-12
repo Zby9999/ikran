@@ -100,7 +100,29 @@ async function bindFolder(
   expect(JSON.parse(res.body).ok).toBe(true);
 }
 
-async function enterWorkbench(page: import("@playwright/test").Page) {
+async function enterWorkbench(
+  page: import("@playwright/test").Page,
+  opts: { port: number; sessionToken: string }
+) {
+  const { connectFigmaForTests } = await import("./helpers/figma-connection");
+  await connectFigmaForTests(opts.port, opts.sessionToken);
+
+  const onWorkbench = await page.getByTestId("seed-workbench").isVisible();
+  if (onWorkbench) {
+    if (
+      (await page.getByTestId("seed-workbench").getAttribute("data-figma-gate")) !==
+      "open"
+    ) {
+      await page.reload();
+    }
+    await expect(page.getByTestId("seed-workbench")).toBeVisible();
+    await expect(page.getByTestId("seed-workbench")).toHaveAttribute(
+      "data-figma-gate",
+      "open"
+    );
+    return;
+  }
+
   await expect(page.getByTestId("project-path")).toHaveText(/.+/, {
     timeout: 15000
   });
@@ -108,6 +130,10 @@ async function enterWorkbench(page: import("@playwright/test").Page) {
   await expect(startButton).toBeEnabled();
   await startButton.click();
   await expect(page.getByTestId("seed-workbench")).toBeVisible();
+  await expect(page.getByTestId("seed-workbench")).toHaveAttribute(
+    "data-figma-gate",
+    "open"
+  );
 }
 
 async function seedEvidenceSurface({
@@ -158,7 +184,7 @@ async function openSeededWorkbench({
   await bindFolder(token, folder, runtime.port);
   const surfaceId = await seedEvidenceSurface({ token, port: runtime.port });
   await page.reload();
-  await enterWorkbench(page);
+  await enterWorkbench(page, { port: runtime.port, sessionToken: token });
 
   const projection = page.getByTestId("seed-reference-projection");
   await expect(projection).toHaveAttribute("data-surface-record-id", surfaceId);
@@ -217,6 +243,9 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     await bindFolder(token, folder, runtime.port);
     await seedEvidenceSurface({ token, port: runtime.port });
 
+    const { connectFigmaForTests } = await import("./helpers/figma-connection");
+    await connectFigmaForTests(runtime.port, token);
+
     // Same shape as composeWorkbenchUrl / create_region_annotation workbench_url.
     await page.goto(
       `${runtime.baseURL}/?session=${encodeURIComponent(token)}&view=workbench`
@@ -266,7 +295,7 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     const surfaceId = (JSON.parse(evidenceRes.body).record as { id: string }).id;
 
     await page.reload();
-    await enterWorkbench(page);
+    await enterWorkbench(page, { port: runtime.port, sessionToken: token });
 
     const annotate = page.getByTestId("annotate-button");
     await expect(annotate).toBeVisible();

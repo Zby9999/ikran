@@ -7,7 +7,12 @@
 
 const CONFLICT_REASONS = new Set(["project_mismatch"]);
 const NOT_FOUND_REASONS = new Set(["not_found"]);
-const INTERNAL_REASONS = new Set(["db_error", "read_failed"]);
+const INTERNAL_REASONS = new Set(["db_error", "read_failed", "figma_api_error"]);
+const UNAUTHORIZED_REASONS = new Set([
+  "figma_connection_required",
+  "invalid_token",
+  "forbidden"
+]);
 
 /**
  * HTTP status for a command-layer `reason` string.
@@ -17,5 +22,6 @@ export function commandErrorHttpStatus(reason: string): number {
   if (INTERNAL_REASONS.has(reason)) return 500;
   if (CONFLICT_REASONS.has(reason)) return 409;
   if (NOT_FOUND_REASONS.has(reason)) return 404;
+  if (UNAUTHORIZED_REASONS.has(reason)) return 403;
   return 400;
 }

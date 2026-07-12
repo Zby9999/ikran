@@ -421,6 +421,8 @@ export interface FigmaEvidenceSurfaceRecord {
   screenshot_data_url: string | null;
   design_signals_json: string | null;
   surface_bounds_json: string | null;
+  /** JSON array of positional nodes from Runtime Figma capture (Issue 05A). */
+  positional_nodes_json?: string | null;
   created_at: string;
   /** Next declaration in append-only lineage; null for current tip. */
   superseded_by: string | null;

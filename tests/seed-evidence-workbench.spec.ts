@@ -140,7 +140,33 @@ function readSeedReferences(folder: string): Array<{
 
 // Drive the UI to the tldraw Workbench once the project is bound.
 // Reused across tests so each test starts from a bound project.
-async function enterWorkbench(page: import("@playwright/test").Page) {
+async function enterWorkbench(
+  page: import("@playwright/test").Page,
+  opts?: { port: number; sessionToken: string }
+) {
+  if (opts) {
+    const { connectFigmaForTests } = await import("./helpers/figma-connection");
+    await connectFigmaForTests(opts.port, opts.sessionToken);
+  }
+
+  // `?view=workbench` keeps the canvas across reload — skip Project Setup.
+  const onWorkbench = await page.getByTestId("seed-workbench").isVisible();
+  if (onWorkbench) {
+    // Connection may have been established after mount; reload to reopen gate.
+    if (
+      (await page.getByTestId("seed-workbench").getAttribute("data-figma-gate")) !==
+      "open"
+    ) {
+      await page.reload();
+    }
+    await expect(page.getByTestId("seed-workbench")).toBeVisible();
+    await expect(page.getByTestId("seed-workbench")).toHaveAttribute(
+      "data-figma-gate",
+      "open"
+    );
+    return;
+  }
+
   await expect(page.getByTestId("project-path")).toHaveText(/.+/, {
     timeout: 15000
   });
@@ -148,6 +174,10 @@ async function enterWorkbench(page: import("@playwright/test").Page) {
   await expect(startButton).toBeEnabled();
   await startButton.click();
   await expect(page.getByTestId("seed-workbench")).toBeVisible();
+  await expect(page.getByTestId("seed-workbench")).toHaveAttribute(
+    "data-figma-gate",
+    "open"
+  );
 }
 
 /** Negative UI guards: no seed write surface; page must not POST seed-reference. */
@@ -212,7 +242,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     expect(record.registered_via).toBe("agent");
 
     await page.reload();
-    await enterWorkbench(page);
+    await enterWorkbench(page, { port: runtime.port, sessionToken: token });
 
     const workbench = page.getByTestId("seed-workbench");
     await expect(workbench).toHaveAttribute("data-canvas-engine", "tldraw");
@@ -273,7 +303,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     });
 
     await page.reload();
-    await enterWorkbench(page);
+    await enterWorkbench(page, { port: runtime.port, sessionToken: token });
 
     const workbench = page.getByTestId("seed-workbench");
     await expect(workbench).toHaveAttribute("data-canvas-engine", "tldraw");
@@ -311,7 +341,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     expect(readSeedReferences(folder).length).toBe(0);
 
     await page.reload();
-    await enterWorkbench(page);
+    await enterWorkbench(page, { port: runtime.port, sessionToken: token });
     await assertNoWorkbenchSeedWriteUi(page);
     await expect(page.getByTestId("seed-reference-projection")).toHaveCount(0);
   });
@@ -339,7 +369,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     expect(recordsBefore[0].figma_seed_reference).toBe(REAL_FIGMA_SEED_REFERENCE);
 
     await page.reload();
-    await enterWorkbench(page);
+    await enterWorkbench(page, { port: runtime.port, sessionToken: token });
 
     await assertNoWorkbenchSeedWriteUi(page);
     await expect(page.locator("svg.react-flow__background")).toHaveCount(0);
@@ -360,7 +390,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     expect(recordsAfter[0].id).toBe(record.id);
 
     await page.reload();
-    await enterWorkbench(page);
+    await enterWorkbench(page, { port: runtime.port, sessionToken: token });
     await expect(page.getByTestId("seed-reference-projection")).toBeVisible();
     await expect(page.getByTestId("seed-reference-projection")).toHaveAttribute(
       "data-runtime-record-id",
@@ -377,7 +407,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     await bindFolder(token, folder, runtime.port);
 
     await page.reload();
-    await enterWorkbench(page);
+    await enterWorkbench(page, { port: runtime.port, sessionToken: token });
 
     await assertNoWorkbenchSeedWriteUi(page);
     await expect(page.getByTestId("seed-reference-projection")).toHaveCount(0);
@@ -441,7 +471,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       const seedId = (JSON.parse(seedRes.body).record as { id: string }).id;
 
       await page.reload();
-      await enterWorkbench(page);
+      await enterWorkbench(page, { port: runtime.port, sessionToken: token });
       await assertNoWorkbenchSeedWriteUi(page);
 
       const projection = page.getByTestId("seed-reference-projection");
@@ -564,7 +594,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       const surfaceId = (JSON.parse(evidenceRes.body).record as { id: string }).id;
 
       await page.reload();
-      await enterWorkbench(page);
+      await enterWorkbench(page, { port: runtime.port, sessionToken: token });
       await assertNoWorkbenchSeedWriteUi(page);
 
       const projection = page.getByTestId("seed-reference-projection");
@@ -682,7 +712,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       expect(surface.screenshot_data_url).toBeNull();
 
       await page.reload();
-      await enterWorkbench(page);
+      await enterWorkbench(page, { port: runtime.port, sessionToken: token });
       await assertNoWorkbenchSeedWriteUi(page);
 
       const projection = page.getByTestId("seed-reference-projection");
@@ -766,7 +796,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       ).toBe(REAL_FIGMA_SEED_REFERENCE);
 
       await page.reload();
-      await enterWorkbench(page);
+      await enterWorkbench(page, { port: runtime.port, sessionToken: token });
       await assertNoWorkbenchSeedWriteUi(page);
 
       const projection = page.getByTestId("seed-reference-projection");

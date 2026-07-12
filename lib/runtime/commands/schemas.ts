@@ -104,6 +104,19 @@ export const createRegionAnnotationInputSchema = z.object(
   createRegionAnnotationInputShape
 );
 
+export const addSeedReferenceInputShape = {
+  figmaSeedReference: z.string(),
+  referenceNote: z.string().optional()
+} as const;
+
+export const addSeedReferenceInputSchema = z.object(addSeedReferenceInputShape);
+
+export const connectFigmaInputShape = {
+  token: z.string()
+} as const;
+
+export const connectFigmaInputSchema = z.object(connectFigmaInputShape);
+
 export type CommandInputParseResult<T> =
   | { ok: true; data: T }
   | { ok: false; reason: "invalid_params" };

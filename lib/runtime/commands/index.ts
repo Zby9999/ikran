@@ -12,6 +12,15 @@ export {
   listSeedReferencesCommand
 } from "./seed-reference";
 
+export { addSeedReferenceCommand } from "./seed-capture";
+
+export {
+  getFigmaConnectionStatusCommand,
+  connectFigmaCommand,
+  disconnectFigmaCommand,
+  requireFigmaConnectionCommand
+} from "./figma-connection";
+
 export {
   recordEvidencePackageCommand,
   listEvidenceSurfacesCommand
@@ -33,6 +42,10 @@ export {
   recordEvidencePackageInputShape,
   createRegionAnnotationInputSchema,
   createRegionAnnotationInputShape,
+  addSeedReferenceInputSchema,
+  addSeedReferenceInputShape,
+  connectFigmaInputSchema,
+  connectFigmaInputShape,
   createOrOpenProjectInputShape,
   setupWorkspaceInputShape
 } from "./schemas";

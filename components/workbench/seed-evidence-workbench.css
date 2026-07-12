@@ -502,3 +502,222 @@
   .region-annotation-marker__chrome {
   background: rgba(165, 165, 165, 0.4);
 }
+
+/* Figma Connection Gate — locked canvas + panel (Figma 305:328 / 309:400) */
+.seed-workbench__canvas--locked {
+  pointer-events: none;
+  user-select: none;
+}
+
+.seed-workbench__canvas--locked .tl-container {
+  pointer-events: none;
+}
+
+.seed-workbench__gate-dim {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.15);
+  pointer-events: auto;
+}
+
+.seed-workbench__gate-panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 25;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+
+.figma-verification-panel {
+  width: 280px;
+  z-index: 25;
+}
+
+.figma-verification-panel__body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 20px;
+  padding: 12px;
+  color: #3d3d3d;
+  font-size: 13px;
+  line-height: normal;
+  letter-spacing: -0.39px;
+}
+
+.figma-verification-panel__intro {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+}
+
+.figma-verification-panel__logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.figma-verification-panel__title {
+  margin: 0;
+  padding: 4px;
+  color: #3d3d3d;
+  font-size: 13px;
+  letter-spacing: -0.39px;
+}
+
+.figma-verification-panel__copy {
+  margin: 0;
+  padding: 0 4px;
+  color: #999999;
+  font-size: 13px;
+  letter-spacing: -0.39px;
+}
+
+.figma-verification-panel__link-row {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 4px;
+}
+
+.figma-verification-panel__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #731b73;
+  text-decoration: none;
+  font-size: 13px;
+  letter-spacing: -0.39px;
+}
+
+.figma-verification-panel__link:hover {
+  text-decoration: underline;
+}
+
+.figma-verification-panel__link-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #f1d9f1;
+  color: #731b73;
+}
+
+.figma-verification-panel__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.figma-verification-panel__field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px;
+  box-sizing: border-box;
+  background: #ffffff;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.figma-verification-panel__input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  color: #3d3d3d;
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: -0.39px;
+  outline: none;
+}
+
+.figma-verification-panel__input::placeholder {
+  color: #999999;
+}
+
+.figma-verification-panel__input:disabled {
+  color: #999999;
+}
+
+.figma-verification-panel__check {
+  flex-shrink: 0;
+}
+
+.figma-verification-panel__verified {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  margin-right: 2px;
+  border-radius: 999px;
+  background: #11c514;
+  color: #ffffff;
+}
+
+.figma-verification-panel__error {
+  margin: 0;
+  padding: 0 4px;
+  color: #b42318;
+  font-size: 12px;
+  letter-spacing: -0.24px;
+}
+
+.figma-verification-panel__enter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid #ffffff;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #ebebeb 0%, #f6f6f6 100%);
+  box-shadow: 0 0 0 1px #a8a8a8;
+  color: #3d3d3d;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: -0.33px;
+  cursor: pointer;
+}
+
+.figma-verification-panel__enter:hover {
+  filter: brightness(0.98);
+}
+
+.figma-verification-panel__enter:active {
+  transform: translateY(1px);
+}
+
+.seed-workbench__paste-error {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  z-index: 40;
+  transform: translateX(-50%);
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #3d3d3d;
+  color: #ffffff;
+  font-size: 13px;
+  letter-spacing: -0.39px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}

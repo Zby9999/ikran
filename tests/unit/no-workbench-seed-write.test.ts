@@ -28,20 +28,23 @@ test.describe("architecture — Workbench seed write entry removed", () => {
     expect(text).not.toMatch(/\bregister\s*\(/);
   });
 
-  test("useWorkbenchRuntime exposes authoritative GET reload + mutations (no seed POST)", () => {
+  test("useWorkbenchRuntime exposes authoritative GET reload + mutations (no legacy seed POST)", () => {
     const hookText = readFileSync(USE_WORKBENCH_RUNTIME, "utf8");
     const clientText = readFileSync(RUNTIME_CLIENT, "utf8");
     const text = `${hookText}\n${clientText}`;
     expect(text).not.toMatch(/\bSeedReferenceRegisterInput\b/);
     expect(text).not.toMatch(/\bSeedReferenceRegisterResult\b/);
-    // Seed list is GET-only; annotation mutations may POST/DELETE elsewhere.
+    // Seed list is GET-only; Issue 05A paste uses /api/seed-capture, not seed-reference POST.
     expect(clientText).toMatch(/fetchJson\(fetcher,\s*"\/api\/seed-reference"/);
     expect(clientText).not.toMatch(
       /fetchJson\(\s*fetcher,\s*"\/api\/seed-reference"[\s\S]{0,180}method:\s*["']POST["']/
     );
+    expect(clientText).toMatch(/\/api\/seed-capture/);
+    expect(clientText).toMatch(/\/api\/figma-connection/);
     expect(hookText).toMatch(/\breload\b/);
     expect(hookText).toMatch(/\bcreateAnnotation\b/);
     expect(hookText).toMatch(/\bdeleteAnnotation\b/);
+    expect(hookText).toMatch(/\bcaptureSeedReference\b/);
   });
 
   test("production Workbench sources do not import enter-panel", () => {

@@ -396,6 +396,77 @@ export function createWorkbenchDataClient(
     loadAll,
     createAnnotation,
     deleteAnnotation,
+    getFigmaConnection: async (): Promise<
+      | { ok: true; connected: false }
+      | {
+          ok: true;
+          connected: true;
+          account: { handle: string; email?: string };
+        }
+      | { ok: false; error: string }
+    > => {
+      const result = await fetchJson(fetcher, "/api/figma-connection", session, {
+        method: "GET"
+      });
+      if (!result.ok) {
+        return {
+          ok: false,
+          error:
+            (typeof result.data.error === "string" && result.data.error) ||
+            "figma_connection_status_failed"
+        };
+      }
+      if (result.data.connected === true) {
+        const account = result.data.account as
+          | { handle: string; email?: string }
+          | undefined;
+        if (!account || typeof account.handle !== "string") {
+          return { ok: false, error: "figma_connection_status_failed" };
+        }
+        return { ok: true, connected: true, account };
+      }
+      return { ok: true, connected: false };
+    },
+    connectFigma: async (
+      token: string
+    ): Promise<{ ok: true } | { ok: false; error: string }> => {
+      const result = await fetchJson(fetcher, "/api/figma-connection", session, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token })
+      });
+      if (!result.ok) {
+        return {
+          ok: false,
+          error:
+            (typeof result.data.error === "string" && result.data.error) ||
+            "figma_connect_failed"
+        };
+      }
+      return { ok: true };
+    },
+    captureSeedReference: async (
+      figmaSeedReference: string
+    ): Promise<RuntimeMutationResult> => {
+      const result = await fetchJson(fetcher, "/api/seed-capture", session, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ figmaSeedReference })
+      });
+      if (!result.ok) {
+        return reportMutationError(
+          (typeof result.data.error === "string" && result.data.error) ||
+            "seed_capture_failed"
+        );
+      }
+      const reloaded = await loadAll();
+      if (!reloaded.ok) {
+        return reportMutationError(
+          `capture_succeeded_reload_failed:${reloaded.error}`
+        );
+      }
+      return { ok: true };
+    },
     dispose() {
       active = false;
       generation += 1;

@@ -100,7 +100,10 @@ export const test = base.extend<{}, { runtime: RuntimeHandle }>({
           env: {
             ...process.env,
             IKRAN_STATE_DIR: stateDir,
-            IKRAN_NEXT_DIST_DIR: SHARED_BUILD_DIR
+            IKRAN_NEXT_DIST_DIR: SHARED_BUILD_DIR,
+            // Issue 05A: e2e never touches real Keychain / Figma network.
+            IKRAN_FIGMA_CREDENTIAL_STORE: "memory",
+            IKRAN_FIGMA_API_MODE: "mock"
           },
           stdio: ["ignore", "pipe", "pipe"],
           cwd: process.cwd(),

@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -567,6 +567,16 @@ CREATE TABLE region_annotations_v4 (
           `Migration v4 failed: PRAGMA foreign_key_check violations: ${JSON.stringify(fkViolations)}`
         );
       }
+    }
+  },
+  {
+    version: 5,
+    up(db) {
+      // Runtime-owned Figma positional node index (ADR 0003 / Issue 05A).
+      db.exec(
+        `ALTER TABLE figma_evidence_surfaces
+         ADD COLUMN positional_nodes_json TEXT`
+      );
     }
   }
 ];
