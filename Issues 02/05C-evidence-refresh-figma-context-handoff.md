@@ -14,21 +14,21 @@
 
 ## Acceptance criteria — automated
 
-- [ ] 重复 paste/add 同一 canonical Reference 不触发 Figma API refresh，不新增 evidence version。
-- [ ] 显式 Refresh 调用 Figma API并在成功后追加新 positional-evidence Surface；旧 Surface 不被覆盖，新 Surface 成为 `current_surface_id`，lineage 关系完整。
-- [ ] Refresh 任一步失败时 current Surface 不变，不产生半成品 evidence version 或成功事件。
-- [ ] Refresh 后历史 Surface 仍可访问，不会被 current Surface 覆盖或删除。
-- [ ] positional node index 只包含定位与结构选择所需的 node identity/parent identity/name/type/depth/visibility/selectability/bounds/clip-render bounds，不包含预取的 styles、variables、component implementation 或完整文件树。
-- [ ] structural overlay 默认只允许选择 Frame、Section、Component、Instance、Text、Image 与有意义命名的 Group；Vector/Path 不污染默认 hit-test，只能通过显式 drill-down 访问。
+- [x] 重复 paste/add 同一 canonical Reference 不触发 Figma API refresh，不新增 evidence version。
+- [x] 显式 Refresh 调用 Figma API并在成功后追加新 positional-evidence Surface；旧 Surface 不被覆盖，新 Surface 成为 `current_surface_id`，lineage 关系完整。
+- [x] Refresh 任一步失败时 current Surface 不变，不产生半成品 evidence version 或成功事件。
+- [x] Refresh 后历史 Surface 仍可访问，不会被 current Surface 覆盖或删除。
+- [x] positional node index 只包含定位与结构选择所需的 node identity/parent identity/name/type/depth/visibility/selectability/bounds/clip-render bounds，不包含预取的 styles、variables、component implementation 或完整文件树。
+- [x] structural overlay 默认只允许选择 Frame、Section、Component、Instance、Text、Image 与有意义命名的 Group；Vector/Path 不污染默认 hit-test，只能通过显式 drill-down 访问。
 - [ ] hover 一个 selectable node 时只高亮该 captured node bounds；重叠节点可通过 breadcrumb、父层级或重复/显式 drill-down 切换，行为与设计师 Figma reference 一致。
-- [ ] hover、临时 selection、highlight 与 breadcrumb navigation 不创建 Runtime record/event，也不进入 research export。
-- [ ] Workbench 使用一张原始 evidence screenshot + overlay；默认不为每个 node 生成或持久化独立截图，只有选中/提交时可按需生成 crop。
-- [ ] 给定 surface + raw semantic rect，Runtime 返回稳定排序的 candidates，并至少包含 node id、bounds、overlap/containment signal；无相交节点时返回空 candidates，而不是发明 primary node。
-- [ ] candidate ranking 对固定 fixtures 可重复；坐标换算覆盖截图/media bounds、normalized rect、嵌套 nodes 和边界 clamp。
-- [ ] `get_seed_reference_context` 返回 source identity、current evidence identity 和 Figma link，不返回 PAT。
-- [ ] `get_annotation_node_candidates` 返回 Runtime 计算的 candidates；Runtime 不写入 `primaryNodeId`。
-- [ ] 对 captured node id，Runtime 可返回其在 current positional index 中的 correspondence 或明确 missing；不会自动迁移任何持久语义记录。
-- [ ] tests 覆盖 refresh success/failure、lineage、historical Surface、semantic-node filtering、nested/overlapping hit-test、ephemeral overlay state、candidate ranking、empty candidates、correspondence/missing 和 context security。
+- [x] hover、临时 selection、highlight 与 breadcrumb navigation 不创建 Runtime record/event，也不进入 research export。
+- [x] Workbench 使用一张原始 evidence screenshot + overlay；默认不为每个 node 生成或持久化独立截图，只有选中/提交时可按需生成 crop。
+- [x] 给定 surface + raw semantic rect，Runtime 返回稳定排序的 candidates，并至少包含 node id、bounds、overlap/containment signal；无相交节点时返回空 candidates，而不是发明 primary node。
+- [x] candidate ranking 对固定 fixtures 可重复；坐标换算覆盖截图/media bounds、normalized rect、嵌套 nodes 和边界 clamp。
+- [x] `get_seed_reference_context` 返回 source identity、current evidence identity 和 Figma link，不返回 PAT。
+- [x] `get_annotation_node_candidates` 返回 Runtime 计算的 candidates；Runtime 不写入 `primaryNodeId`。
+- [x] 对 captured node id，Runtime 可返回其在 current positional index 中的 correspondence 或明确 missing；不会自动迁移任何持久语义记录。
+- [x] tests 覆盖 refresh success/failure、lineage、historical Surface、semantic-node filtering、nested/overlapping hit-test、ephemeral overlay state、candidate ranking、empty candidates、correspondence/missing 和 context security。
 
 ## Acceptance criteria — real Figma / real Agent
 
@@ -42,3 +42,11 @@
 ## Blocked by
 
 - `05B-seed-reference-collection-agent-parity.md`
+
+## Completion report — 2026-07-14
+
+已完成 14/15 项 automated AC：canonical duplicate reuse、explicit Refresh append-only lineage、失败回滚、历史 Surface、最小 positional node index、默认 selectable-node filtering、ephemeral structure overlay、稳定 candidate ranking、context/correspondence MCP handoff 与 no-PAT boundary 均已实现。实现提交：`da5e29d`（已推送 `main`）。
+
+验证由 refresh/seed-capture、Figma positional evidence、context/correspondence、structure overlay 与 MCP suites 覆盖；后续完整 unit suite 53 files / 414 tests 通过。代码审查最终无 blocking finding。
+
+仍未勾选 hover 的完整 breadcrumb/父层级/drill-down 交互，因为缺少对应设计师 Figma UI/interaction reference；Real Figma / real Agent AC 全部保持未勾选，本轮没有用 deterministic fixtures 替代真实验证。
