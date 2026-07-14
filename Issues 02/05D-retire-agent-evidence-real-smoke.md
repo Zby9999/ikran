@@ -25,7 +25,7 @@
 
 ## Acceptance criteria — real end-to-end smoke
 
-- [ ] 使用真实 PAT 打开 Figma Connection Gate，重启 Runtime 后仍连接；报告不包含 secret。
+- [x] 使用真实 PAT 打开 Figma Connection Gate，重启 Runtime 后仍连接；报告不包含 secret。（Browser Use 受控重启后 Connection Gate 仍为 `open`，两个既有 Surface 继续投影；核验过程未读取或输出 PAT。）
 - [x] 设计师在无 Agent 参与时粘贴至少两个真实 Figma nodes，均得到可视 Surface；重复 link 不重复创建。（Browser Use 实机复验：Workbench 保持 2 个可视 Surface；粘贴 canonical-equivalent link 后仍为 2 个 current Seed References，Surface id 未变化。）
 - [ ] 真实 Agent 通过新 MCP tool 添加另一个 node，并在 Workbench 中通过 SSE 出现。
 - [ ] 设计师创建真实 Figma Region Annotation；Runtime 返回 candidates；Agent 通过宿主 Figma MCP 获取 implementation context 并确认 primary node。
@@ -34,7 +34,7 @@
 
 ## Blocked by
 
-- Automated scope 无 blocker；剩余 real smoke 需要可访问的真实 Figma API、真实安装级 PAT 重启和真实 Agent host。
+- Automated scope 无 blocker；剩余 real smoke 需要可访问的真实 Figma API 与真实 Agent host。安装级 PAT 重启持久化已通过。
 
 ## Comments
 
@@ -49,4 +49,4 @@
 
 验证：`npm run check` 完整通过（typecheck；53 unit files / 414 tests；64 e2e tests）。Inter 已改为附带 OFL 许可证的官方本地 variable font，保持现有字体设计并消除 Next build 对 Google Fonts 网络请求的依赖。Structure Overlay / annotation geometry 定向 suite 5 files / 30 tests 通过；Browser Use 继续作为真实 Workbench smoke 工具。Code review 的 Standards 轴发现的重复 SSE helper 已提取到 `tests/helpers/sse.ts` 并修复 timeout waiter 清理；Spec 轴指出的 clipboard-handler 缺口已由真实 paste vertical 补齐；复审前述 automated 缺口均已关闭。`git diff --check` 通过。
 
-Real smoke 已完成 2/6 项。Browser Use 实机验证中，Annotation 模式下两个真实 Figma Surface 均可见；Structure Overlay 命中节点 `197:58`，hover highlight 使用与结构化 Annotation 一致的较小外扩 margin；粘贴 canonical-equivalent Figma link 后 current Seed Reference 数量和 Surface id 均未变化，因此重复复用项标记为 real pass。显式 Refresh 在约 55 秒后解除 pending 并显示 `figma_api_timeout`，没有产生新 current Surface，故 Refresh real AC 仍为 `blocked`。PAT 重启持久化、真实 Agent add/SSE、真实 candidate→Figma MCP→primary confirmation 均为 `not attempted`；deterministic adapter 结果没有计作 real pass，报告和数据库核对过程未输出 secret。
+Real smoke 已完成 3/6 项。Browser Use 实机验证中，Annotation 模式下两个真实 Figma Surface 均可见；Structure Overlay 命中节点 `197:58`，hover highlight 使用与结构化 Annotation 一致的较小外扩 margin；粘贴 canonical-equivalent Figma link 后 current Seed Reference 数量和 Surface id 均未变化，因此重复复用项标记为 real pass。随后受控重启 Runtime，Workbench 的 Figma Connection Gate 仍为 `open`，两个既有 Surface 继续投影，证明真实 PAT 安装级持久化通过；核验过程未读取或输出 secret。显式 Refresh 在约 55 秒后解除 pending 并显示 `figma_api_timeout`，没有产生新 current Surface，故 Refresh real AC 仍为 `blocked`。真实 Agent add/SSE 与真实 candidate→Figma MCP→primary confirmation 为 `not attempted`；deterministic adapter 结果没有计作 real pass。
