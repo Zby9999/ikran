@@ -26,11 +26,11 @@
 ## Acceptance criteria — real end-to-end smoke
 
 - [ ] 使用真实 PAT 打开 Figma Connection Gate，重启 Runtime 后仍连接；报告不包含 secret。
-- [ ] 设计师在无 Agent 参与时粘贴至少两个真实 Figma nodes，均得到可视 Surface；重复 link 不重复创建。
+- [x] 设计师在无 Agent 参与时粘贴至少两个真实 Figma nodes，均得到可视 Surface；重复 link 不重复创建。（Browser Use 实机复验：Workbench 保持 2 个可视 Surface；粘贴 canonical-equivalent link 后仍为 2 个 current Seed References，Surface id 未变化。）
 - [ ] 真实 Agent 通过新 MCP tool 添加另一个 node，并在 Workbench 中通过 SSE 出现。
 - [ ] 设计师创建真实 Figma Region Annotation；Runtime 返回 candidates；Agent 通过宿主 Figma MCP 获取 implementation context 并确认 primary node。
 - [ ] 显式 Refresh 生成新 current evidence version，历史 Surface 与 annotation 仍可回放。
-- [ ] smoke 报告逐项标记 automated pass、real pass、blocked、not attempted；不得用 deterministic adapter 结果替代真实 Figma API、真实 Keychain 或真实 Agent host 结果。
+- [x] smoke 报告逐项标记 automated pass、real pass、blocked、not attempted；不得用 deterministic adapter 结果替代真实 Figma API、真实 Keychain 或真实 Agent host 结果。
 
 ## Blocked by
 
@@ -47,6 +47,6 @@
 
 已完成 7/10 项 automated AC：Active MCP/HTTP/Workbench 已统一到 Runtime-owned capture；pending reader 与 Agent-supplied evidence writer 均返回/保持 retired；Workbench persisted projection 不再依据 `registered_via` 分流 loading；历史 reader 仅作为明确兼容层保留。新增 command-kernel integration 覆盖 connect、Workbench initiator capture、第二 Reference、Agent initiator add、canonical duplicate reuse、annotation candidates、explicit Refresh 与 PAT 不进入 response/SQLite/events；manual smoke 已改写为真实 PAT/Figma/Agent 转型流程。
 
-验证：`npm run typecheck` 通过；完整 unit suite 53 files / 414 tests 通过；05D 定向 suite 8 files / 98 tests 通过；最新安全/SSE command-kernel 定向 suite 6 files / 53 tests 通过。`git diff --check` 通过。完整 one-process HTTP+MCP+SSE vertical、Playwright 与 `npm run check` 未勾选：本轮 Playwright global build 首次因沙箱无法获取 Google Fonts 失败，联网重跑审批通道随后异常中断，未以绕过方式冒充通过。
+验证：`npm run typecheck` 通过；完整 unit suite 53 files / 414 tests 通过；Structure Overlay / annotation geometry 定向 suite 5 files / 30 tests 通过；05D 定向 suite 8 files / 98 tests 通过；最新安全/SSE command-kernel 定向 suite 6 files / 53 tests 通过。`git diff --check` 通过。完整 one-process HTTP+MCP+SSE vertical 与 `npm run check` 仍未勾选；按设计师要求，本轮交互验证改用 Browser Use，不把 Playwright 作为这轮验证的阻塞条件，也不把未执行的 Playwright 冒充通过。
 
-Real end-to-end smoke 全部保持未勾选：本轮未使用真实 PAT、真实 Figma nodes 或真实 Agent host，因此状态为 `not attempted`，deterministic adapter 结果没有计作 real pass。
+Real smoke 已完成 2/6 项。Browser Use 实机验证中，Annotation 模式下两个真实 Figma Surface 均可见；Structure Overlay 命中节点 `197:58`，hover highlight 使用与结构化 Annotation 一致的较小外扩 margin；粘贴 canonical-equivalent Figma link 后 current Seed Reference 数量和 Surface id 均未变化，因此重复复用项标记为 real pass。显式 Refresh 在约 55 秒后解除 pending 并显示 `figma_api_timeout`，没有产生新 current Surface，故 Refresh real AC 仍为 `blocked`。PAT 重启持久化、真实 Agent add/SSE、真实 candidate→Figma MCP→primary confirmation 均为 `not attempted`；deterministic adapter 结果没有计作 real pass，报告和数据库核对过程未输出 secret。
