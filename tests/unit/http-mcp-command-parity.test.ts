@@ -251,36 +251,59 @@ describe("HTTP/MCP command parity — shared domain reasons", () => {
     const cases: Array<{ payload: Record<string, unknown>; reason: string }> = [
       {
         payload: {
+          target: {
+            kind: "figma-region",
+            rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+          },
           author: "agent",
-          body: "x",
-          rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+          body: "x"
         },
         reason: "missing_surface_anchor"
       },
       {
         payload: {
-          surfaceArtifactId: "surf-1",
-          body: "x",
-          rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+          target: {
+            kind: "figma-region",
+            surfaceArtifactId: "surf-1",
+            rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+          },
+          body: "x"
         },
         reason: "missing_author"
       },
       {
         payload: {
-          surfaceArtifactId: "surf-1",
+          target: {
+            kind: "figma-region",
+            surfaceArtifactId: "surf-1",
+            rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+          },
           author: "robot",
-          body: "x",
-          rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+          body: "x"
         },
         reason: "invalid_author"
       },
       {
         payload: {
-          surfaceArtifactId: "surf-1",
+          target: {
+            kind: "figma-region",
+            surfaceArtifactId: "surf-1"
+          },
           author: "agent",
           body: "x"
         },
         reason: "missing_rect"
+      },
+      {
+        payload: {
+          target: {
+            kind: "figma-region",
+            surfaceArtifactId: "missing-surface",
+            rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+          },
+          author: "agent"
+        },
+        reason: "surface_not_found"
       }
     ];
 
@@ -290,6 +313,16 @@ describe("HTTP/MCP command parity — shared domain reasons", () => {
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toBe(c.reason);
     }
+
+    expect(
+      schema.safeParse({
+        target: {
+          kind: "figma-node",
+          evidenceVersionId: "surface-v1"
+        },
+        author: "agent"
+      }).success
+    ).toBe(false);
   });
 });
 

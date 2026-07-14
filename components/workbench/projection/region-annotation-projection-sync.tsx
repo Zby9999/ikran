@@ -19,6 +19,8 @@ import {
   type RegionAnnotationShape
 } from "../region-annotation-shape";
 import { SEED_REFERENCE_PROJECTION_TYPE } from "../seed-reference-projection-shape";
+import type { SeedReferenceProjectionShape } from "../seed-reference-projection-shape";
+import { fitStructuralImageBox } from "../structural-overlay";
 import {
   computeAnnotationPagePlacement,
   findSurfaceShapeForAnnotation,
@@ -56,10 +58,16 @@ function syncRegionAnnotationShapes(
       pageBounds.h
     );
     if (mediaBox.w <= 0 || mediaBox.h <= 0) continue;
+    const surfaceShape = parent as SeedReferenceProjectionShape;
+    const imageBox =
+      fitStructuralImageBox(mediaBox, {
+        width: surfaceShape.props.naturalMediaW,
+        height: surfaceShape.props.naturalMediaH
+      }) ?? mediaBox;
 
     placed.push({
       record,
-      placement: computeAnnotationPagePlacement(record, mediaBox)
+      placement: computeAnnotationPagePlacement(record, mediaBox, imageBox)
     });
   }
 

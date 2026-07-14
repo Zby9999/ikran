@@ -21,6 +21,7 @@ export type EventType =
   | "evidence_package_recorded"
   | "figma_evidence_refreshed"
   | "annotation_created"
+  | "annotation_primary_confirmed"
   | "question_card_created"
   | "designer_answer_submitted"
   | "seed_extraction_stage_completed"

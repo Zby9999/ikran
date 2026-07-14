@@ -386,15 +386,25 @@ export function createWorkbenchDataClient(
   const createAnnotation = async (payload: {
     surfaceArtifactId: string;
     rect: NormalizedRect;
+    targetNodeId?: string;
   }): Promise<RuntimeMutationResult> => {
     const result = await fetchJson(fetcher, "/api/region-annotation", session, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        surfaceArtifactId: payload.surfaceArtifactId,
+        target: payload.targetNodeId
+          ? {
+              kind: "figma-node",
+              evidenceVersionId: payload.surfaceArtifactId,
+              nodeId: payload.targetNodeId
+            }
+          : {
+              kind: "figma-region",
+              surfaceArtifactId: payload.surfaceArtifactId,
+              rect: payload.rect
+            },
         author: "designer",
-        body: "Placeholder annotation",
-        rect: payload.rect
+        body: "Placeholder annotation"
       })
     });
     if (!result.ok) {

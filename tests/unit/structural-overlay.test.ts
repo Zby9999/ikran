@@ -5,6 +5,7 @@ import {
   findStructuralOverlayFrameAtPoint,
   structuralHoverDisplayRect
 } from "../../components/workbench/structural-overlay";
+import { displayRectForRegionAnnotation } from "../../lib/runtime/region-annotation-display";
 
 const FRAME_BOUNDS = JSON.stringify({
   x: 100,
@@ -30,15 +31,34 @@ describe("structural overlay", () => {
   });
 
   test("hover display rect uses the same media-space margin as the annotation", () => {
-    const rect = structuralHoverDisplayRect({
-      rect: { x: 0.2, y: 0.25, w: 0.4, h: 0.1 },
-      imageBox: { x: 100, y: 50, w: 400, h: 200 },
-      mediaSize: { w: 600, h: 400 }
+    const raw = { x: 0.2, y: 0.25, w: 0.4, h: 0.1 };
+    const imageBox = { x: 100, y: 50, w: 400, h: 200 };
+    const mediaSize = { w: 600, h: 400 };
+    const hover = structuralHoverDisplayRect({
+      rect: raw,
+      imageBox,
+      mediaSize
     });
-    expect(rect.x).toBeCloseTo(0.191, 6);
-    expect(rect.y).toBeCloseTo(0.232, 6);
-    expect(rect.w).toBeCloseTo(0.418, 6);
-    expect(rect.h).toBeCloseTo(0.136, 6);
+    const semanticRect = {
+      x: (imageBox.x + raw.x * imageBox.w) / mediaSize.w,
+      y: (imageBox.y + raw.y * imageBox.h) / mediaSize.h,
+      w: (raw.w * imageBox.w) / mediaSize.w,
+      h: (raw.h * imageBox.h) / mediaSize.h
+    };
+    const annotation = displayRectForRegionAnnotation({
+      author: "designer",
+      rect: semanticRect,
+      geometry_version: "v2_raw",
+      from_point: false,
+      targetKind: "figma-node",
+      mediaSize
+    });
+    expect({
+      x: (hover.x * imageBox.w + imageBox.x) / mediaSize.w,
+      y: (hover.y * imageBox.h + imageBox.y) / mediaSize.h,
+      w: (hover.w * imageBox.w) / mediaSize.w,
+      h: (hover.h * imageBox.h) / mediaSize.h
+    }).toEqual(annotation);
   });
 
   test("projects default-selectable captured nodes and excludes root, vectors, and hidden nodes", () => {

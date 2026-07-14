@@ -45,6 +45,12 @@ import {
   type NormalizedRect,
   type PageRect
 } from "./region-annotation-geometry";
+import {
+  buildStructuralOverlayFrames,
+  fitStructuralImageBox,
+  findStructuralOverlayFrameAtPoint
+} from "./structural-overlay";
+import { expandStructureRegionRect } from "@/lib/runtime/region-annotation-display";
 
 export const REGION_ANNOTATION_TOOL_ID = "region-annotation" as const;
 
@@ -54,6 +60,8 @@ const CLICK_DRAG_THRESHOLD_PX = 4;
 export type RegionAnnotationCreatePayload = {
   surfaceArtifactId: string;
   rect: NormalizedRect;
+  /** Captured Figma structure selected by a short click. */
+  targetNodeId?: string;
   /** Local draft marker kept visible until projection sync creates the record. */
   draftShapeId?: string;
 };
@@ -65,6 +73,8 @@ type DraftSession = {
   surfaceArtifactId: string;
   mediaBox: PageRect;
   originPage: { x: number; y: number };
+  /** Structural target under the initial press; click-only, ignored by drags. */
+  structuralTarget: { rect: NormalizedRect; nodeId: string } | null;
   draftShapeId: string;
 };
 
@@ -127,6 +137,37 @@ function rectFromOriginCurrent(
   const w = Math.abs(current.x - origin.x);
   const h = Math.abs(current.y - origin.y);
   return { x, y, w, h };
+}
+
+function structuralRectAtPoint(
+  shape: SeedReferenceProjectionShape,
+  mediaBox: PageRect,
+  pagePoint: { x: number; y: number }
+): { rect: NormalizedRect; nodeId: string } | null {
+  if (mediaBox.w <= 0 || mediaBox.h <= 0) return null;
+  const imageBox =
+    fitStructuralImageBox(mediaBox, {
+      width: shape.props.naturalMediaW,
+      height: shape.props.naturalMediaH
+    }) ?? mediaBox;
+  const frames = buildStructuralOverlayFrames({
+    frameBoundsJson: shape.props.frameBoundsJson,
+    positionalNodesJson: shape.props.positionalNodesJson
+  });
+  const frame = findStructuralOverlayFrameAtPoint(frames, {
+    x: (pagePoint.x - imageBox.x) / imageBox.w,
+    y: (pagePoint.y - imageBox.y) / imageBox.h
+  });
+  if (!frame) return null;
+  return {
+    nodeId: frame.nodeId,
+    rect: {
+      x: (imageBox.x - mediaBox.x + frame.rect.x * imageBox.w) / mediaBox.w,
+      y: (imageBox.y - mediaBox.y + frame.rect.y * imageBox.h) / mediaBox.h,
+      w: (frame.rect.w * imageBox.w) / mediaBox.w,
+      h: (frame.rect.h * imageBox.h) / mediaBox.h
+    }
+  };
 }
 
 type RegionAnnotationToolParent = StateNode & {
@@ -198,6 +239,11 @@ export function createRegionAnnotationToolClass(
         surfaceArtifactId: hit.surfaceArtifactId,
         mediaBox: hit.mediaBox,
         originPage: origin,
+        structuralTarget: structuralRectAtPoint(
+          hit.shape,
+          hit.mediaBox,
+          origin
+        ),
         draftShapeId: String(draftShapeId)
       };
     }
@@ -257,18 +303,22 @@ export function createRegionAnnotationToolClass(
 
       let normalized: NormalizedRect;
       if (isClick) {
-        const nx =
-          session.mediaBox.w > 0
-            ? (session.originPage.x - session.mediaBox.x) / session.mediaBox.w
-            : 0;
-        const ny =
-          session.mediaBox.h > 0
-            ? (session.originPage.y - session.mediaBox.y) / session.mediaBox.h
-            : 0;
-        normalized = expandNormalizedPointToRect(
-          { x: nx, y: ny },
-          session.mediaBox
-        );
+        if (session.structuralTarget) {
+          normalized = session.structuralTarget.rect;
+        } else {
+          const nx =
+            session.mediaBox.w > 0
+              ? (session.originPage.x - session.mediaBox.x) / session.mediaBox.w
+              : 0;
+          const ny =
+            session.mediaBox.h > 0
+              ? (session.originPage.y - session.mediaBox.y) / session.mediaBox.h
+              : 0;
+          normalized = expandNormalizedPointToRect(
+            { x: nx, y: ny },
+            session.mediaBox
+          );
+        }
       } else {
         const raw = rectFromOriginCurrent(session.originPage, current);
         const clamped = clampPageRectToMediaBox(session.mediaBox, raw);
@@ -293,7 +343,17 @@ export function createRegionAnnotationToolClass(
       // Keep the draft visible through Runtime create + reload. Mark it
       // committing so projection sync can drop it in the same batch as the
       // authoritative create (avoids pointer-up delete → empty flash).
-      const pageRect = normalizedRectToPage(session.mediaBox, normalized);
+      const displayNormalized =
+        isClick && session.structuralTarget
+          ? expandStructureRegionRect(normalized, {
+              w: session.mediaBox.w,
+              h: session.mediaBox.h
+            })
+          : normalized;
+      const pageRect = normalizedRectToPage(
+        session.mediaBox,
+        displayNormalized
+      );
       editor.updateShape<RegionAnnotationShape>({
         id: session.draftShapeId as RegionAnnotationShape["id"],
         type: REGION_ANNOTATION_TYPE,
@@ -316,6 +376,9 @@ export function createRegionAnnotationToolClass(
       (this.parent as RegionAnnotationToolParent).commitCreate({
         surfaceArtifactId: session.surfaceArtifactId,
         rect: normalized,
+        ...(isClick && session.structuralTarget
+          ? { targetNodeId: session.structuralTarget.nodeId }
+          : {}),
         draftShapeId: session.draftShapeId
       });
 

@@ -47,6 +47,7 @@ export { listPendingSeedEvidenceCommand } from "./pending-seed-evidence";
 
 export {
   createRegionAnnotationCommand,
+  confirmAnnotationPrimaryNodeCommand,
   listRegionAnnotationsCommand,
   deleteRegionAnnotationCommand
 } from "./region-annotation";
@@ -64,6 +65,7 @@ export {
   recordEvidencePackageInputShape,
   createRegionAnnotationInputSchema,
   createRegionAnnotationInputShape,
+  confirmAnnotationPrimaryInputSchema,
   addSeedReferenceInputSchema,
   addSeedReferenceInputShape,
   refreshSeedReferenceInputSchema,

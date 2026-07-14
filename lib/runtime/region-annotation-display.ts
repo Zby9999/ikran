@@ -84,6 +84,8 @@ export interface DisplayRectForRegionAnnotationInput {
   rect: RegionAnnotationDisplayRect;
   geometry_version: RegionAnnotationGeometryVersion;
   from_point: boolean;
+  /** Explicit persisted target kind; node targets use the structure margin. */
+  targetKind?: "figma-surface" | "figma-node" | "figma-region";
   mediaSize?: AgentRegionMediaSize;
 }
 
@@ -91,8 +93,9 @@ export interface DisplayRectForRegionAnnotationInput {
  * Resolve the normalized rect to project onto the Evidence Surface media box.
  *
  * - `v1_padded`: stored as already-padded → return as-is (any author).
- * - `v2_raw` + agent + explicit (!from_point): use the larger Agent margin.
- * - designer regions or point markers: return as-is.
+ * - `v2_raw` + figma-node: use the tighter Structure margin for hover parity.
+ * - `v2_raw` + non-node agent + explicit (!from_point): larger Agent margin.
+ * - freeform designer regions or point markers: return as-is.
  */
 export function displayRectForRegionAnnotation(
   input: DisplayRectForRegionAnnotationInput
@@ -102,10 +105,14 @@ export function displayRectForRegionAnnotation(
     rect,
     geometry_version,
     from_point,
+    targetKind,
     mediaSize
   } = input;
   if (geometry_version === "v1_padded") {
     return { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
+  }
+  if (!from_point && targetKind === "figma-node") {
+    return expandStructureRegionRect(rect, mediaSize);
   }
   if (author === "agent" && !from_point) {
     return expandAgentRegionRect(rect, mediaSize);

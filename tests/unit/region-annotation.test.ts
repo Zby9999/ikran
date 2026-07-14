@@ -8,6 +8,7 @@ import { test, expect } from "vitest";
 import {
   validateRegionAnnotationInput,
   createRegionAnnotation,
+  confirmAnnotationPrimaryNode,
   deleteRegionAnnotation,
   listRegionAnnotations,
   expandPointToRect,
@@ -21,7 +22,11 @@ import {
 import { recordEvidencePackage } from "../../lib/runtime/evidence-package";
 import { registerSeedReference } from "../../lib/runtime/seed-reference";
 import { listEvents } from "../../lib/runtime/events";
-import { initializeProjectDb } from "../../lib/runtime/db";
+import {
+  closeProjectDb,
+  initializeProjectDb,
+  openProjectDb
+} from "../../lib/runtime/db";
 
 const VALID_FIGMA = "https://www.figma.com/design/AbCdEf/Checkout?node-id=1:2";
 
@@ -69,12 +74,107 @@ function validRect() {
   return { x: 0.1, y: 0.2, w: 0.3, h: 0.25 };
 }
 
+function addPositionalFixture(
+  dir: string,
+  surfaceId: string,
+  nodes: unknown[]
+): void {
+  const db = openProjectDb(dir);
+  try {
+    db.prepare(
+      `UPDATE figma_evidence_surfaces
+       SET frame_bounds_json = ?, positional_nodes_json = ?
+       WHERE id = ?`
+    ).run(
+      JSON.stringify({ x: 100, y: 200, width: 400, height: 800 }),
+      JSON.stringify(nodes),
+      surfaceId
+    );
+  } finally {
+    closeProjectDb(db);
+  }
+}
+
 test.describe("validateRegionAnnotationInput (unit)", () => {
+  test("accepts an explicit figma-region target and rejects the legacy top-level anchor", () => {
+    const explicit = validateRegionAnnotationInput({
+      target: {
+        kind: "figma-region",
+        surfaceArtifactId: "surf-1",
+        rect: validRect()
+      },
+      author: "designer",
+      body: "Explicit target"
+    });
+    expect(explicit.ok).toBe(true);
+    if (explicit.ok) {
+      expect(explicit.input.target).toEqual({
+        kind: "figma-region",
+        surfaceArtifactId: "surf-1",
+        rect: validRect()
+      });
+    }
+
+    const legacy = validateRegionAnnotationInput({
+      surfaceArtifactId: "surf-1",
+      author: "designer",
+      body: "Legacy target",
+      rect: validRect()
+    });
+    expect(legacy).toEqual({ ok: false, reason: "missing_target" });
+  });
+
+  test("accepts a whole figma-surface target with captured evidence identity", () => {
+    const result = validateRegionAnnotationInput({
+      target: {
+        kind: "figma-surface",
+        evidenceVersionId: "surface-v1"
+      },
+      author: "agent",
+      body: "Whole captured surface"
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.input.target).toEqual({
+      kind: "figma-surface",
+      evidenceVersionId: "surface-v1"
+    });
+    expect(result.input.rect).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+  });
+
+  test("figma-node target requires both captured evidence version and node id", () => {
+    const valid = validateRegionAnnotationInput({
+      target: {
+        kind: "figma-node",
+        evidenceVersionId: "surface-v1",
+        nodeId: "12:34"
+      },
+      author: "designer",
+      body: "Explicit source node"
+    });
+    expect(valid.ok).toBe(true);
+    if (valid.ok) {
+      expect(valid.input.target).toEqual({
+        kind: "figma-node",
+        evidenceVersionId: "surface-v1",
+        nodeId: "12:34"
+      });
+    }
+
+    expect(
+      validateRegionAnnotationInput({
+        target: { kind: "figma-node", nodeId: "12:34" },
+        author: "designer",
+        body: "Missing captured version"
+      })
+    ).toEqual({ ok: false, reason: "invalid_target" });
+  });
+
   test("missing surface anchor", () => {
     const res = validateRegionAnnotationInput({
+      target: { kind: "figma-region", rect: validRect() },
       author: "designer",
-      body: "Placeholder annotation",
-      rect: validRect()
+      body: "Placeholder annotation"
     });
     expect(res.ok).toBe(false);
     if (res.ok) return;
@@ -83,10 +183,13 @@ test.describe("validateRegionAnnotationInput (unit)", () => {
 
   test("invalid rect: negative", () => {
     const res = validateRegionAnnotationInput({
-      surfaceArtifactId: "surf-1",
+      target: {
+        kind: "figma-region",
+        surfaceArtifactId: "surf-1",
+        rect: { x: -0.1, y: 0.2, w: 0.3, h: 0.25 }
+      },
       author: "designer",
-      body: "x",
-      rect: { x: -0.1, y: 0.2, w: 0.3, h: 0.25 }
+      body: "x"
     });
     expect(res.ok).toBe(false);
     if (res.ok) return;
@@ -95,10 +198,13 @@ test.describe("validateRegionAnnotationInput (unit)", () => {
 
   test("invalid rect: component > 1", () => {
     const res = validateRegionAnnotationInput({
-      surfaceArtifactId: "surf-1",
+      target: {
+        kind: "figma-region",
+        surfaceArtifactId: "surf-1",
+        rect: { x: 0.1, y: 0.2, w: 1.5, h: 0.25 }
+      },
       author: "designer",
-      body: "x",
-      rect: { x: 0.1, y: 0.2, w: 1.5, h: 0.25 }
+      body: "x"
     });
     expect(res.ok).toBe(false);
     if (res.ok) return;
@@ -107,10 +213,13 @@ test.describe("validateRegionAnnotationInput (unit)", () => {
 
   test("invalid rect: overflow past media box edge", () => {
     const res = validateRegionAnnotationInput({
-      surfaceArtifactId: "surf-1",
+      target: {
+        kind: "figma-region",
+        surfaceArtifactId: "surf-1",
+        rect: { x: 0.8, y: 0.8, w: 0.3, h: 0.3 }
+      },
       author: "designer",
-      body: "x",
-      rect: { x: 0.8, y: 0.8, w: 0.3, h: 0.3 }
+      body: "x"
     });
     expect(res.ok).toBe(false);
     if (res.ok) return;
@@ -119,10 +228,13 @@ test.describe("validateRegionAnnotationInput (unit)", () => {
 
   test("invalid rect: zero width only (not a point)", () => {
     const res = validateRegionAnnotationInput({
-      surfaceArtifactId: "surf-1",
+      target: {
+        kind: "figma-region",
+        surfaceArtifactId: "surf-1",
+        rect: { x: 0.1, y: 0.2, w: 0, h: 0.25 }
+      },
       author: "designer",
-      body: "x",
-      rect: { x: 0.1, y: 0.2, w: 0, h: 0.25 }
+      body: "x"
     });
     expect(res.ok).toBe(false);
     if (res.ok) return;
@@ -131,24 +243,30 @@ test.describe("validateRegionAnnotationInput (unit)", () => {
 
   test("zero-area rect expands to centered POINT_SIDE square", () => {
     const res = validateRegionAnnotationInput({
-      surfaceArtifactId: "surf-1",
+      target: {
+        kind: "figma-region",
+        surfaceArtifactId: "surf-1",
+        rect: { x: 0.5, y: 0.5, w: 0, h: 0 }
+      },
       author: "designer",
-      body: "Placeholder annotation",
-      rect: { x: 0.5, y: 0.5, w: 0, h: 0 }
+      body: "Placeholder annotation"
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.input.rect).toEqual(expandPointToRect({ x: 0.5, y: 0.5 }));
-    expect(res.input.rect.w).toBe(POINT_SIDE);
-    expect(res.input.rect.h).toBe(POINT_SIDE);
+    expect(res.input.rect!.w).toBe(POINT_SIDE);
+    expect(res.input.rect!.h).toBe(POINT_SIDE);
   });
 
   test("point expands to centered square, edge-shifted near corner", () => {
     const res = validateRegionAnnotationInput({
-      surfaceNodeId: "1:2",
+      target: {
+        kind: "figma-region",
+        surfaceNodeId: "1:2",
+        point: { x: 0, y: 0 }
+      },
       author: "agent",
-      body: "click",
-      point: { x: 0, y: 0 }
+      body: "click"
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -157,10 +275,13 @@ test.describe("validateRegionAnnotationInput (unit)", () => {
 
   test("designer default type is explanatory", () => {
     const res = validateRegionAnnotationInput({
-      surfaceArtifactId: "surf-1",
+      target: {
+        kind: "figma-region",
+        surfaceArtifactId: "surf-1",
+        rect: validRect()
+      },
       author: "designer",
-      body: "Placeholder annotation",
-      rect: validRect()
+      body: "Placeholder annotation"
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -169,10 +290,13 @@ test.describe("validateRegionAnnotationInput (unit)", () => {
 
   test("agent default type is assumption", () => {
     const res = validateRegionAnnotationInput({
-      surfaceNodeId: "1:2",
+      target: {
+        kind: "figma-region",
+        surfaceNodeId: "1:2",
+        rect: validRect()
+      },
       author: "agent",
-      body: "maybe CTA",
-      rect: validRect()
+      body: "maybe CTA"
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -181,13 +305,215 @@ test.describe("validateRegionAnnotationInput (unit)", () => {
 });
 
 test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
+  test("figma-surface anchors the whole captured evidence version", () => {
+    withTempProject((dir) => {
+      const surfaceId = seedSurface(dir);
+      const result = createRegionAnnotation(dir, {
+        target: { kind: "figma-surface", evidenceVersionId: surfaceId },
+        author: "agent",
+        body: "Whole surface"
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.record.target_kind).toBe("figma-surface");
+      expect(result.record.target_evidence_version_id).toBe(surfaceId);
+      expect(result.record.target_node_id).toBeNull();
+      expect({
+        x: result.record.rect_x,
+        y: result.record.rect_y,
+        w: result.record.rect_w,
+        h: result.record.rect_h
+      }).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+    });
+  });
+
+  test("Agent confirmation records the primary against annotation, evidence version, and source node", () => {
+    withTempProject((dir) => {
+      const surfaceId = seedSurface(dir);
+      addPositionalFixture(dir, surfaceId, [
+        {
+          id: "12:34",
+          parentId: "1:2",
+          name: "CTA",
+          type: "FRAME",
+          depth: 1,
+          visible: true,
+          bounds: { x: 140, y: 400, width: 120, height: 160 }
+        }
+      ]);
+      const created = createRegionAnnotation(dir, {
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          rect: { x: 0.1, y: 0.25, w: 0.3, h: 0.2 }
+        },
+        author: "agent",
+        body: "Likely CTA"
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+      expect(created.record.primary_node_id).toBeNull();
+      expect(JSON.parse(created.record.candidates_json ?? "[]")).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ nodeId: "12:34" })
+        ])
+      );
+
+      const confirmed = confirmAnnotationPrimaryNode(dir, {
+        annotationId: created.record.id,
+        evidenceVersionId: surfaceId,
+        sourceNodeId: "12:34"
+      });
+      expect(confirmed.ok).toBe(true);
+      if (!confirmed.ok) return;
+      expect(confirmed.confirmation.annotation_id).toBe(created.record.id);
+      expect(confirmed.confirmation.evidence_version_id).toBe(surfaceId);
+      expect(confirmed.confirmation.source_node_id).toBe("12:34");
+      expect(listRegionAnnotations(dir)[0].primary_node_id).toBe("12:34");
+    });
+  });
+
+  test("figma-node persists captured target and derives geometry from that evidence version", () => {
+    withTempProject((dir) => {
+      const surfaceId = seedSurface(dir);
+      addPositionalFixture(dir, surfaceId, [
+        {
+          id: "12:34",
+          parentId: "1:2",
+          name: "CTA",
+          type: "FRAME",
+          depth: 1,
+          visible: true,
+          bounds: { x: 140, y: 400, width: 120, height: 160 }
+        }
+      ]);
+
+      const result = createRegionAnnotation(dir, {
+        target: {
+          kind: "figma-node",
+          evidenceVersionId: surfaceId,
+          nodeId: "12:34"
+        },
+        author: "designer",
+        body: "Captured CTA"
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.record.target_kind).toBe("figma-node");
+      expect(result.record.target_evidence_version_id).toBe(surfaceId);
+      expect(result.record.target_node_id).toBe("12:34");
+      expect(result.record.primary_node_id).toBeNull();
+      expect({
+        x: result.record.rect_x,
+        y: result.record.rect_y,
+        w: result.record.rect_w,
+        h: result.record.rect_h
+      }).toEqual({ x: 0.1, y: 0.25, w: 0.3, h: 0.2 });
+    });
+  });
+
+  test("figma-node rejects a node absent from the captured evidence version", () => {
+    withTempProject((dir) => {
+      const surfaceId = seedSurface(dir);
+      addPositionalFixture(dir, surfaceId, []);
+
+      const result = createRegionAnnotation(dir, {
+        target: {
+          kind: "figma-node",
+          evidenceVersionId: surfaceId,
+          nodeId: "missing:1"
+        },
+        author: "designer",
+        body: "Missing"
+      });
+
+      expect(result).toEqual({ ok: false, reason: "node_not_found" });
+      expect(listRegionAnnotations(dir)).toEqual([]);
+    });
+  });
+
+  test("figma-node remains replayable and becomes stale when refresh has no correspondence", () => {
+    withTempProject((dir) => {
+      const seed = registerSeedReference(dir, {
+        figmaSeedReference: VALID_FIGMA,
+        originalDesignIntent: "stale fixture"
+      });
+      expect(seed.ok).toBe(true);
+      if (!seed.ok) return;
+      const first = recordEvidencePackage(
+        dir,
+        minimalPackage({
+          seedReferenceId: seed.record.id,
+          figmaSeedReference: undefined,
+          frame: { nodeId: "1:2", name: "First" }
+        })
+      );
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+      addPositionalFixture(dir, first.record.id, [
+        {
+          id: "12:34",
+          parentId: "1:2",
+          name: "CTA",
+          type: "FRAME",
+          depth: 1,
+          visible: true,
+          bounds: { x: 140, y: 400, width: 120, height: 160 }
+        }
+      ]);
+      const created = createRegionAnnotation(dir, {
+        target: {
+          kind: "figma-node",
+          evidenceVersionId: first.record.id,
+          nodeId: "12:34"
+        },
+        author: "designer",
+        body: "Historical CTA"
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+
+      const second = recordEvidencePackage(
+        dir,
+        minimalPackage({
+          seedReferenceId: seed.record.id,
+          figmaSeedReference: undefined,
+          frame: { nodeId: "1:2", name: "Second" }
+        })
+      );
+      expect(second.ok).toBe(true);
+      if (!second.ok) return;
+      addPositionalFixture(dir, second.record.id, [
+        {
+          id: "12:34",
+          parentId: "1:2",
+          name: "Hidden replacement",
+          type: "FRAME",
+          depth: 1,
+          visible: false,
+          bounds: { x: 180, y: 500, width: 100, height: 100 }
+        }
+      ]);
+
+      const replayed = listRegionAnnotations(dir)[0];
+      expect(replayed.target_evidence_version_id).toBe(first.record.id);
+      expect(replayed.current_evidence_version_id).toBe(second.record.id);
+      expect(replayed.correspondence_status).toBe("missing");
+      expect(replayed.stale).toBe(true);
+      expect(replayed.current_node_id).toBeNull();
+      expect(replayed.current_rect_x).toBeNull();
+      expect(replayed.rect_x).toBe(created.record.rect_x);
+    });
+  });
+
   test("fail-closed: missing surface anchor writes no row", () => {
     withTempProject((dir) => {
       seedSurface(dir);
       const res = createRegionAnnotation(dir, {
+        target: { kind: "figma-region", rect: validRect() },
         author: "designer",
-        body: "Placeholder annotation",
-        rect: validRect()
+        body: "Placeholder annotation"
       });
       expect(res.ok).toBe(false);
       if (res.ok) return;
@@ -201,10 +527,13 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
     withTempProject((dir) => {
       const surfaceId = seedSurface(dir);
       const res = createRegionAnnotation(dir, {
-        surfaceArtifactId: surfaceId,
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          rect: { x: -0.1, y: 0, w: 0.2, h: 0.2 }
+        },
         author: "designer",
-        body: "x",
-        rect: { x: -0.1, y: 0, w: 0.2, h: 0.2 }
+        body: "x"
       });
       expect(res.ok).toBe(false);
       if (res.ok) return;
@@ -217,10 +546,13 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
     withTempProject((dir) => {
       seedSurface(dir);
       const res = createRegionAnnotation(dir, {
-        surfaceArtifactId: "does-not-exist",
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: "does-not-exist",
+          rect: validRect()
+        },
         author: "designer",
-        body: "x",
-        rect: validRect()
+        body: "x"
       });
       expect(res.ok).toBe(false);
       if (res.ok) return;
@@ -233,10 +565,13 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
     withTempProject((dir) => {
       seedSurface(dir);
       const res = createRegionAnnotation(dir, {
-        surfaceNodeId: "99:99",
+        target: {
+          kind: "figma-region",
+          surfaceNodeId: "99:99",
+          rect: validRect()
+        },
         author: "agent",
-        body: "x",
-        rect: validRect()
+        body: "x"
       });
       expect(res.ok).toBe(false);
       if (res.ok) return;
@@ -259,10 +594,13 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
         frame: { nodeId: "dup:1", name: "B" }
       });
       const res = createRegionAnnotation(dir, {
-        surfaceNodeId: "dup:1",
+        target: {
+          kind: "figma-region",
+          surfaceNodeId: "dup:1",
+          rect: validRect()
+        },
         author: "agent",
-        body: "ambiguous",
-        rect: validRect()
+        body: "ambiguous"
       });
       expect(res.ok).toBe(false);
       if (res.ok) return;
@@ -306,10 +644,13 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
 
       // Two surfaces share frame_node_id; only second is the seed tip.
       const res = createRegionAnnotation(dir, {
-        surfaceNodeId: "1:2",
+        target: {
+          kind: "figma-region",
+          surfaceNodeId: "1:2",
+          rect: validRect()
+        },
         author: "agent",
-        body: "anchors tip after supersede",
-        rect: validRect()
+        body: "anchors tip after supersede"
       });
       expect(res.ok).toBe(true);
       if (!res.ok) return;
@@ -323,10 +664,13 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
     withTempProject((dir) => {
       const surfaceId = seedSurface(dir);
       const res = createRegionAnnotation(dir, {
-        surfaceArtifactId: surfaceId,
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          rect: validRect()
+        },
         author: "designer",
-        body: "Placeholder annotation",
-        rect: validRect()
+        body: "Placeholder annotation"
       });
       expect(res.ok).toBe(true);
       if (!res.ok) return;
@@ -345,17 +689,18 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
     });
   });
 
-  test("valid agent annotation via surfaceNodeId + primaryNodeId", () => {
+  test("valid Agent region annotation is created without inferred primary", () => {
     withTempProject((dir) => {
       const surfaceId = seedSurface(dir);
       const res = createRegionAnnotation(dir, {
-        surfaceNodeId: "1:2",
+        target: {
+          kind: "figma-region",
+          surfaceNodeId: "1:2",
+          rect: { x: 0.05, y: 0.05, w: 0.2, h: 0.1 }
+        },
         author: "agent",
         body: "CTA may be primary action",
-        type: "assumption",
-        rect: { x: 0.05, y: 0.05, w: 0.2, h: 0.1 },
-        primaryNodeId: "12:34",
-        candidates: [{ nodeId: "12:34", confidence: 0.9 }]
+        type: "assumption"
       });
       expect(res.ok).toBe(true);
       if (!res.ok) return;
@@ -364,8 +709,7 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
       expect(res.record.surface_id).toBe(surfaceId);
       expect(res.record.surface_artifact_id).toBe(surfaceId);
       expect(res.record.surface_node_id).toBe("1:2");
-      expect(res.record.primary_node_id).toBe("12:34");
-      expect(res.record.candidates_json).toContain("12:34");
+      expect(res.record.primary_node_id).toBeNull();
       // DB stores raw validated input; padding is display-time only.
       expect(res.record.rect_x).toBe(0.05);
       expect(res.record.rect_y).toBe(0.05);
@@ -390,10 +734,13 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
         }
       });
       const res = createRegionAnnotation(dir, {
-        surfaceArtifactId: surfaceId,
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          rect: raw
+        },
         author: "agent",
-        body: "name box",
-        rect: raw
+        body: "name box"
       });
       expect(res.ok).toBe(true);
       if (!res.ok) return;
@@ -426,10 +773,13 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
     withTempProject((dir) => {
       const surfaceId = seedSurface(dir);
       const designer = createRegionAnnotation(dir, {
-        surfaceArtifactId: surfaceId,
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.15 }
+        },
         author: "designer",
-        body: "exact",
-        rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.15 }
+        body: "exact"
       });
       expect(designer.ok).toBe(true);
       if (!designer.ok) return;
@@ -439,10 +789,13 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
       expect(designer.record.from_point).toBe(false);
 
       const point = createRegionAnnotation(dir, {
-        surfaceArtifactId: surfaceId,
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          point: { x: 0.5, y: 0.5 }
+        },
         author: "agent",
-        body: "click",
-        point: { x: 0.5, y: 0.5 }
+        body: "click"
       });
       expect(point.ok).toBe(true);
       if (!point.ok) return;
@@ -470,16 +823,22 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
     withTempProject((dir) => {
       const surfaceId = seedSurface(dir);
       const first = createRegionAnnotation(dir, {
-        surfaceArtifactId: surfaceId,
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          rect: validRect()
+        },
         author: "designer",
-        body: "first",
-        rect: validRect()
+        body: "first"
       });
       const second = createRegionAnnotation(dir, {
-        surfaceArtifactId: surfaceId,
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          rect: { x: 0.4, y: 0.4, w: 0.1, h: 0.1 }
+        },
         author: "agent",
-        body: "second",
-        rect: { x: 0.4, y: 0.4, w: 0.1, h: 0.1 }
+        body: "second"
       });
       expect(first.ok && second.ok).toBe(true);
       if (!first.ok || !second.ok) return;
@@ -494,16 +853,22 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
     withTempProject((dir) => {
       const surfaceId = seedSurface(dir);
       const designer = createRegionAnnotation(dir, {
-        surfaceArtifactId: surfaceId,
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          rect: validRect()
+        },
         author: "designer",
-        body: "to delete",
-        rect: validRect()
+        body: "to delete"
       });
       const agent = createRegionAnnotation(dir, {
-        surfaceArtifactId: surfaceId,
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          rect: { x: 0.5, y: 0.5, w: 0.1, h: 0.1 }
+        },
         author: "agent",
-        body: "keep",
-        rect: { x: 0.5, y: 0.5, w: 0.1, h: 0.1 }
+        body: "keep"
       });
       expect(designer.ok && agent.ok).toBe(true);
       if (!designer.ok || !agent.ok) return;

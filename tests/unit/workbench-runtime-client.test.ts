@@ -138,6 +138,48 @@ afterEach(async () => {
 });
 
 describe("Workbench Runtime consistency", () => {
+  test("structural click creates an explicit figma-node target", async () => {
+    let posted: unknown = null;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "POST") {
+        posted = JSON.parse(String(init.body));
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return batchResponse(url, []);
+    });
+    const { createWorkbenchDataClient } = await import(
+      "../../components/runtime/use-workbench-runtime"
+    );
+    const client = createWorkbenchDataClient("session", {
+      fetcher,
+      sleep: async () => {},
+      onSnapshot: () => {},
+      onError: () => {}
+    });
+
+    const result = await client.createAnnotation({
+      surfaceArtifactId: "surface-v1",
+      rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.2 },
+      targetNodeId: "12:34"
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(posted).toEqual({
+      target: {
+        kind: "figma-node",
+        evidenceVersionId: "surface-v1",
+        nodeId: "12:34"
+      },
+      author: "designer",
+      body: "Placeholder annotation"
+    });
+    client.dispose();
+  });
+
   test("connection-ready baseline closes the initial GET/SSE window with latest records", async () => {
     vi.stubGlobal("EventSource", MockEventSource);
     const {

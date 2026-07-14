@@ -1,7 +1,7 @@
-// Ikran Issue 06 — `create_region_annotation` MCP tool (HTTP + MCP wiring).
+// Ikran Issue 06 — `create_annotation` MCP tool (HTTP + MCP wiring).
 //
 // Coverage (always):
-// - listTools: create_region_annotation + list_region_annotations registered;
+// - listTools: create_annotation + list_region_annotations registered;
 //   Active seed tools present; legacy Agent evidence tools absent
 //
 // Full create/list e2e (success + invalid) is gated on
@@ -61,7 +61,7 @@ function readEventLines(
   }
 }
 
-test.describe("Ikran Issue 06 — create_region_annotation MCP tool", () => {
+test.describe("Ikran Issue 06 — create_annotation MCP tool", () => {
   test("tool is registered and discoverable via listTools", async () => {
     test.setTimeout(60_000);
 
@@ -72,7 +72,8 @@ test.describe("Ikran Issue 06 — create_region_annotation MCP tool", () => {
       client = handle.client;
 
       const names = (await client.listTools()).tools.map((t) => t.name);
-      expect(names).toContain("create_region_annotation");
+      expect(names).toContain("create_annotation");
+      expect(names).toContain("confirm_annotation_primary_node");
       expect(names).toContain("list_region_annotations");
       expect(names).toContain("add_seed_reference");
       expect(names).toContain("get_figma_connection_status");
@@ -136,13 +137,15 @@ test.describe("Ikran Issue 06 — create_region_annotation MCP tool", () => {
       expect(surface.id).toBeTruthy();
 
       const annRes = await client.callTool({
-        name: "create_region_annotation",
+        name: "create_annotation",
         arguments: {
+          target: {
+            kind: "figma-region",
+            surfaceArtifactId: surface.id,
+            rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.15 }
+          },
           author: "agent",
-          surfaceArtifactId: surface.id,
-          rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.15 },
-          body: "Placeholder annotation",
-          primaryNodeId: "12:34"
+          body: "Placeholder annotation"
         }
       });
       const annSc = sc(annRes);
@@ -217,10 +220,13 @@ test.describe("Ikran Issue 06 — create_region_annotation MCP tool", () => {
       expect(sc(create).ok).toBe(true);
 
       const bad = await client.callTool({
-        name: "create_region_annotation",
+        name: "create_annotation",
         arguments: {
+          target: {
+            kind: "figma-region",
+            rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.15 }
+          },
           author: "agent",
-          rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.15 },
           body: "no surface"
         }
       });

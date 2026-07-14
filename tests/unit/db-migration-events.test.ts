@@ -402,6 +402,7 @@ function seedV3Db(
       rect_y?: number;
       rect_w?: number;
       rect_h?: number;
+      primary_node_id?: string;
     }>;
   } = {}
 ): string {
@@ -505,8 +506,8 @@ function seedV3Db(
   const insertAnn = db.prepare(
     `INSERT INTO region_annotations
      (id, surface_id, surface_artifact_id, author, type, body,
-      rect_x, rect_y, rect_w, rect_h, created_at)
-     VALUES (?, ?, ?, ?, 'assumption', 'body', ?, ?, ?, ?, '2020-01-01T00:00:00.000Z')`
+      rect_x, rect_y, rect_w, rect_h, primary_node_id, created_at)
+     VALUES (?, ?, ?, ?, 'assumption', 'body', ?, ?, ?, ?, ?, '2020-01-01T00:00:00.000Z')`
   );
   for (const ann of opts.annotations ?? []) {
     insertAnn.run(
@@ -517,7 +518,8 @@ function seedV3Db(
       ann.rect_x ?? 0.1,
       ann.rect_y ?? 0.1,
       ann.rect_w ?? 0.2,
-      ann.rect_h ?? 0.15
+      ann.rect_h ?? 0.15,
+      ann.primary_node_id ?? null
     );
   }
   db.close();
@@ -530,7 +532,7 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(6);
+        expect(CURRENT_SCHEMA_VERSION).toBe(7);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
@@ -539,7 +541,8 @@ test.describe("PRAGMA user_version migration runner", () => {
             "project_meta",
             "seed_references",
             "figma_evidence_surfaces",
-            "region_annotations"
+            "region_annotations",
+            "annotation_primary_confirmations"
           ])
         );
         const meta = db
@@ -1250,7 +1253,8 @@ test.describe("PRAGMA user_version migration runner", () => {
             rect_x: 0.05,
             rect_y: 0.05,
             rect_w: 0.224,
-            rect_h: 0.124
+            rect_h: 0.124,
+            primary_node_id: "12:34"
           },
           {
             id: "ann-backfill",
@@ -1313,6 +1317,22 @@ test.describe("PRAGMA user_version migration runner", () => {
             rect_w: 0.3
           }
         ]);
+        const legacyConfirmation = db
+          .prepare(
+            `SELECT annotation_id, evidence_version_id, source_node_id
+             FROM annotation_primary_confirmations
+             WHERE annotation_id = ?`
+          )
+          .get("ann-agent") as {
+          annotation_id: string;
+          evidence_version_id: string;
+          source_node_id: string;
+        };
+        expect(legacyConfirmation).toEqual({
+          annotation_id: "ann-agent",
+          evidence_version_id: "surf-1",
+          source_node_id: "12:34"
+        });
 
         const fks = db
           .prepare("PRAGMA foreign_key_list(region_annotations)")

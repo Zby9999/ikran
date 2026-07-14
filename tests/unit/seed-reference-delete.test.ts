@@ -152,10 +152,13 @@ test("deleteSeedReference cascades designer annotations on the seed's surfaces",
   if (!a.ok) return;
 
   const created = createRegionAnnotation(projectDir, {
-    surfaceArtifactId: a.surface.id,
+    target: {
+      kind: "figma-region",
+      surfaceArtifactId: a.surface.id,
+      rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+    },
     author: "designer",
-    body: "note",
-    rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+    body: "note"
   });
   expect(created.ok).toBe(true);
 

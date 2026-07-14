@@ -265,6 +265,7 @@ export function useWorkbenchRuntime(session: string) {
     async (payload: {
       surfaceArtifactId: string;
       rect: NormalizedRect;
+      targetNodeId?: string;
     }): Promise<MutationResult> => {
       const client = clientRef.current;
       if (!client) {

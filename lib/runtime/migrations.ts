@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -593,6 +593,46 @@ CREATE TABLE IF NOT EXISTS project_meta (
         `INSERT OR IGNORE INTO project_meta (singleton, design_language_description)
          VALUES (1, '')`
       ).run();
+    }
+  },
+  {
+    version: 7,
+    up(db) {
+      // Issue 06: make the annotation target an explicit, versioned union.
+      // Existing region annotations retain their original surface anchor.
+      db.exec(`
+ALTER TABLE region_annotations
+  ADD COLUMN target_kind TEXT NOT NULL DEFAULT 'figma-region';
+ALTER TABLE region_annotations
+  ADD COLUMN target_evidence_version_id TEXT;
+ALTER TABLE region_annotations
+  ADD COLUMN target_node_id TEXT;
+UPDATE region_annotations
+SET target_evidence_version_id = surface_id
+WHERE target_evidence_version_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_region_annotations_target_evidence_version_id
+  ON region_annotations(target_evidence_version_id);
+CREATE TABLE annotation_primary_confirmations (
+  id TEXT PRIMARY KEY,
+  annotation_id TEXT NOT NULL REFERENCES region_annotations(id) ON DELETE CASCADE,
+  evidence_version_id TEXT NOT NULL REFERENCES figma_evidence_surfaces(id) ON DELETE RESTRICT,
+  source_node_id TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_annotation_primary_confirmations_annotation_id
+  ON annotation_primary_confirmations(annotation_id);
+INSERT INTO annotation_primary_confirmations (
+  id, annotation_id, evidence_version_id, source_node_id, created_at
+)
+SELECT
+  'legacy-primary:' || id,
+  id,
+  surface_id,
+  primary_node_id,
+  created_at
+FROM region_annotations
+WHERE primary_node_id IS NOT NULL AND TRIM(primary_node_id) <> '';
+`);
     }
   }
 ];

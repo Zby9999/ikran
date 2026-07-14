@@ -12,7 +12,10 @@ import {
 import { SEED_REFERENCE_PROJECTION_TYPE } from "../../components/workbench/seed-reference-projection-shape";
 import { REGION_ANNOTATION_TYPE } from "../../components/workbench/region-annotation-shape";
 import type { RegionAnnotationRecord } from "../../lib/runtime/region-annotation";
-import { AGENT_REGION_MARGIN } from "../../lib/runtime/region-annotation-display";
+import {
+  AGENT_REGION_MARGIN,
+  STRUCTURE_REGION_MARGIN
+} from "../../lib/runtime/region-annotation-display";
 
 function annotation(
   partial: Partial<RegionAnnotationRecord> & Pick<RegionAnnotationRecord, "id">
@@ -21,6 +24,17 @@ function annotation(
     surface_id: "surf-1",
     surface_artifact_id: "surf-1",
     surface_node_id: null,
+    target_kind: "figma-region",
+    target_evidence_version_id: "surf-1",
+    target_node_id: null,
+    current_evidence_version_id: "surf-1",
+    current_node_id: null,
+    current_rect_x: null,
+    current_rect_y: null,
+    current_rect_w: null,
+    current_rect_h: null,
+    correspondence_status: "not_applicable",
+    stale: false,
     author: "designer",
     type: "explanatory",
     body: "note",
@@ -65,8 +79,48 @@ test.describe("findSurfaceShapeForAnnotation", () => {
       "shape:b"
     );
     expect(
-      findSurfaceShapeForAnnotation(shapes, annotation({ id: "a", surface_id: "nope" }))
+      findSurfaceShapeForAnnotation(
+        shapes,
+        annotation({
+          id: "a",
+          surface_id: "nope",
+          current_evidence_version_id: null
+        })
+      )
     ).toBeUndefined();
+  });
+
+  test("uses current visual surface after refresh while preserving captured target", () => {
+    const shapes = [
+      {
+        id: "shape:current",
+        type: SEED_REFERENCE_PROJECTION_TYPE,
+        meta: {
+          kind: "figma_evidence_surface",
+          runtimeRecordId: "surface-v2",
+          surfaceRecordId: "surface-v2"
+        }
+      }
+    ];
+    const record = annotation({
+      id: "ann-historical",
+      surface_id: "surface-v1",
+      surface_artifact_id: "surface-v1",
+      target_kind: "figma-node",
+      target_evidence_version_id: "surface-v1",
+      target_node_id: "12:34",
+      current_evidence_version_id: "surface-v2",
+      current_node_id: "12:34",
+      correspondence_status: "corresponding",
+      current_rect_x: 0.4,
+      current_rect_y: 0.3,
+      current_rect_w: 0.2,
+      current_rect_h: 0.1
+    });
+    expect(findSurfaceShapeForAnnotation(shapes, record)?.id).toBe(
+      "shape:current"
+    );
+    expect(record.target_evidence_version_id).toBe("surface-v1");
   });
 });
 
@@ -107,6 +161,123 @@ test.describe("computeAnnotationPagePlacement", () => {
     const my = (AGENT_REGION_MARGIN * mediaBox.w) / mediaBox.h;
     expect(placement.pageRect.x).toBeCloseTo((0.2 - AGENT_REGION_MARGIN) * 100, 6);
     expect(placement.pageRect.y).toBeCloseTo((0.25 - my) * 200, 6);
+  });
+
+  test("designer structural annotation gets smaller isotropic padding than Agent", () => {
+    const mediaBox = { x: 10, y: 20, w: 100, h: 200 };
+    const raw = {
+      rect_x: 0.2,
+      rect_y: 0.25,
+      rect_w: 0.6,
+      rect_h: 0.08
+    };
+    const placement = computeAnnotationPagePlacement(
+      annotation({
+        id: "ann-structure",
+        target_kind: "figma-node",
+        target_node_id: "7:9",
+        ...raw
+      }),
+      mediaBox
+    );
+    const my = (STRUCTURE_REGION_MARGIN * mediaBox.w) / mediaBox.h;
+    expect(STRUCTURE_REGION_MARGIN).toBeLessThan(AGENT_REGION_MARGIN);
+    expect(placement.pageRect.x).toBeCloseTo(
+      10 + (raw.rect_x - STRUCTURE_REGION_MARGIN) * 100,
+      6
+    );
+    expect(placement.pageRect.y).toBeCloseTo(
+      20 + (raw.rect_y - my) * 200,
+      6
+    );
+    expect(placement.pageRect.w).toBeCloseTo(
+      (raw.rect_w + STRUCTURE_REGION_MARGIN * 2) * 100,
+      6
+    );
+    expect(placement.pageRect.h).toBeCloseTo(
+      (raw.rect_h + my * 2) * 200,
+      6
+    );
+  });
+
+  test("node target placement uses the fitted screenshot box before applying the shared margin", () => {
+    const mediaBox = { x: 10, y: 20, w: 600, h: 400 };
+    const imageBox = { x: 110, y: 70, w: 400, h: 200 };
+    const placement = computeAnnotationPagePlacement(
+      annotation({
+        id: "ann-letterboxed-node",
+        target_kind: "figma-node",
+        target_node_id: "7:9",
+        rect_x: 0.2,
+        rect_y: 0.25,
+        rect_w: 0.4,
+        rect_h: 0.1
+      }),
+      mediaBox,
+      imageBox
+    );
+    expect(placement.pageRect.x).toBeCloseTo(186.4, 6);
+    expect(placement.pageRect.y).toBeCloseTo(116.4, 6);
+    expect(placement.pageRect.w).toBeCloseTo(167.2, 6);
+    expect(placement.pageRect.h).toBeCloseTo(27.2, 6);
+  });
+
+  test("Agent node target uses the same structure margin as hover", () => {
+    const mediaBox = { x: 0, y: 0, w: 100, h: 200 };
+    const placement = computeAnnotationPagePlacement(
+      annotation({
+        id: "ann-agent-node",
+        author: "agent",
+        target_kind: "figma-node",
+        target_node_id: "7:9",
+        rect_x: 0.2,
+        rect_y: 0.25,
+        rect_w: 0.4,
+        rect_h: 0.1
+      }),
+      mediaBox
+    );
+    expect(placement.pageRect.x).toBeCloseTo(
+      (0.2 - STRUCTURE_REGION_MARGIN) * 100,
+      6
+    );
+    expect(placement.pageRect.w).toBeCloseTo(
+      (0.4 + STRUCTURE_REGION_MARGIN * 2) * 100,
+      6
+    );
+  });
+
+  test("corresponding node uses current bounds without rewriting captured bounds", () => {
+    const record = annotation({
+      id: "ann-moved-node",
+      target_kind: "figma-node",
+      target_node_id: "7:9",
+      rect_x: 0.1,
+      rect_y: 0.1,
+      rect_w: 0.2,
+      rect_h: 0.1,
+      current_node_id: "7:9",
+      correspondence_status: "corresponding",
+      current_rect_x: 0.5,
+      current_rect_y: 0.4,
+      current_rect_w: 0.3,
+      current_rect_h: 0.2
+    });
+    const placement = computeAnnotationPagePlacement(record, {
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100
+    });
+    expect(record.rect_x).toBe(0.1);
+    expect(placement.pageRect.x).toBeCloseTo(
+      (0.5 - STRUCTURE_REGION_MARGIN) * 100,
+      6
+    );
+    expect(placement.pageRect.w).toBeCloseTo(
+      (0.3 + STRUCTURE_REGION_MARGIN * 2) * 100,
+      6
+    );
   });
 });
 
@@ -376,11 +547,12 @@ test.describe("annotationMetaEqual + planAnnotationProjectionOps", () => {
     ).toEqual([]);
   });
 
-  test("deletes an old-surface marker after the stable parent shape switches surfaces", () => {
+  test("keeps region targets on their captured surface after refresh", () => {
     const oldSurfaceAnnotation = annotation({
       id: "ann-old",
       surface_id: "surf-old",
-      surface_artifact_id: "surf-old"
+      surface_artifact_id: "surf-old",
+      current_evidence_version_id: "surf-old"
     });
     const oldParent = {
       id: "shape:seed-1",
@@ -405,30 +577,16 @@ test.describe("annotationMetaEqual + planAnnotationProjectionOps", () => {
         surfaceRecordId: "surf-new"
       }
     };
+    const refreshed = {
+      ...oldSurfaceAnnotation,
+      current_evidence_version_id: "surf-new"
+    };
     expect(
-      findSurfaceShapeForAnnotation([switchedParent], oldSurfaceAnnotation)
+      findSurfaceShapeForAnnotation([switchedParent], refreshed)
     ).toBeUndefined();
-
-    const ops = planAnnotationProjectionOps(
-      [],
-      [
-        {
-          id: "shape:region-annotation:ann-old",
-          x: 10,
-          y: 20,
-          props: { w: 30, h: 40, author: "designer", label: "", surfaceMediaW: 100 },
-          meta: {
-            canvasRecordId: "region-annotation:ann-old",
-            runtimeRecordId: "ann-old",
-            surfaceRecordId: "surf-old"
-          }
-        }
-      ],
-      (id) => `shape:region-annotation:${id}`
+    expect(refreshed.target_evidence_version_id).toBe(
+      oldSurfaceAnnotation.target_evidence_version_id
     );
-    expect(ops).toEqual([
-      { type: "delete", id: "shape:region-annotation:ann-old" }
-    ]);
   });
 });
 

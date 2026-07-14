@@ -86,9 +86,22 @@ export type StoreRecordsDiffLike = {
 
 export function findSurfaceShapeForAnnotation<T extends AnnotationSurfaceShapeLike>(
   shapes: T[],
-  record: Pick<RegionAnnotationRecord, "surface_id" | "surface_artifact_id">
+  record: Pick<
+    RegionAnnotationRecord,
+    | "surface_id"
+    | "surface_artifact_id"
+    | "current_evidence_version_id"
+    | "target_kind"
+    | "correspondence_status"
+  >
 ): T | undefined {
-  const surfaceId = record.surface_id ?? record.surface_artifact_id;
+  // The semantic target remains anchored to the captured version, while the
+  // Workbench only projects the current surface for a seed after refresh.
+  const surfaceId =
+    record.target_kind === "figma-node" &&
+    record.correspondence_status === "corresponding"
+      ? record.current_evidence_version_id
+      : record.surface_id ?? record.surface_artifact_id;
   if (!surfaceId) return undefined;
 
   return shapes.find((shape) => {
@@ -118,19 +131,54 @@ export function annotationMetaEqual(
  */
 export function computeAnnotationPagePlacement(
   record: RegionAnnotationRecord,
-  mediaBox: PageRect
+  mediaBox: PageRect,
+  /** Fitted screenshot content box; node geometry is normalized to this box. */
+  imageBox: PageRect = mediaBox
 ): AnnotationPagePlacement {
+  const nodeRect =
+    record.target_kind === "figma-node" &&
+    record.correspondence_status === "corresponding" &&
+    record.current_rect_x != null &&
+    record.current_rect_y != null &&
+    record.current_rect_w != null &&
+    record.current_rect_h != null
+      ? {
+          x: record.current_rect_x,
+          y: record.current_rect_y,
+          w: record.current_rect_w,
+          h: record.current_rect_h
+        }
+      : {
+          x: record.rect_x,
+          y: record.rect_y,
+          w: record.rect_w,
+          h: record.rect_h
+        };
+  const semanticRect =
+    record.target_kind === "figma-node"
+      ? {
+          x:
+            (imageBox.x - mediaBox.x + nodeRect.x * imageBox.w) /
+            mediaBox.w,
+          y:
+            (imageBox.y - mediaBox.y + nodeRect.y * imageBox.h) /
+            mediaBox.h,
+          w: (nodeRect.w * imageBox.w) / mediaBox.w,
+          h: (nodeRect.h * imageBox.h) / mediaBox.h
+        }
+      : {
+          x: record.rect_x,
+          y: record.rect_y,
+          w: record.rect_w,
+          h: record.rect_h
+        };
   const displayRect = displayRectForRegionAnnotation({
     author: record.author === "agent" ? "agent" : "designer",
-    rect: {
-      x: record.rect_x,
-      y: record.rect_y,
-      w: record.rect_w,
-      h: record.rect_h
-    },
+    rect: semanticRect,
     geometry_version:
       record.geometry_version === "v1_padded" ? "v1_padded" : "v2_raw",
     from_point: Boolean(record.from_point),
+    targetKind: record.target_kind,
     mediaSize: { w: mediaBox.w, h: mediaBox.h }
   });
   const pageRect = normalizedRectToPage(mediaBox, displayRect);

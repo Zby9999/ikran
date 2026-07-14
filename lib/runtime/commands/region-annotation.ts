@@ -2,6 +2,7 @@
 
 import {
   createRegionAnnotation,
+  confirmAnnotationPrimaryNode,
   deleteRegionAnnotation,
   listRegionAnnotations,
   type RegionAnnotationResponse,
@@ -12,11 +13,24 @@ export function createRegionAnnotationCommand(
   projectPath: string,
   input: unknown
 ): RegionAnnotationResponse {
-  // MCP historically defaulted empty body to a placeholder; keep that here so
-  // HTTP and MCP share one path (HTTP clients that omit body still get domain
-  // missing_body unless they pass the placeholder explicitly — MCP tool layer
-  // injects the default before calling this command).
-  return createRegionAnnotation(projectPath, input);
+  let normalized = input;
+  if (input && typeof input === "object") {
+    const raw = input as Record<string, unknown>;
+    normalized = {
+      ...raw,
+      ...(typeof raw.body !== "string" || raw.body.trim().length === 0
+        ? { body: "Placeholder annotation" }
+        : {})
+    };
+  }
+  return createRegionAnnotation(projectPath, normalized);
+}
+
+export function confirmAnnotationPrimaryNodeCommand(
+  projectPath: string,
+  input: unknown
+) {
+  return confirmAnnotationPrimaryNode(projectPath, input);
 }
 
 export type ListRegionAnnotationsCommandResult = {

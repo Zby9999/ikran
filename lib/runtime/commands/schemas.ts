@@ -75,34 +75,56 @@ export const recordEvidencePackageInputSchema = z.object(
   recordEvidencePackageInputShape
 );
 
+const annotationRectSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number()
+});
+
+const annotationPointSchema = z.object({
+  x: z.number(),
+  y: z.number()
+});
+
+export const annotationTargetSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("figma-surface"),
+    evidenceVersionId: z.string()
+  }),
+  z.object({
+    kind: z.literal("figma-node"),
+    evidenceVersionId: z.string(),
+    nodeId: z.string()
+  }),
+  z.object({
+    kind: z.literal("figma-region"),
+    surfaceArtifactId: z.string().optional(),
+    surfaceNodeId: z.string().optional(),
+    rect: annotationRectSchema.optional(),
+    point: annotationPointSchema.optional()
+  })
+]);
+
 export const createRegionAnnotationInputShape = {
-  surfaceArtifactId: z.string().optional(),
-  surfaceNodeId: z.string().optional(),
+  target: annotationTargetSchema.optional(),
   // Optional string (not enum) so missing_author / invalid_author reach domain.
   author: z.string().optional(),
   type: z.string().optional(),
   body: z.string().optional(),
-  rect: z
-    .object({
-      x: z.number(),
-      y: z.number(),
-      w: z.number(),
-      h: z.number()
-    })
-    .optional(),
-  point: z
-    .object({
-      x: z.number(),
-      y: z.number()
-    })
-    .optional(),
-  primaryNodeId: z.string().optional(),
-  candidates: z.array(z.unknown()).optional()
+  // Candidate ranking and primary confirmation are Runtime-owned follow-ups,
+  // not competing fields on the create contract.
 } as const;
 
 export const createRegionAnnotationInputSchema = z.object(
   createRegionAnnotationInputShape
 );
+
+export const confirmAnnotationPrimaryInputSchema = z.object({
+  annotationId: z.string(),
+  evidenceVersionId: z.string(),
+  sourceNodeId: z.string()
+});
 
 export const addSeedReferenceInputShape = {
   figmaSeedReference: z.string(),

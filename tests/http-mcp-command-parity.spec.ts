@@ -100,11 +100,14 @@ test("HTTP and MCP share schemas + domain reasons; MCP writes without fetch", as
       },
       {
         route: "/api/region-annotation",
-        tool: "create_region_annotation",
+        tool: "create_annotation",
         payload: {
+          target: {
+            kind: "figma-region",
+            rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+          },
           author: "agent",
-          body: "No surface",
-          rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+          body: "No surface"
         },
         reason: "missing_surface_anchor",
         httpStatus: 400

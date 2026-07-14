@@ -280,11 +280,14 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     const annRes = await rawPost(
       "/api/region-annotation",
       {
-        surfaceArtifactId: surfaceId,
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.25 }
+        },
         author: "agent",
         body: "Agent observed this region",
-        type: "assumption",
-        rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.25 }
+        type: "assumption"
       },
       { "x-ikran-session": token },
       runtime.port
@@ -348,10 +351,11 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     const request = await createRequest;
     const requestBody = request.postDataJSON() as {
       author: string;
-      surfaceArtifactId: string;
+      target: { kind: string; surfaceArtifactId: string };
     };
     expect(requestBody.author).toBe("designer");
-    expect(requestBody.surfaceArtifactId).toBe(surfaceId);
+    expect(requestBody.target.kind).toBe("figma-region");
+    expect(requestBody.target.surfaceArtifactId).toBe(surfaceId);
 
     let record: AnnotationRecord | undefined;
     await expect

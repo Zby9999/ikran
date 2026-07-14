@@ -7,6 +7,8 @@ import { NextResponse } from "next/server";
 import { authorize } from "../../../lib/runtime/session";
 import {
   commandErrorHttpStatus,
+  confirmAnnotationPrimaryInputSchema,
+  confirmAnnotationPrimaryNodeCommand,
   createRegionAnnotationCommand,
   createRegionAnnotationInputSchema,
   deleteRegionAnnotationCommand,
@@ -91,6 +93,50 @@ export async function POST(request: NextRequest) {
     record: result.record,
     event_id: result.event_id
   });
+}
+
+export async function PATCH(request: NextRequest) {
+  const auth = authorize(request);
+  if (!auth.ok) {
+    return NextResponse.json(
+      { ok: false, error: auth.reason },
+      { status: auth.status }
+    );
+  }
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "invalid_json" },
+      { status: commandErrorHttpStatus("invalid_json") }
+    );
+  }
+  const parsed = parseCommandInput(confirmAnnotationPrimaryInputSchema, body);
+  if (!parsed.ok) {
+    return NextResponse.json(
+      { ok: false, error: parsed.reason },
+      { status: commandErrorHttpStatus(parsed.reason) }
+    );
+  }
+  const state = requireActiveProjectCommand();
+  if (!state.ok) {
+    return NextResponse.json(
+      { ok: false, error: state.reason },
+      { status: commandErrorHttpStatus(state.reason) }
+    );
+  }
+  const result = confirmAnnotationPrimaryNodeCommand(
+    state.project.path,
+    parsed.data
+  );
+  if (!result.ok) {
+    return NextResponse.json(
+      { ok: false, error: result.reason },
+      { status: commandErrorHttpStatus(result.reason) }
+    );
+  }
+  return NextResponse.json(result);
 }
 
 export async function DELETE(request: NextRequest) {

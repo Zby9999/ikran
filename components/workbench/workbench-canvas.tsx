@@ -125,6 +125,7 @@ export function WorkbenchCanvas({
   onCreateAnnotation?: (payload: {
     surfaceArtifactId: string;
     rect: NormalizedRect;
+    targetNodeId?: string;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Designer DELETE via Runtime client — only remove after HTTP success. */
   onDeleteAnnotation?: (
