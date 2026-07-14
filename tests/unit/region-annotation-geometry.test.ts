@@ -31,7 +31,7 @@ test.describe("region-annotation-geometry (unit)", () => {
       h: shapeH - SEED_REF_FRAME_CHROME_H
     });
     expect(SEED_REF_MEDIA_INSET_X * 2).toBe(SEED_REF_FRAME_CHROME_W);
-    expect(SEED_REF_MEDIA_INSET_Y + 5).toBe(SEED_REF_FRAME_CHROME_H);
+    expect(SEED_REF_MEDIA_INSET_Y + 6).toBe(SEED_REF_FRAME_CHROME_H);
   });
 
   test("normalizedRectToPage and pageRectToNormalized round-trip", () => {

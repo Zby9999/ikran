@@ -2,8 +2,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   addSeedReferenceCommand,
   addSeedReferenceInputSchema,
+  getAnnotationNodeCandidatesContext,
+  getAnnotationNodeCandidatesInputSchema,
+  getCapturedNodeCorrespondence,
+  getCapturedNodeCorrespondenceInputSchema,
   getFigmaConnectionStatusCommand,
   getProjectReadinessCommand,
+  getSeedReferenceContext,
+  getSeedReferenceContextInputSchema,
+  refreshSeedReferenceCommand,
+  refreshSeedReferenceInputSchema,
   requireActiveProjectCommand,
   setDesignLanguageDescriptionCommand,
   setDesignLanguageDescriptionInputSchema,
@@ -133,6 +141,163 @@ export function registerSeedEvidenceTools(
           }
         };
       }
+    }
+  );
+
+  mcp.registerTool(
+    "refresh_seed_reference",
+    {
+      description:
+        "Explicitly refresh one Seed Reference through the Runtime Figma Connection. Appends a new positional-evidence Surface, preserves history, advances current_surface_id, and records lineage atomically. Pass { seedReferenceId }.",
+      inputSchema: refreshSeedReferenceInputSchema
+    },
+    async (args) => {
+      const rt = await ensureRuntime();
+      const active = requireActiveProjectCommand();
+      if (!active.ok) {
+        return failureResult("refresh_seed_reference", active.reason, rt);
+      }
+      const result = await refreshSeedReferenceCommand(active.project.path, {
+        seedReferenceId: args.seedReferenceId,
+        initiator: "agent"
+      });
+      if (!result.ok) {
+        return failureResult("refresh_seed_reference", result.reason, rt);
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Seed Reference refreshed. Current Surface: ${result.surface.id}; previous Surface preserved: ${result.previous_surface_id}.`
+          }
+        ],
+        structuredContent: {
+          ...result,
+          session: rt.token,
+          workbench_url: rt.url
+        }
+      };
+    }
+  );
+
+  mcp.registerTool(
+    "get_seed_reference_context",
+    {
+      description:
+        "Return one Seed Reference's canonical Figma source identity, original Figma link, and current positional-evidence identity for on-demand host Figma MCP handoff. Never returns the Figma PAT or implementation context.",
+      inputSchema: getSeedReferenceContextInputSchema
+    },
+    async (args) => {
+      const rt = await ensureRuntime();
+      const active = requireActiveProjectCommand();
+      if (!active.ok) {
+        return failureResult("get_seed_reference_context", active.reason, rt);
+      }
+      const result = getSeedReferenceContext(
+        active.project.path,
+        args.seedReferenceId
+      );
+      if (!result.ok) {
+        return failureResult("get_seed_reference_context", result.reason, rt);
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Figma source ${result.source.fileKey} / ${result.source.nodeId}; current Surface ${result.currentEvidence.surfaceId}.`
+          }
+        ],
+        structuredContent: {
+          ...result,
+          session: rt.token,
+          workbench_url: rt.url
+        }
+      };
+    }
+  );
+
+  mcp.registerTool(
+    "get_annotation_node_candidates",
+    {
+      description:
+        "For a captured Figma Evidence Surface and normalized semantic rect {x,y,w,h}, return deterministic intersecting positional node candidates with bounds and overlap/containment signals. Returns no primaryNodeId and performs no semantic inference.",
+      inputSchema: getAnnotationNodeCandidatesInputSchema
+    },
+    async (args) => {
+      const rt = await ensureRuntime();
+      const active = requireActiveProjectCommand();
+      if (!active.ok) {
+        return failureResult(
+          "get_annotation_node_candidates",
+          active.reason,
+          rt
+        );
+      }
+      const result = getAnnotationNodeCandidatesContext(active.project.path, {
+        surfaceId: args.surfaceId,
+        rect: args.rect
+      });
+      if (!result.ok) {
+        return failureResult(
+          "get_annotation_node_candidates",
+          result.reason,
+          rt
+        );
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `${result.candidates.length} positional node candidate(s) for Surface ${result.surfaceId}.`
+          }
+        ],
+        structuredContent: {
+          ...result,
+          session: rt.token,
+          workbench_url: rt.url
+        }
+      };
+    }
+  );
+
+  mcp.registerTool(
+    "get_captured_node_correspondence",
+    {
+      description:
+        "Check whether a captured Figma node id has an exact correspondence in a Seed Reference's current positional index. Returns corresponding or explicit missing; never migrates an annotation or other persistent record.",
+      inputSchema: getCapturedNodeCorrespondenceInputSchema
+    },
+    async (args) => {
+      const rt = await ensureRuntime();
+      const active = requireActiveProjectCommand();
+      if (!active.ok) {
+        return failureResult(
+          "get_captured_node_correspondence",
+          active.reason,
+          rt
+        );
+      }
+      const result = getCapturedNodeCorrespondence(active.project.path, args);
+      if (!result.ok) {
+        return failureResult(
+          "get_captured_node_correspondence",
+          result.reason,
+          rt
+        );
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Captured node ${args.capturedNodeId}: ${result.correspondence.status}.`
+          }
+        ],
+        structuredContent: {
+          ...result,
+          session: rt.token,
+          workbench_url: rt.url
+        }
+      };
     }
   );
 

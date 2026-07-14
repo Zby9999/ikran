@@ -87,6 +87,10 @@ test.describe("Active MCP — add_seed_reference", () => {
         expect(names).toContain("get_project_readiness");
         expect(names).toContain("set_design_language_description");
         expect(names).toContain("update_seed_reference_note");
+        expect(names).toContain("refresh_seed_reference");
+        expect(names).toContain("get_seed_reference_context");
+        expect(names).toContain("get_annotation_node_candidates");
+        expect(names).toContain("get_captured_node_correspondence");
         for (const legacy of LEGACY_SEED_TOOLS) {
           expect(names).not.toContain(legacy);
         }

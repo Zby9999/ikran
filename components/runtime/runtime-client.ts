@@ -463,6 +463,34 @@ export function createWorkbenchDataClient(
     return { ok: true };
   };
 
+  const refreshSeedReference = async (
+    seedReferenceId: string
+  ): Promise<RuntimeMutationResult> => {
+    const result = await fetchJson(
+      fetcher,
+      "/api/seed-reference/refresh",
+      session,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seedReferenceId })
+      }
+    );
+    if (!result.ok) {
+      return reportMutationError(
+        (typeof result.data.error === "string" && result.data.error) ||
+          "refresh_seed_failed"
+      );
+    }
+    const reloaded = await loadAll();
+    if (!reloaded.ok) {
+      return reportMutationError(
+        `refresh_succeeded_reload_failed:${reloaded.error}`
+      );
+    }
+    return { ok: true };
+  };
+
   const putWorkbenchLayoutNow = async (
     layout: WorkbenchLayoutDocument,
     writeRevision: number
@@ -554,6 +582,7 @@ export function createWorkbenchDataClient(
     createAnnotation,
     deleteAnnotation,
     deleteSeedReference,
+    refreshSeedReference,
     putWorkbenchLayout,
     flushWorkbenchLayout,
     updateSeedReferenceNote,

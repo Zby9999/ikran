@@ -59,6 +59,25 @@ test("validateToken maps 401 to invalid_token", async () => {
   });
 });
 
+test("validateToken aborts and reports a structured timeout", async () => {
+  let signal: AbortSignal | null = null;
+  const client = createFigmaApiClient({
+    baseUrl: "https://api.figma.test",
+    apiTimeoutMs: 5,
+    fetchImpl: async (_input, init) => {
+      signal = init?.signal ?? null;
+      return new Promise<Response>(() => undefined);
+    }
+  });
+
+  expect(await client.validateToken("figd_x")).toEqual({
+    ok: false,
+    reason: "figma_api_timeout"
+  });
+  expect(signal).not.toBeNull();
+  expect((signal as AbortSignal | null)?.aborted).toBe(true);
+});
+
 /** Minimal valid 1×1 PNG (real decoder signature). */
 const TINY_PNG = Uint8Array.from(
   Buffer.from(
@@ -72,12 +91,14 @@ const VALID_DOCUMENT = {
   name: "Frame",
   type: "FRAME",
   absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 50 },
+  absoluteRenderBounds: { x: 0, y: 0, width: 100, height: 50 },
   children: [
     {
       id: "1:3",
       name: "Title",
       type: "TEXT",
-      absoluteBoundingBox: { x: 10, y: 10, width: 40, height: 12 }
+      absoluteBoundingBox: { x: 10, y: 10, width: 40, height: 12 },
+      absoluteRenderBounds: { x: 9, y: 9, width: 42, height: 14 }
     }
   ]
 };
@@ -135,9 +156,80 @@ test("capturePositionalEvidence builds screenshot data URL and node index", asyn
     parentId: "1:2",
     name: "Title",
     type: "TEXT",
-    depth: 1
+    depth: 1,
+    visible: true,
+    selectable: true,
+    bounds: { x: 10, y: 10, width: 40, height: 12 },
+    clipRenderBounds: { x: 9, y: 9, width: 42, height: 14 }
   });
+  expect(Object.keys(result.capture.nodes[1]).sort()).toEqual([
+    "bounds",
+    "clipRenderBounds",
+    "depth",
+    "id",
+    "name",
+    "parentId",
+    "selectable",
+    "type",
+    "visible"
+  ]);
   expect(result.capture.frame.name).toBe("Frame");
+});
+
+test("positional index derives image selectability, effective visibility, and ancestor-clipped render bounds", async () => {
+  const client = clientWithFixture({
+    document: {
+      id: "1:2",
+      name: "Root",
+      type: "FRAME",
+      clipsContent: true,
+      absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 80 },
+      absoluteRenderBounds: { x: 0, y: 0, width: 100, height: 80 },
+      children: [
+        {
+          id: "1:3",
+          name: "Hero photo",
+          type: "RECTANGLE",
+          fills: [{ type: "IMAGE", visible: true }],
+          absoluteBoundingBox: { x: 90, y: 10, width: 30, height: 30 },
+          absoluteRenderBounds: { x: 88, y: 8, width: 35, height: 35 }
+        },
+        {
+          id: "1:4",
+          name: "Hidden section",
+          type: "FRAME",
+          visible: false,
+          absoluteBoundingBox: { x: 10, y: 10, width: 50, height: 40 },
+          children: [
+            {
+              id: "1:5",
+              name: "Invisible by ancestry",
+              type: "TEXT",
+              absoluteBoundingBox: { x: 20, y: 20, width: 20, height: 10 }
+            }
+          ]
+        }
+      ]
+    }
+  });
+  const result = await client.capturePositionalEvidence({
+    token: "t",
+    fileKey: "f",
+    nodeId: "1:2"
+  });
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+
+  expect(result.capture.nodes.find((node) => node.id === "1:3")).toMatchObject({
+    type: "RECTANGLE",
+    selectable: true,
+    clipRenderBounds: { x: 88, y: 8, width: 12, height: 35 }
+  });
+  expect(result.capture.nodes.find((node) => node.id === "1:5")).toMatchObject({
+    visible: false,
+    selectable: false
+  });
+  expect(JSON.stringify(result.capture.nodes)).not.toContain("fills");
 });
 
 test("capturePositionalEvidence maps 404", async () => {
@@ -180,6 +272,51 @@ test("screenshot with image MIME but non-image bytes fails closed", async () => 
       nodeId: "1:2"
     })
   ).toEqual({ ok: false, reason: "screenshot_missing" });
+});
+
+test("capturePositionalEvidence times out while reading an unfinished screenshot body", async () => {
+  let screenshotSignal: AbortSignal | null = null;
+  const client = createFigmaApiClient({
+    baseUrl: "https://api.figma.test",
+    apiTimeoutMs: 100,
+    screenshotTimeoutMs: 5,
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.includes("/nodes?")) {
+        return new Response(
+          JSON.stringify({ nodes: { "1:2": { document: VALID_DOCUMENT } } }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      if (url.includes("/images/")) {
+        return new Response(
+          JSON.stringify({ images: { "1:2": "https://cdn.test/slow.png" } }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      screenshotSignal = init?.signal ?? null;
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(TINY_PNG.subarray(0, 8));
+            // Deliberately never close: models a CDN that returns 200 headers
+            // and then leaves the image body unfinished.
+          }
+        }),
+        { status: 200, headers: { "content-type": "image/png" } }
+      );
+    }
+  });
+
+  expect(
+    await client.capturePositionalEvidence({
+      token: "t",
+      fileKey: "f",
+      nodeId: "1:2"
+    })
+  ).toEqual({ ok: false, reason: "figma_api_timeout" });
+  expect(screenshotSignal).not.toBeNull();
+  expect((screenshotSignal as AbortSignal | null)?.aborted).toBe(true);
 });
 
 test("malformed root missing type fails closed", async () => {

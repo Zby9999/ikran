@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { rawGet as httpGet, rawPost as httpPost, rawDelete as httpDelete, rawPatch as httpPatch } from "./helpers/http";
 import { connectFigmaForTests } from "./helpers/figma-connection";
+import { listEvents } from "../lib/runtime/events";
+import { listRegionAnnotations } from "../lib/runtime/region-annotation";
 
 const test = base.extend<{ folder: string }>({
   folder: async ({}, use) => {
@@ -205,6 +207,137 @@ test("valid token → Enter Canvas unlocks gate; paste captures surface", async 
   expect(body.ok).toBe(true);
   expect(body.surface.frame_name).toBe("Mock Frame");
   expect(body.surface.positional_nodes_json).toContain("FRAME");
+});
+
+test("05C: header refresh button is leftmost and appends a new evidence version", async ({
+  page,
+  runtime,
+  folder
+}) => {
+  const token = await captureToken(page, runtime.baseURL);
+  await bindFolder(token, folder, runtime.port);
+  await ensureGateOpen(page, runtime, token);
+
+  const capture = await httpPost(
+    runtime.port,
+    "/api/seed-capture",
+    {
+      figmaSeedReference:
+        "https://www.figma.com/design/AbCdEfGh/Mock?node-id=5-6"
+    },
+    {
+      host: `localhost:${runtime.port}`,
+      "x-ikran-session": token,
+      "content-type": "application/json"
+    }
+  );
+  expect(capture.status).toBe(200);
+  const first = JSON.parse(capture.body) as {
+    record: { id: string; current_surface_id: string };
+    surface: { id: string };
+  };
+
+  const frame = page.getByTestId("seed-reference-projection");
+  await expect(frame).toBeVisible({ timeout: 10000 });
+  const refresh = frame.getByRole("button", { name: "Refresh evidence" });
+  await expect(refresh).toBeVisible();
+  await expect(frame.locator(".seed-ref-frame__header-actions > :first-child")).toHaveAttribute(
+    "data-testid",
+    "seed-reference-projection-refresh"
+  );
+
+  const refreshResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/seed-reference/refresh"
+  );
+  await refresh.click();
+  expect((await refreshResponse).status()).toBe(200);
+
+  const surfacesResponse = await httpGet(
+    runtime.port,
+    "/api/evidence-package",
+    {
+      host: `localhost:${runtime.port}`,
+      "x-ikran-session": token
+    }
+  );
+  const surfaces = JSON.parse(surfacesResponse.body).records as Array<{
+    id: string;
+    superseded_by: string | null;
+  }>;
+  expect(surfaces).toHaveLength(2);
+  const oldSurface = surfaces.find((surface) => surface.id === first.surface.id);
+  const newSurface = surfaces.find((surface) => surface.id !== first.surface.id);
+  expect(newSurface).toBeTruthy();
+  expect(oldSurface?.superseded_by).toBe(newSurface?.id);
+
+  const seedsResponse = await httpGet(runtime.port, "/api/seed-reference", {
+    host: `localhost:${runtime.port}`,
+    "x-ikran-session": token
+  });
+  const seeds = JSON.parse(seedsResponse.body).records as Array<{
+    id: string;
+    current_surface_id: string;
+  }>;
+  expect(seeds.find((seed) => seed.id === first.record.id)?.current_surface_id).toBe(
+    newSurface?.id
+  );
+});
+
+test("05C: Annotation mode activates structural hover without persisting state", async ({
+  page,
+  runtime,
+  folder
+}) => {
+  const token = await captureToken(page, runtime.baseURL);
+  await bindFolder(token, folder, runtime.port);
+  await ensureGateOpen(page, runtime, token);
+
+  const capture = await httpPost(
+    runtime.port,
+    "/api/seed-capture",
+    {
+      figmaSeedReference:
+        "https://www.figma.com/design/AbCdEfGh/Mock?node-id=7-8"
+    },
+    {
+      host: `localhost:${runtime.port}`,
+      "x-ikran-session": token,
+      "content-type": "application/json"
+    }
+  );
+  expect(capture.status).toBe(200);
+
+  const overlay = page.getByTestId("seed-reference-structural-overlay");
+  await expect(overlay).toHaveCount(0);
+  const annotate = page.getByTestId("annotate-button");
+  await annotate.click();
+  await expect(annotate).toHaveAttribute("aria-pressed", "true");
+  await expect(overlay).toBeVisible({ timeout: 10000 });
+  const box = await overlay.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) return;
+
+  // Mock child Frame is x=.1, y=.1, w=.5, h=.4 in the captured root.
+  const point = {
+    x: box.x + box.width * 0.3,
+    y: box.y + box.height * 0.25
+  };
+  const eventsBeforeHover = listEvents(folder);
+  const annotationsBeforeHover = listRegionAnnotations(folder);
+  await page.mouse.move(point.x, point.y);
+  const hovered = page.getByTestId(
+    "seed-reference-structural-highlight-hovered"
+  );
+  await expect(hovered).toBeVisible();
+  await expect(hovered).toHaveAttribute("data-node-id", /child-frame$/);
+  await expect(hovered).toHaveCSS("border-top-style", "none");
+  await expect(hovered).toHaveCSS("background-color", "rgba(25, 209, 34, 0.4)");
+  const hoveredBox = await hovered.boundingBox();
+  expect(hoveredBox).not.toBeNull();
+  expect(listEvents(folder)).toEqual(eventsBeforeHover);
+  expect(listRegionAnnotations(folder)).toEqual(annotationsBeforeHover);
 });
 
 test("paste/add fail closed when gate closed — no SQLite rows", async ({

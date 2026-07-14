@@ -38,8 +38,16 @@
 // #B980B9; selected deepens both to #731b73 (`.seed-ref-frame--selected`).
 // Unselected chrome background is #EEE1EE; selected keeps the purple wash.
 
-import { useState, type SyntheticEvent } from "react";
-import { NoteIcon } from "@hugeicons/core-free-icons";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+  type SyntheticEvent
+} from "react";
+import { NoteIcon, RefreshIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   BaseBoxShapeUtil,
@@ -67,6 +75,14 @@ import {
   sizeFromNaturalPixels
 } from "./seed-reference-resize-clamp";
 import { applySeedProjectionReflow } from "./projection/seed-projection-reflow";
+import { useWorkbenchSeedActions } from "./workbench-seed-actions";
+import { annotationChromeForMediaWidth } from "./annotation-chrome";
+import {
+  buildStructuralOverlayFrames,
+  fitStructuralImageBox,
+  findStructuralOverlayFrameAtPoint,
+  structuralHoverDisplayRect
+} from "./structural-overlay";
 
 export {
   SEED_REF_FRAME_CHROME_H,
@@ -88,6 +104,10 @@ declare module "@tldraw/tlschema" {
       designLanguageDescription: string;
       /** Source frame / node name when known; empty → title falls back to "Figma seed". */
       frameName: string;
+      /** Captured absolute bounds of the screenshot root Frame. */
+      frameBoundsJson: string;
+      /** Captured positional node index for ephemeral structural overlays. */
+      positionalNodesJson: string;
       /** Screenshot <img src>: data URL or /api/artifacts?... URL. */
       screenshotDataUrl: string;
       /**
@@ -165,6 +185,8 @@ function SeedReferenceProjectionFrame({
     originalDesignIntent,
     designLanguageDescription,
     frameName,
+    frameBoundsJson,
+    positionalNodesJson,
     screenshotDataUrl,
     hasScreenshotArtifact,
     awaitingEvidence,
@@ -174,11 +196,29 @@ function SeedReferenceProjectionFrame({
     shape.meta;
   const [descriptionOpen, setDescriptionOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [hoveredStructuralNodeId, setHoveredStructuralNodeId] = useState<
+    string | null
+  >(null);
+  const [imageBox, setImageBox] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const mediaRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
+  const seedActions = useWorkbenchSeedActions();
   const editor = useEditor();
   const isSelected = useValue(
     "seed-ref-selected",
     () => editor.getSelectedShapeIds().includes(shape.id),
     [editor, shape.id]
+  );
+  const currentToolId = useValue(
+    "seed-ref-current-tool",
+    () => editor.getCurrentToolId(),
+    [editor]
   );
   const title = frameName.trim() || FALLBACK_TITLE;
   const description = designLanguageDescription;
@@ -191,9 +231,138 @@ function SeedReferenceProjectionFrame({
         : null;
   const screenshotSrc = screenshotDataUrl.trim();
   const hasScreenshot = screenshotSrc.length > 0;
+  const structuralFrames = useMemo(
+    () =>
+      buildStructuralOverlayFrames({
+        frameBoundsJson,
+        positionalNodesJson
+      }),
+    [frameBoundsJson, positionalNodesJson]
+  );
+  const structuralEnabled =
+    hasScreenshot &&
+    structuralFrames.length > 0 &&
+    currentToolId === "region-annotation";
+  const hoveredStructuralFrame = structuralFrames.find(
+    (frame) => frame.nodeId === hoveredStructuralNodeId
+  );
+  const mediaSize = {
+    w: mediaRef.current?.clientWidth ?? imageBox?.width ?? 0,
+    h: mediaRef.current?.clientHeight ?? imageBox?.height ?? 0
+  };
+  const hoveredStructuralDisplayRect =
+    hoveredStructuralFrame && imageBox
+      ? structuralHoverDisplayRect({
+          rect: hoveredStructuralFrame.rect,
+          imageBox: {
+            x: imageBox.left,
+            y: imageBox.top,
+            w: imageBox.width,
+            h: imageBox.height
+          },
+          mediaSize
+        })
+      : null;
   const showAwaiting = awaitingEvidence && !hasScreenshot;
   const showGuide = showAwaiting && awaitingUx === "guide";
   const showSpinner = showAwaiting && awaitingUx !== "guide";
+
+  const measureImageBox = useCallback(() => {
+    const media = mediaRef.current;
+    const img = imageRef.current;
+    if (!media || !img || !img.naturalWidth || !img.naturalHeight) {
+      setImageBox(null);
+      return;
+    }
+    const width = media.clientWidth;
+    const height = media.clientHeight;
+    const fitted = fitStructuralImageBox(
+      { x: 0, y: 0, w: width, h: height },
+      { width: img.naturalWidth, height: img.naturalHeight }
+    );
+    if (!fitted) {
+      setImageBox(null);
+      return;
+    }
+    const next = {
+      left: fitted.x,
+      top: fitted.y,
+      width: fitted.w,
+      height: fitted.h
+    };
+    setImageBox((current) =>
+      current &&
+      Math.abs(current.left - next.left) < 0.1 &&
+      Math.abs(current.top - next.top) < 0.1 &&
+      Math.abs(current.width - next.width) < 0.1 &&
+      Math.abs(current.height - next.height) < 0.1
+        ? current
+        : next
+    );
+  }, []);
+
+  useEffect(() => {
+    setHoveredStructuralNodeId(null);
+  }, [structuralFrames, surfaceRecordId]);
+
+  useEffect(() => {
+    if (!hasScreenshot) {
+      setImageBox(null);
+      return;
+    }
+    const media = mediaRef.current;
+    if (!media) return;
+    measureImageBox();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measureImageBox);
+    observer.observe(media);
+    return () => observer.disconnect();
+  }, [hasScreenshot, measureImageBox, screenshotSrc]);
+
+  useEffect(() => {
+    if (structuralEnabled) return;
+    setHoveredStructuralNodeId(null);
+  }, [structuralEnabled]);
+
+  const structuralPoint = useCallback(
+    (event: { clientX: number; clientY: number }) => {
+      const media = mediaRef.current;
+      if (!media || !imageBox || imageBox.width <= 0 || imageBox.height <= 0) {
+        return null;
+      }
+      const bounds = media.getBoundingClientRect();
+      const scaleX = media.clientWidth > 0 ? bounds.width / media.clientWidth : 1;
+      const scaleY = media.clientHeight > 0 ? bounds.height / media.clientHeight : 1;
+      const localX = (event.clientX - bounds.left) / scaleX - imageBox.left;
+      const localY = (event.clientY - bounds.top) / scaleY - imageBox.top;
+      if (
+        localX < 0 ||
+        localY < 0 ||
+        localX > imageBox.width ||
+        localY > imageBox.height
+      ) {
+        return null;
+      }
+      return { x: localX / imageBox.width, y: localY / imageBox.height };
+    },
+    [imageBox]
+  );
+
+  const structuralFrameFromEvent = useCallback(
+    (event: { clientX: number; clientY: number }) => {
+      const point = structuralPoint(event);
+      return point
+        ? findStructuralOverlayFrameAtPoint(structuralFrames, point)
+        : null;
+    },
+    [structuralFrames, structuralPoint]
+  );
+
+  const handleStructuralPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (!structuralEnabled) return;
+    const frame = structuralFrameFromEvent(event);
+    setHoveredStructuralNodeId(frame?.nodeId ?? null);
+  };
 
   const stopShapePointer = (event: SyntheticEvent) => {
     event.stopPropagation();
@@ -220,10 +389,22 @@ function SeedReferenceProjectionFrame({
     setDescriptionOpen((open) => !open);
   };
 
+  const refreshEvidence = async (event: SyntheticEvent) => {
+    stopShapePointer(event);
+    if (!noteSeedId || !seedActions || refreshing) return;
+    setRefreshing(true);
+    try {
+      await seedActions.refreshSeedReference(noteSeedId);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const handleScreenshotLoad = (event: SyntheticEvent<HTMLImageElement>) => {
     const img = event.currentTarget;
     const nw = img.naturalWidth;
     const nh = img.naturalHeight;
+    requestAnimationFrame(measureImageBox);
     // Ignore tiny fixtures / broken loads — keep the default placeholder size.
     if (!nw || !nh || Math.max(nw, nh) < 32) return;
     const naturalUnchanged =
@@ -290,6 +471,30 @@ function SeedReferenceProjectionFrame({
           {title}
         </p>
         <div className="seed-ref-frame__header-actions">
+          <Button
+            type="button"
+            variant="ghost"
+            className={cn(
+              seedRefFrameHeaderButtonClass,
+              "seed-ref-frame__refresh",
+              refreshing && "seed-ref-frame__refresh--active"
+            )}
+            data-testid="seed-reference-projection-refresh"
+            aria-label="Refresh evidence"
+            aria-busy={refreshing}
+            disabled={!noteSeedId || !seedActions || refreshing}
+            onPointerDown={stopShapePointer}
+            onMouseDown={stopShapePointer}
+            onClick={refreshEvidence}
+          >
+            <HugeiconsIcon
+              className="seed-ref-frame__refresh-icon"
+              icon={RefreshIcon}
+              size={14}
+              color="currentColor"
+              strokeWidth={1.5}
+            />
+          </Button>
           <div className="seed-ref-frame__figma-link-wrap">
             <div className="seed-ref-frame__figma-hint-anchor" aria-hidden="true">
               <SeedRefFrameFigmaHint />
@@ -387,6 +592,7 @@ function SeedReferenceProjectionFrame({
         </div>
       </div>
       <div
+        ref={mediaRef}
         className="seed-ref-frame__media"
         data-testid="seed-reference-projection-media"
         data-has-screenshot={hasScreenshot ? "true" : "false"}
@@ -396,10 +602,15 @@ function SeedReferenceProjectionFrame({
         data-awaiting-evidence={showAwaiting ? "true" : "false"}
         data-awaiting-ux={showAwaiting ? awaitingUx : undefined}
         aria-hidden={hasScreenshot || showAwaiting ? undefined : "true"}
+        data-structural-overlay={structuralFrames.length > 0 ? "true" : "false"}
+        data-hovered-structural-node-id={hoveredStructuralNodeId ?? undefined}
+        onPointerMove={handleStructuralPointerMove}
+        onPointerLeave={() => setHoveredStructuralNodeId(null)}
       >
         {hasScreenshot ? (
           // eslint-disable-next-line @next/next/no-img-element -- Runtime data URL or same-origin /api/artifacts
           <img
+            ref={imageRef}
             className="seed-ref-frame__media-img"
             data-testid="seed-reference-projection-screenshot"
             src={screenshotSrc}
@@ -441,6 +652,29 @@ function SeedReferenceProjectionFrame({
             </p>
           </div>
         ) : null}
+        {structuralEnabled && imageBox ? (
+          <div
+            className="seed-ref-frame__structural-overlay"
+            data-testid="seed-reference-structural-overlay"
+            aria-hidden="true"
+            style={imageBox}
+          >
+            {hoveredStructuralFrame && hoveredStructuralDisplayRect ? (
+              <div
+                className="seed-ref-frame__structural-highlight seed-ref-frame__structural-highlight--hovered"
+                data-testid="seed-reference-structural-highlight-hovered"
+                data-node-id={hoveredStructuralFrame.nodeId}
+                style={{
+                  left: `${hoveredStructuralDisplayRect.x * 100}%`,
+                  top: `${hoveredStructuralDisplayRect.y * 100}%`,
+                  width: `${hoveredStructuralDisplayRect.w * 100}%`,
+                  height: `${hoveredStructuralDisplayRect.h * 100}%`,
+                  borderRadius: annotationChromeForMediaWidth(mediaSize.w).radius
+                }}
+              />
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </HTMLContainer>
   );
@@ -456,6 +690,8 @@ export class SeedReferenceProjectionShapeUtil extends BaseBoxShapeUtil<SeedRefer
     originalDesignIntent: T.string,
     designLanguageDescription: T.string,
     frameName: T.string,
+    frameBoundsJson: T.string,
+    positionalNodesJson: T.string,
     screenshotDataUrl: T.string,
     hasScreenshotArtifact: T.boolean,
     awaitingEvidence: T.boolean,
@@ -473,6 +709,8 @@ export class SeedReferenceProjectionShapeUtil extends BaseBoxShapeUtil<SeedRefer
       originalDesignIntent: "",
       designLanguageDescription: "",
       frameName: "",
+      frameBoundsJson: "",
+      positionalNodesJson: "",
       screenshotDataUrl: "",
       hasScreenshotArtifact: false,
       awaitingEvidence: false,

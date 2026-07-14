@@ -45,6 +45,7 @@ export function SeedEvidenceWorkbench({
     createAnnotation,
     deleteAnnotation,
     deleteSeedReference,
+    refreshSeedReference,
     putWorkbenchLayout,
     flushWorkbenchLayout,
     updateSeedReferenceNote,
@@ -281,6 +282,7 @@ export function SeedEvidenceWorkbench({
             onPutWorkbenchLayout={putWorkbenchLayout}
             onFlushWorkbenchLayout={flushWorkbenchLayout}
             onUpdateSeedReferenceNote={updateSeedReferenceNote}
+            onRefreshSeedReference={refreshSeedReference}
             onUpdateDesignLanguageDescription={updateDesignLanguageDescription}
             focusSeedId={focusSeedId}
             onFocusSeedApplied={clearFocusSeedId}

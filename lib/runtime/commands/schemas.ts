@@ -111,6 +111,33 @@ export const addSeedReferenceInputShape = {
 
 export const addSeedReferenceInputSchema = z.object(addSeedReferenceInputShape);
 
+export const refreshSeedReferenceInputShape = {
+  seedReferenceId: z.string()
+} as const;
+
+export const refreshSeedReferenceInputSchema = z.object(
+  refreshSeedReferenceInputShape
+);
+
+export const getSeedReferenceContextInputSchema = z.object({
+  seedReferenceId: z.string()
+});
+
+export const getAnnotationNodeCandidatesInputSchema = z.object({
+  surfaceId: z.string(),
+  rect: z.object({
+    x: z.number(),
+    y: z.number(),
+    w: z.number(),
+    h: z.number()
+  })
+});
+
+export const getCapturedNodeCorrespondenceInputSchema = z.object({
+  seedReferenceId: z.string(),
+  capturedNodeId: z.string()
+});
+
 export const updateSeedReferenceNoteInputShape = {
   id: z.string(),
   /** Pass "" to clear. Field is required so omit does not silently wipe the note. */

@@ -47,7 +47,9 @@ export type SeedCaptureErrorReason =
   | "rate_limited"
   | "screenshot_missing"
   | "malformed_figma_response"
+  | "figma_api_timeout"
   | "figma_api_error"
+  | "seed_reference_not_found"
   | "db_error";
 
 export type SeedCaptureResult =
@@ -59,6 +61,16 @@ export type SeedCaptureResult =
       reused?: true;
       /** Attached surface to a pre-existing seed that had no current surface. */
       fulfilled_pending?: true;
+    }
+  | { ok: false; reason: SeedCaptureErrorReason };
+
+export type SeedRefreshResult =
+  | {
+      ok: true;
+      record: SeedReferenceRecord;
+      surface: FigmaEvidenceSurfaceRecord;
+      previous_surface_id: string;
+      event_id: string;
     }
   | { ok: false; reason: SeedCaptureErrorReason };
 
@@ -197,7 +209,7 @@ export async function addSeedReference(
 ): Promise<SeedCaptureResult> {
   const connection = await requireFigmaConnectionCommand();
   if (!connection.ok) {
-    return { ok: false, reason: "figma_connection_required" };
+    return { ok: false, reason: connection.reason };
   }
 
   const validated = validateCaptureUrl(input.figmaSeedReference);
@@ -401,6 +413,117 @@ export async function addSeedReference(
 
     return result;
   } catch {
+    return { ok: false, reason: "db_error" };
+  }
+}
+
+/** Explicitly append a new positional-evidence version for one Seed Reference. */
+export async function refreshSeedReference(
+  projectPath: string,
+  input: { seedReferenceId: string; initiator: SeedCaptureInitiator }
+): Promise<SeedRefreshResult> {
+  const connection = await requireFigmaConnectionCommand();
+  if (!connection.ok) {
+    return { ok: false, reason: connection.reason };
+  }
+
+  let seed: SeedReferenceRecord | null = null;
+  try {
+    seed = withProjectTransaction(projectPath, (db) => {
+      const row = db
+        .prepare(`SELECT * FROM seed_references WHERE id = ?`)
+        .get(input.seedReferenceId) as Record<string, unknown> | undefined;
+      return row ? mapSeedRow(row) : null;
+    });
+  } catch {
+    return { ok: false, reason: "db_error" };
+  }
+  if (!seed || !seed.current_surface_id) {
+    return { ok: false, reason: "seed_reference_not_found" };
+  }
+
+  const captured = await getFigmaApiClient().capturePositionalEvidence({
+    token: connection.token,
+    fileKey: seed.file_key,
+    nodeId: seed.node_id
+  });
+  if (!captured.ok) return { ok: false, reason: captured.reason };
+
+  const surfaceId = randomUUID();
+  const createdAt = new Date().toISOString();
+  try {
+    const result = withProjectTransaction(projectPath, (db) => {
+      const currentRow = db
+        .prepare(`SELECT * FROM seed_references WHERE id = ?`)
+        .get(input.seedReferenceId) as Record<string, unknown> | undefined;
+      if (!currentRow) {
+        const error = new Error("seed_reference_not_found");
+        (error as Error & { reason?: string }).reason =
+          "seed_reference_not_found";
+        throw error;
+      }
+      const currentSeed = mapSeedRow(currentRow);
+      const previousSurfaceId = currentSeed.current_surface_id;
+      if (!previousSurfaceId) {
+        const error = new Error("seed_reference_not_found");
+        (error as Error & { reason?: string }).reason =
+          "seed_reference_not_found";
+        throw error;
+      }
+
+      const surface = insertCapturedSurface(db, {
+        surfaceId,
+        seedId: currentSeed.id,
+        figmaUrl: currentSeed.figma_seed_reference,
+        createdAt,
+        capture: captured.capture
+      });
+      const advanced = db
+        .prepare(
+          `UPDATE figma_evidence_surfaces
+           SET superseded_by = ?
+           WHERE id = ? AND seed_reference_id = ? AND superseded_by IS NULL`
+        )
+        .run(surfaceId, previousSurfaceId, currentSeed.id);
+      if (advanced.changes !== 1) {
+        throw new Error("evidence_lineage_conflict");
+      }
+      logEvidenceCaptured(db, {
+        surfaceId,
+        seedId: currentSeed.id,
+        figmaUrl: currentSeed.figma_seed_reference,
+        initiator: input.initiator
+      });
+      const event = logEventOnDb(db, "figma_evidence_refreshed", {
+        seed_reference_id: currentSeed.id,
+        previous_surface_id: previousSurfaceId,
+        current_surface_id: surface.id,
+        initiator: input.initiator
+      });
+      return {
+        ok: true as const,
+        record: { ...currentSeed, current_surface_id: surface.id },
+        surface,
+        previous_surface_id: previousSurfaceId,
+        event_id: event.event_id
+      };
+    });
+
+    emitRecordEvent({
+      kind: "evidence",
+      action: "created",
+      id: result.surface.id,
+      projectPath: path.resolve(projectPath)
+    });
+    return result;
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error as Error & { reason?: string }).reason ===
+        "seed_reference_not_found"
+    ) {
+      return { ok: false, reason: "seed_reference_not_found" };
+    }
     return { ok: false, reason: "db_error" };
   }
 }

@@ -297,6 +297,17 @@ export function useWorkbenchRuntime(session: string) {
     []
   );
 
+  const refreshSeedReference = useCallback(
+    async (seedId: string): Promise<MutationResult> => {
+      const client = clientRef.current;
+      if (!client) {
+        return { ok: false, error: "runtime_client_unavailable" };
+      }
+      return client.refreshSeedReference(seedId);
+    },
+    []
+  );
+
   const getFigmaConnection = useCallback(async () => {
     const client = clientRef.current;
     if (!client) {
@@ -383,6 +394,7 @@ export function useWorkbenchRuntime(session: string) {
     createAnnotation,
     deleteAnnotation,
     deleteSeedReference,
+    refreshSeedReference,
     putWorkbenchLayout,
     flushWorkbenchLayout,
     updateSeedReferenceNote,

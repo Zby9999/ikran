@@ -14,7 +14,16 @@ export {
   updateSeedReferenceNoteCommand
 } from "./seed-reference";
 
-export { addSeedReferenceCommand } from "./seed-capture";
+export {
+  addSeedReferenceCommand,
+  refreshSeedReferenceCommand
+} from "./seed-capture";
+
+export {
+  getSeedReferenceContext,
+  getAnnotationNodeCandidatesContext,
+  getCapturedNodeCorrespondence
+} from "../figma-context";
 
 export {
   getProjectReadinessCommand,
@@ -57,6 +66,11 @@ export {
   createRegionAnnotationInputShape,
   addSeedReferenceInputSchema,
   addSeedReferenceInputShape,
+  refreshSeedReferenceInputSchema,
+  refreshSeedReferenceInputShape,
+  getSeedReferenceContextInputSchema,
+  getAnnotationNodeCandidatesInputSchema,
+  getCapturedNodeCorrespondenceInputSchema,
   updateSeedReferenceNoteInputSchema,
   updateSeedReferenceNoteInputShape,
   setDesignLanguageDescriptionInputSchema,

@@ -4,8 +4,8 @@ import type { TLResizeHandle } from "tldraw";
  * Frame chrome around the media bitmap (padding + header + media border).
  * Matches `.seed-ref-frame` / `__header` / `__media` in seed-evidence-workbench.css.
  */
-export const SEED_REF_FRAME_CHROME_W = 10; // pad 4+4 + media border 1+1
-export const SEED_REF_FRAME_CHROME_H = 34; // pad top 4 + header 20 + gap 4 + media border 1+1 + pad bottom 4
+export const SEED_REF_FRAME_CHROME_W = 12; // frame border 1+1 + pad 4+4 + media border 1+1
+export const SEED_REF_FRAME_CHROME_H = 36; // frame border 1+1 + pad top 4 + header 20 + gap 4 + media border 1+1 + pad bottom 4
 
 /**
  * Asset / grow ceiling for screenshot media (page pixels). Aligns with Figma

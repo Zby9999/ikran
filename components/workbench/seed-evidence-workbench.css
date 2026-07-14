@@ -478,6 +478,7 @@
   white-space: nowrap;
 }
 
+.seed-ref-frame__refresh,
 .seed-ref-frame__figma-link,
 .seed-ref-frame__notes,
 .seed-ref-frame__info {
@@ -496,12 +497,15 @@
   appearance: none;
 }
 
+.seed-ref-frame__refresh:disabled,
 .seed-ref-frame__figma-link:disabled,
 .seed-ref-frame__notes:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
+.seed-ref-frame__refresh:hover:not(:disabled),
+.seed-ref-frame__refresh:focus-visible:not(:disabled),
 .seed-ref-frame__figma-link:hover:not(:disabled),
 .seed-ref-frame__figma-link:focus-visible:not(:disabled),
 .seed-ref-frame__notes:hover:not(:disabled),
@@ -513,12 +517,23 @@
   background: #bb70bb;
 }
 
+.seed-ref-frame__refresh-icon,
 .seed-ref-frame__figma-icon,
 .seed-ref-frame__notes-icon,
 .seed-ref-frame__info-icon {
   display: block;
   pointer-events: none;
   color: #731b73;
+}
+
+.seed-ref-frame__refresh--active .seed-ref-frame__refresh-icon {
+  animation: seed-ref-refresh-spin 0.8s linear infinite;
+}
+
+@keyframes seed-ref-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Description tip (Figma 227:130 / hover 227:246) — fade + slide up on show. */
@@ -713,6 +728,7 @@
 }
 
 .seed-ref-frame__media {
+  position: relative;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -723,6 +739,30 @@
   border: 1px solid #b980b9;
   background: #ffffff;
   overflow: hidden;
+}
+
+/* Ephemeral Figma structural overlay. In Annotation mode it previews the
+   target with the designer Annotation green; confirmation becomes a normal
+   persisted Region Annotation projected by `.region-annotation-marker`. */
+.seed-ref-frame__structural-overlay {
+  position: absolute;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.seed-ref-frame__structural-highlight {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+  transition:
+    background-color 100ms ease,
+    border-color 100ms ease;
+}
+
+.seed-ref-frame__structural-highlight--hovered {
+  z-index: 1;
+  border: 0;
+  background: rgba(25, 209, 34, 0.4);
 }
 
 /* scale-down = never upscale past intrinsic pixels (fixes soft Figma MCP
@@ -787,7 +827,7 @@
 
 /* Region Annotation marker (Issue 06) — on-surface box only.
    Stroke/radius are page-space CSS borders scaled with parent media width
-   (Figma ref: 1px / 8px at ~695px media; set inline). Camera zoom scales
+   (1px / 4px at ~695px media; set inline). Camera zoom scales
    them once with the html-layer. */
 .region-annotation-marker {
   box-sizing: border-box;

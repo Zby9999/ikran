@@ -12,9 +12,14 @@ import {
   setFigmaApiClientForTests,
   type FigmaApiClient
 } from "../../lib/runtime/figma-api";
-import { addSeedReference } from "../../lib/runtime/seed-capture";
+import {
+  addSeedReference,
+  refreshSeedReference
+} from "../../lib/runtime/seed-capture";
 import { listSeedReferences } from "../../lib/runtime/seed-reference";
 import { listFigmaEvidenceSurfaces } from "../../lib/runtime/evidence-package";
+import { listEvents } from "../../lib/runtime/events";
+import { closeProjectDb, openProjectDb } from "../../lib/runtime/db";
 
 const TINY_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -127,6 +132,109 @@ test("atomic capture writes seed + surface + positional index", async () => {
   expect(result.surface.positional_nodes_json).toContain('"FRAME"');
   expect(listSeedReferences(projectDir)).toHaveLength(1);
   expect(listFigmaEvidenceSurfaces(projectDir)).toHaveLength(1);
+});
+
+test("explicit refresh appends a surface, advances current, and preserves history", async () => {
+  await withConnectedStore();
+  const first = await addSeedReference(projectDir, {
+    figmaSeedReference: "https://www.figma.com/design/AbCdEf/X?node-id=1-2",
+    initiator: "ui"
+  });
+  expect(first.ok).toBe(true);
+  if (!first.ok) return;
+
+  const refreshed = await refreshSeedReference(projectDir, {
+    seedReferenceId: first.record.id,
+    initiator: "ui"
+  });
+  expect(refreshed.ok).toBe(true);
+  if (!refreshed.ok) return;
+
+  expect(refreshed.surface.id).not.toBe(first.surface.id);
+  expect(refreshed.previous_surface_id).toBe(first.surface.id);
+  expect(refreshed.record.current_surface_id).toBe(refreshed.surface.id);
+  const surfaces = listFigmaEvidenceSurfaces(projectDir);
+  expect(surfaces).toHaveLength(2);
+  expect(surfaces.find((surface) => surface.id === first.surface.id)).toMatchObject({
+    superseded_by: refreshed.surface.id
+  });
+  expect(surfaces.find((surface) => surface.id === refreshed.surface.id)).toMatchObject({
+    superseded_by: null
+  });
+});
+
+test("failed explicit refresh leaves current and history unchanged", async () => {
+  await withConnectedStore();
+  const first = await addSeedReference(projectDir, {
+    figmaSeedReference:
+      "https://www.figma.com/design/AbCdEf/X?node-id=forbidden",
+    initiator: "ui"
+  });
+  // The fixture fails this id on initial capture, so create a normal seed then
+  // switch the API double to fail only for the refresh call.
+  expect(first.ok).toBe(false);
+
+  const normal = await addSeedReference(projectDir, {
+    figmaSeedReference: "https://www.figma.com/design/AbCdEf/X?node-id=1-2",
+    initiator: "ui"
+  });
+  expect(normal.ok).toBe(true);
+  if (!normal.ok) return;
+
+  setFigmaApiClientForTests({
+    ...api,
+    async capturePositionalEvidence() {
+      return { ok: false, reason: "rate_limited" };
+    }
+  });
+  const eventsBefore = listEvents(projectDir);
+  const failed = await refreshSeedReference(projectDir, {
+    seedReferenceId: normal.record.id,
+    initiator: "ui"
+  });
+  expect(failed).toEqual({ ok: false, reason: "rate_limited" });
+  expect(listSeedReferences(projectDir)[0].current_surface_id).toBe(
+    normal.surface.id
+  );
+  expect(listFigmaEvidenceSurfaces(projectDir)).toEqual([normal.surface]);
+  expect(listEvents(projectDir)).toEqual(eventsBefore);
+});
+
+test("late refresh transaction failure rolls back surface, lineage, current, and events", async () => {
+  await withConnectedStore();
+  const normal = await addSeedReference(projectDir, {
+    figmaSeedReference: "https://www.figma.com/design/AbCdEf/X?node-id=1-2",
+    initiator: "ui"
+  });
+  expect(normal.ok).toBe(true);
+  if (!normal.ok) return;
+
+  const db = openProjectDb(projectDir);
+  try {
+    db.exec(`
+      CREATE TRIGGER fail_refresh_success_event
+      BEFORE INSERT ON events
+      WHEN NEW.type = 'figma_evidence_refreshed'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced late refresh failure');
+      END;
+    `);
+  } finally {
+    closeProjectDb(db);
+  }
+
+  const seedsBefore = listSeedReferences(projectDir);
+  const surfacesBefore = listFigmaEvidenceSurfaces(projectDir);
+  const eventsBefore = listEvents(projectDir);
+  const failed = await refreshSeedReference(projectDir, {
+    seedReferenceId: normal.record.id,
+    initiator: "agent"
+  });
+
+  expect(failed).toEqual({ ok: false, reason: "db_error" });
+  expect(listSeedReferences(projectDir)).toEqual(seedsBefore);
+  expect(listFigmaEvidenceSurfaces(projectDir)).toEqual(surfacesBefore);
+  expect(listEvents(projectDir)).toEqual(eventsBefore);
 });
 
 test.each([

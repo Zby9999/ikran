@@ -77,6 +77,7 @@ export function WorkbenchCanvas({
   onPutWorkbenchLayout,
   onFlushWorkbenchLayout,
   onUpdateSeedReferenceNote,
+  onRefreshSeedReference,
   onUpdateDesignLanguageDescription,
   focusSeedId = null,
   onFocusSeedApplied,
@@ -108,6 +109,9 @@ export function WorkbenchCanvas({
   onUpdateSeedReferenceNote?: (
     seedId: string,
     referenceNote: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onRefreshSeedReference?: (
+    seedId: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   onUpdateDesignLanguageDescription?: (
     designLanguageDescription: string
@@ -150,6 +154,13 @@ export function WorkbenchCanvas({
 
   const seedActions = useMemo(
     () => ({
+      refreshSeedReference:
+        onRefreshSeedReference ??
+        (async () =>
+          ({
+            ok: false as const,
+            error: "refresh_seed_unavailable"
+          }) as const),
       updateSeedReferenceNote:
         onUpdateSeedReferenceNote ??
         (async () =>
@@ -165,7 +176,11 @@ export function WorkbenchCanvas({
             error: "update_description_unavailable"
           }) as const)
     }),
-    [onUpdateDesignLanguageDescription, onUpdateSeedReferenceNote]
+    [
+      onRefreshSeedReference,
+      onUpdateDesignLanguageDescription,
+      onUpdateSeedReferenceNote
+    ]
   );
 
   return (

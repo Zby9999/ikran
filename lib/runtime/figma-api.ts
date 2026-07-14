@@ -1,21 +1,18 @@
 // Deterministic Figma REST client for positional evidence (ADR 0003 / Issue 05A).
 // Injectable via `setFigmaApiClientForTests` or `IKRAN_FIGMA_API_BASE` for doubles.
 
+import {
+  isDefaultSelectableFigmaNode,
+  type PositionalEvidenceNode
+} from "./figma-positional-evidence";
+
 export type FigmaAccountIdentity = {
   /** Non-sensitive account handle / email for UI status. Never a token. */
   handle: string;
   email?: string;
 };
 
-export type FigmaPositionalNode = {
-  id: string;
-  parentId: string | null;
-  name: string;
-  type: string;
-  depth: number;
-  visible: boolean;
-  bounds: { x: number; y: number; width: number; height: number } | null;
-};
+export type FigmaPositionalNode = PositionalEvidenceNode;
 
 export type FigmaPositionalCapture = {
   screenshotDataUrl: string;
@@ -31,7 +28,10 @@ export type FigmaPositionalCapture = {
 export type FigmaApiClient = {
   validateToken(token: string): Promise<
     | { ok: true; account: FigmaAccountIdentity }
-    | { ok: false; reason: "invalid_token" | "figma_api_error" }
+    | {
+        ok: false;
+        reason: "invalid_token" | "figma_api_timeout" | "figma_api_error";
+      }
   >;
   capturePositionalEvidence(input: {
     token: string;
@@ -48,6 +48,7 @@ export type FigmaApiClient = {
           | "rate_limited"
           | "screenshot_missing"
           | "malformed_figma_response"
+          | "figma_api_timeout"
           | "figma_api_error";
       }
   >;
@@ -56,6 +57,42 @@ export type FigmaApiClient = {
 const DEFAULT_BASE = "https://api.figma.com";
 
 type FetchLike = typeof fetch;
+
+const DEFAULT_API_TIMEOUT_MS = 10_000;
+const DEFAULT_SCREENSHOT_TIMEOUT_MS = 30_000;
+
+class FigmaApiTimeoutError extends Error {
+  constructor() {
+    super("Figma request timed out");
+    this.name = "FigmaApiTimeoutError";
+  }
+}
+
+async function withRequestTimeout<T>(
+  timeoutMs: number,
+  operation: (signal: AbortSignal) => Promise<T>
+): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new FigmaApiTimeoutError());
+    }, timeoutMs);
+  });
+  try {
+    // The race guarantees a deadline even for injected fetch implementations
+    // that ignore AbortSignal. Production fetch still receives the abort so
+    // sockets and response streams are released promptly.
+    return await Promise.race([operation(controller.signal), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function isFigmaApiTimeout(error: unknown): boolean {
+  return error instanceof FigmaApiTimeoutError;
+}
 
 function resolveBaseUrl(): string {
   const fromEnv = process.env.IKRAN_FIGMA_API_BASE?.trim();
@@ -79,7 +116,10 @@ type RawNode = {
   name?: string;
   type?: string;
   visible?: boolean;
+  clipsContent?: boolean;
   absoluteBoundingBox?: AbsoluteBounds;
+  absoluteRenderBounds?: AbsoluteBounds;
+  fills?: Array<{ type?: string; visible?: boolean }>;
   children?: RawNode[];
 };
 
@@ -98,6 +138,18 @@ function parseAbsoluteBounds(box: unknown): AbsoluteBounds | null {
   return { x: b.x, y: b.y, width: b.width, height: b.height };
 }
 
+function intersectAbsoluteBounds(
+  a: AbsoluteBounds,
+  b: AbsoluteBounds
+): AbsoluteBounds | null {
+  const x1 = Math.max(a.x, b.x);
+  const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.width, b.x + b.width);
+  const y2 = Math.min(a.y + a.height, b.y + b.height);
+  if (x2 <= x1 || y2 <= y1) return null;
+  return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
+}
+
 /**
  * Minimum positional index for structural overlay: every indexed node needs
  * id/name/type; the capture root also needs positive absolute bounds.
@@ -107,7 +159,9 @@ function walkNodes(
   node: RawNode,
   parentId: string | null,
   depth: number,
-  out: FigmaPositionalNode[]
+  out: FigmaPositionalNode[],
+  inheritedVisible = true,
+  ancestorClip: AbsoluteBounds | null | undefined = undefined
 ): boolean {
   if (typeof node.id !== "string" || !node.id.trim()) return false;
   if (typeof node.name !== "string") return false;
@@ -116,21 +170,51 @@ function walkNodes(
   const bounds = parseAbsoluteBounds(node.absoluteBoundingBox);
   if (depth === 0 && !bounds) return false;
 
-  out.push({
+  const visible = inheritedVisible && node.visible !== false;
+  const rawRenderBounds = parseAbsoluteBounds(node.absoluteRenderBounds) ?? bounds;
+  const clipRenderBounds =
+    ancestorClip === null || rawRenderBounds === null
+      ? null
+      : ancestorClip === undefined
+        ? rawRenderBounds
+        : intersectAbsoluteBounds(rawRenderBounds, ancestorClip);
+  const positionalNode: FigmaPositionalNode = {
     id: node.id,
     parentId,
     name: node.name,
     type: node.type,
     depth,
-    visible: node.visible !== false,
-    bounds
-  });
+    visible,
+    bounds,
+    clipRenderBounds
+  };
+  const hasVisibleImageFill =
+    Array.isArray(node.fills) &&
+    node.fills.some(
+      (fill) => fill?.type === "IMAGE" && fill.visible !== false
+    );
+  positionalNode.selectable =
+    visible &&
+    clipRenderBounds !== null &&
+    (hasVisibleImageFill || isDefaultSelectableFigmaNode(positionalNode));
+  out.push(positionalNode);
 
   if (node.children === undefined) return true;
   if (!Array.isArray(node.children)) return false;
+  let childClip = ancestorClip;
+  if (node.clipsContent === true && bounds) {
+    childClip =
+      ancestorClip === null
+        ? null
+        : ancestorClip === undefined
+          ? bounds
+          : intersectAbsoluteBounds(ancestorClip, bounds);
+  }
   for (const child of node.children) {
     if (!child || typeof child !== "object") return false;
-    if (!walkNodes(child, node.id, depth + 1, out)) return false;
+    if (!walkNodes(child, node.id, depth + 1, out, visible, childClip)) {
+      return false;
+    }
   }
   return true;
 }
@@ -186,18 +270,36 @@ function mapStatusReason(
 }
 
 export function createFigmaApiClient(
-  options?: { fetchImpl?: FetchLike; baseUrl?: string }
+  options?: {
+    fetchImpl?: FetchLike;
+    baseUrl?: string;
+    apiTimeoutMs?: number;
+    screenshotTimeoutMs?: number;
+  }
 ): FigmaApiClient {
   const fetchImpl = options?.fetchImpl ?? fetch;
   const baseUrl = options?.baseUrl ?? resolveBaseUrl();
+  const apiTimeoutMs = options?.apiTimeoutMs ?? DEFAULT_API_TIMEOUT_MS;
+  const screenshotTimeoutMs =
+    options?.screenshotTimeoutMs ?? DEFAULT_SCREENSHOT_TIMEOUT_MS;
 
   return {
     async validateToken(token) {
       try {
-        const res = await fetchImpl(`${baseUrl}/v1/me`, {
-          method: "GET",
-          headers: authHeaders(token)
-        });
+        const { res, body } = await withRequestTimeout(
+          apiTimeoutMs,
+          async (signal) => {
+            const res = await fetchImpl(`${baseUrl}/v1/me`, {
+              method: "GET",
+              headers: authHeaders(token),
+              signal
+            });
+            const body = res.ok
+              ? ((await res.json()) as { handle?: string; email?: string })
+              : null;
+            return { res, body };
+          }
+        );
         if (!res.ok) {
           return {
             ok: false,
@@ -207,14 +309,10 @@ export function createFigmaApiClient(
               : "figma_api_error"
           };
         }
-        const body = (await res.json()) as {
-          handle?: string;
-          email?: string;
-        };
         const handle =
-          typeof body.handle === "string" && body.handle.trim()
+          typeof body?.handle === "string" && body.handle.trim()
             ? body.handle.trim()
-            : typeof body.email === "string" && body.email.trim()
+            : typeof body?.email === "string" && body.email.trim()
               ? body.email.trim()
               : null;
         if (!handle) {
@@ -224,10 +322,13 @@ export function createFigmaApiClient(
           ok: true,
           account: {
             handle,
-            ...(typeof body.email === "string" ? { email: body.email } : {})
+            ...(typeof body?.email === "string" ? { email: body.email } : {})
           }
         };
-      } catch {
+      } catch (error) {
+        if (isFigmaApiTimeout(error)) {
+          return { ok: false, reason: "figma_api_timeout" };
+        }
         return { ok: false, reason: "figma_api_error" };
       }
     },
@@ -237,17 +338,26 @@ export function createFigmaApiClient(
         const nodesUrl = `${baseUrl}/v1/files/${encodeURIComponent(
           fileKey
         )}/nodes?ids=${encodeURIComponent(nodeId)}`;
-        const nodesRes = await fetchImpl(nodesUrl, {
-          method: "GET",
-          headers: authHeaders(token)
-        });
+        const { res: nodesRes, body: nodesBody } = await withRequestTimeout(
+          apiTimeoutMs,
+          async (signal) => {
+            const res = await fetchImpl(nodesUrl, {
+              method: "GET",
+              headers: authHeaders(token),
+              signal
+            });
+            const body = res.ok
+              ? ((await res.json()) as {
+                  nodes?: Record<string, { document?: RawNode } | null>;
+                })
+              : null;
+            return { res, body };
+          }
+        );
         if (!nodesRes.ok) {
           return { ok: false, reason: mapStatusReason(nodesRes.status) };
         }
-        const nodesBody = (await nodesRes.json()) as {
-          nodes?: Record<string, { document?: RawNode } | null>;
-        };
-        const entry = nodesBody.nodes?.[nodeId];
+        const entry = nodesBody?.nodes?.[nodeId];
         const document = entry?.document;
         if (!document || typeof document !== "object") {
           return { ok: false, reason: "malformed_figma_response" };
@@ -265,26 +375,43 @@ export function createFigmaApiClient(
         const imagesUrl = `${baseUrl}/v1/images/${encodeURIComponent(
           fileKey
         )}?ids=${encodeURIComponent(nodeId)}&format=png&scale=2`;
-        const imagesRes = await fetchImpl(imagesUrl, {
-          method: "GET",
-          headers: authHeaders(token)
-        });
+        const { res: imagesRes, body: imagesBody } = await withRequestTimeout(
+          apiTimeoutMs,
+          async (signal) => {
+            const res = await fetchImpl(imagesUrl, {
+              method: "GET",
+              headers: authHeaders(token),
+              signal
+            });
+            const body = res.ok
+              ? ((await res.json()) as {
+                  images?: Record<string, string | null>;
+                })
+              : null;
+            return { res, body };
+          }
+        );
         if (!imagesRes.ok) {
           return { ok: false, reason: mapStatusReason(imagesRes.status) };
         }
-        const imagesBody = (await imagesRes.json()) as {
-          images?: Record<string, string | null>;
-        };
-        const imageUrl = imagesBody.images?.[nodeId];
+        const imageUrl = imagesBody?.images?.[nodeId];
         if (!imageUrl || typeof imageUrl !== "string") {
           return { ok: false, reason: "screenshot_missing" };
         }
 
-        const imgRes = await fetchImpl(imageUrl, { method: "GET" });
+        const { res: imgRes, buf } = await withRequestTimeout(
+          screenshotTimeoutMs,
+          async (signal) => {
+            const res = await fetchImpl(imageUrl, { method: "GET", signal });
+            const buf = res.ok
+              ? Buffer.from(await res.arrayBuffer())
+              : Buffer.alloc(0);
+            return { res, buf };
+          }
+        );
         if (!imgRes.ok) {
           return { ok: false, reason: "screenshot_missing" };
         }
-        const buf = Buffer.from(await imgRes.arrayBuffer());
         const mime = resolveScreenshotMime(
           imgRes.headers.get("content-type"),
           buf
@@ -308,7 +435,10 @@ export function createFigmaApiClient(
             surfaceBounds: { width: bounds.width, height: bounds.height }
           }
         };
-      } catch {
+      } catch (error) {
+        if (isFigmaApiTimeout(error)) {
+          return { ok: false, reason: "figma_api_timeout" };
+        }
         return { ok: false, reason: "figma_api_error" };
       }
     }
@@ -350,7 +480,27 @@ export function createMockFigmaApiClient(): FigmaApiClient {
               depth: 0,
               visible: true,
               bounds: { x: 0, y: 0, width: 320, height: 240 }
-            }
+            },
+            ...(nodeId === "7:8"
+              ? [
+                  {
+                    id: `${nodeId}:child-frame`,
+                    parentId: nodeId,
+                    name: "Mock child frame",
+                    type: "FRAME",
+                    depth: 1,
+                    visible: true,
+                    selectable: true,
+                    bounds: { x: 32, y: 24, width: 160, height: 96 },
+                    clipRenderBounds: {
+                      x: 32,
+                      y: 24,
+                      width: 160,
+                      height: 96
+                    }
+                  }
+                ]
+              : [])
           ],
           surfaceBounds: { width: 320, height: 240 }
         }

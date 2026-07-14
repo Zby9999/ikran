@@ -11,7 +11,8 @@ import {
 } from "../../lib/runtime/figma-api";
 import {
   connectFigmaCommand,
-  getFigmaConnectionStatusCommand
+  getFigmaConnectionStatusCommand,
+  requireFigmaConnectionCommand
 } from "../../lib/runtime/commands/figma-connection";
 
 const validClient: FigmaApiClient = {
@@ -68,5 +69,36 @@ test("empty token is rejected", async () => {
   expect(await connectFigmaCommand("  ")).toEqual({
     ok: false,
     reason: "missing_token"
+  });
+});
+
+test("connection preserves a Figma API timeout instead of reporting a bad token", async () => {
+  setFigmaApiClientForTests({
+    ...validClient,
+    async validateToken() {
+      return { ok: false, reason: "figma_api_timeout" };
+    }
+  });
+
+  expect(await connectFigmaCommand("figd_slow")).toEqual({
+    ok: false,
+    reason: "figma_api_timeout"
+  });
+});
+
+test("connection gate propagates timeout to capture commands", async () => {
+  setFigmaCredentialStoreForTests(
+    createMemoryFigmaCredentialStore("figd_slow")
+  );
+  setFigmaApiClientForTests({
+    ...validClient,
+    async validateToken() {
+      return { ok: false, reason: "figma_api_timeout" };
+    }
+  });
+
+  expect(await requireFigmaConnectionCommand()).toEqual({
+    ok: false,
+    reason: "figma_api_timeout"
   });
 });

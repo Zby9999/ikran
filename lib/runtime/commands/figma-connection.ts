@@ -15,7 +15,11 @@ export type ConnectFigmaResult =
   | { ok: true; status: Extract<FigmaConnectionStatus, { connected: true }> }
   | {
       ok: false;
-      reason: "missing_token" | "invalid_token" | "figma_api_error";
+      reason:
+        | "missing_token"
+        | "invalid_token"
+        | "figma_api_timeout"
+        | "figma_api_error";
     };
 
 export async function getFigmaConnectionStatusCommand(): Promise<FigmaConnectionStatus> {
@@ -48,7 +52,11 @@ export async function connectFigmaCommand(
   if (!validated.ok) {
     return {
       ok: false,
-      reason: validated.reason === "invalid_token" ? "invalid_token" : "figma_api_error"
+      reason:
+        validated.reason === "invalid_token" ||
+        validated.reason === "figma_api_timeout"
+          ? validated.reason
+          : "figma_api_error"
     };
   }
 
@@ -68,7 +76,10 @@ export async function disconnectFigmaCommand(): Promise<{ ok: true }> {
 
 export async function requireFigmaConnectionCommand(): Promise<
   | { ok: true; token: string; account: FigmaAccountIdentity }
-  | { ok: false; reason: "figma_connection_required" }
+  | {
+      ok: false;
+      reason: "figma_connection_required" | "figma_api_timeout";
+    }
 > {
   const store = getFigmaCredentialStore();
   const token = await store.get();
@@ -78,6 +89,9 @@ export async function requireFigmaConnectionCommand(): Promise<
   const api = getFigmaApiClient();
   const validated = await api.validateToken(token);
   if (!validated.ok) {
+    if (validated.reason === "figma_api_timeout") {
+      return { ok: false, reason: "figma_api_timeout" };
+    }
     return { ok: false, reason: "figma_connection_required" };
   }
   return { ok: true, token, account: validated.account };

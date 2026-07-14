@@ -7,6 +7,9 @@
 /** Horizontal comfort padding as a fraction of media **width**. */
 export const AGENT_REGION_MARGIN = 0.012;
 
+/** Structure-overlay comfort padding: intentionally tighter than Agent regions. */
+export const STRUCTURE_REGION_MARGIN = 0.006;
+
 export type RegionAnnotationGeometryVersion = "v1_padded" | "v2_raw";
 
 export type RegionAnnotationDisplayAuthor = "designer" | "agent";
@@ -54,6 +57,28 @@ export function expandAgentRegionRect(
   };
 }
 
+/** Expand a structure-selected Designer region with the same isotropic rule. */
+export function expandStructureRegionRect(
+  rect: RegionAnnotationDisplayRect,
+  mediaSize?: AgentRegionMediaSize
+): RegionAnnotationDisplayRect {
+  const mx = STRUCTURE_REGION_MARGIN;
+  let my = STRUCTURE_REGION_MARGIN;
+  if (mediaSize && mediaSize.w > 0 && mediaSize.h > 0) {
+    my = (mx * mediaSize.w) / mediaSize.h;
+  }
+  const left = Math.max(0, rect.x - mx);
+  const top = Math.max(0, rect.y - my);
+  const right = Math.min(1, rect.x + rect.w + mx);
+  const bottom = Math.min(1, rect.y + rect.h + my);
+  return {
+    x: left,
+    y: top,
+    w: Math.max(0, right - left),
+    h: Math.max(0, bottom - top)
+  };
+}
+
 export interface DisplayRectForRegionAnnotationInput {
   author: RegionAnnotationDisplayAuthor;
   rect: RegionAnnotationDisplayRect;
@@ -66,13 +91,19 @@ export interface DisplayRectForRegionAnnotationInput {
  * Resolve the normalized rect to project onto the Evidence Surface media box.
  *
  * - `v1_padded`: stored as already-padded → return as-is (any author).
- * - `v2_raw` + agent + explicit (!from_point): expand with page-isotropic margin.
- * - designer or from_point: return as-is.
+ * - `v2_raw` + agent + explicit (!from_point): use the larger Agent margin.
+ * - designer regions or point markers: return as-is.
  */
 export function displayRectForRegionAnnotation(
   input: DisplayRectForRegionAnnotationInput
 ): RegionAnnotationDisplayRect {
-  const { author, rect, geometry_version, from_point, mediaSize } = input;
+  const {
+    author,
+    rect,
+    geometry_version,
+    from_point,
+    mediaSize
+  } = input;
   if (geometry_version === "v1_padded") {
     return { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
   }

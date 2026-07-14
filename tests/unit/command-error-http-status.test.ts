@@ -22,6 +22,10 @@ describe("commandErrorHttpStatus", () => {
     expect(commandErrorHttpStatus("endpoint_retired")).toBe(410);
   });
 
+  test("maps figma_api_timeout to 504 so clients can distinguish upstream timeout", () => {
+    expect(commandErrorHttpStatus("figma_api_timeout")).toBe(504);
+  });
+
   test("maps client / validation / fail-closed domain reasons to 400", () => {
     const clientReasons = [
       "invalid_json",

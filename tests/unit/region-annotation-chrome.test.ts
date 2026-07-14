@@ -8,19 +8,20 @@ import {
 
 test.describe("annotationChromeForMediaWidth", () => {
   test("matches Figma annotation chrome at the ref media width", () => {
+    expect(REGION_ANNOTATION_RADIUS_AT_REF).toBe(4);
     expect(annotationChromeForMediaWidth(REGION_ANNOTATION_REF_MEDIA_W)).toEqual({
       stroke: REGION_ANNOTATION_STROKE_AT_REF,
       radius: REGION_ANNOTATION_RADIUS_AT_REF
     });
   });
 
-  test("at default seed-ref size (~370), chrome is thinner than Figma abs 1/8", () => {
+  test("at default seed-ref size (~370), chrome scales from the 1/4 reference", () => {
     const defaultMediaW = 370;
     const chrome = annotationChromeForMediaWidth(defaultMediaW);
     expect(chrome.stroke).toBeCloseTo((1 * defaultMediaW) / 695);
-    expect(chrome.radius).toBeCloseTo((8 * defaultMediaW) / 695);
+    expect(chrome.radius).toBeCloseTo((4 * defaultMediaW) / 695);
     expect(chrome.stroke).toBeLessThan(1);
-    expect(chrome.radius).toBeLessThan(8);
+    expect(chrome.radius).toBeLessThan(4);
   });
 
   test("scales stroke and radius with media width (Seed Reference resize)", () => {

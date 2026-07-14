@@ -21,6 +21,10 @@ export type SeedProjectionTarget = {
   /** Project-level Design Language Description (shared; Info tip only). */
   designLanguageDescription: string;
   frameName: string;
+  /** Captured source Frame bounds used to normalize structural overlays. */
+  frameBoundsJson: string;
+  /** Runtime-captured positional node index; implementation context excluded. */
+  positionalNodesJson: string;
   /** <img src>: data URL or authenticated /api/artifacts URL. */
   screenshotDataUrl: string;
   /** True when src comes from artifactPath (not an inline data URL). */
@@ -284,6 +288,8 @@ export function buildInFlightSeedProjectionTargets(
       originalDesignIntent: "",
       designLanguageDescription,
       frameName: "Capturing…",
+      frameBoundsJson: "",
+      positionalNodesJson: "",
       screenshotDataUrl: "",
       hasScreenshotArtifact: false,
       awaitingEvidence: true,
@@ -325,6 +331,8 @@ export function buildSeedProjectionTargets(
         originalDesignIntent: seed.original_design_intent,
         designLanguageDescription: description,
         frameName: surface.frame_name,
+        frameBoundsJson: surface.frame_bounds_json ?? "",
+        positionalNodesJson: surface.positional_nodes_json ?? "",
         screenshotDataUrl: shot.src,
         hasScreenshotArtifact: shot.hasArtifactOnly,
         awaitingEvidence: !shot.src,
@@ -347,6 +355,8 @@ export function buildSeedProjectionTargets(
         originalDesignIntent: seed.original_design_intent,
         designLanguageDescription: description,
         frameName: "",
+        frameBoundsJson: "",
+        positionalNodesJson: "",
         screenshotDataUrl: "",
         hasScreenshotArtifact: false,
         awaitingEvidence: true,
@@ -373,6 +383,8 @@ export function buildSeedProjectionTargets(
       originalDesignIntent: "",
       designLanguageDescription: description,
       frameName: surface.frame_name,
+      frameBoundsJson: surface.frame_bounds_json ?? "",
+      positionalNodesJson: surface.positional_nodes_json ?? "",
       screenshotDataUrl: shot.src,
       hasScreenshotArtifact: shot.hasArtifactOnly,
       awaitingEvidence: !shot.src,
@@ -402,6 +414,8 @@ export function seedProjectionPropsEqual(
     a.originalDesignIntent === b.originalDesignIntent &&
     a.designLanguageDescription === b.designLanguageDescription &&
     a.frameName === b.frameName &&
+    a.frameBoundsJson === b.frameBoundsJson &&
+    a.positionalNodesJson === b.positionalNodesJson &&
     a.screenshotDataUrl === b.screenshotDataUrl &&
     a.hasScreenshotArtifact === b.hasScreenshotArtifact &&
     a.awaitingEvidence === b.awaitingEvidence &&
@@ -481,6 +495,8 @@ export function planSeedProjectionOps(
           originalDesignIntent: target.originalDesignIntent,
           designLanguageDescription: target.designLanguageDescription,
           frameName: target.frameName,
+          frameBoundsJson: target.frameBoundsJson,
+          positionalNodesJson: target.positionalNodesJson,
           screenshotDataUrl: target.screenshotDataUrl,
           hasScreenshotArtifact: target.hasScreenshotArtifact,
           awaitingEvidence: target.awaitingEvidence,
@@ -517,6 +533,8 @@ export function planSeedProjectionOps(
           originalDesignIntent: target.originalDesignIntent,
           designLanguageDescription: target.designLanguageDescription,
           frameName: target.frameName,
+          frameBoundsJson: target.frameBoundsJson,
+          positionalNodesJson: target.positionalNodesJson,
           screenshotDataUrl: target.screenshotDataUrl,
           hasScreenshotArtifact: target.hasScreenshotArtifact,
           awaitingEvidence: target.awaitingEvidence,
@@ -556,6 +574,8 @@ export function planSeedProjectionOps(
         originalDesignIntent: target.originalDesignIntent,
         designLanguageDescription: target.designLanguageDescription,
         frameName: target.frameName,
+        frameBoundsJson: target.frameBoundsJson,
+        positionalNodesJson: target.positionalNodesJson,
         screenshotDataUrl: target.screenshotDataUrl,
         hasScreenshotArtifact: target.hasScreenshotArtifact,
         awaitingEvidence: target.awaitingEvidence,

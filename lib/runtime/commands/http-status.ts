@@ -8,6 +8,7 @@
 const CONFLICT_REASONS = new Set(["project_mismatch"]);
 const NOT_FOUND_REASONS = new Set(["not_found"]);
 const GONE_REASONS = new Set(["endpoint_retired"]);
+const GATEWAY_TIMEOUT_REASONS = new Set(["figma_api_timeout"]);
 const INTERNAL_REASONS = new Set([
   "db_error",
   "read_failed",
@@ -29,6 +30,7 @@ export function commandErrorHttpStatus(reason: string): number {
   if (CONFLICT_REASONS.has(reason)) return 409;
   if (NOT_FOUND_REASONS.has(reason)) return 404;
   if (GONE_REASONS.has(reason)) return 410;
+  if (GATEWAY_TIMEOUT_REASONS.has(reason)) return 504;
   if (UNAUTHORIZED_REASONS.has(reason)) return 403;
   return 400;
 }

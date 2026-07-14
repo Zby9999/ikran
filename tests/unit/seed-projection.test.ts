@@ -104,7 +104,9 @@ test.describe("buildSeedProjectionTargets", () => {
   test("seed + surface with data URL upgrades meta and clears awaiting", () => {
     const surf = surface({
       id: "surf-1",
-      screenshot_data_url: "data:image/png;base64,aa"
+      screenshot_data_url: "data:image/png;base64,aa",
+      frame_bounds_json: '{"x":0,"y":0,"width":320,"height":240}',
+      positional_nodes_json: '[{"id":"1:2","type":"FRAME"}]'
     });
     const [t] = buildSeedProjectionTargets([SEED], [surf], "sess");
     expect(t.shapeKey).toBe("seed-1");
@@ -112,6 +114,8 @@ test.describe("buildSeedProjectionTargets", () => {
     expect(t.screenshotDataUrl).toBe("data:image/png;base64,aa");
     expect(t.hasScreenshotArtifact).toBe(false);
     expect(t.frameName).toBe("Frame A");
+    expect(t.frameBoundsJson).toContain('"width":320');
+    expect(t.positionalNodesJson).toContain('"type":"FRAME"');
     expect(t.meta).toEqual({
       canvasRecordId: "seed-reference:seed-1",
       runtimeRecordId: "surf-1",
@@ -249,6 +253,8 @@ test.describe("seed projection equality + layout", () => {
       originalDesignIntent: "i",
       designLanguageDescription: "",
       frameName: "F",
+      frameBoundsJson: "",
+      positionalNodesJson: "",
       screenshotDataUrl: "data:x",
       hasScreenshotArtifact: false,
       awaitingEvidence: false,
@@ -272,6 +278,8 @@ test.describe("seed projection equality + layout", () => {
           originalDesignIntent: "i",
           designLanguageDescription: "",
           frameName: "F",
+          frameBoundsJson: "",
+          positionalNodesJson: "",
           screenshotDataUrl: "data:x",
           hasScreenshotArtifact: false,
           awaitingEvidence: false,
@@ -316,6 +324,8 @@ test.describe("planSeedProjectionOps", () => {
           originalDesignIntent: SEED.original_design_intent,
           designLanguageDescription: "",
           frameName: "",
+          frameBoundsJson: "",
+          positionalNodesJson: "",
           screenshotDataUrl: "",
           hasScreenshotArtifact: false,
           awaitingEvidence: true,
@@ -341,6 +351,8 @@ test.describe("planSeedProjectionOps", () => {
           originalDesignIntent: "",
           designLanguageDescription: "",
           frameName: "",
+          frameBoundsJson: "",
+          positionalNodesJson: "",
           screenshotDataUrl: "",
           hasScreenshotArtifact: false,
           awaitingEvidence: true,
@@ -432,6 +444,8 @@ test.describe("planSeedProjectionOps", () => {
           originalDesignIntent: SEED.original_design_intent,
           designLanguageDescription: "",
           frameName: "",
+          frameBoundsJson: "",
+          positionalNodesJson: "",
           screenshotDataUrl: "",
           hasScreenshotArtifact: false,
           awaitingEvidence: true,
@@ -524,6 +538,8 @@ test.describe("planSeedProjectionOps", () => {
           originalDesignIntent: SEED.original_design_intent,
           designLanguageDescription: "",
           frameName: "Frame A",
+          frameBoundsJson: "",
+          positionalNodesJson: "",
           screenshotDataUrl: "data:image/png;base64,OLD",
           hasScreenshotArtifact: false,
           awaitingEvidence: false,

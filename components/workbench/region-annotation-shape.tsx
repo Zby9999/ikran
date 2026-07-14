@@ -12,7 +12,7 @@
 // Visual: on-surface colored box only (no side cards, connectors, or pink).
 // Stroke + radius are **page-space** and scale with the parent Seed Reference
 // **media box width**, calibrated to Figma annotations on the Design System
-// Abstract seed-ref (media ~695px → 1px stroke / 8px radius). Camera zoom
+// Abstract seed-ref (media ~695px → 1px stroke / 4px radius). Camera zoom
 // scales them once via the html-layer transform — not inverse-scaled to
 // screen pixels.
 //   designer → border #19d122, fill rgba(25,209,34,0.05)
@@ -30,6 +30,10 @@ import {
   useValue
 } from "tldraw";
 import { mediaBoxInPage } from "./region-annotation-geometry";
+import {
+  annotationChromeForMediaWidth,
+  REGION_ANNOTATION_REF_MEDIA_W
+} from "./annotation-chrome";
 import {
   isSeedReferenceProjectionShape,
   seedReferenceMetaMatchesSurfaceId
@@ -73,34 +77,15 @@ export const REGION_ANNOTATION_DEFAULT_H = 40;
 
 /**
  * Stroke / radius at the Figma annotation reference media width.
- * Figma nodes 97:774 / 97:775 / 247:138: strokeWeight 1, cornerRadius 8.
+ * Stroke stays at the Figma reference weight; radius is intentionally reduced
+ * to 4px so tiny point annotations remain visually precise and readable.
  */
-export const REGION_ANNOTATION_STROKE_AT_REF = 1;
-export const REGION_ANNOTATION_RADIUS_AT_REF = 8;
-
-/**
- * Media width where stroke/radius above apply (Figma seed-ref image 97:773
- * inside Design System Abstract). Smaller Seed References get thinner /
- * tighter chrome; larger ones scale up proportionally.
- */
-export const REGION_ANNOTATION_REF_MEDIA_W = 695;
-
-/**
- * Page-space stroke + radius scaled to the parent Seed Reference media width.
- * At Figma ref media width → 1px stroke / 8px radius. Halving the Seed
- * Reference halves stroke and radius. Camera zoom then scales these page
- * values once.
- */
-export function annotationChromeForMediaWidth(mediaW: number): {
-  stroke: number;
-  radius: number;
-} {
-  const scale = mediaW > 0 ? mediaW / REGION_ANNOTATION_REF_MEDIA_W : 1;
-  return {
-    stroke: Math.max(0, REGION_ANNOTATION_STROKE_AT_REF * scale),
-    radius: Math.max(0, REGION_ANNOTATION_RADIUS_AT_REF * scale)
-  };
-}
+export {
+  REGION_ANNOTATION_STROKE_AT_REF,
+  REGION_ANNOTATION_RADIUS_AT_REF,
+  REGION_ANNOTATION_REF_MEDIA_W,
+  annotationChromeForMediaWidth
+} from "./annotation-chrome";
 
 function RegionAnnotationMarker({ shape }: { shape: RegionAnnotationShape }) {
   const { w, h, author, surfaceMediaW } = shape.props;
