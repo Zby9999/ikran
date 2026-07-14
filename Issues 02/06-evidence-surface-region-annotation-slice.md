@@ -22,20 +22,20 @@
 
 ## Acceptance criteria
 
-- [ ] Active `create_annotation` command/tool 使用显式 target union；现有 region-only 调用迁移到 `figma-region` target，不保留两套互相竞争的 Active write semantics。
-- [ ] Annotation 支持 `figma-surface`、`figma-node` 与 `figma-region` 三种明确 target；三者都必须包含 captured surface/evidence identity。
-- [ ] `figma-node` target 必须包含明确 `nodeId` 与 captured `evidenceVersionId`，不能只保存 current node pointer。
-- [ ] Region Annotation 必须包含 `surfaceArtifactId` 或 `surfaceNodeId`。
-- [ ] Figma annotation 可在尚未确认 primary node 时创建；Runtime 只返回确定性排序 candidates，不自行写入 `primaryNodeId`。
-- [ ] Agent 经宿主 Figma MCP 核验 candidate 后，可确认 `primaryNodeId`，且确认记录回连 annotation、surface version 与 source node。
-- [ ] Refresh 有可信 correspondence 时，Node Annotation 可显示 current 对应 node，但 persisted target 仍锚定 captured evidence version，不自动迁移。
+- [x] Active `create_annotation` command/tool 使用显式 target union；现有 region-only 调用迁移到 `figma-region` target，不保留两套互相竞争的 Active write semantics。
+- [x] Annotation 支持 `figma-surface`、`figma-node` 与 `figma-region` 三种明确 target；三者都必须包含 captured surface/evidence identity。
+- [x] `figma-node` target 必须包含明确 `nodeId` 与 captured `evidenceVersionId`，不能只保存 current node pointer。
+- [x] Region Annotation 必须包含 `surfaceArtifactId` 或 `surfaceNodeId`。
+- [x] Figma annotation 可在尚未确认 primary node 时创建；Runtime 只返回确定性排序 candidates，不自行写入 `primaryNodeId`。
+- [x] Agent 经宿主 Figma MCP 核验 candidate 后，可确认 `primaryNodeId`，且确认记录回连 annotation、surface version 与 source node。
+- [x] Refresh 有可信 correspondence 时，Node Annotation 可显示 current 对应 node，但 persisted target 仍锚定 captured evidence version，不自动迁移。
 - [ ] Refresh 无 correspondence 时，Node Annotation 标记 stale，并按设计师 Figma reference 明确提示；历史 Annotation 仍可查看和回放，不删除、不改写为无效。
-- [ ] Workbench 可创建设计师标注，并显示为 tldraw custom shape。
+- [x] Workbench 可创建设计师标注，并显示为 tldraw custom shape。
 - [ ] Workbench node selection 高亮与最终 `figma-node` Annotation target 一致，提交前设计师能确认 node name/type/breadcrumb。
-- [ ] Agent 创建的标注通过 SSE/refresh 出现在 Workbench。
-- [ ] 标注类型可为 question、assumption、observed fact、generalization risk，且不影响完成状态。
-- [ ] 测试覆盖缺少 surface anchor、无效 rect、有效 Agent annotation、有效 designer annotation。
-- [ ] 测试覆盖 surface/node/region targets、缺失 evidence version、无效 node id、ephemeral hover 不落库，以及 stale Node Annotation 仍可回放。
+- [x] Agent 创建的标注通过 SSE/refresh 出现在 Workbench。
+- [x] 标注类型可为 question、assumption、observed fact、generalization risk，且不影响完成状态。
+- [x] 测试覆盖缺少 surface anchor、无效 rect、有效 Agent annotation、有效 designer annotation。
+- [x] 测试覆盖 surface/node/region targets、缺失 evidence version、无效 node id、ephemeral hover 不落库，以及 stale Node Annotation 仍可回放。
 
 ## Real Agent validation
 
@@ -55,6 +55,14 @@
 - Anchor schema 中明确 source coordinate space 和 normalized rect。
 - Validation error 直接指出缺少 surface id、rect 或 candidate，而不是泛化为 invalid output。
 - tldraw shape 只保存 record id 和 display geometry；语义字段只从 Runtime record 渲染。
+
+## Completion report — 2026-07-14
+
+已完成 12/14 项 automated AC：`create_annotation` 已收口为三分支显式 target union；Runtime 持久化 captured target、排序 region candidates、独立记录 Agent primary confirmation，并在 Refresh 后仅对可信 current node correspondence 使用 current bounds，保留 captured target/rect 不变。Workbench 的 structure hover、designer/Agent node annotation 共用同一绿色 structure margin，free-region/point/drag 与 SSE projection 均已覆盖。
+
+实现提交：`be75fcb`（已推送 `main`）。验证包括生产构建、412 项完整 unit tests，以及 10 项 Issue 06 Playwright/MCP tests；Code Review 最终无 blocking finding。
+
+仍未勾选：stale warning 的具体视觉提示，以及 node breadcrumb/确认信息，需要设计师 Figma UI/interaction reference；Real Agent validation 需要真实 PAT、真实 Figma source 与真实 Agent host，本次未用 mock/deterministic 结果冒充。
 
 ## Blocked by
 
