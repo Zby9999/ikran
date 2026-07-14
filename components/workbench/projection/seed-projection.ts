@@ -16,7 +16,10 @@ export type SeedProjectionTarget = {
   shapeKey: string;
   canvasRecordId: string;
   figmaSeedReference: string;
+  /** Per-seed Reference Note (historical prop name on the shape). */
   originalDesignIntent: string;
+  /** Project-level Design Language Description (shared; Info tip only). */
+  designLanguageDescription: string;
   frameName: string;
   /** <img src>: data URL or authenticated /api/artifacts URL. */
   screenshotDataUrl: string;
@@ -42,11 +45,20 @@ export type SeedProjectionTarget = {
 
 export type SeedProjectionExisting = {
   id: string;
-  /** Page-space origin — local geometry, never written back to Runtime. */
+  /** Page-space origin — local geometry; may be restored from workbench-layout. */
   x: number;
   y: number;
   props: SeedReferenceProjectionShape["props"];
   meta: SeedReferenceProjectionMeta;
+};
+
+/** Persisted frame geometry from `.ikran/workbench-layout.json` (UX only). */
+export type SeedProjectionSavedFrame = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  layoutLocked: boolean;
 };
 
 /** Axis-aligned bounds used only for create-time collision packing. */
@@ -188,7 +200,14 @@ export function seedProjectionLayoutFootprint(
 
 /** Occupied packing rect for an existing projection shape. */
 export function seedProjectionOccupiedBounds(
-  shape: Pick<SeedProjectionExisting, "x" | "y" | "props">
+  shape: {
+    x: number;
+    y: number;
+    props: Pick<
+      SeedReferenceProjectionShape["props"],
+      "w" | "h" | "naturalMediaW" | "naturalMediaH"
+    >;
+  }
 ): SeedProjectionBounds {
   const hasNaturalSize =
     shape.props.naturalMediaW > 0 && shape.props.naturalMediaH > 0;
@@ -253,7 +272,8 @@ export type InFlightSeedCapture = {
 };
 
 export function buildInFlightSeedProjectionTargets(
-  inFlight: InFlightSeedCapture[]
+  inFlight: InFlightSeedCapture[],
+  designLanguageDescription = ""
 ): SeedProjectionTarget[] {
   return inFlight.map((p) => {
     const size = projectionSize(null);
@@ -262,6 +282,7 @@ export function buildInFlightSeedProjectionTargets(
       canvasRecordId: `inflight-capture:${p.id}`,
       figmaSeedReference: p.figmaSeedReference,
       originalDesignIntent: "",
+      designLanguageDescription,
       frameName: "Capturing…",
       screenshotDataUrl: "",
       hasScreenshotArtifact: false,
@@ -281,10 +302,12 @@ export function buildInFlightSeedProjectionTargets(
 export function buildSeedProjectionTargets(
   seeds: SeedReferenceRecord[],
   surfaces: FigmaEvidenceSurfaceRecord[],
-  session: string
+  session: string,
+  designLanguageDescription = ""
 ): SeedProjectionTarget[] {
   const targets: SeedProjectionTarget[] = [];
   const claimedSurfaceIds = new Set<string>();
+  const description = designLanguageDescription;
 
   for (const seed of seeds) {
     const { surface, claimIds } = findSurfaceForSeed(seed, surfaces);
@@ -300,6 +323,7 @@ export function buildSeedProjectionTargets(
         canvasRecordId: `seed-reference:${seed.id}`,
         figmaSeedReference: seed.figma_seed_reference,
         originalDesignIntent: seed.original_design_intent,
+        designLanguageDescription: description,
         frameName: surface.frame_name,
         screenshotDataUrl: shot.src,
         hasScreenshotArtifact: shot.hasArtifactOnly,
@@ -321,6 +345,7 @@ export function buildSeedProjectionTargets(
         canvasRecordId: `seed-reference:${seed.id}`,
         figmaSeedReference: seed.figma_seed_reference,
         originalDesignIntent: seed.original_design_intent,
+        designLanguageDescription: description,
         frameName: "",
         screenshotDataUrl: "",
         hasScreenshotArtifact: false,
@@ -346,6 +371,7 @@ export function buildSeedProjectionTargets(
       canvasRecordId: `figma-evidence-surface:${surface.id}`,
       figmaSeedReference: surface.figma_seed_reference,
       originalDesignIntent: "",
+      designLanguageDescription: description,
       frameName: surface.frame_name,
       screenshotDataUrl: shot.src,
       hasScreenshotArtifact: shot.hasArtifactOnly,
@@ -374,6 +400,7 @@ export function seedProjectionPropsEqual(
   return (
     a.figmaSeedReference === b.figmaSeedReference &&
     a.originalDesignIntent === b.originalDesignIntent &&
+    a.designLanguageDescription === b.designLanguageDescription &&
     a.frameName === b.frameName &&
     a.screenshotDataUrl === b.screenshotDataUrl &&
     a.hasScreenshotArtifact === b.hasScreenshotArtifact &&
@@ -398,13 +425,20 @@ export function seedProjectionMetaEqual(
 /**
  * Plan create/update/delete ops for seed-reference-projection shapes.
  * `shapeIdForKey` maps target.shapeKey → tldraw shape id string.
- * Geometry is assigned only on create (collision-aware); updates never move
+ * Geometry is assigned only on create: prefer `savedFrames` (Workbench UX
+ * layout) when present, otherwise collision-aware packing. Updates never move
  * shapes the designer has already positioned.
  */
 export function planSeedProjectionOps(
   targets: SeedProjectionTarget[],
   existing: SeedProjectionExisting[],
-  shapeIdForKey: (shapeKey: string) => string
+  shapeIdForKey: (shapeKey: string) => string,
+  options?: {
+    savedFrames?: ReadonlyMap<string, SeedProjectionSavedFrame> | Record<
+      string,
+      SeedProjectionSavedFrame
+    >;
+  }
 ): SeedProjectionOp[] {
   const ops: SeedProjectionOp[] = [];
   const existingById = new Map(existing.map((s) => [s.id, s]));
@@ -414,6 +448,21 @@ export function planSeedProjectionOps(
   const occupied: SeedProjectionBounds[] = existing
     .filter((s) => wantIds.has(s.id))
     .map(seedProjectionOccupiedBounds);
+
+  const savedFramesOption = options?.savedFrames;
+  const savedForKey = (
+    shapeKey: string
+  ): SeedProjectionSavedFrame | undefined => {
+    if (!savedFramesOption) return undefined;
+    if (savedFramesOption instanceof Map) {
+      return savedFramesOption.get(shapeKey);
+    }
+    const asRecord = savedFramesOption as Record<
+      string,
+      SeedProjectionSavedFrame
+    >;
+    return asRecord[shapeKey];
+  };
 
   for (const target of targets) {
     const shapeId = shapeIdForKey(target.shapeKey);
@@ -430,6 +479,7 @@ export function planSeedProjectionOps(
         const nextProps: Partial<SeedReferenceProjectionShape["props"]> = {
           figmaSeedReference: target.figmaSeedReference,
           originalDesignIntent: target.originalDesignIntent,
+          designLanguageDescription: target.designLanguageDescription,
           frameName: target.frameName,
           screenshotDataUrl: target.screenshotDataUrl,
           hasScreenshotArtifact: target.hasScreenshotArtifact,
@@ -444,6 +494,39 @@ export function planSeedProjectionOps(
           ...(metaChanged ? { meta: target.meta } : {})
         });
       }
+      continue;
+    }
+
+    const saved = savedForKey(target.shapeKey);
+    if (saved) {
+      occupied.push({
+        x: saved.x,
+        y: saved.y,
+        w: saved.w,
+        h: saved.h
+      });
+      ops.push({
+        type: "create",
+        id: shapeId,
+        x: saved.x,
+        y: saved.y,
+        props: {
+          w: saved.w,
+          h: saved.h,
+          figmaSeedReference: target.figmaSeedReference,
+          originalDesignIntent: target.originalDesignIntent,
+          designLanguageDescription: target.designLanguageDescription,
+          frameName: target.frameName,
+          screenshotDataUrl: target.screenshotDataUrl,
+          hasScreenshotArtifact: target.hasScreenshotArtifact,
+          awaitingEvidence: target.awaitingEvidence,
+          awaitingUx: target.awaitingUx,
+          naturalMediaW: 0,
+          naturalMediaH: 0,
+          layoutLocked: saved.layoutLocked
+        },
+        meta: target.meta
+      });
       continue;
     }
 
@@ -471,13 +554,15 @@ export function planSeedProjectionOps(
         h: target.h,
         figmaSeedReference: target.figmaSeedReference,
         originalDesignIntent: target.originalDesignIntent,
+        designLanguageDescription: target.designLanguageDescription,
         frameName: target.frameName,
         screenshotDataUrl: target.screenshotDataUrl,
         hasScreenshotArtifact: target.hasScreenshotArtifact,
         awaitingEvidence: target.awaitingEvidence,
         awaitingUx: target.awaitingUx,
         naturalMediaW: 0,
-        naturalMediaH: 0
+        naturalMediaH: 0,
+        layoutLocked: false
       },
       meta: target.meta
     });
@@ -490,4 +575,90 @@ export function planSeedProjectionOps(
   }
 
   return ops;
+}
+
+/** Shape snapshot for post-screenshot-load overlap reflow. */
+export type SeedProjectionReflowShape = {
+  id: string;
+  x: number;
+  y: number;
+  /** When true, designer positioned this frame — reflow must not move it. */
+  layoutLocked: boolean;
+  props: Pick<
+    SeedReferenceProjectionShape["props"],
+    "w" | "h" | "naturalMediaW" | "naturalMediaH"
+  >;
+};
+
+export type SeedProjectionMoveOp = {
+  type: "move";
+  id: string;
+  x: number;
+  y: number;
+};
+
+/**
+ * True when any unlocked frame overlaps another seed frame (locked or not)
+ * closer than the layout gap. Used to skip no-op reflows after onLoad.
+ */
+export function seedProjectionNeedsReflow(
+  shapes: SeedProjectionReflowShape[]
+): boolean {
+  const bounds = shapes.map((s) => ({
+    id: s.id,
+    locked: s.layoutLocked,
+    ...seedProjectionOccupiedBounds(s)
+  }));
+  for (let i = 0; i < bounds.length; i++) {
+    for (let j = i + 1; j < bounds.length; j++) {
+      const a = bounds[i];
+      const b = bounds[j];
+      // Two locked frames may overlap if the designer stacked them — leave them.
+      if (a.locked && b.locked) continue;
+      if (seedProjectionBoundsOverlap(a, b)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Re-pack unlocked seed projections after natural screenshot size is known.
+ * Locked frames stay put and act as obstacles. Deterministic order by id.
+ * Returns only moves that change x/y.
+ */
+export function planSeedProjectionReflowMoves(
+  shapes: SeedProjectionReflowShape[]
+): SeedProjectionMoveOp[] {
+  if (!seedProjectionNeedsReflow(shapes)) return [];
+
+  const locked = shapes.filter((s) => s.layoutLocked);
+  const movable = shapes
+    .filter((s) => !s.layoutLocked)
+    .slice()
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  const occupied: SeedProjectionBounds[] = locked.map(
+    seedProjectionOccupiedBounds
+  );
+  const moves: SeedProjectionMoveOp[] = [];
+
+  for (const shape of movable) {
+    const footprint = seedProjectionOccupiedBounds(shape);
+    const layout = findNonOverlappingSeedProjectionLayout(
+      occupied,
+      footprint.w,
+      footprint.h
+    );
+    occupied.push({
+      x: layout.x,
+      y: layout.y,
+      w: footprint.w,
+      h: footprint.h
+    });
+    if (layout.x !== shape.x || layout.y !== shape.y) {
+      moves.push({ type: "move", id: shape.id, x: layout.x, y: layout.y });
+    }
+  }
+
+  return moves;
 }

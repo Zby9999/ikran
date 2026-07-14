@@ -37,7 +37,7 @@
 .squircle-chrome {
   box-sizing: border-box;
   padding: 1px;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.10);
   overflow: hidden;
 }
 
@@ -60,19 +60,39 @@
   overflow: hidden;
 }
 
-/* Folder chip — single-row (empty) or Extraction two-row (Figma 255:184).
-   Figma 134:406 surface is 48px (12px pad + 24px row + 12px pad); squircle
-   chrome adds 2px rings (1px shell + 1px white) → 52px outer shell. */
-.seed-workbench__folder {
+/* Folder chip — compact Default / Sign Seed Design / Extraction (Figma 329:429).
+   Default outer = 6 + 24 + 6 = 36px (Figma 329:430). Expanded keeps squircle rings. */
+.seed-workbench__folder-stack {
   position: fixed;
   top: 16px;
   left: 16px;
   z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   width: 270px;
-  height: 52px;
 }
 
-.seed-workbench__folder--extraction {
+.seed-workbench__folder {
+  position: relative;
+  top: auto;
+  left: auto;
+  z-index: auto;
+  width: 100%;
+}
+
+/* Compact Default keeps default squircle padding rings (1px dark + 1px white) so
+   clip-path does not cut chrome at corners. Body padding 4 + rings 2 = 6px from
+   outer edge to the 24px back button (Figma 329:430 single-box p=6). Outer width
+   stays 270 (surface 266). Expanded keeps body padding 6 + rings. */
+.seed-workbench__folder:not(.seed-workbench__folder--expanded) .squircle-chrome__ring,
+.seed-workbench__folder:not(.seed-workbench__folder--expanded) .squircle-chrome__surface {
+  height: auto;
+  min-height: 0;
+}
+
+.seed-workbench__folder--expanded {
   height: auto;
 }
 
@@ -80,12 +100,17 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 12px;
-  padding: 12px;
+  gap: 6px;
+  padding: 6px;
   color: #3d3d3d;
   font-size: 13px;
   line-height: normal;
   letter-spacing: -0.39px;
+}
+
+.seed-workbench__folder-body--compact {
+  gap: 0;
+  padding: 4px;
 }
 
 .seed-workbench__folder-row {
@@ -95,6 +120,7 @@
   gap: 12px;
   width: 100%;
   min-width: 0;
+  min-height: 24px;
 }
 
 .seed-workbench__folder-leading {
@@ -111,13 +137,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: 16px;
+  font-weight: 500;
+  line-height: normal;
 }
 
 .seed-workbench__folder-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex: 0 0 auto;
 }
 
@@ -128,6 +155,116 @@
   background: #c7c7c7;
 }
 
+.seed-workbench__folder-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.seed-workbench__folder-stage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding-right: 8px;
+  min-width: 0;
+}
+
+/* Figma 329:487 / 329:423 — stage pill: #e3e3e3, py 2 px 6, 12px / -0.36 */
+.seed-workbench__folder-stage-label {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: #e3e3e3;
+  color: #3d3d3d;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: -0.36px;
+  line-height: normal;
+  white-space: nowrap;
+}
+
+/* Figma 329:489 — count sits in row with px 4 only (row height follows label). */
+.seed-workbench__folder-stage-count {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  color: #3d3d3d;
+  white-space: nowrap;
+}
+
+.seed-workbench__folder-next {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid #c3c3c3;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #f0f0f0 100%);
+  box-shadow: none;
+  color: #3d3d3d;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: -0.33px;
+  cursor: pointer;
+}
+
+.seed-workbench__folder-next:hover:not(:disabled) {
+  filter: brightness(0.98);
+}
+
+.seed-workbench__folder-next:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Outside folder chrome — centered under the panel stack. */
+.seed-workbench__phase-error {
+  margin: 0;
+  max-width: 100%;
+  color: #b42318;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+  letter-spacing: -0.2px;
+  text-align: center;
+  opacity: 1;
+  transition: opacity 300ms ease;
+}
+
+.seed-workbench__phase-error--exiting {
+  opacity: 0;
+}
+
+/* Floating runtime / paste alerts — canvas is absolute full-bleed (z0). */
+.seed-workbench__toast-error {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 40;
+  translate: -50% 0;
+  margin: 0;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 8px 12px;
+  border: 1px solid rgba(180, 35, 24, 0.35);
+  border-radius: 8px;
+  background: #fff5f5;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.35;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
 .seed-workbench__folder-extraction {
   display: flex;
   align-items: center;
@@ -135,18 +272,15 @@
   gap: 8px;
   width: 100%;
   min-width: 0;
+  padding-right: 8px;
 }
 
-.seed-workbench__folder-extraction-label {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
+/* Figma 329:425 — same horizontal inset as stage count; no vertical pad. */
 .seed-workbench__folder-extraction-counts {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px;
+  padding: 0 4px;
   flex: 0 0 auto;
   white-space: nowrap;
 }
@@ -169,24 +303,28 @@
   border: 1px solid #c3c3c3;
   border-radius: 8px;
   background: linear-gradient(180deg, #ffffff 0%, #f0f0f0 100%);
-  box-shadow: 0 0 0 1px #e8e8e8;
   /* Figma 134:429 icon stroke — not body text #3d3d3d */
   color: #575757;
   cursor: pointer;
   padding: 0;
   user-select: none;
-  transition: transform 150ms ease;
+  transition:
+    transform 150ms ease,
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
 }
 
-.small-icon-button:active:enabled {
+.small-icon-button:active:enabled:not([data-active="true"]) {
   transform: scale(0.99) translateY(1px);
   background: linear-gradient(180deg, #e1e1e1 0%, #f0f0f0 100%);
 }
 
+/* Selected/active — Figma 325:422 (not the old pressed gray). */
 .small-icon-button[data-active="true"] {
-  background: linear-gradient(180deg, #e1e1e1 0%, #f0f0f0 100%);
-  border-color: #a0a0a0;
-  color: #3d3d3d;
+  border-color: #3a93ff;
+  background: linear-gradient(180deg, #3a93ff 0%, #72b2ff 100%);
+  color: #ffffff;
 }
 
 .small-icon-button:disabled {
@@ -195,10 +333,31 @@
   transform: none;
 }
 
+.small-icon-button--loading:disabled {
+  opacity: 1;
+  cursor: wait;
+}
+
 .small-icon-button__icon {
   display: block;
   flex-shrink: 0;
   pointer-events: none;
+}
+
+.small-icon-button__spinner {
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid rgb(87 87 87 / 0.25);
+  border-top-color: #575757;
+  border-radius: 50%;
+  animation: small-icon-button-spin 0.7s linear infinite;
+}
+
+@keyframes small-icon-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Hugeicons CrosshairIcon circle is at cx=11 in a 24×24 viewBox (1 unit left
@@ -218,17 +377,11 @@
   align-items: stretch;
   gap: 4px;
   padding: 4px;
-  /* Unselected: both strokes #B980B9; selected deepens to #731b73. */
+  /* Unselected stroke #B980B9; selected deepens to #731b73. */
   border: 1px solid #b980b9;
   border-radius: 8px;
-  /* Soft purple header wash (Figma radial); media sits on white below. */
-  background:
-    linear-gradient(
-      180deg,
-      rgba(217, 173, 217, 0.95) 0%,
-      rgba(194, 144, 194, 0.55) 28px,
-      rgba(194, 144, 194, 0.35) 100%
-    );
+  /* Soft lilac chrome (unselected only); media sits on white below. */
+  background: #eee1ee;
   box-shadow: 0 4px 4px rgba(0, 0, 0, 0.25);
   overflow: visible;
   font-family:
@@ -238,6 +391,14 @@
 
 .seed-ref-frame--selected {
   border-color: #731b73;
+  /* Previous selected chrome wash — unchanged from pre-#EEE1EE default. */
+  background:
+    linear-gradient(
+      180deg,
+      rgba(217, 173, 217, 0.95) 0%,
+      rgba(194, 144, 194, 0.55) 28px,
+      rgba(194, 144, 194, 0.35) 100%
+    );
 }
 
 .seed-ref-frame--selected .seed-ref-frame__media {
@@ -273,6 +434,7 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  gap: 4px;
   height: 20px;
 }
 
@@ -317,6 +479,7 @@
 }
 
 .seed-ref-frame__figma-link,
+.seed-ref-frame__notes,
 .seed-ref-frame__info {
   box-sizing: border-box;
   display: grid;
@@ -333,22 +496,29 @@
   appearance: none;
 }
 
-.seed-ref-frame__figma-link:disabled {
+.seed-ref-frame__figma-link:disabled,
+.seed-ref-frame__notes:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
 .seed-ref-frame__figma-link:hover:not(:disabled),
 .seed-ref-frame__figma-link:focus-visible:not(:disabled),
+.seed-ref-frame__notes:hover:not(:disabled),
+.seed-ref-frame__notes:focus-visible:not(:disabled),
+.seed-ref-frame__notes--open,
 .seed-ref-frame__info:hover,
-.seed-ref-frame__info:focus-visible {
+.seed-ref-frame__info:focus-visible,
+.seed-ref-frame__info--open {
   background: #bb70bb;
 }
 
 .seed-ref-frame__figma-icon,
+.seed-ref-frame__notes-icon,
 .seed-ref-frame__info-icon {
   display: block;
   pointer-events: none;
+  color: #731b73;
 }
 
 /* Description tip (Figma 227:130 / hover 227:246) — fade + slide up on show. */
@@ -390,6 +560,156 @@
   overflow-wrap: break-word;
   word-break: break-word;
   pointer-events: none;
+}
+
+/* Per-frame Reference Note panel (Figma 356:560). */
+.seed-ref-frame__notes-anchor {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--seed-ref-tip-gap, 10px));
+  z-index: 3;
+  pointer-events: auto;
+  animation: seed-ref-tip-enter 160ms ease forwards;
+}
+
+.seed-ref-frame__notes-panel {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 360px;
+  padding: 0 0 16px;
+  overflow: hidden;
+  border: 1px solid #731b73;
+  border-radius: 8px;
+  background: #ffeeff;
+  color: #731b73;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: -0.39px;
+}
+
+.seed-ref-frame__notes-header {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 6px 6px 14px;
+  /* Outer chrome is on `.notes-panel`; only a bottom rule here so strokes don't double. */
+  border: 0;
+  border-bottom: 1px solid #731b73;
+  background: #ffffff;
+}
+
+.seed-ref-frame__notes-label {
+  margin: 0;
+  color: #731b73;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: normal;
+  letter-spacing: -0.39px;
+  white-space: nowrap;
+}
+
+.seed-ref-frame__notes-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.seed-ref-frame__notes-icon-btn {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #7d477d;
+  cursor: pointer;
+}
+
+.seed-ref-frame__notes-icon-btn:hover:not(:disabled),
+.seed-ref-frame__notes-icon-btn:focus-visible:not(:disabled) {
+  background: #ffeeff;
+  outline: none;
+}
+
+.seed-ref-frame__notes-icon-btn--active,
+.seed-ref-frame__notes-icon-btn--active:hover:not(:disabled),
+.seed-ref-frame__notes-icon-btn--active:focus-visible:not(:disabled) {
+  background: #7d477d;
+  color: #ffffff;
+}
+
+.seed-ref-frame__notes-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.seed-ref-frame__notes-body {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 0 16px;
+}
+
+.seed-ref-frame__notes-text {
+  margin: 0;
+  width: 100%;
+  color: #731b73;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: -0.39px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.seed-ref-frame__notes-text--empty {
+  color: rgba(115, 27, 115, 0.45);
+}
+
+.seed-ref-frame__notes-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 54px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #731b73;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: -0.39px;
+  resize: vertical;
+}
+
+.seed-ref-frame__notes-input::placeholder {
+  color: rgba(115, 27, 115, 0.45);
+}
+
+.seed-ref-frame__notes-input:focus {
+  outline: none;
+}
+
+.seed-ref-frame__notes-error {
+  margin: 0;
+  color: #b42318;
+  font-size: 11px;
 }
 
 .seed-ref-frame__media {
@@ -531,27 +851,36 @@
 }
 
 .figma-verification-panel {
-  width: 280px;
+  width: 270px;
   z-index: 25;
+}
+
+/* Outer shell 270px incl. 1px dark + 1px white rings (surface 266). Body padding 4
+   + rings 2 = 6px from outer edge (Figma 327:466 single-box p=6). Padding rings
+   avoid clip-path cutting chrome at corners — do not paint rings via box-shadow. */
+.figma-verification-panel .squircle-chrome__ring,
+.figma-verification-panel .squircle-chrome__surface {
+  height: auto;
+  min-height: 0;
 }
 
 .figma-verification-panel__body {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: 20px;
-  padding: 12px;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 4px;
   color: #3d3d3d;
   font-size: 13px;
   line-height: normal;
   letter-spacing: -0.39px;
 }
 
-.figma-verification-panel__intro {
+/* Figma 327:465 — brand = logo + title; copy group separate; section gap 16. */
+.figma-verification-panel__brand {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
   width: 100%;
 }
 
@@ -559,47 +888,70 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   border-radius: 4px;
   overflow: hidden;
 }
 
 .figma-verification-panel__title {
   margin: 0;
-  padding: 4px;
+  padding: 6px 10px;
   color: #3d3d3d;
   font-size: 13px;
+  font-weight: 500;
   letter-spacing: -0.39px;
+}
+
+.figma-verification-panel__copy-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  box-sizing: border-box;
 }
 
 .figma-verification-panel__copy {
   margin: 0;
-  padding: 0 4px;
-  color: #999999;
+  padding: 0;
+  color: #636363;
   font-size: 13px;
+  font-weight: 400;
   letter-spacing: -0.39px;
 }
 
 .figma-verification-panel__link-row {
   display: flex;
   align-items: center;
-  min-height: 24px;
-  padding: 0 4px;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 144px;
+  height: 28px;
 }
 
 .figma-verification-panel__link {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  border-radius: 99px;
   color: #731b73;
   text-decoration: none;
   font-size: 13px;
   letter-spacing: -0.39px;
 }
 
-.figma-verification-panel__link:hover {
-  text-decoration: underline;
+.figma-verification-panel__link-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 99px;
+  transition: background-color 160ms ease;
+}
+
+.figma-verification-panel__link:hover .figma-verification-panel__link-inner {
+  background: #f1d9f1;
 }
 
 .figma-verification-panel__link-icon {
@@ -616,7 +968,7 @@
 .figma-verification-panel__form {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
 }
 
@@ -624,60 +976,104 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
   width: 100%;
-  min-height: 32px;
-  padding: 4px;
-  box-sizing: border-box;
-  background: #ffffff;
-  border-radius: 4px;
-  overflow: hidden;
 }
 
-.figma-verification-panel__input {
-  flex: 1;
-  min-width: 0;
-  height: 24px;
-  border: 0;
-  background: transparent;
+.figma-verification-panel .figma-verification-panel__input {
   color: #3d3d3d;
-  font: inherit;
-  font-size: 13px;
-  letter-spacing: -0.39px;
-  outline: none;
+  /* Beat Input base rounded-lg; empty/entered left corners stay identical. */
+  border-radius: 8px;
 }
 
-.figma-verification-panel__input::placeholder {
+.figma-verification-panel .figma-verification-panel__input--entered {
+  /* left 8px unchanged; right 12px only when trailing + is present */
+  border-radius: 8px 12px 12px 8px;
+}
+
+.figma-verification-panel .figma-verification-panel__input:disabled {
   color: #999999;
 }
 
-.figma-verification-panel__input:disabled {
-  color: #999999;
+.figma-verification-panel .figma-verification-panel__input[aria-invalid="true"] {
+  border-color: #b42318;
+  box-shadow: 0 0 0 1px rgb(180 35 24 / 0.2);
 }
 
 .figma-verification-panel__check {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  z-index: 1;
   flex-shrink: 0;
+  transform: translateY(-50%);
+}
+
+/* Keep vertical centering — base :disabled { transform: none } would drop it. */
+.figma-verification-panel__check:disabled,
+.figma-verification-panel__check.small-icon-button--loading:disabled {
+  transform: translateY(-50%);
+}
+
+.figma-verification-panel__check:active:enabled:not([data-active="true"]) {
+  transform: translateY(calc(-50% + 1px)) scale(0.99);
 }
 
 .figma-verification-panel__verified {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 12px;
-  height: 12px;
-  margin-right: 2px;
+  width: 11.667px;
+  height: 11.667px;
   border-radius: 999px;
   background: #11c514;
   color: #ffffff;
+  transform: translateY(-50%);
 }
 
-.figma-verification-panel__error {
+.figma-verification-panel__error-inline {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  z-index: 1;
   margin: 0;
-  padding: 0 4px;
   color: #b42318;
   font-size: 12px;
   letter-spacing: -0.24px;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+/* Smart height reveal when Enter Canvas appears (Figma 329:390 annotation).
+   Closed slot collapses to 0fr; negative margin cancels body gap:16 so input
+   sits flush with body padding only (4px + 2px rings = 6px from outer edge). */
+.figma-verification-panel__enter-slot {
+  display: grid;
+  grid-template-rows: 0fr;
+  width: 100%;
+  margin-top: -16px;
+  transition: grid-template-rows 220ms ease, margin-top 220ms ease,
+    margin-bottom 220ms ease;
+}
+
+.figma-verification-panel__enter-slot--open {
+  grid-template-rows: 1fr;
+  margin-top: 0;
+  /* Reclaim the inner padding-bottom from body padding so outer spacing stays 6px. */
+  margin-bottom: -1px;
+}
+
+.figma-verification-panel__enter-slot-inner {
+  min-height: 0;
+  overflow: hidden;
+  /* Room for active:translate-y-px / :active translateY(1px) so press is not clipped. */
+  padding-bottom: 1px;
 }
 
 .figma-verification-panel__enter {
@@ -687,13 +1083,14 @@
   width: 100%;
   height: 28px;
   padding: 0 12px;
-  border: 1px solid #ffffff;
-  border-radius: 6px;
-  background: linear-gradient(180deg, #ebebeb 0%, #f6f6f6 100%);
-  box-shadow: 0 0 0 1px #a8a8a8;
+  border: 1px solid #c3c3c3;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #f0f0f0 100%);
+  box-shadow: none;
   color: #3d3d3d;
   font: inherit;
   font-size: 11px;
+  font-weight: 400;
   letter-spacing: -0.33px;
   cursor: pointer;
 }

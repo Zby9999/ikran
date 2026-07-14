@@ -9,6 +9,7 @@ import path from "node:path";
 import {
   rawDelete as httpDelete,
   rawGet as httpGet,
+  rawPatch as httpPatch,
   rawPost as httpPost
 } from "./helpers/http";
 import { connectFigmaForTests } from "./helpers/figma-connection";
@@ -51,6 +52,18 @@ function rawGet(
   port: number
 ) {
   return httpGet(port, route, {
+    host: `localhost:${port}`,
+    ...headers
+  });
+}
+
+function rawPatch(
+  route: string,
+  body: unknown,
+  headers: Record<string, string>,
+  port: number
+) {
+  return httpPatch(port, route, body, {
     host: `localhost:${port}`,
     ...headers
   });
@@ -264,6 +277,15 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     expect(captured.record.registered_via).toBe("agent");
     expect(captured.surface.frame_name).toBe("Mock Frame");
 
+    const description = "Shared design language for Agent-first projection.";
+    const readiness = await rawPatch(
+      "/api/project/readiness",
+      { designLanguageDescription: description },
+      { "x-ikran-session": token, "content-type": "application/json" },
+      runtime.port
+    );
+    expect(readiness.status).toBe(200);
+
     await page.reload();
     await enterWorkbench(page, { port: runtime.port, sessionToken: token });
 
@@ -303,9 +325,23 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     ).toHaveCount(0);
     await expect(projection.getByTestId("seed-reference-projection-url")).toHaveCount(0);
 
-    await projection.getByTestId("seed-reference-projection-info").hover();
-    const tip = projection.getByTestId("seed-reference-projection-tip");
-    await expect(tip).toContainText("Agent-first");
+    await projection.getByTestId("seed-reference-projection-info").click();
+    const descriptionPanel = projection.getByTestId(
+      "seed-reference-description-panel"
+    );
+    await expect(descriptionPanel).toBeVisible();
+    await expect(
+      projection.getByTestId("seed-reference-description-text")
+    ).toContainText("Shared design language");
+
+    await projection.getByTestId("seed-reference-projection-notes").click();
+    await expect(
+      projection.getByTestId("seed-reference-notes-panel")
+    ).toBeVisible();
+    await expect(
+      projection.getByTestId("seed-reference-notes-text")
+    ).toContainText("Agent-first");
+    await expect(descriptionPanel).toHaveCount(0);
 
     const records = readSeedReferences(folder);
     expect(records.length).toBe(1);

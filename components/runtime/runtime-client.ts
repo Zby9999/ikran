@@ -5,6 +5,8 @@ import type { RecordBusEvent } from "@/lib/runtime/record-bus";
 import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 import type { FigmaEvidenceSurfaceRecord } from "@/lib/runtime/evidence-package";
 import type { RegionAnnotationRecord } from "@/lib/runtime/region-annotation";
+import type { WorkbenchLayoutDocument } from "@/lib/runtime/workbench-layout-shared";
+import { emptyWorkbenchLayout } from "@/lib/runtime/workbench-layout-shared";
 import type { NormalizedRect } from "@/components/workbench/region-annotation-geometry";
 
 export type RuntimeHeartbeatEvent = {
@@ -161,6 +163,10 @@ export type WorkbenchRuntimeSnapshot = {
   seeds: SeedReferenceRecord[];
   surfaces: FigmaEvidenceSurfaceRecord[];
   annotations: RegionAnnotationRecord[];
+  /** Project UX layout — frame geometry + camera (not research data). */
+  layout: WorkbenchLayoutDocument;
+  /** Project-level Design Language Description (Info tip). */
+  designLanguageDescription: string;
 };
 
 export type RuntimeMutationResult =
@@ -256,6 +262,16 @@ export function createWorkbenchDataClient(
   let active = true;
   let generation = 0;
   let latestLoad: Promise<RuntimeMutationResult> | null = null;
+  let lastLayout = emptyWorkbenchLayout();
+  let layoutWriteQueue: Promise<void> = Promise.resolve();
+  let layoutWriteRevision = Date.now() * 1000;
+  const nextLayoutWriteRevision = () => {
+    layoutWriteRevision = Math.max(
+      layoutWriteRevision + 1,
+      Date.now() * 1000
+    );
+    return layoutWriteRevision;
+  };
 
   const loadAll = (): Promise<RuntimeMutationResult> => {
     const requestGeneration = ++generation;
@@ -288,12 +304,19 @@ export function createWorkbenchDataClient(
           }
         }
 
-        const [seedRes, surfaceRes, annotationRes] = await Promise.all([
+        const [seedRes, surfaceRes, annotationRes, layoutRes, readinessRes] =
+          await Promise.all([
           fetchJson(fetcher, "/api/seed-reference", session, { method: "GET" }),
           fetchJson(fetcher, "/api/evidence-package", session, {
             method: "GET"
           }),
           fetchJson(fetcher, "/api/region-annotation", session, {
+            method: "GET"
+          }),
+          fetchJson(fetcher, "/api/workbench-layout", session, {
+            method: "GET"
+          }),
+          fetchJson(fetcher, "/api/project/readiness", session, {
             method: "GET"
           })
         ]);
@@ -308,19 +331,42 @@ export function createWorkbenchDataClient(
           return { ok: false, error: "load_superseded" };
         }
 
-        if (seedRes.ok && surfaceRes.ok && annotationRes.ok) {
+        if (
+          seedRes.ok &&
+          surfaceRes.ok &&
+          annotationRes.ok &&
+          readinessRes.ok
+        ) {
+          if (layoutRes.ok) {
+            const layoutRaw = layoutRes.data.layout;
+            lastLayout =
+              layoutRaw !== null && typeof layoutRaw === "object"
+                ? (layoutRaw as WorkbenchLayoutDocument)
+                : emptyWorkbenchLayout();
+          }
+          const designLanguageDescription =
+            typeof readinessRes.data.designLanguageDescription === "string"
+              ? readinessRes.data.designLanguageDescription
+              : "";
           options.onSnapshot({
             seeds: (seedRes.data.records as SeedReferenceRecord[]) ?? [],
             surfaces:
               (surfaceRes.data.records as FigmaEvidenceSurfaceRecord[]) ?? [],
             annotations:
-              (annotationRes.data.records as RegionAnnotationRecord[]) ?? []
+              (annotationRes.data.records as RegionAnnotationRecord[]) ?? [],
+            layout: lastLayout,
+            designLanguageDescription
           });
           options.onError(null);
           return { ok: true };
         }
 
-        lastError = resultError(seedRes, surfaceRes, annotationRes);
+        lastError = resultError(
+          seedRes,
+          surfaceRes,
+          annotationRes,
+          readinessRes
+        );
         // Surface while retrying so the canvas is not silently stale.
         options.onError(lastError);
       }
@@ -417,11 +463,101 @@ export function createWorkbenchDataClient(
     return { ok: true };
   };
 
+  const putWorkbenchLayoutNow = async (
+    layout: WorkbenchLayoutDocument,
+    writeRevision: number
+  ): Promise<RuntimeMutationResult> => {
+    const result = await fetchJson(fetcher, "/api/workbench-layout", session, {
+      method: "PUT",
+      keepalive: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ layout, writeRevision })
+    });
+    if (!result.ok) {
+      return reportMutationError(
+        (typeof result.data.error === "string" && result.data.error) ||
+          "put_workbench_layout_failed"
+      );
+    }
+    return { ok: true };
+  };
+
+  const putWorkbenchLayout = (
+    layout: WorkbenchLayoutDocument
+  ): Promise<RuntimeMutationResult> => {
+    const writeRevision = nextLayoutWriteRevision();
+    const result = layoutWriteQueue.then(
+      () => putWorkbenchLayoutNow(layout, writeRevision),
+      () => putWorkbenchLayoutNow(layout, writeRevision)
+    );
+    layoutWriteQueue = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  };
+
+  const flushWorkbenchLayout = (
+    layout: WorkbenchLayoutDocument
+  ): Promise<RuntimeMutationResult> =>
+    putWorkbenchLayoutNow(layout, nextLayoutWriteRevision());
+
+  const updateSeedReferenceNote = async (
+    seedId: string,
+    referenceNote: string
+  ): Promise<RuntimeMutationResult> => {
+    const result = await fetchJson(fetcher, "/api/seed-reference", session, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: seedId, referenceNote })
+    });
+    if (!result.ok) {
+      return reportMutationError(
+        (typeof result.data.error === "string" && result.data.error) ||
+          "update_seed_note_failed"
+      );
+    }
+    const reloaded = await loadAll();
+    if (!reloaded.ok) {
+      return reportMutationError(
+        `update_note_succeeded_reload_failed:${reloaded.error}`
+      );
+    }
+    return { ok: true };
+  };
+
+  const updateDesignLanguageDescription = async (
+    designLanguageDescription: string
+  ): Promise<RuntimeMutationResult> => {
+    const result = await fetchJson(fetcher, "/api/project/readiness", session, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ designLanguageDescription })
+    });
+    if (!result.ok) {
+      return reportMutationError(
+        (typeof result.data.error === "string" && result.data.error) ||
+          "update_design_language_description_failed"
+      );
+    }
+    const reloaded = await loadAll();
+    if (!reloaded.ok) {
+      return reportMutationError(
+        `update_description_succeeded_reload_failed:${reloaded.error}`
+      );
+    }
+    return { ok: true };
+  };
+
   return {
     loadAll,
     createAnnotation,
     deleteAnnotation,
     deleteSeedReference,
+    putWorkbenchLayout,
+    flushWorkbenchLayout,
+    updateSeedReferenceNote,
+    updateDesignLanguageDescription,
     getFigmaConnection: async (): Promise<
       | { ok: true; connected: false }
       | {

@@ -9,28 +9,44 @@ export function SmallIconButton({
   icon,
   label,
   className,
+  iconSize = 14,
+  strokeWidth = 1.5,
+  loading = false,
+  disabled,
   ...props
 }: ComponentProps<"button"> & {
   icon: IconSvgElement;
   label: string;
+  iconSize?: number;
+  strokeWidth?: number;
+  loading?: boolean;
 }) {
   return (
     <button
       type="button"
       aria-label={label}
-      className={cn("small-icon-button", className)}
+      aria-busy={loading || undefined}
+      className={cn(
+        "small-icon-button",
+        loading && "small-icon-button--loading",
+        className
+      )}
+      disabled={disabled || loading}
       {...props}
     >
-      <HugeiconsIcon
-        className="small-icon-button__icon"
-        icon={icon}
-        size={14}
-        color="currentColor"
-        // Figma mini icons are 14×14 with stroke-width 0.875. Hugeicons uses a
-        // 24×24 viewBox, so the matching strokeWidth is (0.875/14)*24 = 1.5.
-        // Passing 0.875 here made strokes ~0.51px and looked much thinner.
-        strokeWidth={1.5}
-      />
+      {loading ? (
+        <span className="small-icon-button__spinner" aria-hidden="true" />
+      ) : (
+        <HugeiconsIcon
+          className="small-icon-button__icon"
+          icon={icon}
+          size={iconSize}
+          color="currentColor"
+          // Figma mini icons are 14×14 with stroke-width 0.875. Hugeicons uses a
+          // 24×24 viewBox, so the matching strokeWidth is (0.875/14)*24 = 1.5.
+          strokeWidth={strokeWidth}
+        />
+      )}
     </button>
   );
 }

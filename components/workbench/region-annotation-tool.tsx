@@ -8,9 +8,9 @@
 // Pointer contract (media box only — coordinate space A):
 //   - click → tiny page-square marker (normalized w=POINT_SIDE; h from media aspect)
 //   - press-drag → rectangle clamped to the Evidence Surface media area
-// On pointer up: commit via the per-editor injected create handler (no module
-// global) with normalized rect + surfaceArtifactId from the hit surface meta.
-//
+// On pointer up: keep a local draft marker (marked draft:committing) through
+// the injected Runtime mutation; projection sync deletes it in the same batch
+// as the authoritative create so the canvas never flashes empty.
 // The tool never invents Runtime records — it only commits via the injected
 // Runtime mutation; projection sync rebuilds shapes from authoritative GET.
 
@@ -40,6 +40,7 @@ import {
   clampPageRectToMediaBox,
   expandNormalizedPointToRect,
   mediaBoxInPage,
+  normalizedRectToPage,
   pageRectToNormalized,
   type NormalizedRect,
   type PageRect
@@ -53,6 +54,8 @@ const CLICK_DRAG_THRESHOLD_PX = 4;
 export type RegionAnnotationCreatePayload = {
   surfaceArtifactId: string;
   rect: NormalizedRect;
+  /** Local draft marker kept visible until projection sync creates the record. */
+  draftShapeId?: string;
 };
 
 type CreateHandler = (payload: RegionAnnotationCreatePayload) => void;
@@ -287,12 +290,33 @@ export function createRegionAnnotationToolClass(
         }
       }
 
-      // Drop the local draft — Runtime record → projection sync owns the shape.
-      editor.deleteShape(session.draftShapeId as RegionAnnotationShape["id"]);
+      // Keep the draft visible through Runtime create + reload. Mark it
+      // committing so projection sync can drop it in the same batch as the
+      // authoritative create (avoids pointer-up delete → empty flash).
+      const pageRect = normalizedRectToPage(session.mediaBox, normalized);
+      editor.updateShape<RegionAnnotationShape>({
+        id: session.draftShapeId as RegionAnnotationShape["id"],
+        type: REGION_ANNOTATION_TYPE,
+        x: pageRect.x,
+        y: pageRect.y,
+        props: {
+          w: Math.max(1, pageRect.w),
+          h: Math.max(1, pageRect.h),
+          author: "designer",
+          label: "",
+          surfaceMediaW: session.mediaBox.w
+        },
+        meta: {
+          canvasRecordId: "region-annotation:draft:committing",
+          runtimeRecordId: "draft:committing",
+          surfaceRecordId: session.surfaceArtifactId
+        }
+      });
 
       (this.parent as RegionAnnotationToolParent).commitCreate({
         surfaceArtifactId: session.surfaceArtifactId,
-        rect: normalized
+        rect: normalized,
+        draftShapeId: session.draftShapeId
       });
 
       this.parent.transition("idle");
@@ -348,8 +372,19 @@ export function RegionAnnotationToolController({
     createHandlerRef.current = (payload) => {
       void (async () => {
         const mutate = onCreateRef.current;
-        if (!mutate) return;
-        await mutate(payload);
+        const draftId = payload.draftShapeId as
+          | RegionAnnotationShape["id"]
+          | undefined;
+        if (!mutate) {
+          if (draftId) editor.deleteShape(draftId);
+          return;
+        }
+        const result = await mutate(payload);
+        // Success: projection sync removes draft:committing with the create.
+        // Failure: drop the local stand-in so it does not linger.
+        if (!result.ok && draftId) {
+          editor.deleteShape(draftId);
+        }
       })();
     };
 

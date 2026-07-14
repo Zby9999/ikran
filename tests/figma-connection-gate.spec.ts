@@ -289,9 +289,16 @@ test("canvas paste shows Ikran frame only — never Figma iframe embed", async (
   await bindFolder(token, folder, runtime.port);
   await ensureGateOpen(page, runtime, token);
 
-  // Hold capture briefly so the optimistic awaiting frame is observable.
+  // Hold capture at a deterministic boundary so canonical in-flight dedupe can
+  // be asserted without timing assumptions under parallel test load.
+  let captureRequests = 0;
+  let releaseCapture!: () => void;
+  const captureGate = new Promise<void>((resolve) => {
+    releaseCapture = resolve;
+  });
   await page.route("**/api/seed-capture", async (route) => {
-    await new Promise((r) => setTimeout(r, 400));
+    captureRequests += 1;
+    await captureGate;
     await route.continue();
   });
 
@@ -312,6 +319,29 @@ test("canvas paste shows Ikran frame only — never Figma iframe embed", async (
   await expect(
     page.getByTestId("seed-reference-projection").first()
   ).toBeVisible({ timeout: 5000 });
+
+  try {
+    await page.evaluate(() => {
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", {
+        value: {
+          getData: (type: string) =>
+            type === "text/plain"
+              ? "https://www.figma.com/design/AbCdEfGh/Mock?node-id=1:2&t=duplicate"
+              : ""
+        }
+      });
+      window.dispatchEvent(event);
+    });
+    await page.waitForTimeout(100);
+    expect(captureRequests).toBe(1);
+    await expect(
+      page.getByTestId("seed-reference-projection-awaiting")
+    ).toHaveCount(1);
+  } finally {
+    releaseCapture();
+  }
+
   await expect(page.locator('iframe[src*="figma.com"]')).toHaveCount(0);
   await expect(
     page.locator('.tl-embed iframe, iframe.tl-embed__iframe')
@@ -325,6 +355,34 @@ test("canvas paste shows Ikran frame only — never Figma iframe embed", async (
     page.getByTestId("seed-reference-projection-screenshot").first()
   ).toBeVisible({ timeout: 10000 });
   await expect(page.locator('iframe[src*="figma.com"]')).toHaveCount(0);
+});
+
+test("canvas paste of a random URL does not create embed or bookmark", async ({
+  page,
+  runtime,
+  folder
+}) => {
+  const token = await captureToken(page, runtime.baseURL);
+  await bindFolder(token, folder, runtime.port);
+  await ensureGateOpen(page, runtime, token);
+
+  await page.evaluate(() => {
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: (type: string) =>
+          type === "text/plain" ? "https://example.com/random-page" : ""
+      }
+    });
+    window.dispatchEvent(event);
+  });
+
+  // Give tldraw a beat to create (or fail to create) shapes.
+  await page.waitForTimeout(500);
+  await expect(
+    page.locator(".tl-embed, .tl-bookmark, .tl-embed iframe, iframe.tl-embed__iframe")
+  ).toHaveCount(0);
+  await expect(page.getByTestId("seed-reference-projection")).toHaveCount(0);
 });
 
 test("deleting a seed frame stays gone after pasting another", async ({
@@ -462,14 +520,27 @@ test("05B: three pastes project three frames; duplicate paste reuses and focuses
     .first()
     .click();
 
+  let duplicateCaptureRequests = 0;
+  await page.route("**/api/seed-capture", async (route) => {
+    duplicateCaptureRequests += 1;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await route.continue();
+  });
+
   await pasteUrl(
     "https://www.figma.com/design/AbCdEfGh/Mock?node-id=1:1&t=noise"
   );
 
+  // Duplicate must focus immediately — no optimistic Capturing… frame.
+  await expect(
+    page.getByTestId("seed-reference-projection-awaiting")
+  ).toHaveCount(0);
   await expect(page.getByTestId("seed-reference-projection")).toHaveCount(3);
   await expect(
     page.getByTestId("seed-reference-projection-screenshot")
   ).toHaveCount(3);
+  await page.waitForTimeout(500);
+  expect(duplicateCaptureRequests).toBe(0);
   const after = await httpGet(runtime.port, "/api/seed-reference", {
     host: `localhost:${runtime.port}`,
     "x-ikran-session": token
@@ -482,6 +553,82 @@ test("05B: three pastes project three frames; duplicate paste reuses and focuses
   await expect(focused).toHaveAttribute("data-selected", "true", {
     timeout: 5000
   });
+});
+
+test("05B: leaving the Workbench flushes the last frame layout change", async ({
+  page,
+  runtime,
+  folder
+}) => {
+  const token = await captureToken(page, runtime.baseURL);
+  await bindFolder(token, folder, runtime.port);
+  await ensureGateOpen(page, runtime, token);
+  let layoutPutRequests = 0;
+  page.on("request", (request) => {
+    if (
+      request.method() === "PUT" &&
+      request.url().includes("/api/workbench-layout")
+    ) {
+      layoutPutRequests += 1;
+    }
+  });
+
+  await page.evaluate(() => {
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: (type: string) =>
+          type === "text/plain"
+            ? "https://www.figma.com/design/AbCdEfGh/Mock?node-id=8-8"
+            : ""
+      }
+    });
+    window.dispatchEvent(event);
+  });
+
+  const projection = page.getByTestId("seed-reference-projection");
+  await expect(projection).toBeVisible({ timeout: 15000 });
+  await expect(
+    page.getByTestId("seed-reference-projection-screenshot")
+  ).toBeVisible({ timeout: 15000 });
+  const seedId = await projection.getAttribute("data-seed-record-id");
+  expect(seedId).toBeTruthy();
+
+  const backBox = await page
+    .getByRole("button", { name: "Back to setup" })
+    .boundingBox();
+  expect(backBox).toBeTruthy();
+  await projection.click();
+  await expect(projection).toHaveAttribute("data-selected", "true");
+  await page.keyboard.press("ArrowRight");
+  const canvasBox = await page.getByTestId("workbench-canvas").boundingBox();
+  expect(canvasBox).toBeTruthy();
+  await page.mouse.move(
+    canvasBox!.x + canvasBox!.width / 2,
+    canvasBox!.y + canvasBox!.height / 2
+  );
+  await page.mouse.wheel(0, 120);
+  const putsBeforePagehide = layoutPutRequests;
+  await page.evaluate(() => {
+    window.dispatchEvent(new PageTransitionEvent("pagehide"));
+  });
+  await expect.poll(() => layoutPutRequests).toBeGreaterThan(putsBeforePagehide);
+  await page.mouse.click(
+    backBox!.x + backBox!.width / 2,
+    backBox!.y + backBox!.height / 2
+  );
+
+  await expect.poll(() => layoutPutRequests).toBeGreaterThan(0);
+  await expect.poll(async () => {
+    const response = await httpGet(runtime.port, "/api/workbench-layout", {
+      host: `localhost:${runtime.port}`,
+      "x-ikran-session": token
+    });
+    const body = JSON.parse(response.body) as {
+      layout?: { frames?: Record<string, { x: number }> };
+    };
+    return seedId ? body.layout?.frames?.[seedId]?.x ?? null : null;
+  }).not.toBeNull();
 });
 
 test("05B: readiness reports description_missing until Description is set", async ({

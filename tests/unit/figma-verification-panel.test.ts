@@ -30,3 +30,23 @@ test("verified → verified phase", () => {
     })
   ).toBe("verified");
 });
+
+test("verifying → checking phase", () => {
+  expect(
+    tokenPanelPhaseFromValue("figd_x", {
+      verifying: true,
+      verified: false,
+      error: null
+    })
+  ).toBe("checking");
+});
+
+test("error beats ready when token present", () => {
+  expect(
+    tokenPanelPhaseFromValue("figd_x", {
+      verifying: false,
+      verified: false,
+      error: "Invalid token"
+    })
+  ).toBe("error");
+});

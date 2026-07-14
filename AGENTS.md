@@ -31,8 +31,6 @@ Product and architecture details are in `IKRAN-MVP-PRD.zh-CN.md` and `issues/`.
 - Ikran Agent conventions belong in Ikran surfaces (e.g. MCP `instructions`, tool descriptions, `AGENTS.md`, `Issues 02/`, product docs) — not in `workflow/` Skills.
 - `workflow/` Skills may still inform design-agent methodology for this repository; treat them as foundation context for the project, not as Ikran MCP configuration.
 
-## Agent skills
-
 ### Issue tracker
 
 Implementation issues live as markdown under `Issues 02/`. See `docs/agents/issue-tracker.md`.

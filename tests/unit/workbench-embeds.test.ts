@@ -1,5 +1,4 @@
 import { test, expect } from "vitest";
-import { DEFAULT_EMBED_DEFINITIONS } from "tldraw";
 import {
   extractFigmaDesignUrl,
   isFigmaDesignUrl,
@@ -13,19 +12,15 @@ import {
 } from "../../components/workbench/projection/seed-projection";
 import type { SeedReferenceRecord } from "../../lib/runtime/seed-reference";
 
-test.describe("workbench embeds — no Figma iframe on paste", () => {
-  test("WORKBENCH_EMBED_DEFINITIONS excludes figma", () => {
+test.describe("workbench embeds — no URL iframe on paste", () => {
+  test("keeps Runtime-capable embeds but excludes Figma", () => {
+    expect(WORKBENCH_EMBED_DEFINITIONS.length).toBeGreaterThan(0);
+    expect(WORKBENCH_EMBED_DEFINITIONS.some((def) => def.type === "figma")).toBe(
+      false
+    );
     expect(
-      WORKBENCH_EMBED_DEFINITIONS.some((d) => d.type === "figma")
-    ).toBe(false);
-    expect(
-      DEFAULT_EMBED_DEFINITIONS.some((d) => d.type === "figma")
+      WORKBENCH_EMBED_DEFINITIONS.some((def) => def.type === "youtube")
     ).toBe(true);
-    const types = new Set(WORKBENCH_EMBED_DEFINITIONS.map((d) => d.type));
-    for (const def of DEFAULT_EMBED_DEFINITIONS) {
-      if (def.type === "figma") continue;
-      expect(types.has(def.type)).toBe(true);
-    }
   });
 
   test("extract / isFigmaDesignUrl covers design + file only", () => {

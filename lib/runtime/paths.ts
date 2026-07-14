@@ -42,6 +42,11 @@ export function getProjectEventsPath(projectPath: string): string {
   return path.join(getIkranDir(projectPath), "events.jsonl");
 }
 
+/** Workbench canvas UX layout (frame positions + camera) — not research data. */
+export function getWorkbenchLayoutPath(projectPath: string): string {
+  return path.join(getIkranDir(projectPath), "workbench-layout.json");
+}
+
 export function getArtifactsDir(projectPath: string): string {
   return path.join(getIkranDir(projectPath), "artifacts");
 }

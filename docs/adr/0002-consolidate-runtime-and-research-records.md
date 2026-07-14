@@ -74,6 +74,8 @@ ADR 0001 完成了产品转向：Ikran 不再 spawn 无头 CLI Agent，而是作
 - **入选门槛：** Design System v1 → 新原型 → 反馈 / 确认规则更新 → Design System v2 → 第二次新设计。仅达标项目有资格生成研究 export。
 - **导出内容：** 达标后导出该项目整条成功语义链路（含闭环完成前的 seed / evidence / annotation / alignment / DS v1 / 第一次原型等），不是只导出终点。Runtime 在闭环前照常记录成功语义事实。
 - **不进入研究事实/导出：** 失败请求、失败标注、草稿、取消、Open Gap、canvas layout。
+- Canvas layout 可作为项目本地、可丢弃的 Workbench UX 状态持久化，以恢复
+  Frame geometry 与 camera；它不写入 canonical events，不成为研究事实或导出内容。
 - 运维调试仍可保留失败日志；系统并非「永不记录错误」，只是错误与草稿不属于成功研究事实。
 
 ## 替代方案与权衡

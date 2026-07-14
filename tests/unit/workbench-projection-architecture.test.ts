@@ -13,6 +13,7 @@ const PROJECTION = path.join(WORKBENCH, "projection");
 
 const REQUIRED_PROJECTION_FILES = [
   "seed-projection.ts",
+  "seed-projection-reflow.ts",
   "annotation-projection.ts",
   "seed-projection-sync.tsx",
   "region-annotation-projection-sync.tsx"

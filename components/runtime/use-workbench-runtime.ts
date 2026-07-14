@@ -10,6 +10,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 import type { FigmaEvidenceSurfaceRecord } from "@/lib/runtime/evidence-package";
 import type { RegionAnnotationRecord } from "@/lib/runtime/region-annotation";
+import type { WorkbenchLayoutDocument } from "@/lib/runtime/workbench-layout-shared";
+import { emptyWorkbenchLayout } from "@/lib/runtime/workbench-layout-shared";
 import type { NormalizedRect } from "@/components/workbench/region-annotation-geometry";
 import {
   createWorkbenchDataClient,
@@ -77,6 +79,18 @@ function annotationSignature(records: RegionAnnotationRecord[]): string {
     .join("|");
 }
 
+function layoutSignature(layout: WorkbenchLayoutDocument): string {
+  const cam = layout.camera;
+  const frameKeys = Object.keys(layout.frames).sort();
+  const frames = frameKeys
+    .map((id) => {
+      const f = layout.frames[id]!;
+      return `${id}:${f.x}:${f.y}:${f.w}:${f.h}:${f.layoutLocked ? 1 : 0}`;
+    })
+    .join("|");
+  return `${layout.version}:${cam.x}:${cam.y}:${cam.z}:${frames}`;
+}
+
 /**
  * Subscribe before the initial GET. A fresh connection runs an initial load,
  * then another authoritative baseline after `open`; a subscriber joining an
@@ -114,6 +128,11 @@ export function useWorkbenchRuntime(session: string) {
   const [seeds, setSeeds] = useState<SeedReferenceRecord[]>([]);
   const [surfaces, setSurfaces] = useState<FigmaEvidenceSurfaceRecord[]>([]);
   const [annotations, setAnnotations] = useState<RegionAnnotationRecord[]>([]);
+  const [layout, setLayout] = useState<WorkbenchLayoutDocument>(
+    emptyWorkbenchLayout
+  );
+  const [designLanguageDescription, setDesignLanguageDescription] =
+    useState("");
   const [status, setStatus] = useState<WorkbenchRuntimeStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const clientRef = useRef<ReturnType<typeof createWorkbenchDataClient> | null>(
@@ -136,6 +155,16 @@ export function useWorkbenchRuntime(session: string) {
       annotationSignature(prev) === annotationSignature(snapshot.annotations)
         ? prev
         : snapshot.annotations
+    );
+    setLayout((prev) =>
+      layoutSignature(prev) === layoutSignature(snapshot.layout)
+        ? prev
+        : snapshot.layout
+    );
+    setDesignLanguageDescription((prev) =>
+      prev === snapshot.designLanguageDescription
+        ? prev
+        : snapshot.designLanguageDescription
     );
   }, []);
 
@@ -213,7 +242,12 @@ export function useWorkbenchRuntime(session: string) {
       runLoadRef.current = null;
       unsubscribe();
       client.dispose();
-      if (clientRef.current === client) clientRef.current = null;
+      // Child layout persistence flushes during the same unmount. Keep the
+      // disposed client's mutation methods reachable until all effect cleanups
+      // in this turn have run; no snapshot/error can apply after dispose.
+      queueMicrotask(() => {
+        if (clientRef.current === client) clientRef.current = null;
+      });
       if (reloadTimer) clearTimeout(reloadTimer);
       clearHeal();
     };
@@ -290,16 +324,69 @@ export function useWorkbenchRuntime(session: string) {
     []
   );
 
+  const putWorkbenchLayout = useCallback(
+    async (next: WorkbenchLayoutDocument): Promise<MutationResult> => {
+      const client = clientRef.current;
+      if (!client) {
+        return { ok: false, error: "runtime_client_unavailable" };
+      }
+      return client.putWorkbenchLayout(next);
+    },
+    []
+  );
+
+  const flushWorkbenchLayout = useCallback(
+    async (next: WorkbenchLayoutDocument): Promise<MutationResult> => {
+      const client = clientRef.current;
+      if (!client) {
+        return { ok: false, error: "runtime_client_unavailable" };
+      }
+      return client.flushWorkbenchLayout(next);
+    },
+    []
+  );
+
+  const updateSeedReferenceNote = useCallback(
+    async (
+      seedId: string,
+      referenceNote: string
+    ): Promise<MutationResult> => {
+      const client = clientRef.current;
+      if (!client) {
+        return { ok: false, error: "runtime_client_unavailable" };
+      }
+      return client.updateSeedReferenceNote(seedId, referenceNote);
+    },
+    []
+  );
+
+  const updateDesignLanguageDescription = useCallback(
+    async (next: string): Promise<MutationResult> => {
+      const client = clientRef.current;
+      if (!client) {
+        return { ok: false, error: "runtime_client_unavailable" };
+      }
+      return client.updateDesignLanguageDescription(next);
+    },
+    []
+  );
+
   return {
     seeds,
     surfaces,
     annotations,
+    layout,
+    designLanguageDescription,
     status,
     error,
     reload,
     createAnnotation,
     deleteAnnotation,
     deleteSeedReference,
+    putWorkbenchLayout,
+    flushWorkbenchLayout,
+    updateSeedReferenceNote,
+    updateDesignLanguageDescription,
     getFigmaConnection,
     connectFigma,
     captureSeedReference

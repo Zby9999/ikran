@@ -11,8 +11,8 @@
 // This file is imported via `next/dynamic({ ssr: false })` from
 // SeedEvidenceWorkbench because `<Tldraw>` touches the DOM during render.
 
-import { useMemo, useRef } from "react";
-import { Tldraw, type TLStateNodeConstructor } from "tldraw";
+import { useEffect, useMemo, useRef } from "react";
+import { Tldraw, type TLStateNodeConstructor, type TLUiOverrides } from "tldraw";
 import { SeedReferenceProjectionShapeUtil } from "./seed-reference-projection-shape";
 import { RegionAnnotationShapeUtil } from "./region-annotation-shape";
 import {
@@ -26,9 +26,12 @@ import { SeedSelectionForegroundOverlayUtil } from "./seed-selection-foreground-
 import { WORKBENCH_CANVAS_COMPONENTS } from "./workbench-canvas-grid";
 import { SeedProjectionSync } from "./projection/seed-projection-sync";
 import { RegionAnnotationProjectionSync } from "./projection/region-annotation-projection-sync";
+import { WorkbenchLayoutPersistence } from "./projection/workbench-layout-persistence";
+import { WorkbenchSeedActionsProvider } from "./workbench-seed-actions";
 import {
   artifactScreenshotUrl,
-  type InFlightSeedCapture
+  type InFlightSeedCapture,
+  type SeedProjectionSavedFrame
 } from "./projection/seed-projection";
 import { WORKBENCH_EMBED_DEFINITIONS } from "./workbench-embeds";
 import { FigmaEmbedPasteGuard } from "./figma-embed-paste-guard";
@@ -36,6 +39,10 @@ import { FocusSeedProjectionController } from "./focus-seed-projection-controlle
 import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 import type { FigmaEvidenceSurfaceRecord } from "@/lib/runtime/evidence-package";
 import type { RegionAnnotationRecord } from "@/lib/runtime/region-annotation";
+import type {
+  WorkbenchCameraLayout,
+  WorkbenchLayoutDocument
+} from "@/lib/runtime/workbench-layout-shared";
 import type { NormalizedRect } from "./region-annotation-geometry";
 
 export { artifactScreenshotUrl };
@@ -48,12 +55,29 @@ const SHAPE_UTILS = [
 
 const OVERLAY_UTILS = [SeedSelectionForegroundOverlayUtil];
 
+/** Unbind tldraw Frame's F shortcut — Workbench uses F for Annotate. */
+const WORKBENCH_UI_OVERRIDES: TLUiOverrides = {
+  tools(_editor, tools) {
+    if (tools.frame) {
+      tools.frame = { ...tools.frame, kbd: undefined };
+    }
+    return tools;
+  }
+};
+
 export function WorkbenchCanvas({
   records,
   surfaces = [],
   annotations = [],
   session,
   inFlightCaptures = [],
+  savedFrames = {},
+  savedCamera = null,
+  designLanguageDescription = "",
+  onPutWorkbenchLayout,
+  onFlushWorkbenchLayout,
+  onUpdateSeedReferenceNote,
+  onUpdateDesignLanguageDescription,
   focusSeedId = null,
   onFocusSeedApplied,
   annotateMode = false,
@@ -69,6 +93,25 @@ export function WorkbenchCanvas({
   session: string;
   /** In-flight paste captures — spinner frames until Runtime responds. */
   inFlightCaptures?: InFlightSeedCapture[];
+  /** UX layout frames from `.ikran/workbench-layout.json` (seed id → geometry). */
+  savedFrames?: Record<string, SeedProjectionSavedFrame>;
+  /** UX camera from workbench-layout — applied once on mount. */
+  savedCamera?: WorkbenchCameraLayout | null;
+  /** Project-level Design Language Description (Info panel; shared across Frames). */
+  designLanguageDescription?: string;
+  onPutWorkbenchLayout?: (
+    layout: WorkbenchLayoutDocument
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onFlushWorkbenchLayout?: (
+    layout: WorkbenchLayoutDocument
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onUpdateSeedReferenceNote?: (
+    seedId: string,
+    referenceNote: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onUpdateDesignLanguageDescription?: (
+    designLanguageDescription: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Duplicate paste: focus existing Frame for this Seed Reference id. */
   focusSeedId?: string | null;
   onFocusSeedApplied?: () => void;
@@ -105,7 +148,28 @@ export function WorkbenchCanvas({
     [RegionAnnotationTool]
   );
 
+  const seedActions = useMemo(
+    () => ({
+      updateSeedReferenceNote:
+        onUpdateSeedReferenceNote ??
+        (async () =>
+          ({
+            ok: false as const,
+            error: "update_seed_note_unavailable"
+          }) as const),
+      updateDesignLanguageDescription:
+        onUpdateDesignLanguageDescription ??
+        (async () =>
+          ({
+            ok: false as const,
+            error: "update_description_unavailable"
+          }) as const)
+    }),
+    [onUpdateDesignLanguageDescription, onUpdateSeedReferenceNote]
+  );
+
   return (
+    <WorkbenchSeedActionsProvider value={seedActions}>
     <Tldraw
       hideUi
       embeds={WORKBENCH_EMBED_DEFINITIONS}
@@ -113,6 +177,10 @@ export function WorkbenchCanvas({
       tools={tools}
       components={WORKBENCH_CANVAS_COMPONENTS}
       overlayUtils={OVERLAY_UTILS}
+      overrides={WORKBENCH_UI_OVERRIDES}
+      // Persisted region annotations are isLocked (not user-draggable). Still
+      // allow left-click selection so Delete can target designer markers.
+      options={{ selectLockedShapes: true }}
     >
       <FigmaEmbedPasteGuard />
       <SeedProjectionSync
@@ -120,7 +188,17 @@ export function WorkbenchCanvas({
         surfaces={surfaces}
         session={session}
         inFlightCaptures={inFlightCaptures}
+        savedFrames={savedFrames}
+        designLanguageDescription={designLanguageDescription}
       />
+      {onPutWorkbenchLayout && onFlushWorkbenchLayout ? (
+        <WorkbenchLayoutPersistence
+          session={session}
+          savedCamera={savedCamera}
+          onPutLayout={onPutWorkbenchLayout}
+          onFlushLayout={onFlushWorkbenchLayout}
+        />
+      ) : null}
       <FocusSeedProjectionController
         seedId={focusSeedId}
         projectionEpoch={records.length + surfaces.length}
@@ -138,5 +216,6 @@ export function WorkbenchCanvas({
       />
       <SeedReferenceDeleteController onDelete={onDeleteSeedReference} />
     </Tldraw>
+    </WorkbenchSeedActionsProvider>
   );
 }

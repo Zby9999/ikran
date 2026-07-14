@@ -7,6 +7,7 @@ import {
   defaultSeedProjectionLayout,
   findNonOverlappingSeedProjectionLayout,
   planSeedProjectionOps,
+  planSeedProjectionReflowMoves,
   seedProjectionBoundsOverlap,
   seedProjectionLayoutFootprint,
   seedProjectionMetaEqual,
@@ -18,6 +19,7 @@ import {
   SEED_PROJECTION_LAYOUT_RESERVE_H,
   SEED_PROJECTION_LAYOUT_RESERVE_W,
   type SeedProjectionExisting,
+  type SeedProjectionReflowShape,
   type SeedProjectionTarget
 } from "../../components/workbench/projection/seed-projection";
 import type { FigmaEvidenceSurfaceRecord } from "../../lib/runtime/evidence-package";
@@ -227,13 +229,6 @@ test.describe("seed projection equality + layout", () => {
         props: {
           w: 380,
           h: 520,
-          figmaSeedReference: "",
-          originalDesignIntent: "",
-          frameName: "",
-          screenshotDataUrl: "",
-          hasScreenshotArtifact: false,
-          awaitingEvidence: true,
-          awaitingUx: "spinner",
           naturalMediaW: 0,
           naturalMediaH: 0
         }
@@ -252,6 +247,7 @@ test.describe("seed projection equality + layout", () => {
       canvasRecordId: "seed-reference:seed-1",
       figmaSeedReference: "u",
       originalDesignIntent: "i",
+      designLanguageDescription: "",
       frameName: "F",
       screenshotDataUrl: "data:x",
       hasScreenshotArtifact: false,
@@ -274,13 +270,15 @@ test.describe("seed projection equality + layout", () => {
           h: 999,
           figmaSeedReference: "u",
           originalDesignIntent: "i",
+          designLanguageDescription: "",
           frameName: "F",
           screenshotDataUrl: "data:x",
           hasScreenshotArtifact: false,
           awaitingEvidence: false,
           awaitingUx: "spinner",
           naturalMediaW: 10,
-          naturalMediaH: 10
+          naturalMediaH: 10,
+          layoutLocked: false
         },
         target
       )
@@ -316,13 +314,15 @@ test.describe("planSeedProjectionOps", () => {
           h: 520,
           figmaSeedReference: SEED.figma_seed_reference,
           originalDesignIntent: SEED.original_design_intent,
+          designLanguageDescription: "",
           frameName: "",
           screenshotDataUrl: "",
           hasScreenshotArtifact: false,
           awaitingEvidence: true,
           awaitingUx: "spinner",
           naturalMediaW: 0,
-          naturalMediaH: 0
+          naturalMediaH: 0,
+          layoutLocked: false
         },
         meta: {
           canvasRecordId: "seed-reference:seed-1",
@@ -339,13 +339,15 @@ test.describe("planSeedProjectionOps", () => {
           h: 520,
           figmaSeedReference: "x",
           originalDesignIntent: "",
+          designLanguageDescription: "",
           frameName: "",
           screenshotDataUrl: "",
           hasScreenshotArtifact: false,
           awaitingEvidence: true,
           awaitingUx: "spinner",
           naturalMediaW: 0,
-          naturalMediaH: 0
+          naturalMediaH: 0,
+          layoutLocked: false
         },
         meta: {
           canvasRecordId: "seed-reference:stale",
@@ -428,13 +430,15 @@ test.describe("planSeedProjectionOps", () => {
           h: 1100,
           figmaSeedReference: SEED.figma_seed_reference,
           originalDesignIntent: SEED.original_design_intent,
+          designLanguageDescription: "",
           frameName: "",
           screenshotDataUrl: "",
           hasScreenshotArtifact: false,
           awaitingEvidence: true,
           awaitingUx: "spinner",
           naturalMediaW: 630,
-          naturalMediaH: 1066
+          naturalMediaH: 1066,
+          layoutLocked: false
         },
         meta: {
           canvasRecordId: "seed-reference:seed-1",
@@ -465,6 +469,38 @@ test.describe("planSeedProjectionOps", () => {
     }
   });
 
+  test("create prefers savedFrames geometry over packing", () => {
+    const targets = buildSeedProjectionTargets([SEED], [], "sess");
+    const ops = planSeedProjectionOps(
+      targets,
+      [],
+      (key) => `shape:${key}`,
+      {
+        savedFrames: {
+          "seed-1": {
+            x: 777,
+            y: 888,
+            w: 320,
+            h: 480,
+            layoutLocked: true
+          }
+        }
+      }
+    );
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({
+      type: "create",
+      id: "shape:seed-1",
+      x: 777,
+      y: 888,
+      props: {
+        w: 320,
+        h: 480,
+        layoutLocked: true
+      }
+    });
+  });
+
   test("screenshot change clears naturalMedia on update", () => {
     const targets = buildSeedProjectionTargets(
       [SEED],
@@ -486,13 +522,15 @@ test.describe("planSeedProjectionOps", () => {
           h: 520,
           figmaSeedReference: SEED.figma_seed_reference,
           originalDesignIntent: SEED.original_design_intent,
+          designLanguageDescription: "",
           frameName: "Frame A",
           screenshotDataUrl: "data:image/png;base64,OLD",
           hasScreenshotArtifact: false,
           awaitingEvidence: false,
           awaitingUx: "spinner",
           naturalMediaW: 100,
-          naturalMediaH: 200
+          naturalMediaH: 200,
+          layoutLocked: false
         },
         meta: {
           canvasRecordId: "seed-reference:seed-1",
@@ -512,6 +550,171 @@ test.describe("planSeedProjectionOps", () => {
         naturalMediaW: 0,
         naturalMediaH: 0
       });
+    }
+  });
+});
+
+test.describe("planSeedProjectionReflowMoves", () => {
+  function frame(partial: {
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    naturalW: number;
+    naturalH: number;
+    layoutLocked?: boolean;
+  }): SeedProjectionReflowShape {
+    return {
+      id: partial.id,
+      x: partial.x,
+      y: partial.y,
+      layoutLocked: partial.layoutLocked ?? false,
+      props: {
+        w: partial.w,
+        h: partial.h,
+        naturalMediaW: partial.naturalW,
+        naturalMediaH: partial.naturalH
+      }
+    };
+  }
+
+  test("refresh-style stack: large natural sizes at reserved spacing get unpacked", () => {
+    // Mimic batch create (720-stride) then screenshot onLoad to ~2000×2800.
+    const gap = SEED_PROJECTION_LAYOUT_GAP;
+    const reservedStride = SEED_PROJECTION_LAYOUT_RESERVE_W + gap;
+    const shapes = [
+      frame({
+        id: "shape:a",
+        x: SEED_PROJECTION_LAYOUT_ORIGIN_X,
+        y: SEED_PROJECTION_LAYOUT_ORIGIN_Y,
+        w: 2010,
+        h: 2834,
+        naturalW: 2000,
+        naturalH: 2800
+      }),
+      frame({
+        id: "shape:b",
+        x: SEED_PROJECTION_LAYOUT_ORIGIN_X + reservedStride,
+        y: SEED_PROJECTION_LAYOUT_ORIGIN_Y,
+        w: 2010,
+        h: 2834,
+        naturalW: 2000,
+        naturalH: 2800
+      }),
+      frame({
+        id: "shape:c",
+        x: SEED_PROJECTION_LAYOUT_ORIGIN_X + reservedStride * 2,
+        y: SEED_PROJECTION_LAYOUT_ORIGIN_Y,
+        w: 2010,
+        h: 2834,
+        naturalW: 2000,
+        naturalH: 2800
+      })
+    ];
+    expect(
+      seedProjectionBoundsOverlap(
+        { x: shapes[0].x, y: shapes[0].y, w: shapes[0].props.w, h: shapes[0].props.h },
+        { x: shapes[1].x, y: shapes[1].y, w: shapes[1].props.w, h: shapes[1].props.h },
+        gap
+      )
+    ).toBe(true);
+
+    const moves = planSeedProjectionReflowMoves(shapes);
+    expect(moves.length).toBeGreaterThan(0);
+
+    const byId = new Map(shapes.map((s) => [s.id, { ...s }]));
+    for (const m of moves) {
+      const s = byId.get(m.id);
+      expect(s).toBeTruthy();
+      if (s) {
+        s.x = m.x;
+        s.y = m.y;
+      }
+    }
+    const placed = [...byId.values()];
+    for (let i = 0; i < placed.length; i++) {
+      for (let j = i + 1; j < placed.length; j++) {
+        expect(
+          seedProjectionBoundsOverlap(
+            {
+              x: placed[i].x,
+              y: placed[i].y,
+              w: placed[i].props.w,
+              h: placed[i].props.h
+            },
+            {
+              x: placed[j].x,
+              y: placed[j].y,
+              w: placed[j].props.w,
+              h: placed[j].props.h
+            },
+            gap
+          )
+        ).toBe(false);
+      }
+    }
+  });
+
+  test("no moves when frames already clear each other", () => {
+    const shapes = [
+      frame({
+        id: "shape:a",
+        x: 120,
+        y: 140,
+        w: 640,
+        h: 1100,
+        naturalW: 630,
+        naturalH: 1066
+      }),
+      frame({
+        id: "shape:b",
+        x: 120 + 640 + SEED_PROJECTION_LAYOUT_GAP,
+        y: 140,
+        w: 640,
+        h: 1100,
+        naturalW: 630,
+        naturalH: 1066
+      })
+    ];
+    expect(planSeedProjectionReflowMoves(shapes)).toEqual([]);
+  });
+
+  test("layoutLocked frames stay put; unlocked pack around them", () => {
+    const shapes = [
+      frame({
+        id: "shape:locked",
+        x: 500,
+        y: 200,
+        w: 800,
+        h: 1200,
+        naturalW: 790,
+        naturalH: 1166,
+        layoutLocked: true
+      }),
+      frame({
+        id: "shape:free",
+        x: 520,
+        y: 220,
+        w: 800,
+        h: 1200,
+        naturalW: 790,
+        naturalH: 1166,
+        layoutLocked: false
+      })
+    ];
+    const moves = planSeedProjectionReflowMoves(shapes);
+    expect(moves.every((m) => m.id !== "shape:locked")).toBe(true);
+    const free = moves.find((m) => m.id === "shape:free");
+    expect(free).toBeTruthy();
+    if (free) {
+      expect(
+        seedProjectionBoundsOverlap(
+          { x: 500, y: 200, w: 800, h: 1200 },
+          { x: free.x, y: free.y, w: 800, h: 1200 },
+          SEED_PROJECTION_LAYOUT_GAP
+        )
+      ).toBe(false);
     }
   });
 });

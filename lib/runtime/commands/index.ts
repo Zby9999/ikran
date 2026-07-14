@@ -43,6 +43,11 @@ export {
 } from "./region-annotation";
 
 export {
+  getWorkbenchLayoutCommand,
+  putWorkbenchLayoutCommand
+} from "./workbench-layout";
+
+export {
   parseCommandInput,
   registerSeedReferenceInputSchema,
   registerSeedReferenceInputShape,

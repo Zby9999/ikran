@@ -162,7 +162,8 @@ test.describe("annotationMetaEqual + planAnnotationProjectionOps", () => {
           canvasRecordId: "region-annotation:ann-1",
           runtimeRecordId: "ann-1",
           surfaceRecordId: "surf-1"
-        }
+        },
+        isLocked: true
       },
       {
         id: "shape:draft",
@@ -201,6 +202,178 @@ test.describe("annotationMetaEqual + planAnnotationProjectionOps", () => {
       true
     );
     expect(ops.some((o) => o.id === "shape:draft")).toBe(false);
+  });
+
+  test("preserves draft:committing until a create handoff (no empty flash)", () => {
+    const mediaBox = { x: 0, y: 0, w: 100, h: 100 };
+    const existingAnn = annotation({
+      id: "ann-1",
+      rect_x: 0,
+      rect_y: 0,
+      rect_w: 0.5,
+      rect_h: 0.5
+    });
+    const placement = computeAnnotationPagePlacement(existingAnn, mediaBox);
+    const committingDraft: AnnotationProjectionExisting = {
+      id: "shape:draft-committing",
+      x: 10,
+      y: 10,
+      props: { w: 20, h: 20, author: "designer", label: "", surfaceMediaW: 100 },
+      meta: {
+        canvasRecordId: "region-annotation:draft:committing",
+        runtimeRecordId: "draft:committing",
+        surfaceRecordId: "surf-1"
+      }
+    };
+    const lockedExisting: AnnotationProjectionExisting = {
+      id: "shape:region-annotation:ann-1",
+      x: placement.pageRect.x,
+      y: placement.pageRect.y,
+      props: {
+        w: placement.nextW,
+        h: placement.nextH,
+        author: "designer",
+        label: "",
+        surfaceMediaW: placement.surfaceMediaW
+      },
+      meta: {
+        canvasRecordId: "region-annotation:ann-1",
+        runtimeRecordId: "ann-1",
+        surfaceRecordId: "surf-1"
+      },
+      isLocked: true
+    };
+
+    // Seed move / update-only sync must not drop the stand-in early.
+    const updateOnly = planAnnotationProjectionOps(
+      [{ record: existingAnn, placement }],
+      [lockedExisting, committingDraft],
+      (id) => `shape:region-annotation:${id}`
+    );
+    expect(
+      updateOnly.some((o) => o.id === "shape:draft-committing")
+    ).toBe(false);
+
+    // After Runtime create lands, delete committing draft in the same plan.
+    const fresh = annotation({
+      id: "ann-new",
+      rect_x: 0.1,
+      rect_y: 0.1,
+      rect_w: 0.2,
+      rect_h: 0.2
+    });
+    const freshPlacement = computeAnnotationPagePlacement(fresh, mediaBox);
+    const withCreate = planAnnotationProjectionOps(
+      [
+        { record: existingAnn, placement },
+        { record: fresh, placement: freshPlacement }
+      ],
+      [lockedExisting, committingDraft],
+      (id) => `shape:region-annotation:${id}`
+    );
+    expect(withCreate.some((o) => o.type === "create")).toBe(true);
+    expect(
+      withCreate.some(
+        (o) => o.type === "delete" && o.id === "shape:draft-committing"
+      )
+    ).toBe(true);
+  });
+
+  test("creates and re-locks persisted markers so select-tool drag is a no-op", () => {
+    const mediaBox = { x: 0, y: 0, w: 100, h: 100 };
+    const record = annotation({
+      id: "ann-lock",
+      rect_x: 0.1,
+      rect_y: 0.2,
+      rect_w: 0.3,
+      rect_h: 0.4
+    });
+    const placement = computeAnnotationPagePlacement(record, mediaBox);
+
+    const createOps = planAnnotationProjectionOps(
+      [{ record, placement }],
+      [],
+      (id) => `shape:region-annotation:${id}`
+    );
+    expect(createOps).toEqual([
+      {
+        type: "create",
+        id: "shape:region-annotation:ann-lock",
+        x: placement.pageRect.x,
+        y: placement.pageRect.y,
+        props: {
+          w: placement.nextW,
+          h: placement.nextH,
+          author: "designer",
+          label: "",
+          surfaceMediaW: placement.surfaceMediaW
+        },
+        meta: placement.meta,
+        isLocked: true
+      }
+    ]);
+
+    // Geometry already matches Runtime, but unlocked → must re-lock.
+    const relockOps = planAnnotationProjectionOps(
+      [{ record, placement }],
+      [
+        {
+          id: "shape:region-annotation:ann-lock",
+          x: placement.pageRect.x,
+          y: placement.pageRect.y,
+          props: {
+            w: placement.nextW,
+            h: placement.nextH,
+            author: "designer",
+            label: "",
+            surfaceMediaW: placement.surfaceMediaW
+          },
+          meta: placement.meta,
+          isLocked: false
+        }
+      ],
+      (id) => `shape:region-annotation:${id}`
+    );
+    expect(relockOps).toEqual([
+      {
+        type: "update",
+        id: "shape:region-annotation:ann-lock",
+        x: placement.pageRect.x,
+        y: placement.pageRect.y,
+        props: {
+          w: placement.nextW,
+          h: placement.nextH,
+          author: "designer",
+          label: "",
+          surfaceMediaW: placement.surfaceMediaW
+        },
+        isLocked: true
+      }
+    ]);
+
+    // Already locked + geometry matches → no op (no useless writes).
+    expect(
+      planAnnotationProjectionOps(
+        [{ record, placement }],
+        [
+          {
+            id: "shape:region-annotation:ann-lock",
+            x: placement.pageRect.x,
+            y: placement.pageRect.y,
+            props: {
+              w: placement.nextW,
+              h: placement.nextH,
+              author: "designer",
+              label: "",
+              surfaceMediaW: placement.surfaceMediaW
+            },
+            meta: placement.meta,
+            isLocked: true
+          }
+        ],
+        (id) => `shape:region-annotation:${id}`
+      )
+    ).toEqual([]);
   });
 
   test("deletes an old-surface marker after the stable parent shape switches surfaces", () => {
@@ -396,6 +569,7 @@ test.describe("shouldResyncAnnotationsForStoreChanges", () => {
   test("true when persisted annotation geometry drifts (user drag snap-back)", () => {
     const from = annotationShape("shape:ann-1", { x: 10, y: 20, w: 30, h: 40 });
     // Measured bug: drag left a permanent 120×80 offset until refresh.
+    // Markers are now isLocked; this remains defense in depth if unlocked.
     const to = annotationShape("shape:ann-1", {
       x: 10 + 120,
       y: 20 + 80,
@@ -446,7 +620,8 @@ test.describe("shouldResyncAnnotationsForStoreChanges", () => {
           label: "",
           surfaceMediaW: placement.surfaceMediaW
         },
-        meta: placement.meta
+        meta: placement.meta,
+        isLocked: true
       }
     ];
     const ops = planAnnotationProjectionOps(
@@ -466,7 +641,8 @@ test.describe("shouldResyncAnnotationsForStoreChanges", () => {
           author: "designer",
           label: "",
           surfaceMediaW: placement.surfaceMediaW
-        }
+        },
+        isLocked: true
       }
     ]);
   });
@@ -489,6 +665,22 @@ test.describe("shouldResyncAnnotationsForStoreChanges", () => {
           "shape:d": [
             annotationShape("shape:d", { runtimeRecordId: "draft", x: 0 }),
             annotationShape("shape:d", { runtimeRecordId: "draft", x: 9 })
+          ]
+        },
+        removed: {}
+      })
+    ).toBe(false);
+    // Committing-draft handoff meta must not resync either.
+    expect(
+      shouldResyncAnnotationsForStoreChanges({
+        added: {},
+        updated: {
+          "shape:d": [
+            annotationShape("shape:d", { runtimeRecordId: "draft", x: 0 }),
+            annotationShape("shape:d", {
+              runtimeRecordId: "draft:committing",
+              x: 0
+            })
           ]
         },
         removed: {}

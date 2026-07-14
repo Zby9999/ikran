@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 import type { InFlightSeedCapture } from "./projection/seed-projection";
+import {
+  findExistingSeedIdForPasteUrl,
+  hasInFlightSeedForPasteUrl
+} from "./find-existing-seed-for-paste";
 import { extractFigmaDesignUrl, isMalformedFigmaPaste } from "./workbench-embeds";
 
 type CaptureResult =
@@ -25,12 +30,13 @@ const PASTE_ERROR_BY_REASON: Record<string, string> = {
 
 /**
  * Window-level Figma paste capture: gate rejection, optimistic in-flight
- * frames, duplicate focus request, and fail-closed alert copy (no invented
- * toast chrome).
+ * frames, duplicate focus (no loading frame), and fail-closed alert copy.
  */
 export function useFigmaPasteCapture(opts: {
   canvasLocked: boolean;
   gateOpen: boolean;
+  /** Current Runtime seeds — used to short-circuit duplicate paste locally. */
+  seeds: readonly SeedReferenceRecord[];
   captureSeedReference: (url: string) => Promise<CaptureResult>;
 }): {
   pasteError: string | null;
@@ -39,13 +45,17 @@ export function useFigmaPasteCapture(opts: {
   focusSeedId: string | null;
   clearFocusSeedId: () => void;
 } {
-  const { canvasLocked, gateOpen, captureSeedReference } = opts;
+  const { canvasLocked, gateOpen, seeds, captureSeedReference } = opts;
   const [pasteError, setPasteError] = useState<string | null>(null);
   const [inFlightCaptures, setInFlightCaptures] = useState<
     InFlightSeedCapture[]
   >([]);
   const [focusSeedId, setFocusSeedId] = useState<string | null>(null);
   const pasteErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seedsRef = useRef(seeds);
+  const inFlightRef = useRef(inFlightCaptures);
+  seedsRef.current = seeds;
+  inFlightRef.current = inFlightCaptures;
 
   useEffect(() => {
     return () => {
@@ -88,14 +98,25 @@ export function useFigmaPasteCapture(opts: {
         return;
       }
 
+      // Same canonical file+node is already projected from Runtime records.
+      // Focus it directly: no capture request and no optimistic loading frame.
+      const existingId = findExistingSeedIdForPasteUrl(seedsRef.current, url);
+      if (existingId) {
+        setFocusSeedId(existingId);
+        return;
+      }
+      if (hasInFlightSeedForPasteUrl(inFlightRef.current, url)) return;
+
       const inFlightId =
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? crypto.randomUUID()
           : `inflight-${Date.now()}`;
-      setInFlightCaptures((prev) => [
-        ...prev,
+      const nextInFlight = [
+        ...inFlightRef.current,
         { id: inFlightId, figmaSeedReference: url }
-      ]);
+      ];
+      inFlightRef.current = nextInFlight;
+      setInFlightCaptures(nextInFlight);
 
       try {
         const result = await captureSeedReference(url);
@@ -105,12 +126,13 @@ export function useFigmaPasteCapture(opts: {
               "Could not capture that Figma link. Check the URL and try again."
           );
         } else if (result.reused && result.seedId) {
+          // Runtime-side reuse still handles races when local records were stale.
           setFocusSeedId(result.seedId);
         }
       } finally {
-        setInFlightCaptures((prev) =>
-          prev.filter((p) => p.id !== inFlightId)
-        );
+        const remaining = inFlightRef.current.filter((p) => p.id !== inFlightId);
+        inFlightRef.current = remaining;
+        setInFlightCaptures(remaining);
       }
     },
     [canvasLocked, gateOpen, captureSeedReference, showPasteError]

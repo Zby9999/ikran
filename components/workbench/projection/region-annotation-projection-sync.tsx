@@ -3,10 +3,13 @@
 // One-way Region Annotation projection sync (Task 12).
 // Runtime records → marker shapes. Re-projects when parent seed surfaces
 // are created / moved / resized / deleted, or when a persisted marker's
-// local geometry drifts (user drag) so Runtime rect is re-applied — not on
-// annotation drafts or unrelated document changes. Sync writes go through
-// mergeRemoteChanges; the listener is user-scoped, so corrections do not
-// re-enter.
+// local geometry drifts (defense if unlocked) so Runtime rect is re-applied
+// — not on annotation drafts or unrelated document changes. Committing
+// drafts (post pointer-up stand-ins) are dropped in the same batch as
+// authoritative creates so create never flashes empty. Sync writes go
+// through mergeRemoteChanges + ignoreShapeLock (markers are isLocked so
+// select-tool drag is a no-op); the listener is user-scoped, so corrections
+// do not re-enter.
 
 import { useEffect, useRef } from "react";
 import { createShapeId, useEditor, type TLShapeId } from "tldraw";
@@ -70,7 +73,8 @@ function syncRegionAnnotationShapes(
         x: shape.x,
         y: shape.y,
         props: shape.props,
-        meta: shape.meta as RegionAnnotationMeta
+        meta: shape.meta as RegionAnnotationMeta,
+        isLocked: shape.isLocked
       };
     });
 
@@ -81,31 +85,39 @@ function syncRegionAnnotationShapes(
   );
 
   // Apply as remote so beforeDelete allows Agent / stale marker cleanup
-  // (user path still blocks Agent deletes).
+  // (user path still blocks Agent deletes). ignoreShapeLock: markers are
+  // locked against user drag but still need projection updates.
   editor.store.mergeRemoteChanges(() => {
-    for (const op of ops) {
-      if (op.type === "create") {
-        editor.createShape<RegionAnnotationShape>({
-          id: op.id as TLShapeId,
-          type: REGION_ANNOTATION_TYPE,
-          x: op.x,
-          y: op.y,
-          props: op.props,
-          meta: op.meta
-        });
-      } else if (op.type === "update") {
-        editor.updateShape<RegionAnnotationShape>({
-          id: op.id as TLShapeId,
-          type: REGION_ANNOTATION_TYPE,
-          x: op.x,
-          y: op.y,
-          props: op.props,
-          ...(op.meta ? { meta: op.meta } : {})
-        });
-      } else {
-        editor.deleteShape(op.id as TLShapeId);
-      }
-    }
+    editor.run(
+      () => {
+        for (const op of ops) {
+          if (op.type === "create") {
+            editor.createShape<RegionAnnotationShape>({
+              id: op.id as TLShapeId,
+              type: REGION_ANNOTATION_TYPE,
+              x: op.x,
+              y: op.y,
+              isLocked: op.isLocked,
+              props: op.props,
+              meta: op.meta
+            });
+          } else if (op.type === "update") {
+            editor.updateShape<RegionAnnotationShape>({
+              id: op.id as TLShapeId,
+              type: REGION_ANNOTATION_TYPE,
+              x: op.x,
+              y: op.y,
+              isLocked: op.isLocked,
+              props: op.props,
+              ...(op.meta ? { meta: op.meta } : {})
+            });
+          } else {
+            editor.deleteShape(op.id as TLShapeId);
+          }
+        }
+      },
+      { ignoreShapeLock: true }
+    );
   });
 }
 

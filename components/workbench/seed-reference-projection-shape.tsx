@@ -7,8 +7,9 @@
 // records (`seed_references` and/or `figma_evidence_surfaces`). It carries
 // Runtime ids in `meta` (and as data-* attributes) so tests / UI can tie the
 // canvas shape back to the semantic record, but geometry (x/y/w/h) is local-only
-// and never written back. On refresh the shape is rebuilt from records at a
-// default position.
+// and never written back. On refresh the shape is rebuilt from records; create
+// packing uses a reserved footprint, then screenshot onLoad reflows unlocked
+// frames so large natural sizes do not stay stacked from the placeholder stride.
 //
 // Meta id convention (Issue 05):
 //   - Seed-only: kind = "seed_reference_projection", runtimeRecordId = seed.id
@@ -27,15 +28,19 @@
 //
 // Default size: 380×520 — readable tall placeholder on the workbench canvas
 // (not the full Figma page aspect 695:1851, which would be ~380×1013).
-// Resize is aspect-ratio locked. With a screenshot, corner resize cannot grow
-// past natural pixels + frame chrome (object-fit: scale-down); shrink is free.
-// Without a screenshot, resize is unconstrained. Blue selection bounds stay
+// Resize is aspect-ratio locked. With a screenshot, import display fits the
+// longer edge to ≤1080 (full-res bitmap unchanged); corner resize can grow up
+// to natural pixels + chrome (≤4096). Shrink is free. Without a screenshot,
+// resize is unconstrained. Blue selection bounds stay
 // hidden; corner resize hit targets stay active (visual corner squares
 // suppressed via SeedSelectionForegroundOverlayUtil — do NOT use
 // hideResizeHandles, which also removes hit geometry). Unselected strokes are
 // #B980B9; selected deepens both to #731b73 (`.seed-ref-frame--selected`).
+// Unselected chrome background is #EEE1EE; selected keeps the purple wash.
 
 import { useState, type SyntheticEvent } from "react";
+import { NoteIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
   BaseBoxShapeUtil,
   HTMLContainer,
@@ -49,17 +54,27 @@ import {
 } from "tldraw";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { SeedReferenceDescriptionTip } from "./seed-reference-description-tip";
+import { SeedReferenceDescriptionPanel } from "./seed-reference-description-panel";
+import { SeedReferenceNotesPanel } from "./seed-reference-notes-panel";
 import { SeedRefFrameFigmaHint } from "./seed-ref-frame-figma-hint";
 import { SeedRefFrameFigmaIcon } from "./seed-ref-frame-figma-icon";
 import {
   SEED_REF_FRAME_CHROME_H,
   SEED_REF_FRAME_CHROME_W,
   clampSeedReferenceResizeToNaturalSize,
+  defaultDisplaySizeFromNaturalPixels,
+  maxDisplaySizeFromNaturalPixels,
   sizeFromNaturalPixels
 } from "./seed-reference-resize-clamp";
+import { applySeedProjectionReflow } from "./projection/seed-projection-reflow";
 
-export { SEED_REF_FRAME_CHROME_H, SEED_REF_FRAME_CHROME_W, sizeFromNaturalPixels };
+export {
+  SEED_REF_FRAME_CHROME_H,
+  SEED_REF_FRAME_CHROME_W,
+  defaultDisplaySizeFromNaturalPixels,
+  maxDisplaySizeFromNaturalPixels,
+  sizeFromNaturalPixels
+};
 
 declare module "@tldraw/tlschema" {
   interface TLGlobalShapePropsMap {
@@ -67,7 +82,10 @@ declare module "@tldraw/tlschema" {
       w: number;
       h: number;
       figmaSeedReference: string;
+      /** Per-seed Reference Note (historical column name). */
       originalDesignIntent: string;
+      /** Project-level Design Language Description (Info tip). */
+      designLanguageDescription: string;
       /** Source frame / node name when known; empty → title falls back to "Figma seed". */
       frameName: string;
       /** Screenshot <img src>: data URL or /api/artifacts?... URL. */
@@ -93,6 +111,11 @@ declare module "@tldraw/tlschema" {
        */
       naturalMediaW: number;
       naturalMediaH: number;
+      /**
+       * When true, the designer has moved/resized this frame — post-load
+       * collision reflow must leave its page position alone.
+       */
+      layoutLocked: boolean;
     };
   }
 }
@@ -123,7 +146,6 @@ export const SEED_REFERENCE_PROJECTION_DEFAULT_W = 380;
 export const SEED_REFERENCE_PROJECTION_DEFAULT_H = 520;
 
 const FALLBACK_TITLE = "Figma seed";
-const FALLBACK_DESCRIPTION = "No description yet";
 
 const seedRefFrameHeaderButtonClass = cn(
   "size-5 min-h-0 min-w-0 shrink-0 rounded-[4px] border-0 bg-transparent p-0 shadow-none",
@@ -141,6 +163,7 @@ function SeedReferenceProjectionFrame({
     h,
     figmaSeedReference,
     originalDesignIntent,
+    designLanguageDescription,
     frameName,
     screenshotDataUrl,
     hasScreenshotArtifact,
@@ -149,16 +172,23 @@ function SeedReferenceProjectionFrame({
   } = shape.props;
   const { canvasRecordId, runtimeRecordId, kind, seedRecordId, surfaceRecordId } =
     shape.meta;
-  const [tipOpen, setTipOpen] = useState(false);
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
   const editor = useEditor();
   const isSelected = useValue(
     "seed-ref-selected",
     () => editor.getSelectedShapeIds().includes(shape.id),
     [editor, shape.id]
   );
-
   const title = frameName.trim() || FALLBACK_TITLE;
-  const description = originalDesignIntent.trim() || FALLBACK_DESCRIPTION;
+  const description = designLanguageDescription;
+  const referenceNote = originalDesignIntent;
+  const noteSeedId =
+    typeof seedRecordId === "string" && seedRecordId.length > 0
+      ? seedRecordId
+      : kind === "seed_reference_projection"
+        ? runtimeRecordId
+        : null;
   const screenshotSrc = screenshotDataUrl.trim();
   const hasScreenshot = screenshotSrc.length > 0;
   const showAwaiting = awaitingEvidence && !hasScreenshot;
@@ -177,20 +207,52 @@ function SeedReferenceProjectionFrame({
     window.open(figmaUrl, "_blank", "noopener,noreferrer");
   };
 
+  const toggleNotes = (event: SyntheticEvent) => {
+    stopShapePointer(event);
+    if (!noteSeedId) return;
+    setDescriptionOpen(false);
+    setNotesOpen((open) => !open);
+  };
+
+  const toggleDescription = (event: SyntheticEvent) => {
+    stopShapePointer(event);
+    setNotesOpen(false);
+    setDescriptionOpen((open) => !open);
+  };
+
   const handleScreenshotLoad = (event: SyntheticEvent<HTMLImageElement>) => {
     const img = event.currentTarget;
     const nw = img.naturalWidth;
     const nh = img.naturalHeight;
     // Ignore tiny fixtures / broken loads — keep the default placeholder size.
     if (!nw || !nh || Math.max(nw, nh) < 32) return;
-    const next = sizeFromNaturalPixels(nw, nh);
+    const naturalUnchanged =
+      shape.props.naturalMediaW === nw && shape.props.naturalMediaH === nh;
+
+    // Designer-positioned / restored frames keep display size; only record
+    // natural pixels for resize clamp.
+    if (shape.props.layoutLocked) {
+      if (naturalUnchanged) return;
+      editor.updateShape<SeedReferenceProjectionShape>({
+        id: shape.id,
+        type: SEED_REFERENCE_PROJECTION_TYPE,
+        props: {
+          naturalMediaW: nw,
+          naturalMediaH: nh
+        }
+      });
+      applySeedProjectionReflow(editor);
+      return;
+    }
+
+    const next = defaultDisplaySizeFromNaturalPixels(nw, nh);
     const sizeUnchanged =
       Math.abs(shape.props.w - next.w) < 1 &&
       Math.abs(shape.props.h - next.h) < 1;
-    const naturalUnchanged =
-      shape.props.naturalMediaW === nw && shape.props.naturalMediaH === nh;
     if (sizeUnchanged && naturalUnchanged) return;
-    // Local geometry + natural size for resize clamp — never written back to Runtime.
+    // Local geometry + natural size for resize clamp. Display defaults to
+    // ≤1080 long edge; full-res bitmap stays in <img>. May later persist to
+    // `.ikran/workbench-layout.json` (UX only).
     editor.updateShape<SeedReferenceProjectionShape>({
       id: shape.id,
       type: SEED_REFERENCE_PROJECTION_TYPE,
@@ -201,6 +263,9 @@ function SeedReferenceProjectionFrame({
         naturalMediaH: nh
       }
     });
+    // Batch create on refresh packs with a placeholder reserve; after natural
+    // size is known, unlock overlap by reflowing auto-laid-out siblings.
+    applySeedProjectionReflow(editor);
   };
 
   return (
@@ -246,17 +311,41 @@ function SeedReferenceProjectionFrame({
           <Button
             type="button"
             variant="ghost"
-            className={cn(seedRefFrameHeaderButtonClass, "seed-ref-frame__info")}
-            data-testid="seed-reference-projection-info"
-            aria-label="Description"
-            aria-expanded={tipOpen}
+            className={cn(
+              seedRefFrameHeaderButtonClass,
+              "seed-ref-frame__notes",
+              notesOpen && "seed-ref-frame__notes--open"
+            )}
+            data-testid="seed-reference-projection-notes"
+            aria-label="Notes"
+            aria-expanded={notesOpen}
+            disabled={!noteSeedId}
             onPointerDown={stopShapePointer}
             onMouseDown={stopShapePointer}
-            onClick={stopShapePointer}
-            onMouseEnter={() => setTipOpen(true)}
-            onMouseLeave={() => setTipOpen(false)}
-            onFocus={() => setTipOpen(true)}
-            onBlur={() => setTipOpen(false)}
+            onClick={toggleNotes}
+          >
+            <HugeiconsIcon
+              className="seed-ref-frame__notes-icon"
+              icon={NoteIcon}
+              size={14}
+              color="currentColor"
+              strokeWidth={1.5}
+            />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className={cn(
+              seedRefFrameHeaderButtonClass,
+              "seed-ref-frame__info",
+              descriptionOpen && "seed-ref-frame__info--open"
+            )}
+            data-testid="seed-reference-projection-info"
+            aria-label="Design language description"
+            aria-expanded={descriptionOpen}
+            onPointerDown={stopShapePointer}
+            onMouseDown={stopShapePointer}
+            onClick={toggleDescription}
           >
             <svg
               className="seed-ref-frame__info-icon"
@@ -282,7 +371,19 @@ function SeedReferenceProjectionFrame({
               <circle cx="7" cy="4.5" r="0.7" fill="#731b73" />
             </svg>
           </Button>
-          {tipOpen ? <SeedReferenceDescriptionTip description={description} /> : null}
+          {descriptionOpen ? (
+            <SeedReferenceDescriptionPanel
+              description={description}
+              onClose={() => setDescriptionOpen(false)}
+            />
+          ) : null}
+          {notesOpen && noteSeedId ? (
+            <SeedReferenceNotesPanel
+              seedId={noteSeedId}
+              note={referenceNote}
+              onClose={() => setNotesOpen(false)}
+            />
+          ) : null}
         </div>
       </div>
       <div
@@ -353,13 +454,15 @@ export class SeedReferenceProjectionShapeUtil extends BaseBoxShapeUtil<SeedRefer
     h: T.number,
     figmaSeedReference: T.string,
     originalDesignIntent: T.string,
+    designLanguageDescription: T.string,
     frameName: T.string,
     screenshotDataUrl: T.string,
     hasScreenshotArtifact: T.boolean,
     awaitingEvidence: T.boolean,
     awaitingUx: T.literalEnum("spinner", "guide"),
     naturalMediaW: T.number,
-    naturalMediaH: T.number
+    naturalMediaH: T.number,
+    layoutLocked: T.boolean
   };
 
   getDefaultProps(): SeedReferenceProjectionShape["props"] {
@@ -368,13 +471,15 @@ export class SeedReferenceProjectionShapeUtil extends BaseBoxShapeUtil<SeedRefer
       h: SEED_REFERENCE_PROJECTION_DEFAULT_H,
       figmaSeedReference: "",
       originalDesignIntent: "",
+      designLanguageDescription: "",
       frameName: "",
       screenshotDataUrl: "",
       hasScreenshotArtifact: false,
       awaitingEvidence: false,
       awaitingUx: "spinner",
       naturalMediaW: 0,
-      naturalMediaH: 0
+      naturalMediaH: 0,
+      layoutLocked: false
     };
   }
 
@@ -401,8 +506,9 @@ export class SeedReferenceProjectionShapeUtil extends BaseBoxShapeUtil<SeedRefer
   }
 
   /**
-   * Corner resize: allow shrink below screenshot natural size; clamp grow at
-   * natural pixels + frame chrome. No screenshot / unknown natural → free resize.
+   * Corner resize: allow shrink below default display size; clamp grow at
+   * natural pixels + frame chrome (≤4096 long edge). No screenshot / unknown
+   * natural → free resize.
    */
   override onResize(
     shape: SeedReferenceProjectionShape,
@@ -416,7 +522,7 @@ export class SeedReferenceProjectionShapeUtil extends BaseBoxShapeUtil<SeedRefer
       return resized;
     }
 
-    const max = sizeFromNaturalPixels(naturalMediaW, naturalMediaH);
+    const max = maxDisplaySizeFromNaturalPixels(naturalMediaW, naturalMediaH);
     const clamped = clampSeedReferenceResizeToNaturalSize({
       x: resized.x,
       y: resized.y,
@@ -437,6 +543,32 @@ export class SeedReferenceProjectionShapeUtil extends BaseBoxShapeUtil<SeedRefer
         w: clamped.w,
         h: clamped.h
       }
+    };
+  }
+
+  /** Designer drag — freeze auto reflow for this frame. */
+  override onTranslateEnd(
+    _initial: SeedReferenceProjectionShape,
+    current: SeedReferenceProjectionShape
+  ) {
+    if (current.props.layoutLocked) return;
+    return {
+      id: current.id,
+      type: SEED_REFERENCE_PROJECTION_TYPE,
+      props: { layoutLocked: true }
+    };
+  }
+
+  /** Designer corner resize — freeze auto reflow for this frame. */
+  override onResizeEnd(
+    _initial: SeedReferenceProjectionShape,
+    current: SeedReferenceProjectionShape
+  ) {
+    if (current.props.layoutLocked) return;
+    return {
+      id: current.id,
+      type: SEED_REFERENCE_PROJECTION_TYPE,
+      props: { layoutLocked: true }
     };
   }
 

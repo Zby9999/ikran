@@ -7,26 +7,85 @@ import type { TLResizeHandle } from "tldraw";
 export const SEED_REF_FRAME_CHROME_W = 10; // pad 4+4 + media border 1+1
 export const SEED_REF_FRAME_CHROME_H = 34; // pad top 4 + header 20 + gap 4 + media border 1+1 + pad bottom 4
 
-/** Cap the longer media edge in page pixels (downscale only; never upscale).
- *  Align with Figma MCP get_screenshot maxDimension guidance (4096). */
-const MAX_SCREENSHOT_MEDIA_EDGE = 4096;
+/**
+ * Asset / grow ceiling for screenshot media (page pixels). Aligns with Figma
+ * MCP get_screenshot maxDimension guidance — never upscale past this.
+ */
+export const MAX_SCREENSHOT_MEDIA_EDGE = 4096;
 
-export function sizeFromNaturalPixels(
+/**
+ * Default on-canvas display: fit the longer media edge to this size so a
+ * 4096 capture does not dominate the Workbench. The <img> still loads full
+ * resolution; only the frame's page size is smaller. Designers can resize
+ * up to {@link MAX_SCREENSHOT_MEDIA_EDGE} / natural size.
+ */
+export const DEFAULT_DISPLAY_MEDIA_EDGE = 1080;
+
+function fitMediaToMaxEdge(
   naturalWidth: number,
-  naturalHeight: number
-): { w: number; h: number } {
+  naturalHeight: number,
+  maxEdge: number
+): { mediaW: number; mediaH: number } {
   let mediaW = naturalWidth;
   let mediaH = naturalHeight;
   const longEdge = Math.max(mediaW, mediaH);
-  if (longEdge > MAX_SCREENSHOT_MEDIA_EDGE) {
-    const scale = MAX_SCREENSHOT_MEDIA_EDGE / longEdge;
+  if (longEdge > maxEdge) {
+    const scale = maxEdge / longEdge;
     mediaW = Math.round(mediaW * scale);
     mediaH = Math.round(mediaH * scale);
   }
+  return { mediaW, mediaH };
+}
+
+function frameSizeFromMedia(
+  mediaW: number,
+  mediaH: number
+): { w: number; h: number } {
   return {
     w: mediaW + SEED_REF_FRAME_CHROME_W,
     h: mediaH + SEED_REF_FRAME_CHROME_H
   };
+}
+
+/** Initial / preferred on-canvas frame size (long edge ≤ 1080). */
+export function defaultDisplaySizeFromNaturalPixels(
+  naturalWidth: number,
+  naturalHeight: number
+): { w: number; h: number } {
+  const { mediaW, mediaH } = fitMediaToMaxEdge(
+    naturalWidth,
+    naturalHeight,
+    DEFAULT_DISPLAY_MEDIA_EDGE
+  );
+  return frameSizeFromMedia(mediaW, mediaH);
+}
+
+/**
+ * Maximum frame size when the designer grows a corner handle (long edge ≤
+ * natural, and never above the 4096 asset cap).
+ */
+export function maxDisplaySizeFromNaturalPixels(
+  naturalWidth: number,
+  naturalHeight: number
+): { w: number; h: number } {
+  const { mediaW, mediaH } = fitMediaToMaxEdge(
+    naturalWidth,
+    naturalHeight,
+    MAX_SCREENSHOT_MEDIA_EDGE
+  );
+  return frameSizeFromMedia(mediaW, mediaH);
+}
+
+/**
+ * @deprecated Prefer {@link defaultDisplaySizeFromNaturalPixels} for import
+ * sizing and {@link maxDisplaySizeFromNaturalPixels} for resize clamps.
+ * Kept as the default-display helper for existing call sites.
+ */
+export function sizeFromNaturalPixels(
+  naturalWidth: number,
+  naturalHeight: number
+): { w: number; h: number } {
+  return defaultDisplaySizeFromNaturalPixels(naturalWidth, naturalHeight);
 }
 
 export function clampSeedReferenceResizeToNaturalSize({
@@ -48,7 +107,7 @@ export function clampSeedReferenceResizeToNaturalSize({
   maxW: number;
   maxH: number;
 }): { x: number; y: number; w: number; h: number } {
-  if (maxW <= 0 || maxH <= 0 || w <= maxW && h <= maxH) {
+  if (maxW <= 0 || maxH <= 0 || (w <= maxW && h <= maxH)) {
     return { x, y, w, h };
   }
 

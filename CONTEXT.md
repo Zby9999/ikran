@@ -186,13 +186,16 @@ _Avoid_: node, shape (those are canvas projections, not records)
 
 **Geometry**:
 Canvas positions, sizes, viewport, and layout. Owned by the canvas (tldraw),
-explicitly **not** source of truth and **not** research data. Lost/reconstructed
-freely. Does not enter research export. By contrast, semantic annotation replay
-uses the Runtime-owned raw semantic region and its evidence anchor, so a
-successful Agent annotation can be reconstructed without depending on
-ephemeral canvas layout or display padding.
-_Avoid_: layout state (when meant as persistent truth), treating display
-padding or canvas layout as the annotation fact
+explicitly **not** source of truth and **not** research data. Runtime may persist
+project-local Workbench geometry as disposable UX state so Frames and camera
+resume where the designer left them; it remains reconstructable, stays outside
+canonical events and research export, and may be discarded without losing a
+research fact. By contrast, semantic annotation replay uses the Runtime-owned
+raw semantic region and its evidence anchor, so a successful Agent annotation
+can be reconstructed without depending on saved canvas layout or display
+padding.
+_Avoid_: layout state (when meant as research truth), treating display padding
+or canvas layout as the annotation fact
 
 **Successful research case**:
 A project that completes the successful recursion **eligibility** threshold:
@@ -237,7 +240,8 @@ _Avoid_: log, register, commit
 
 - **Source of truth**: Canvas records (semantic), owned by Runtime, persisted to
   `.ikran` SQLite (records + canonical events in the same transactional boundary).
-- **Not source of truth**: Geometry + canvas layout, owned by tldraw, ephemeral.
+- **Not source of truth**: Geometry + canvas layout, owned by tldraw; optionally
+  persisted as disposable project-local Workbench UX state.
 - **Derived**: JSONL and research export packages rebuilt from canonical stores.
 - Each tldraw shape carries the `canvas record` id it projects. Semantic
   mutations flow through MCP tools (Runtime validates per Issue 13); geometric

@@ -34,7 +34,7 @@ export type FigmaVerificationPanelProps = {
 };
 
 /**
- * Figma Connection Gate panel (Figma 309:400).
+ * Figma Connection Gate panel (Figma 327:465 / composition 305:328).
  * States: empty → ready (+ check) → verified (check + Enter Canvas).
  */
 export function FigmaVerificationPanel({
@@ -48,7 +48,10 @@ export function FigmaVerificationPanel({
   const inputId = useId();
   const showCheck = phase === "ready" || phase === "checking";
   const showVerified = phase === "verified";
+  const showError = phase === "error" && Boolean(error);
   const showEnter = phase === "verified";
+  // Asymmetric right radius is only for the trailing + button; error/verified stay 8px.
+  const tokenEntered = showCheck || showVerified || showError;
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -60,16 +63,20 @@ export function FigmaVerificationPanel({
     <SquircleChrome
       className="figma-verification-panel"
       surfaceClassName="figma-verification-panel__body"
+      cornerRadius={16}
       surfaceProps={{
         "data-testid": "figma-verification-panel",
         "data-phase": phase
       }}
     >
-      <div className="figma-verification-panel__intro">
+      <div className="figma-verification-panel__brand">
         <div className="figma-verification-panel__logo" aria-hidden="true">
           <FigmaLogoMark />
         </div>
         <p className="figma-verification-panel__title">Connect Figma</p>
+      </div>
+
+      <div className="figma-verification-panel__copy-group">
         <p className="figma-verification-panel__copy">
           Ikran needs a read-only Personal Access Token to capture Figma
           evidence.
@@ -87,26 +94,41 @@ export function FigmaVerificationPanel({
           rel="noreferrer"
           data-testid="figma-token-help-link"
         >
-          <span>Get a Figma token</span>
-          <span className="figma-verification-panel__link-icon" aria-hidden="true">
-            <HugeiconsIcon
-              icon={ArrowUpRight03Icon}
-              size={10}
-              color="currentColor"
-              strokeWidth={1.5}
-            />
+          <span className="figma-verification-panel__link-inner">
+            <span>Get a Figma token</span>
+            <span className="figma-verification-panel__link-icon" aria-hidden="true">
+              <HugeiconsIcon
+                icon={ArrowUpRight03Icon}
+                size={10}
+                color="currentColor"
+                strokeWidth={1.5}
+              />
+            </span>
           </span>
         </a>
       </div>
 
       <form className="figma-verification-panel__form" onSubmit={handleSubmit}>
-        <label className="figma-verification-panel__field" htmlFor={inputId}>
+        <div className="figma-verification-panel__field">
+          <label className="sr-only" htmlFor={inputId}>
+            Figma Personal Access Token
+          </label>
           <Input
             id={inputId}
             className={cn(
               "figma-verification-panel__input",
-              "h-6 rounded-none border-0 bg-transparent px-0 py-0 text-[13px] shadow-none",
-              "focus-visible:border-0 focus-visible:ring-0 disabled:cursor-default disabled:bg-transparent disabled:opacity-100"
+              "h-8 border bg-white py-1 text-[13px] tracking-[-0.39px] shadow-none md:text-[13px]",
+              "border-[rgba(0,0,0,0.1)] placeholder:text-[#999999]",
+              "focus-visible:border-[rgba(0,0,0,0.1)] focus-visible:ring-1 focus-visible:ring-[#731b73]/25",
+              "disabled:cursor-default disabled:bg-white disabled:opacity-100",
+              "aria-invalid:border-destructive aria-invalid:ring-1 aria-invalid:ring-destructive/20",
+              tokenEntered
+                ? cn(
+                    "pl-[10px]",
+                    showCheck && "figma-verification-panel__input--entered",
+                    showError ? "pr-[88px]" : "pr-8"
+                  )
+                : "px-[10px]"
             )}
             type="password"
             autoComplete="off"
@@ -123,7 +145,7 @@ export function FigmaVerificationPanel({
               icon={Add01Icon}
               label="Check Figma token"
               className="figma-verification-panel__check"
-              disabled={phase === "checking"}
+              loading={phase === "checking"}
               onClick={onCheck}
               data-testid="figma-token-check"
             />
@@ -142,30 +164,38 @@ export function FigmaVerificationPanel({
               />
             </span>
           ) : null}
-        </label>
-
-        {phase === "error" && error ? (
-          <p
-            className="figma-verification-panel__error"
-            role="alert"
-            data-testid="figma-token-error"
-          >
-            {error}
-          </p>
-        ) : null}
-
-        {showEnter ? (
-          <Button
-            type="button"
-            variant="ghost"
-            className="figma-verification-panel__enter"
-            onClick={onEnterCanvas}
-            data-testid="figma-enter-canvas"
-          >
-            Enter Canvas
-          </Button>
-        ) : null}
+          {showError ? (
+            <span
+              className="figma-verification-panel__error-inline"
+              role="alert"
+              data-testid="figma-token-error"
+            >
+              {error}
+            </span>
+          ) : null}
+        </div>
       </form>
+
+      <div
+        className={cn(
+          "figma-verification-panel__enter-slot",
+          showEnter && "figma-verification-panel__enter-slot--open"
+        )}
+      >
+        <div className="figma-verification-panel__enter-slot-inner">
+          {showEnter ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="figma-verification-panel__enter"
+              onClick={onEnterCanvas}
+              data-testid="figma-enter-canvas"
+            >
+              Enter Canvas
+            </Button>
+          ) : null}
+        </div>
+      </div>
     </SquircleChrome>
   );
 }
@@ -210,9 +240,7 @@ export function FigmaVerificationPanelController({
     if (!result.ok) {
       // Never echo the token in the error string.
       setError(
-        result.error === "invalid_token"
-          ? "That token could not be verified. Check it and try again."
-          : "Could not connect to Figma. Try again."
+        result.error === "invalid_token" ? "Invalid token" : "Couldn't connect"
       );
       return;
     }

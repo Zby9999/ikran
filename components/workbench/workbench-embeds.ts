@@ -1,5 +1,5 @@
-// Workbench embed allowlist — Figma URLs are Runtime-owned Evidence Surfaces,
-// never tldraw iframe embeds (Issue 05A paste coexistence bug).
+// Workbench embed allowlist. Runtime-owned Prototype Evidence Surfaces may use
+// tldraw embeds; Figma URLs are Runtime-owned Seed capture instead.
 
 import {
   DEFAULT_EMBED_DEFINITIONS,
@@ -12,9 +12,9 @@ import {
 
 export { extractFigmaDesignUrl, isFigmaDesignUrl };
 
-/** Default embeds minus Figma so paste never creates a Figma iframe. */
+/** Runtime projections may embed supported previews; Figma never becomes an iframe. */
 export const WORKBENCH_EMBED_DEFINITIONS: TLEmbedDefinition[] =
-  DEFAULT_EMBED_DEFINITIONS.filter((def) => def.type !== "figma");
+  DEFAULT_EMBED_DEFINITIONS.filter((definition) => definition.type !== "figma");
 
 /** True when clipboard mentions figma.com but is not a design/file selection URL. */
 export function isMalformedFigmaPaste(text: string): boolean {

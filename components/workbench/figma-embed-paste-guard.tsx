@@ -1,18 +1,16 @@
 "use client";
 
-// Inside <Tldraw>: block Figma URL → embed/bookmark, purge any Figma embeds.
+// Inside <Tldraw>: user-pasted URLs must not create arbitrary canvas shapes.
+// Runtime-owned Prototype Evidence Surfaces remain valid embed shapes.
 
 import { useEffect } from "react";
-import {
-  createBookmarkFromUrl,
-  useEditor,
-  type TLEmbedShape
-} from "tldraw";
+import { useEditor } from "tldraw";
 import { isFigmaDesignUrl, isFigmaEmbedUrl } from "./workbench-embeds";
 
 /**
- * Prevents tldraw from turning pasted Figma links into iframe embeds (or
- * bookmarks). Capture still happens via SeedEvidenceWorkbench paste handler.
+ * Prevents tldraw from turning pasted links into iframe embeds or bookmarks.
+ * Figma design/file URLs are swallowed here; SeedEvidenceWorkbench paste owns
+ * Runtime capture. Every other URL is ignored so random sites cannot embed.
  */
 export function FigmaEmbedPasteGuard() {
   const editor = useEditor();
@@ -20,20 +18,18 @@ export function FigmaEmbedPasteGuard() {
   useEffect(() => {
     if (!editor) return;
 
+    // Replace default URL handler (embed-on-paste / bookmark unfurl).
     editor.registerExternalContentHandler("url", async (content) => {
       if (isFigmaDesignUrl(content.url)) {
         // Swallow — Workbench paste owns Runtime capture for Figma URLs.
         return;
       }
-      const position =
-        content.point ??
-        (editor.inputs.getShiftKey()
-          ? editor.inputs.getCurrentPagePoint()
-          : editor.getViewportPageBounds().center);
-      await createBookmarkFromUrl(editor, {
-        url: content.url,
-        center: position
-      });
+      // Non-Figma URLs must not become bookmarks or embeds.
+    });
+
+    // Block iframe HTML / arbitrary embed external content.
+    editor.registerExternalContentHandler("embed", () => {
+      return;
     });
   }, [editor]);
 
@@ -45,7 +41,8 @@ export function FigmaEmbedPasteGuard() {
         .getCurrentPageShapes()
         .filter((shape) => {
           if (shape.type === "embed") {
-            return isFigmaEmbedUrl((shape as TLEmbedShape).props.url);
+            const url = (shape as { props?: { url?: string } }).props?.url;
+            return isFigmaEmbedUrl(url);
           }
           if (shape.type === "bookmark") {
             const url = (shape as { props?: { url?: string } }).props?.url;

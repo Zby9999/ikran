@@ -268,6 +268,14 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     await annotate.click();
     await expect(annotate).toHaveAttribute("aria-pressed", "false");
 
+    // Tool hotkeys: F → Annotate, V → select.
+    await page.keyboard.press("f");
+    await expect(annotate).toHaveAttribute("aria-pressed", "true");
+    await expect(annotate).toHaveAttribute("data-active", "true");
+    await page.keyboard.press("v");
+    await expect(annotate).toHaveAttribute("aria-pressed", "false");
+    await expect(annotate).not.toHaveAttribute("data-active", "true");
+
     // Agent-written annotation invalidates the Workbench via SSE (no reload).
     const annRes = await rawPost(
       "/api/region-annotation",

@@ -54,6 +54,9 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
+/** Authoritative Workbench GET batch size (seeds/surfaces/annotations/layout/readiness). */
+const LOAD_BATCH = 5;
+
 function jsonResponse(
   records: unknown[],
   options?: { ok?: boolean; status?: number; error?: string }
@@ -68,6 +71,61 @@ function jsonResponse(
       headers: { "Content-Type": "application/json" }
     }
   );
+}
+
+function layoutResponse(
+  options?: {
+    ok?: boolean;
+    status?: number;
+    error?: string;
+    layout?: unknown;
+  }
+): Response {
+  const ok = options?.ok ?? true;
+  return new Response(
+    JSON.stringify(
+      ok
+        ? {
+            ok: true,
+            layout:
+              options?.layout ??
+              { version: 1, camera: { x: 0, y: 0, z: 1 }, frames: {} }
+          }
+        : { ok: false, error: options?.error ?? "load_failed" }
+    ),
+    {
+      status: options?.status ?? (ok ? 200 : 500),
+      headers: { "Content-Type": "application/json" }
+    }
+  );
+}
+
+function readinessResponse(
+  options?: { ok?: boolean; status?: number; error?: string; description?: string }
+): Response {
+  const ok = options?.ok ?? true;
+  return new Response(
+    JSON.stringify(
+      ok
+        ? {
+            ok: true,
+            preconditions: [],
+            designLanguageDescription: options?.description ?? ""
+          }
+        : { ok: false, error: options?.error ?? "load_failed" }
+    ),
+    {
+      status: options?.status ?? (ok ? 200 : 500),
+      headers: { "Content-Type": "application/json" }
+    }
+  );
+}
+
+function batchResponse(url: string, seedRecords: unknown[]): Response {
+  if (url.includes("workbench-layout")) return layoutResponse();
+  if (url.includes("project/readiness")) return readinessResponse();
+  if (url.includes("seed-reference")) return jsonResponse(seedRecords);
+  return jsonResponse([]);
 }
 
 afterEach(async () => {
@@ -87,16 +145,26 @@ describe("Workbench Runtime consistency", () => {
       startWorkbenchRuntimeSubscription
     } = await import("../../components/runtime/use-workbench-runtime");
 
-    const firstResponses = [deferred<Response>(), deferred<Response>(), deferred<Response>()];
+    const firstResponses = Array.from({ length: LOAD_BATCH }, () =>
+      deferred<Response>()
+    );
     let fetchIndex = 0;
     let latest = false;
-    const fetcher = vi.fn(async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
       if (!latest) {
         return firstResponses[fetchIndex++].promise;
       }
-      return jsonResponse(
-        fetchIndex++ % 3 === 0 ? [{ id: "seed-latest" }] : []
-      );
+      const i = fetchIndex++;
+      // Within each batch of 4, first URL resolved as seed when index%4===0 —
+      // but Promise.all order follows call order: seed, surface, annotation, layout.
+      if (url.includes("seed-reference")) {
+        return jsonResponse([{ id: "seed-latest" }]);
+      }
+      if (url.includes("workbench-layout")) return layoutResponse();
+      if (url.includes("project/readiness")) return readinessResponse();
+      return jsonResponse([]);
+      void i;
     });
 
     const snapshots: Array<{ seeds: Array<{ id: string }> }> = [];
@@ -124,6 +192,8 @@ describe("Workbench Runtime consistency", () => {
     firstResponses[0].resolve(jsonResponse([{ id: "seed-old" }]));
     firstResponses[1].resolve(jsonResponse([]));
     firstResponses[2].resolve(jsonResponse([]));
+    firstResponses[3].resolve(layoutResponse());
+    firstResponses[4].resolve(readinessResponse());
     await Promise.resolve();
     await Promise.resolve();
 
@@ -155,7 +225,9 @@ describe("Workbench Runtime consistency", () => {
   });
 
   test("out-of-order loads only apply the newest response", async () => {
-    const responses = Array.from({ length: 6 }, () => deferred<Response>());
+    const responses = Array.from({ length: LOAD_BATCH * 2 }, () =>
+      deferred<Response>()
+    );
     let index = 0;
     const snapshots: Array<{ seeds: Array<{ id: string }> }> = [];
     const { createWorkbenchDataClient } = await import(
@@ -172,14 +244,19 @@ describe("Workbench Runtime consistency", () => {
     const older = client.loadAll();
     const newer = client.loadAll();
 
-    responses[3].resolve(jsonResponse([{ id: "new" }]));
-    responses[4].resolve(jsonResponse([]));
-    responses[5].resolve(jsonResponse([]));
+    // Newer batch (indices 5–9): seed, surface, annotation, layout, readiness
+    responses[5].resolve(jsonResponse([{ id: "new" }]));
+    responses[6].resolve(jsonResponse([]));
+    responses[7].resolve(jsonResponse([]));
+    responses[8].resolve(layoutResponse());
+    responses[9].resolve(readinessResponse());
     await newer;
 
     responses[0].resolve(jsonResponse([{ id: "old" }]));
     responses[1].resolve(jsonResponse([]));
     responses[2].resolve(jsonResponse([]));
+    responses[3].resolve(layoutResponse());
+    responses[4].resolve(readinessResponse());
     await older;
 
     expect(snapshots).toHaveLength(1);
@@ -238,7 +315,7 @@ describe("Workbench Runtime consistency", () => {
     let batch = 0;
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      const current = Math.floor(batch / 3);
+      const current = Math.floor(batch / LOAD_BATCH);
       batch += 1;
       if (current < 2) {
         return jsonResponse([], {
@@ -247,10 +324,7 @@ describe("Workbench Runtime consistency", () => {
           error: "transient_500"
         });
       }
-      if (url.includes("seed-reference")) {
-        return jsonResponse([{ id: "seed-healed" }]);
-      }
-      return jsonResponse([]);
+      return batchResponse(url, [{ id: "seed-healed" }]);
     });
     const errors: Array<string | null> = [];
     const snapshots: Array<{ seeds: Array<{ id: string }> }> = [];
@@ -271,11 +345,196 @@ describe("Workbench Runtime consistency", () => {
     const result = await client.loadAll();
 
     expect(result).toEqual({ ok: true });
-    expect(fetcher).toHaveBeenCalledTimes(9); // 3 attempts × 3 GETs
+    expect(fetcher).toHaveBeenCalledTimes(3 * LOAD_BATCH);
     expect(sleeps).toEqual([...LOAD_BACKOFF_MS]);
     expect(errors).toEqual(["transient_500", "transient_500", null]);
     expect(snapshots.at(-1)?.seeds).toEqual([{ id: "seed-healed" }]);
     client.dispose();
+  });
+
+  test("layout failure falls back without blocking semantic records", async () => {
+    const snapshots: Array<{
+      seeds: Array<{ id: string }>;
+      layout: { camera: { x: number } };
+    }> = [];
+    const errors: Array<string | null> = [];
+    let layoutLoads = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("workbench-layout")) {
+        layoutLoads += 1;
+        if (layoutLoads === 1) {
+          return layoutResponse({
+            layout: {
+              version: 1,
+              camera: { x: 42, y: 0, z: 1 },
+              frames: {}
+            }
+          });
+        }
+        return layoutResponse({ ok: false, status: 500, error: "read_failed" });
+      }
+      return batchResponse(url, [{ id: `seed-${layoutLoads || 1}` }]);
+    });
+    const { createWorkbenchDataClient } = await import(
+      "../../components/runtime/runtime-client"
+    );
+    const client = createWorkbenchDataClient("session", {
+      fetcher,
+      maxLoadAttempts: 1,
+      onSnapshot: (snapshot) => {
+        snapshots.push(snapshot as (typeof snapshots)[number]);
+      },
+      onError: (error) => errors.push(error)
+    });
+
+    expect(await client.loadAll()).toEqual({ ok: true });
+    expect(await client.loadAll()).toEqual({ ok: true });
+    expect(snapshots.at(-1)?.seeds).toEqual([{ id: "seed-1" }]);
+    expect(snapshots.at(-1)?.layout.camera.x).toBe(42);
+    expect(errors).toEqual([null, null]);
+    client.dispose();
+  });
+
+  test("layout PUTs are serialized in call order", async () => {
+    const responses = [deferred<Response>(), deferred<Response>()];
+    const bodies: Array<{
+      layout: { camera: { x: number } };
+      writeRevision: number;
+    }> = [];
+    const fetcher = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return responses[bodies.length - 1]!.promise;
+      }
+    );
+    const { createWorkbenchDataClient } = await import(
+      "../../components/runtime/runtime-client"
+    );
+    const client = createWorkbenchDataClient("session", {
+      fetcher,
+      onSnapshot: () => {},
+      onError: () => {}
+    });
+    const layout = (x: number) => ({
+      version: 1 as const,
+      camera: { x, y: 0, z: 1 },
+      frames: {}
+    });
+
+    const first = client.putWorkbenchLayout(layout(1));
+    const second = client.putWorkbenchLayout(layout(2));
+    await Promise.resolve();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    responses[0].resolve(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      })
+    );
+    await first;
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    responses[1].resolve(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      })
+    );
+    await second;
+
+    expect(bodies.map((body) => body.layout)).toEqual([
+      layout(1),
+      layout(2)
+    ]);
+    expect(bodies[1]!.writeRevision).toBeGreaterThan(
+      bodies[0]!.writeRevision
+    );
+    client.dispose();
+  });
+
+  test("layout flush bypasses a blocked queue with a newer revision", async () => {
+    const responses = [deferred<Response>(), deferred<Response>()];
+    const bodies: Array<{ layout: { camera: { x: number } }; writeRevision: number }> = [];
+    const fetcher = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return responses[bodies.length - 1]!.promise;
+      }
+    );
+    const { createWorkbenchDataClient } = await import(
+      "../../components/runtime/runtime-client"
+    );
+    const client = createWorkbenchDataClient("session", {
+      fetcher,
+      onSnapshot: () => {},
+      onError: () => {}
+    });
+    const layout = (x: number) => ({
+      version: 1 as const,
+      camera: { x, y: 0, z: 1 },
+      frames: {}
+    });
+
+    const queued = client.putWorkbenchLayout(layout(1));
+    await Promise.resolve();
+    const flushed = client.flushWorkbenchLayout(layout(2));
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    expect(bodies.map((body) => body.layout.camera.x)).toEqual([1, 2]);
+    expect(bodies[1]!.writeRevision).toBeGreaterThan(bodies[0]!.writeRevision);
+
+    for (const response of responses) {
+      response.resolve(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      );
+    }
+    await Promise.all([queued, flushed]);
+    client.dispose();
+  });
+
+  test("an older client can produce a newer revision on a later write", async () => {
+    let now = 100;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const requests: Array<{ client: string; writeRevision: number }> = [];
+    const makeFetcher = (client: string) =>
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as { writeRevision: number };
+        requests.push({ client, writeRevision: body.writeRevision });
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      });
+    const { createWorkbenchDataClient } = await import(
+      "../../components/runtime/runtime-client"
+    );
+    const options = (client: string) => ({
+      fetcher: makeFetcher(client),
+      onSnapshot: () => {},
+      onError: () => {}
+    });
+    const older = createWorkbenchDataClient("session", options("older"));
+    now = 200;
+    const newer = createWorkbenchDataClient("session", options("newer"));
+    const layout = {
+      version: 1 as const,
+      camera: { x: 0, y: 0, z: 1 },
+      frames: {}
+    };
+
+    await newer.putWorkbenchLayout(layout);
+    now = 300;
+    await older.putWorkbenchLayout(layout);
+
+    expect(requests[1]!.writeRevision).toBeGreaterThan(
+      requests[0]!.writeRevision
+    );
+    older.dispose();
+    newer.dispose();
+    nowSpy.mockRestore();
   });
 
   test("loadAll surfaces error on each attempt and gives up after max attempts", async () => {
@@ -298,7 +557,7 @@ describe("Workbench Runtime consistency", () => {
     const result = await client.loadAll();
 
     expect(result).toEqual({ ok: false, error: "still_down" });
-    expect(fetcher).toHaveBeenCalledTimes(LOAD_MAX_ATTEMPTS * 3);
+    expect(fetcher).toHaveBeenCalledTimes(LOAD_MAX_ATTEMPTS * LOAD_BATCH);
     expect(sleeps).toEqual([...LOAD_BACKOFF_MS]);
     expect(errors).toEqual(["still_down", "still_down", "still_down"]);
     client.dispose();

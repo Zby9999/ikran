@@ -8,7 +8,12 @@
 const CONFLICT_REASONS = new Set(["project_mismatch"]);
 const NOT_FOUND_REASONS = new Set(["not_found"]);
 const GONE_REASONS = new Set(["endpoint_retired"]);
-const INTERNAL_REASONS = new Set(["db_error", "read_failed", "figma_api_error"]);
+const INTERNAL_REASONS = new Set([
+  "db_error",
+  "read_failed",
+  "write_failed",
+  "figma_api_error"
+]);
 const UNAUTHORIZED_REASONS = new Set([
   "figma_connection_required",
   "invalid_token",

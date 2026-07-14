@@ -41,6 +41,8 @@ export type AnnotationProjectionExisting = {
   y: number;
   props: RegionAnnotationShape["props"];
   meta: RegionAnnotationMeta;
+  /** tldraw lock — persisted markers must stay locked against user drag. */
+  isLocked?: boolean;
 };
 
 export type AnnotationProjectionCreateOp = {
@@ -50,6 +52,8 @@ export type AnnotationProjectionCreateOp = {
   y: number;
   props: RegionAnnotationShape["props"];
   meta: RegionAnnotationMeta;
+  /** Always true for Runtime-backed markers — not user-draggable. */
+  isLocked: true;
 };
 
 export type AnnotationProjectionUpdateOp = {
@@ -59,6 +63,8 @@ export type AnnotationProjectionUpdateOp = {
   y: number;
   props: RegionAnnotationShape["props"];
   meta?: RegionAnnotationMeta;
+  /** Always true — re-locks any marker that drifted unlocked. */
+  isLocked: true;
 };
 
 export type AnnotationProjectionDeleteOp = {
@@ -176,7 +182,9 @@ export function planAnnotationProjectionOps(
         current.x !== pageRect.x ||
         current.y !== pageRect.y;
       const metaChanged = !annotationMetaEqual(current.meta, meta);
-      if (propsChanged || metaChanged) {
+      // Persisted markers must stay locked so select-tool drag is a no-op.
+      const lockNeeded = current.isLocked !== true;
+      if (propsChanged || metaChanged || lockNeeded) {
         ops.push({
           type: "update",
           id: shapeId,
@@ -189,6 +197,7 @@ export function planAnnotationProjectionOps(
             label: "",
             surfaceMediaW
           },
+          isLocked: true,
           ...(metaChanged ? { meta } : {})
         });
       }
@@ -207,15 +216,27 @@ export function planAnnotationProjectionOps(
         label: "",
         surfaceMediaW
       },
-      meta
+      meta,
+      isLocked: true
     });
   }
 
   for (const shape of existing) {
-    // Keep in-progress drafts from the annotate tool.
-    if (shape.meta.runtimeRecordId === "draft") continue;
+    // Keep in-progress drafts from the annotate tool. Committing drafts stay
+    // until a create lands in this same plan (handoff below) so pointer-up
+    // does not flash an empty canvas while Runtime create + reload finish.
+    if (isAnnotationDraftRuntimeId(shape.meta.runtimeRecordId)) continue;
     if (!wantIds.has(shape.id)) {
       ops.push({ type: "delete", id: shape.id });
+    }
+  }
+
+  // Same-batch handoff: drop committing drafts when Runtime markers are created.
+  if (ops.some((op) => op.type === "create")) {
+    for (const shape of existing) {
+      if (isAnnotationCommittingDraftRuntimeId(shape.meta.runtimeRecordId)) {
+        ops.push({ type: "delete", id: shape.id });
+      }
     }
   }
 
@@ -261,11 +282,27 @@ function isRegionAnnotationShapeRecord(record: unknown): boolean {
   );
 }
 
+/** Persisted Runtime-backed marker — not an annotate-tool draft / handoff. */
+function isAnnotationDraftRuntimeId(runtimeId: unknown): boolean {
+  return (
+    runtimeId == null ||
+    runtimeId === "" ||
+    (typeof runtimeId === "string" &&
+      (runtimeId === "draft" || runtimeId.startsWith("draft")))
+  );
+}
+
+function isAnnotationCommittingDraftRuntimeId(runtimeId: unknown): boolean {
+  return (
+    typeof runtimeId === "string" && runtimeId.startsWith("draft:committing")
+  );
+}
+
 /** Persisted Runtime-backed marker — not an in-progress annotate-tool draft. */
 function isPersistedAnnotationShapeRecord(record: unknown): boolean {
   if (!isRegionAnnotationShapeRecord(record)) return false;
   const runtimeId = asShapeRecord(record)?.meta?.runtimeRecordId;
-  return typeof runtimeId === "string" && runtimeId !== "draft" && runtimeId.length > 0;
+  return typeof runtimeId === "string" && !isAnnotationDraftRuntimeId(runtimeId);
 }
 
 function shapeGeometryChanged(from: unknown, to: unknown): boolean {
@@ -300,12 +337,13 @@ function seedProjectionIdentityMetaChanged(
  * True when projection must re-apply Runtime rects:
  * - seed-reference-projection parent created / deleted / moved / resized /
  *   semantic surface identity change
- * - persisted region-annotation marker geometry drifted (user drag) — snap
- *   back to Runtime authoritative rect on the next pass
+ * - persisted region-annotation marker geometry drifted (defense in depth if
+ *   a marker is unlocked) — snap back to Runtime authoritative rect
  *
  * Annotation drafts, annotation create/delete, unrelated props, and other
  * shapes do not qualify. Sync writes use mergeRemoteChanges (source remote),
  * so the user-scoped store listener does not re-enter on its own corrections.
+ * Persisted markers are created/updated with isLocked so user drag is a no-op.
  */
 export function shouldResyncAnnotationsForStoreChanges(
   changes: StoreRecordsDiffLike

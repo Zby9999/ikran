@@ -12,6 +12,7 @@
   --color-foreground: var(--text);
   --color-muted-foreground: var(--muted);
   --color-border: var(--line);
+  --color-input: #e0e0e0;
   --color-ring: var(--blue);
   --color-primary: #3a3a3a;
   --color-primary-foreground: #dedede;

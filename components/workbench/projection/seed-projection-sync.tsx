@@ -1,7 +1,8 @@
 "use client";
 
 // One-way seed / Evidence Surface projection sync (Task 12).
-// Runtime records → tldraw shapes. Geometry is never written back.
+// Runtime records → tldraw shapes. Create geometry may come from
+// `.ikran/workbench-layout.json` (UX); updates never move designer positions.
 
 import { useEffect } from "react";
 import { createShapeId, useEditor, type TLShapeId } from "tldraw";
@@ -15,7 +16,8 @@ import {
   buildSeedProjectionTargets,
   planSeedProjectionOps,
   type InFlightSeedCapture,
-  type SeedProjectionExisting
+  type SeedProjectionExisting,
+  type SeedProjectionSavedFrame
 } from "./seed-projection";
 import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 import type { FigmaEvidenceSurfaceRecord } from "@/lib/runtime/evidence-package";
@@ -24,13 +26,19 @@ export function SeedProjectionSync({
   records,
   surfaces,
   session,
-  inFlightCaptures = []
+  inFlightCaptures = [],
+  savedFrames = {},
+  designLanguageDescription = ""
 }: {
   records: SeedReferenceRecord[];
   surfaces: FigmaEvidenceSurfaceRecord[];
   session: string;
   /** In-flight paste captures — show spinner frame until Runtime responds. */
   inFlightCaptures?: InFlightSeedCapture[];
+  /** Persisted UX geometry keyed by seed id (from workbench-layout.json). */
+  savedFrames?: Record<string, SeedProjectionSavedFrame>;
+  /** Project-level Design Language Description for Info tip. */
+  designLanguageDescription?: string;
 }) {
   const editor = useEditor();
 
@@ -38,8 +46,16 @@ export function SeedProjectionSync({
     if (!editor) return;
 
     const targets = [
-      ...buildSeedProjectionTargets(records, surfaces, session),
-      ...buildInFlightSeedProjectionTargets(inFlightCaptures)
+      ...buildSeedProjectionTargets(
+        records,
+        surfaces,
+        session,
+        designLanguageDescription
+      ),
+      ...buildInFlightSeedProjectionTargets(
+        inFlightCaptures,
+        designLanguageDescription
+      )
     ];
     const existing: SeedProjectionExisting[] = editor
       .getCurrentPageShapes()
@@ -55,8 +71,11 @@ export function SeedProjectionSync({
         };
       });
 
-    const ops = planSeedProjectionOps(targets, existing, (key) =>
-      String(createShapeId(key))
+    const ops = planSeedProjectionOps(
+      targets,
+      existing,
+      (key) => String(createShapeId(key)),
+      { savedFrames }
     );
 
     editor.store.mergeRemoteChanges(() => {
@@ -82,7 +101,7 @@ export function SeedProjectionSync({
         }
       }
     });
-  }, [editor, records, surfaces, session, inFlightCaptures]);
+  }, [editor, records, surfaces, session, inFlightCaptures, savedFrames, designLanguageDescription]);
 
   return null;
 }

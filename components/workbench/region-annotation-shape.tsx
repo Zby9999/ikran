@@ -6,6 +6,9 @@
 // box; normalized rect lives on the Runtime record and is mapped via
 // `region-annotation-geometry.ts` by the wiring agent.
 //
+// Persisted markers are projected with `isLocked: true` so select-tool drag
+// is a no-op (Workbench enables `selectLockedShapes` so Delete still works).
+//
 // Visual: on-surface colored box only (no side cards, connectors, or pink).
 // Stroke + radius are **page-space** and scale with the parent Seed Reference
 // **media box width**, calibrated to Figma annotations on the Design System
@@ -208,6 +211,10 @@ export class RegionAnnotationShapeUtil extends BaseBoxShapeUtil<RegionAnnotation
   }
 
   override canEdit(_shape: RegionAnnotationShape) {
+    return false;
+  }
+
+  override canResize(_shape: RegionAnnotationShape) {
     return false;
   }
 

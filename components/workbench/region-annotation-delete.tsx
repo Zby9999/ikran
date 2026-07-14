@@ -111,7 +111,10 @@ export function RegionAnnotationDeleteController({
           // On failure: keep marker; mutation sets Workbench error state.
         }
         if (removed.length > 0) {
-          editor.deleteShapes(removed);
+          // Markers are isLocked against drag; still allow Runtime-backed delete.
+          editor.run(() => {
+            editor.deleteShapes(removed);
+          }, { ignoreShapeLock: true });
         }
       })();
     };
