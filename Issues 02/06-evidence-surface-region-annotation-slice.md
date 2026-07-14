@@ -42,7 +42,7 @@
 - [ ] 设计师在真实 Figma Evidence Surface 上分别创建至少一个 node target 和一个 free-region target，node highlight/breadcrumb 与真实 Figma source 可人工核对。
 - [ ] 真实 Agent 基于 Runtime-captured 真实 Figma evidence 创建至少一个 anchored Annotation，并核验至少一个 Runtime candidate 或诚实记录空 candidates。
 - [ ] 在受控真实 Figma source 中移除/替换已注释 node 后 Refresh；Workbench 显示 stale warning，且旧 evidence version 与 Node Annotation 仍可回放。
-- [ ] Workbench 能显示该 annotation，并能回连 semantic record id。
+- [x] Workbench 能显示该 annotation，并能回连 semantic record id。（Browser Use 实机核验当前 14 个 Annotation projection 均带有 Runtime `record id`；SQLite 中对应 designer node/region records 可回连。）
 
 ## Likely difficulties for Agent
 
@@ -60,10 +60,10 @@
 
 已完成 12/14 项 automated AC：`create_annotation` 已收口为三分支显式 target union；Runtime 持久化 captured target、排序 region candidates、独立记录 Agent primary confirmation，并在 Refresh 后仅对可信 current node correspondence 使用 current bounds，保留 captured target/rect 不变。Workbench 的 structure hover、designer/Agent node annotation 共用同一绿色 structure margin，free-region/point/drag 与 SSE projection 均已覆盖。
 
-实现提交：`be75fcb`（已推送 `main`）。验证包括生产构建、412 项完整 unit tests，以及 10 项 Issue 06 Playwright/MCP tests；Code Review 最终无 blocking finding。
+实现提交：`be75fcb`（已推送 `main`）。最终整体验证为 `npm run check` 完整通过（typecheck；53 unit files / 414 tests；64 e2e tests），Issue 06 的定向 Playwright/MCP coverage 继续通过；Code Review 最终无 blocking finding。
 
-仍未勾选：stale warning 的具体视觉提示，以及 node breadcrumb/确认信息，需要设计师 Figma UI/interaction reference；Real Agent validation 需要真实 PAT、真实 Figma source 与真实 Agent host，本次未用 mock/deterministic 结果冒充。
+Real Agent validation 已完成 1/4 项：Browser Use 实机读取当前 Workbench 投影，14 个 Annotation shape 均具有 Runtime semantic record id，并可与 SQLite 中的 designer `figma-node` / `figma-region` records 回连。仍未勾选：stale warning 的具体视觉提示，以及 node breadcrumb/确认信息，需要设计师 Figma UI/interaction reference；真实 Agent anchored Annotation、candidate 核验和受控 source mutation/Refresh 仍需要真实 Figma source 与 Agent host。本次未用 mock/deterministic 结果冒充。
 
 ## Blocked by
 
-- `05C-evidence-refresh-figma-context-handoff.md`
+- Automated 剩余两项受缺失的设计师 Figma UI/interaction reference 阻塞；Real Agent 剩余三项需要可控的真实 Figma source 与真实 Agent host。
