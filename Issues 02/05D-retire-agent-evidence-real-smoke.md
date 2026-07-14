@@ -1,6 +1,6 @@
 # 05D — 退役 Agent-Supplied Evidence 与真实转型 Smoke
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 ## What to build
 
@@ -18,9 +18,9 @@
 - [x] 生产源与 Active tests 不再依赖 awaiting-Agent screenshot orchestration、`registered_via` 分源 loading 或 Agent-provided screenshot payload。
 - [x] 历史已完成 Seed Reference/Evidence Surface/annotation 数据仍可读取、投影和导出；迁移不重写历史 initiator/provenance。
 - [x] 历史只有 pending reference、没有成功 evidence 的记录不被视为成功 positional evidence，不进入成功研究 export。
-- [ ] deterministic one-process vertical test 完整覆盖：connect → paste → capture → second Reference → Agent add → duplicate reuse → annotation candidates → explicit Refresh。
-- [ ] HTTP/MCP command parity、no-loopback、SQLite transaction、SSE projection 和 no-secret guards 在新路径上保持通过。
-- [ ] 删除/替换旧路径后运行项目 `npm run check`；任何仍保留的 legacy reader 必须有明确历史兼容测试，不能重新成为写入口。
+- [x] deterministic one-process vertical test 完整覆盖：connect → paste → capture → second Reference → Agent add → duplicate reuse → annotation candidates → explicit Refresh。（真实 Workbench clipboard handler + HTTP + MCP + SSE，同一个 MCP-owned Runtime。）
+- [x] HTTP/MCP command parity、no-loopback、SQLite transaction、SSE projection 和 no-secret guards 在新路径上保持通过。（含 Refresh 后 `evidence/created` + `seed/updated` commit-only projection。）
+- [x] 删除/替换旧路径后运行项目 `npm run check`；任何仍保留的 legacy reader 必须有明确历史兼容测试，不能重新成为写入口。
 - [x] PRD、CONTEXT、ADR、Issue 05/06–16、manual smoke 文档和 MCP descriptions 使用同一 Active 术语与工具面。
 
 ## Acceptance criteria — real end-to-end smoke
@@ -34,7 +34,7 @@
 
 ## Blocked by
 
-- `06-evidence-surface-region-annotation-slice.md`
+- Automated scope 无 blocker；剩余 real smoke 需要可访问的真实 Figma API、真实安装级 PAT 重启和真实 Agent host。
 
 ## Comments
 
@@ -45,8 +45,8 @@
 
 ## Completion report — 2026-07-14
 
-已完成 7/10 项 automated AC：Active MCP/HTTP/Workbench 已统一到 Runtime-owned capture；pending reader 与 Agent-supplied evidence writer 均返回/保持 retired；Workbench persisted projection 不再依据 `registered_via` 分流 loading；历史 reader 仅作为明确兼容层保留。新增 command-kernel integration 覆盖 connect、Workbench initiator capture、第二 Reference、Agent initiator add、canonical duplicate reuse、annotation candidates、explicit Refresh 与 PAT 不进入 response/SQLite/events；manual smoke 已改写为真实 PAT/Figma/Agent 转型流程。
+已完成 10/10 项 automated AC：Active MCP/HTTP/Workbench 已统一到 Runtime-owned capture；pending reader 与 Agent-supplied evidence writer 均保持 retired；历史 reader 仅作为明确兼容层保留。单进程纵切现在从真实 Workbench clipboard paste 开始，在同一个 MCP-owned Runtime 中贯穿第二 Reference、Agent MCP add、canonical duplicate reuse、annotation candidates、explicit Refresh、SQLite lineage、SSE 页面投影与 no-secret 检查；另有禁用 `global fetch` 的聚焦测试证明 MCP semantic write 不走 HTTP loopback。Refresh 提交后同时广播 `evidence/created` 与 `seed/updated`，明确投影 current Surface 变化。
 
-验证：`npm run typecheck` 通过；完整 unit suite 53 files / 414 tests 通过；Structure Overlay / annotation geometry 定向 suite 5 files / 30 tests 通过；05D 定向 suite 8 files / 98 tests 通过；最新安全/SSE command-kernel 定向 suite 6 files / 53 tests 通过。`git diff --check` 通过。完整 one-process HTTP+MCP+SSE vertical 与 `npm run check` 仍未勾选；按设计师要求，本轮交互验证改用 Browser Use，不把 Playwright 作为这轮验证的阻塞条件，也不把未执行的 Playwright 冒充通过。
+验证：`npm run check` 完整通过（typecheck；53 unit files / 414 tests；64 e2e tests）。Inter 已改为附带 OFL 许可证的官方本地 variable font，保持现有字体设计并消除 Next build 对 Google Fonts 网络请求的依赖。Structure Overlay / annotation geometry 定向 suite 5 files / 30 tests 通过；Browser Use 继续作为真实 Workbench smoke 工具。Code review 的 Standards 轴发现的重复 SSE helper 已提取到 `tests/helpers/sse.ts` 并修复 timeout waiter 清理；Spec 轴指出的 clipboard-handler 缺口已由真实 paste vertical 补齐；复审前述 automated 缺口均已关闭。`git diff --check` 通过。
 
 Real smoke 已完成 2/6 项。Browser Use 实机验证中，Annotation 模式下两个真实 Figma Surface 均可见；Structure Overlay 命中节点 `197:58`，hover highlight 使用与结构化 Annotation 一致的较小外扩 margin；粘贴 canonical-equivalent Figma link 后 current Seed Reference 数量和 Surface id 均未变化，因此重复复用项标记为 real pass。显式 Refresh 在约 55 秒后解除 pending 并显示 `figma_api_timeout`，没有产生新 current Surface，故 Refresh real AC 仍为 `blocked`。PAT 重启持久化、真实 Agent add/SSE、真实 candidate→Figma MCP→primary confirmation 均为 `not attempted`；deterministic adapter 结果没有计作 real pass，报告和数据库核对过程未输出 secret。

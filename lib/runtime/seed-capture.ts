@@ -515,6 +515,12 @@ export async function refreshSeedReference(
       id: result.surface.id,
       projectPath: path.resolve(projectPath)
     });
+    emitRecordEvent({
+      kind: "seed",
+      action: "updated",
+      id: result.record.id,
+      projectPath: path.resolve(projectPath)
+    });
     return result;
   } catch (error) {
     if (

@@ -3,9 +3,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import http from "node:http";
 import { expect, test as base } from "./fixtures";
 import { rawPost as httpPost } from "./helpers/http";
+import { openRecordSse } from "./helpers/sse";
 
 const test = base.extend<{ folder: string }>({
   folder: async ({}, use) => {
@@ -51,83 +51,6 @@ async function captureToken(
   return sessionToken;
 }
 
-function openSse(
-  port: number,
-  session: string
-): Promise<{
-  close: () => void;
-  waitForRecord: (timeoutMs?: number) => Promise<Record<string, unknown>>;
-}> {
-  return new Promise((resolve, reject) => {
-    const req = http.request(
-      {
-        hostname: "127.0.0.1",
-        port,
-        path: `/api/events?session=${encodeURIComponent(session)}`,
-        method: "GET",
-        headers: {
-          host: `localhost:${port}`,
-          Accept: "text/event-stream"
-        }
-      },
-      (res) => {
-        if ((res.statusCode ?? 0) !== 200) {
-          reject(new Error(`SSE status ${res.statusCode}`));
-          return;
-        }
-        let buffer = "";
-        const pending: Array<(v: Record<string, unknown>) => void> = [];
-        const queued: Record<string, unknown>[] = [];
-
-        res.on("data", (chunk: Buffer) => {
-          buffer += chunk.toString("utf8");
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() ?? "";
-          for (const part of parts) {
-            const lines = part.split("\n");
-            let event = "message";
-            let data = "";
-            for (const line of lines) {
-              if (line.startsWith("event:")) event = line.slice(6).trim();
-              if (line.startsWith("data:")) data += line.slice(5).trim();
-            }
-            if (event === "record" && data) {
-              const parsed = JSON.parse(data) as Record<string, unknown>;
-              const waiter = pending.shift();
-              if (waiter) waiter(parsed);
-              else queued.push(parsed);
-            }
-          }
-        });
-
-        resolve({
-          close: () => {
-            req.destroy();
-            res.destroy();
-          },
-          waitForRecord: (timeoutMs = 10_000) =>
-            new Promise((resWait, rejWait) => {
-              if (queued.length > 0) {
-                resWait(queued.shift()!);
-                return;
-              }
-              const timer = setTimeout(
-                () => rejWait(new Error("timeout waiting for record event")),
-                timeoutMs
-              );
-              pending.push((v) => {
-                clearTimeout(timer);
-                resWait(v);
-              });
-            })
-        });
-      }
-    );
-    req.on("error", reject);
-    req.end();
-  });
-}
-
 test.describe("Task 11 — SSE record invalidation", () => {
   test.beforeEach(async ({ runtime }) => {
     rmSync(path.join(runtime.stateDir, "runtime-state.json"), { force: true });
@@ -148,7 +71,7 @@ test.describe("Task 11 — SSE record invalidation", () => {
     );
     expect(bind.status).toBe(200);
 
-    const sse = await openSse(runtime.port, token);
+    const sse = await openRecordSse(runtime.port, token);
     const recordPromise = sse.waitForRecord();
 
     const { connectFigmaForTests } = await import("./helpers/figma-connection");
@@ -209,14 +132,18 @@ test.describe("Task 11 — SSE record invalidation", () => {
     const annRes = await rawPost(
       "/api/region-annotation",
       {
-        surfaceArtifactId: surfaceId,
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.25 }
+        },
         author: "designer",
-        body: "Placeholder annotation",
-        rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.25 }
+        body: "Placeholder annotation"
       },
       { "x-ikran-session": token },
       runtime.port
     );
+    expect(annRes.status).toBe(200);
     const annotationId = (JSON.parse(annRes.body).record as { id: string }).id;
 
     await page.reload();

@@ -22,6 +22,11 @@ import { listEvents } from "../../lib/runtime/events";
 import { closeProjectDb, openProjectDb } from "../../lib/runtime/db";
 import { getAnnotationNodeCandidatesContext } from "../../lib/runtime/figma-context";
 import { connectFigmaCommand } from "../../lib/runtime/commands/figma-connection";
+import {
+  resetRecordBusForTests,
+  subscribeRecordEvents,
+  type RecordBusEvent
+} from "../../lib/runtime/record-bus";
 
 const TINY_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -103,6 +108,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  resetRecordBusForTests();
   resetFigmaCredentialStoreForTests();
   resetFigmaApiClientForTests();
   rmSync(projectDir, { recursive: true, force: true });
@@ -138,6 +144,8 @@ test("atomic capture writes seed + surface + positional index", async () => {
 
 test("explicit refresh appends a surface, advances current, and preserves history", async () => {
   await withConnectedStore();
+  const recordEvents: RecordBusEvent[] = [];
+  const unsubscribe = subscribeRecordEvents((event) => recordEvents.push(event));
   const first = await addSeedReference(projectDir, {
     figmaSeedReference: "https://www.figma.com/design/AbCdEf/X?node-id=1-2",
     initiator: "ui"
@@ -163,6 +171,21 @@ test("explicit refresh appends a surface, advances current, and preserves histor
   expect(surfaces.find((surface) => surface.id === refreshed.surface.id)).toMatchObject({
     superseded_by: null
   });
+  expect(recordEvents.slice(-2)).toMatchObject([
+    {
+      kind: "evidence",
+      action: "created",
+      id: refreshed.surface.id,
+      projectPath: path.resolve(projectDir)
+    },
+    {
+      kind: "seed",
+      action: "updated",
+      id: first.record.id,
+      projectPath: path.resolve(projectDir)
+    }
+  ]);
+  unsubscribe();
 });
 
 test("failed explicit refresh leaves current and history unchanged", async () => {
