@@ -31,9 +31,9 @@
 
 - [x] 设计师从真实 Figma 文件粘贴至少两个不同 selection links，Workbench 同时显示两个不同 Frame，截图与各自 source link 一致。
 - [x] 真实 Agent 通过 `add_seed_reference` 添加第三个真实 Figma node；已打开 Workbench 通过 SSE 显示它，并记录 initiator=agent。
-- [ ] 对同一真实 node 分别粘贴含不同 share query 的链接并让 Agent 再次添加；最终仍只有一个 canonical Reference/Frame/lineage。
-- [ ] 不填写 Design Language Description 时验证 Runtime readiness 明确报告 `description_missing`；填写一次后 readiness 通过，多个 References 无需重复 Description。正式阶段阻断在 Issue 07 验收。
-- [ ] 为其中一条真实 Reference 添加 Note，确认其他 References 不出现该 Note。
+- [x] 对同一真实 node 分别粘贴含不同 share query 的链接并让 Agent 再次添加；最终仍只有一个 canonical Reference/Frame/lineage。
+- [x] 不填写 Design Language Description 时验证 Runtime readiness 明确报告 `description_missing`；填写一次后 readiness 通过，多个 References 无需重复 Description。正式阶段阻断在 Issue 07 验收。
+- [x] 为其中一条真实 Reference 添加 Note，确认其他 References 不出现该 Note。
 
 
 
