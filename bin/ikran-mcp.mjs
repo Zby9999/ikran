@@ -201,7 +201,7 @@ mcp
   .connect(transport)
   .then(() => {
     console.error(
-      `[ikran-mcp] ready (open_workbench, create_or_open_project, register_seed_reference, list_pending_seed_evidence, record_evidence_package, create_region_annotation, list_region_annotations, list_working_folders, setup_workspace, host=${host}, prod=${prod})`
+      `[ikran-mcp] ready (active Runtime-owned project, seed/evidence, annotation, readiness, and workspace tools registered; host=${host}, prod=${prod})`
     );
   })
   .catch((err) => {

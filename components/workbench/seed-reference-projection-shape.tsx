@@ -121,7 +121,8 @@ declare module "@tldraw/tlschema" {
        */
       awaitingEvidence: boolean;
       /**
-       * Awaiting presentation: `spinner` (Agent path) or `guide` (UI path).
+       * Awaiting presentation: `spinner` for an in-flight Runtime capture,
+       * `guide` for an incomplete historical row.
        */
       awaitingUx: "spinner" | "guide";
       /**
@@ -625,13 +626,13 @@ function SeedReferenceProjectionFrame({
             data-awaiting-evidence="true"
             data-awaiting-ux="guide"
             role="status"
-            aria-label="Ask Agents to fetch a Figma screenshot"
+            aria-label="No captured Figma evidence is available"
           >
             <p
               className="seed-ref-frame__awaiting-hint"
               data-testid="seed-reference-projection-awaiting-hint"
             >
-              Ask Agents to fetch a Figma screenshot for this seed
+              No captured Figma evidence is available for this historical seed
             </p>
           </div>
         ) : showSpinner ? (
@@ -641,14 +642,14 @@ function SeedReferenceProjectionFrame({
             data-awaiting-evidence="true"
             data-awaiting-ux="spinner"
             role="status"
-            aria-label="Waiting for Agent to fulfill pending evidence"
+            aria-label="Capturing Figma evidence"
           >
             <span className="seed-ref-frame__awaiting-spinner" aria-hidden="true" />
             <p
               className="seed-ref-frame__awaiting-hint"
               data-testid="seed-reference-projection-awaiting-hint"
             >
-              Waiting for Agent — capturing Figma screenshot
+              Capturing Figma evidence
             </p>
           </div>
         ) : null}

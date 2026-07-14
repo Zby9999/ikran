@@ -9,10 +9,7 @@ import {
   requireActiveProjectCommand,
   setupWorkspaceInputShape
 } from "../runtime/commands";
-import {
-  pendingSeedRecords,
-  type RegisterIkranToolsDeps
-} from "./shared";
+import { type RegisterIkranToolsDeps } from "./shared";
 
 export function registerProjectWorkspaceTools(
   mcp: McpServer,
@@ -25,14 +22,10 @@ export function registerProjectWorkspaceTools(
     "open_workbench",
     {
       description:
-        "Open the Ikran workbench. Starts or reuses the local Runtime HTTP surface on 127.0.0.1 (auto port) and returns a localhost Workbench URL containing a startup-level session token. Open it in any browser; ideal target is this Agent host's embedded browser. The URL is local-only and is not a public/remote link. Active seed capture is Runtime-owned (ADR 0003): ensure Figma Connection via the Workbench gate, then use add_seed_reference (same command as Workbench paste) — do not orchestrate host Figma screenshots for ingestion. May include historical pending_seed_evidence rows for awareness only."
+        "Open the Ikran workbench. Starts or reuses the local Runtime HTTP surface on 127.0.0.1 (auto port) and returns a localhost Workbench URL containing a startup-level session token. Open it in any browser; ideal target is this Agent host's embedded browser. The URL is local-only and is not a public/remote link. Active seed capture is Runtime-owned (ADR 0003): ensure Figma Connection via the Workbench gate, then use add_seed_reference (same command as Workbench paste). Do not orchestrate host Figma screenshots for ingestion."
     },
     async () => {
       const rt = await ensureRuntime();
-      const active = requireActiveProjectCommand();
-      const pending = active.ok
-        ? pendingSeedRecords(active.project.path)
-        : [];
       const baseText = `Ikran Workbench URL:\n${rt.url}\n\nLocal-only. Open in any browser (ideal: this Agent host's embedded browser).`;
       return {
         content: [
@@ -46,8 +39,7 @@ export function registerProjectWorkspaceTools(
           host: rt.host,
           port: rt.port,
           session: rt.token,
-          reused: !rt.spawned,
-          pending_seed_evidence: pending
+          reused: !rt.spawned
         }
       };
     }

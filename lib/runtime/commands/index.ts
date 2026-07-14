@@ -8,7 +8,6 @@ export {
 } from "./project";
 
 export {
-  registerSeedReferenceCommand,
   listSeedReferencesCommand,
   deleteSeedReferenceCommand,
   updateSeedReferenceNoteCommand
@@ -38,12 +37,7 @@ export {
   requireFigmaConnectionCommand
 } from "./figma-connection";
 
-export {
-  recordEvidencePackageCommand,
-  listEvidenceSurfacesCommand
-} from "./evidence-package";
-
-export { listPendingSeedEvidenceCommand } from "./pending-seed-evidence";
+export { listEvidenceSurfacesCommand } from "./evidence-package";
 
 export {
   createRegionAnnotationCommand,
@@ -59,10 +53,6 @@ export {
 
 export {
   parseCommandInput,
-  registerSeedReferenceInputSchema,
-  registerSeedReferenceInputShape,
-  recordEvidencePackageInputSchema,
-  recordEvidencePackageInputShape,
   createRegionAnnotationInputSchema,
   createRegionAnnotationInputShape,
   confirmAnnotationPrimaryInputSchema,

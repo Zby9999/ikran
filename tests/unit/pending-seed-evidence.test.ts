@@ -1,6 +1,6 @@
-// Unit tests for listPendingSeedEvidence (Agent-first evidence capture).
-// Pure Node — no MCP/Next. Runtime never contacts Figma.
-// Seeds may still carry legacy registered_via=ui rows; pending listing is via-agnostic.
+// Historical compatibility tests for legacy pending rows only.
+// listPendingSeedEvidence is deliberately absent from Active HTTP/MCP surfaces;
+// these tests protect old project readability without reviving a write workflow.
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,7 +24,7 @@ function withTempProject(fn: (dir: string) => void) {
   }
 }
 
-test.describe("listPendingSeedEvidence (unit)", () => {
+test.describe("legacy listPendingSeedEvidence reader (historical compatibility)", () => {
   test("seed only → pending", () => {
     withTempProject((dir) => {
       const seed = registerSeedReference(dir, {

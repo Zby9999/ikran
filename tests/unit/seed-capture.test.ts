@@ -20,6 +20,8 @@ import { listSeedReferences } from "../../lib/runtime/seed-reference";
 import { listFigmaEvidenceSurfaces } from "../../lib/runtime/evidence-package";
 import { listEvents } from "../../lib/runtime/events";
 import { closeProjectDb, openProjectDb } from "../../lib/runtime/db";
+import { getAnnotationNodeCandidatesContext } from "../../lib/runtime/figma-context";
+import { connectFigmaCommand } from "../../lib/runtime/commands/figma-connection";
 
 const TINY_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -293,6 +295,13 @@ test("legacy pending seed (no surface) is fulfilled instead of unique-key db_err
   expect(registered.ok).toBe(true);
   if (!registered.ok) return;
   expect(registered.record.current_surface_id).toBeNull();
+  expect(listFigmaEvidenceSurfaces(projectDir)).toEqual([]);
+  expect(
+    getAnnotationNodeCandidatesContext(projectDir, {
+      surfaceId: registered.record.id,
+      rect: { x: 0, y: 0, w: 1, h: 1 }
+    })
+  ).toEqual({ ok: false, reason: "surface_not_found" });
 
   const captured = await addSeedReference(projectDir, {
     figmaSeedReference: "https://www.figma.com/design/AbCdEf/X?node-id=1-2",
@@ -394,6 +403,79 @@ test("duplicate submit preserves first initiator and does not grow the collectio
   expect(duplicate.surface.id).toBe(first.surface.id);
   expect(listSeedReferences(projectDir)).toHaveLength(1);
   expect(listFigmaEvidenceSurfaces(projectDir)).toHaveLength(1);
+});
+
+test("command-kernel integration covers connect, UI/Agent initiators, dedupe, candidates, refresh, and no-secret persistence", async () => {
+  const connected = await connectFigmaCommand("figd_good");
+  expect(connected.ok).toBe(true);
+  expect(JSON.stringify(connected)).not.toContain("figd_good");
+
+  const first = await addSeedReference(projectDir, {
+    figmaSeedReference:
+      "https://www.figma.com/design/AbCdEf/X?node-id=1-1&t=ui-paste",
+    initiator: "ui"
+  });
+  const second = await addSeedReference(projectDir, {
+    figmaSeedReference:
+      "https://www.figma.com/design/AbCdEf/X?node-id=2-2",
+    initiator: "ui"
+  });
+  const agent = await addSeedReference(projectDir, {
+    figmaSeedReference:
+      "https://www.figma.com/design/OtherKey/X?node-id=3-3",
+    initiator: "agent"
+  });
+  expect(first.ok && second.ok && agent.ok).toBe(true);
+  if (!first.ok || !second.ok || !agent.ok) return;
+
+  const duplicate = await addSeedReference(projectDir, {
+    figmaSeedReference:
+      "https://www.figma.com/design/AbCdEf/X?node-id=1:1&t=agent-duplicate",
+    initiator: "agent"
+  });
+  expect(duplicate.ok).toBe(true);
+  if (!duplicate.ok) return;
+  expect(duplicate.reused).toBe(true);
+  expect(duplicate.record.id).toBe(first.record.id);
+  expect(duplicate.surface.id).toBe(first.surface.id);
+
+  const candidates = getAnnotationNodeCandidatesContext(projectDir, {
+    surfaceId: first.surface.id,
+    rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+  });
+  expect(candidates.ok).toBe(true);
+  if (!candidates.ok) return;
+  expect(candidates.candidates.map((candidate) => candidate.nodeId)).toEqual([
+    "1:1"
+  ]);
+  expect(candidates).not.toHaveProperty("primaryNodeId");
+
+  const refreshed = await refreshSeedReference(projectDir, {
+    seedReferenceId: first.record.id,
+    initiator: "ui"
+  });
+  expect(refreshed.ok).toBe(true);
+  if (!refreshed.ok) return;
+  expect(refreshed.previous_surface_id).toBe(first.surface.id);
+  expect(refreshed.surface.id).not.toBe(first.surface.id);
+  expect(listSeedReferences(projectDir)).toHaveLength(3);
+  expect(listFigmaEvidenceSurfaces(projectDir)).toHaveLength(4);
+  expect(
+    JSON.stringify({
+      responses: {
+        connected,
+        first,
+        second,
+        agent,
+        duplicate,
+        candidates,
+        refreshed
+      },
+      seeds: listSeedReferences(projectDir),
+      surfaces: listFigmaEvidenceSurfaces(projectDir),
+      events: listEvents(projectDir)
+    })
+  ).not.toContain("figd_good");
 });
 
 test("ui and agent first captures differ only by initiator for the same URL", async () => {

@@ -52,19 +52,15 @@ export interface SeedReferenceInput {
    */
   originalDesignIntent: string;
   /**
-   * Who registered the seed. Controls Workbench awaiting UX:
-   * - `ui` — legacy rows only (guide, no spinner); HTTP POST rejects new ui writes
-   * - `agent` — MCP register_seed_reference: show loading spinner
-   * Defaults to `agent` when omitted (MCP / older clients).
-   * Product entry is Agent-only; Workbench no longer produces `ui`.
+   * Historical initiator provenance. Active Workbench projection never branches
+   * capture/loading UX on this field.
    */
   registeredVia?: "ui" | "agent";
 }
 
 /**
- * HTTP POST /api/seed-reference write policy: Agent-only.
- * Rejects `registeredVia: "ui"` so the product entry cannot mint ui rows.
- * Omitted / agent / unknown → agent. Legacy DB ui rows remain readable.
+ * Legacy HTTP write-policy helper retained for historical reader tests only.
+ * The Active route uses addSeedReferenceCommand and Runtime-owned capture.
  */
 export function resolveHttpRegisteredVia(
   requested: unknown

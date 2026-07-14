@@ -779,7 +779,7 @@
   user-select: none;
 }
 
-/* Awaiting Evidence Surface — Agent path: spinner; UI path: guide only. */
+/* Evidence availability — Runtime capture spinner; incomplete history guide. */
 .seed-ref-frame__awaiting {
   display: flex;
   flex-direction: column;

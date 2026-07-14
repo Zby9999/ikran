@@ -1,5 +1,3 @@
-import { listPendingSeedEvidenceCommand } from "../runtime/commands";
-
 export type RuntimeHandle = {
   host: string;
   port: number;
@@ -22,10 +20,6 @@ export type RegisterIkranToolsDeps = {
   /** Absolute path to bin/ikran-mcp.mjs (for setup_workspace snippet). */
   mcpEntryPath: string;
 };
-
-export function pendingSeedRecords(projectPath: string) {
-  return listPendingSeedEvidenceCommand(projectPath).records;
-}
 
 export function failureResult(
   toolName: string,

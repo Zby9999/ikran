@@ -34,7 +34,7 @@ function seedSignature(records: SeedReferenceRecord[]): string {
   return records
     .map(
       (r) =>
-        `${r.id}:${r.registered_via ?? "agent"}:${r.current_surface_id ?? ""}:${r.original_design_intent}`
+        `${r.id}:${r.current_surface_id ?? ""}:${r.original_design_intent}`
     )
     .join("|");
 }

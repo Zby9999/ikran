@@ -31,14 +31,14 @@ export type SeedProjectionTarget = {
   hasScreenshotArtifact: boolean;
   /**
    * Seed (or surface) is projected but there is not yet a screenshot src to
-   * show — Workbench media shows awaiting UX until Evidence Surface screenshot
-   * arrives.
+   * show. Persisted incomplete historical rows use a guide; only an ephemeral
+   * Runtime capture request can use the spinner.
    */
   awaitingEvidence: boolean;
   /**
    * How to present awaiting state:
-   * - `spinner` — Agent-registered seed (loading while Agent continues)
-   * - `guide` — UI-registered seed (tell designer to ask Agents for screenshot)
+   * - `spinner` — local Runtime capture is currently in flight
+   * - `guide` — persisted historical row has no captured screenshot
    */
   awaitingUx: "spinner" | "guide";
   meta: SeedReferenceProjectionMeta;
@@ -320,8 +320,9 @@ export function buildSeedProjectionTargets(
     for (const id of claimIds) claimedSurfaceIds.add(id);
 
     const size = projectionSize(surface);
-    const awaitingUx: "spinner" | "guide" =
-      seed.registered_via === "ui" ? "guide" : "spinner";
+    // Persisted rows without captured media are historical/incomplete facts,
+    // never pending Agent work. Only local in-flight capture uses spinner.
+    const awaitingUx: "guide" = "guide";
     if (surface) {
       const shot = screenshotSrcForSurface(surface, session);
       targets.push({
@@ -388,7 +389,7 @@ export function buildSeedProjectionTargets(
       screenshotDataUrl: shot.src,
       hasScreenshotArtifact: shot.hasArtifactOnly,
       awaitingEvidence: !shot.src,
-      awaitingUx: "spinner",
+      awaitingUx: "guide",
       w: size.w,
       h: size.h,
       meta: {

@@ -2,9 +2,8 @@
 // surface the SAME domain reason. Shared Zod transport schemas must accept
 // those payloads so the MCP SDK does not reject before domain validation.
 //
-// Active seed path uses addSeedReferenceCommand (+ Figma Connection). Legacy
-// registerSeedReference / recordEvidencePackage commands remain for historical
-// HTTP/readers but are not Active MCP tools.
+// Active seed path uses addSeedReferenceCommand (+ Figma Connection). Retired
+// Agent-supplied seed/evidence write contracts are absent from this suite.
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,16 +12,11 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { initializeProjectDb } from "../../lib/runtime/db";
 import {
   parseCommandInput,
-  registerSeedReferenceInputSchema,
-  registerSeedReferenceInputShape,
-  recordEvidencePackageInputSchema,
   createRegionAnnotationInputSchema,
   addSeedReferenceInputSchema,
   addSeedReferenceInputShape
 } from "../../lib/runtime/commands/schemas";
 import {
-  registerSeedReferenceCommand,
-  recordEvidencePackageCommand,
   createRegionAnnotationCommand,
   addSeedReferenceCommand
 } from "../../lib/runtime/commands";
@@ -87,12 +81,6 @@ describe("HTTP/MCP command parity — shared domain reasons", () => {
     expect(
       Object.prototype.hasOwnProperty.call(addSeedReferenceInputShape, "initiator")
     ).toBe(false);
-    expect(
-      Object.prototype.hasOwnProperty.call(
-        registerSeedReferenceInputShape,
-        "registeredVia"
-      )
-    ).toBe(false);
   });
 
   test("Active seed-capture: gate closed + URL reasons match", async () => {
@@ -142,103 +130,6 @@ describe("HTTP/MCP command parity — shared domain reasons", () => {
     for (const c of cases) {
       expect(schema.safeParse(c.payload).success, c.reason).toBe(true);
       const result = await addSeedReferenceCommand(projectPath, c.payload);
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.reason).toBe(c.reason);
-    }
-  });
-
-  test("legacy seed: transport schema accepts domain-invalid payloads; command reason matches", () => {
-    const projectPath = freshProject();
-    const schema = registerSeedReferenceInputSchema;
-
-    const cases: Array<{ payload: Record<string, unknown>; reason: string }> = [
-      {
-        payload: { figmaSeedReference: "", originalDesignIntent: "intent" },
-        reason: "missing_figma_seed_reference"
-      },
-      {
-        payload: {
-          figmaSeedReference: "https://www.figma.com/design/abc/X",
-          originalDesignIntent: ""
-        },
-        reason: "missing_original_design_intent"
-      },
-      {
-        payload: {
-          figmaSeedReference: "http://www.figma.com/design/abc/X",
-          originalDesignIntent: "intent"
-        },
-        reason: "invalid_figma_url"
-      },
-      {
-        payload: {
-          figmaSeedReference: "https://example.com/design/abc/X",
-          originalDesignIntent: "intent"
-        },
-        reason: "not_figma_host"
-      },
-      {
-        payload: {
-          figmaSeedReference: "https://www.figma.com/other/abc/X",
-          originalDesignIntent: "intent"
-        },
-        reason: "not_figma_design_path"
-      }
-    ];
-
-    for (const c of cases) {
-      expect(schema.safeParse(c.payload).success, c.reason).toBe(true);
-      const result = registerSeedReferenceCommand(projectPath, c.payload);
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.reason).toBe(c.reason);
-    }
-  });
-
-  test("legacy evidence: transport schema accepts domain-invalid payloads; command reason matches", () => {
-    const projectPath = freshProject();
-    const schema = recordEvidencePackageInputSchema;
-
-    const base = {
-      figmaSeedReference:
-        "https://www.figma.com/design/abc123/Parity?node-id=1:2",
-      frame: { nodeId: "1:2", name: "Frame" },
-      evidenceViews: { rawData: "missing", screenshot: "available" }
-    };
-
-    const cases: Array<{ payload: Record<string, unknown>; reason: string }> = [
-      {
-        payload: {
-          frame: base.frame,
-          evidenceViews: base.evidenceViews
-        },
-        reason: "missing_seed_reference"
-      },
-      {
-        payload: {
-          ...base,
-          figmaSeedReference: "https://example.com/design/abc/X"
-        },
-        reason: "not_figma_host"
-      },
-      {
-        payload: {
-          ...base,
-          evidenceViews: { rawData: "nope", screenshot: "available" }
-        },
-        reason: "invalid_evidence_views"
-      },
-      {
-        payload: {
-          ...base,
-          screenshot: undefined
-        },
-        reason: "screenshot_required_when_available"
-      }
-    ];
-
-    for (const c of cases) {
-      expect(schema.safeParse(c.payload).success, c.reason).toBe(true);
-      const result = recordEvidencePackageCommand(projectPath, c.payload);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toBe(c.reason);
     }

@@ -1,15 +1,9 @@
-// GET /api/pending-seed-evidence
-//
-// Thin HTTP adapter: authorize + active project + shared pending command.
+// GET /api/pending-seed-evidence — retired Agent orchestration reader.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { authorize } from "../../../lib/runtime/session";
-import {
-  commandErrorHttpStatus,
-  listPendingSeedEvidenceCommand,
-  requireActiveProjectCommand
-} from "../../../lib/runtime/commands";
+import { commandErrorHttpStatus } from "../../../lib/runtime/commands";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,14 +17,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const state = requireActiveProjectCommand();
-  if (!state.ok) {
-    return NextResponse.json(
-      { ok: false, error: state.reason },
-      { status: commandErrorHttpStatus(state.reason) }
-    );
-  }
-
-  const listed = listPendingSeedEvidenceCommand(state.project.path);
-  return NextResponse.json({ ok: true, records: listed.records });
+  return NextResponse.json(
+    { ok: false, error: "endpoint_retired" },
+    { status: commandErrorHttpStatus("endpoint_retired") }
+  );
 }

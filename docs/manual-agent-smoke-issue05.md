@@ -1,172 +1,74 @@
-# Issue 02/05 — 真实 Agent 手动冒烟：`record_evidence_package`
+# Issue 02/05D — Runtime-owned Figma positional evidence 真实冒烟
 
-> **Historical（2026-07-10）：** 下文仍描述当时的 **Workbench plus / EnterPanel 双入口 seed** 与 UI/Agent awaiting 分源步骤。当前 Active 契约已改为 **Seed 纯 Agent-first**（Workbench 无 seed URL/intent 写入口）；以 `IKRAN-MVP-PRD.zh-CN.md`、ADR 0002 与 `Issues 02/05-…` 顶部收口说明为准。本文件不批量重写，仅作历史手动 smoke 指引。真实 Figma smoke **仍未验证**。
+> 这是当前 Active smoke 手册。旧 `register_seed_reference`、`list_pending_seed_evidence`、Agent-supplied `record_evidence_package` 与 awaiting-Agent screenshot 编排均已退役；历史读取兼容不代表这些入口仍可写。
 
-> 真实 Agent + 真实 Figma MCP 验证由你手动完成；本文件是前置条件、步骤与失败分类。
-> 产品事实源：`Issues 02/05-agent-host-figma-evidence-declaration.md`。
-> 前置：`docs/manual-agent-smoke-issue03.md`（`register_seed_reference`）+ Issue 02/04 Workbench。
+## 目标
 
-本 slice：Agent host 用**自己的 Figma MCP**摄取 seed evidence，再通过 Ikran 的
-`record_evidence_package` 声明最小 structured package。Runtime **只**校验 schema、写入
-`figma_evidence_surfaces`、广播给 Workbench——**不访问 Figma**（无 fetch / oEmbed / `/api/figma/*`）。
+验证 ADR 0003 的真实边界：Ikran Runtime 使用安装级 Figma Connection 捕获 screenshot 与 positional index；Workbench paste 和 Agent `add_seed_reference` 共享同一 command；Agent 仅在需要 implementation context 时使用宿主 Figma MCP，并显式确认 annotation primary node。
 
-Mock / Playwright 只能证明 schema、MCP 代理与 UI 投影路径；**不能**代替本文件的 Real Agent 步骤。
+Deterministic adapter、mock PAT、Playwright fixture 只能记作 automated pass，不能代替本手册的 real pass。
 
-## Product conventions（Ikran MCP，非 workflow Skills）
+## 前置条件
 
-这些约定写在 **Ikran MCP**（`bin/ikran-mcp.mjs` 的 server `instructions` 与相关 tool descriptions）里，由 Agent 在同一会话中遵守。它们**不是** Figma 插件默认值，也**不**编码在 `workflow/` Skills 中（见 `AGENTS.md` → Workflow vs Ikran MCP）。
+1. 使用最新构建启动 Runtime；MCP host 与 Workbench 指向同一 `IKRAN_STATE_DIR`。
+2. 准备只读真实 Figma PAT、至少三个可访问的 Figma selection links，以及可调用宿主 Figma MCP 的真实 Agent host。
+3. 创建或绑定测试项目，并确认报告、终端与截图中不出现 PAT。
 
-1. **截图清晰度：`maxDimension: 4096`**
-   Agent 调用 host Figma MCP `get_screenshot` 时必须传 **`maxDimension: 4096`**（产品默认约定）。Figma MCP 自身默认常为 `1024`，大 frame 会被压糊；Workbench 按截图像素投影，长边显示上限同为 4096。不要依赖插件默认。
+## 真实纵切
 
-2. **两条 seed 注册路径，同一 pending 工作**（Historical；当前仅 Agent `register_seed_reference`）
-   设计师可通过 **Workbench plus / EnterPanel**（HTTP `POST /api/seed-reference`）**或** Agent `register_seed_reference` 注册 seed。两条路径写入同一 `seed_references` 事实；尚无截图 Evidence Surface 的 seed 都是 **pending Agent evidence work**。
+1. 在 Workbench Figma Connection Gate 连接真实 PAT；重启 Runtime，确认连接状态仍存在。
+2. 不借助 Agent，在 Workbench 粘贴第一个 link。预期一次成功同时产生 Seed Reference 与可视 Evidence Surface，无 pending/awaiting-Agent 状态。
+3. 粘贴第二个不同 node。预期得到独立 Reference/Surface；再次粘贴第一个 canonical-equivalent link，预期复用既有 Reference，不追加版本。
+4. 让真实 Agent 调 `add_seed_reference` 添加第三个 node。预期 Runtime 自行 capture，并通过 SSE 出现在已打开的 Workbench。
+5. 在 Annotation 模式创建 region annotation。预期 Runtime 返回确定性 candidates，但不自行写 primary node。
+6. 让 Agent 根据 candidate 的 source identity 调宿主 Figma MCP 获取 implementation context，再调 `confirm_annotation_primary_node` 明确确认。
+7. 对第一个 Reference 调 `refresh_seed_reference`。预期追加 current evidence version；旧 Surface、旧 annotation target 与 provenance 仍可读取/回放。
+8. 重启 Runtime 后复查以上记录与 Figma Connection 状态。
 
-3. **Seed → evidence 编排（含 UI 发起）— AUTO-EXECUTE**
-   - Agent 路径：`register_seed_reference` 成功后**不是终点**——同一会话内立刻 Figma `get_screenshot`（4096）→ `record_evidence_package`。
-   - **UI 路径 / 打开 Workbench 后**：`open_workbench` / `list_pending_seed_evidence` 会返回 `pending_seed_evidence` 与 `fulfill_now`。对**每一条** pending seed：Figma MCP `get_screenshot`（`maxDimension: 4096`）→ Ikran `record_evidence_package`。
-   - **禁止询问**：发现 pending 时不得回复「如果需要，我可以继续」；必须在同一 turn 直接执行。
-   - **Host 限制**：UI 加号无法打断空闲 Agent；需要 Agent **下一轮**调用 Ikran（如 `open_workbench` / `list_pending_seed_evidence`）才能捡起 pending。
+## 退役边界检查
 
-4. **Workbench awaiting UX（按注册来源区分）**
-   Seed 已注册、尚无带截图的 Evidence Surface 时：
-   - **UI / EnterPanel**（`registered_via: ui`）：投影显示**引导文案**（请设计师让 Agents 调取 Figma screenshot），**不**显示加载圆圈。
-   - **Agent**（`registered_via: agent`）：投影显示 **loading 圆圈**，等待同一会话内 Agent 继续截图。
-   `record_evidence_package` 写入截图后，awaiting 结束并显示图像。
+- MCP discovery 不应出现 `register_seed_reference`、`list_pending_seed_evidence`、`record_evidence_package`。
+- `GET /api/pending-seed-evidence` 与 `POST /api/evidence-package` 应返回 `410 endpoint_retired`。
+- Workbench 不应出现 “Waiting for Agent evidence capture” 或按 `registered_via` 分流的 loading。
+- 任何 capture 失败都不得留下半写 Seed/Surface；duplicate 不得隐式 refresh。
+- Runtime/MCP 响应、event、SQLite、日志和报告均不得包含 PAT。
 
-## 0. 前置条件
+## 失败分类
 
-1. **Ikran Runtime 与 MCP 对齐**
-   - `--prod`：先 `npm run build`，再重启 MCP host + Runtime（否则新 route 会 `route_not_found`）。
-   - dev：MCP 配置去掉 `--prod`；仍须 **reload MCP servers**，让 `bin/ikran-mcp.mjs` 注册
-     `record_evidence_package`、`list_pending_seed_evidence`（并加载上述 instructions）。
-2. **MCP host 同时配置 Ikran + Figma MCP**（Cursor / Codex 等）。Figma MCP 负责读真实 seed page；
-   Ikran 只收声明。
-3. **`IKRAN_STATE_DIR` 与 UI 一致**（推荐项目级 `.ikran`，与 `setup_workspace` / Issue 02 一致）。
-   错位会导致「tool 成功但 Workbench 看不到 surface」。
-4. **活跃项目**：`create_or_open_project`（不带 path 或传当前工作区）。
-5. **已注册 seed**（二选一，记下 `record.id` / pending 列表里的 `id`，后续优先传 `seedReferenceId`）：
-   - Agent：`register_seed_reference`；或
-   - 设计师：Workbench plus / EnterPanel（HTTP）。
-
-## 1. 冒烟步骤
-
-### 1a. Agent 路径：同会话 seed 注册后继续截图 + 声明
-
-对设计师刚提供的 Figma seed，在**同一 Agent 会话**中：
-
-1. `register_seed_reference`（成功后不要停）。
-2. 立刻用 **Figma MCP**（非 Ikran）`get_screenshot`，**必须** `maxDimension: 4096`。
-3. 可选：再取 raw / 节点结构（frame `nodeId` + `name`，可选 bounds）。
-4. 立刻调用 Ikran `record_evidence_package`。
-
-若只有一种 evidence view 可用：在 package 里对另一种标 `"missing"`，**不要猜、不要编造截图**。
-
-需要时再对照截图响应里的 `original_width` / `original_height` 决定是否重取。
-
-### 1a′. UI 路径：Workbench 注册 → pending list → 截图 + 声明
-
-设计师在 Workbench 用 **plus / EnterPanel** 粘贴 Figma seed URL 并提交（HTTP，不经 Agent tool）：
-
-1. Workbench 投影应立刻进入 **awaiting-evidence loading**，并显示 **“Waiting for Agent evidence capture”**。
-2. Agent（`open_workbench` 之后，或协助 seed 录入 / 看到 awaiting 时）调用 Ikran **`list_pending_seed_evidence`**（无参）。
-3. 对返回的**每一条** pending seed：Figma MCP `get_screenshot`（**`maxDimension: 4096`**）→ Ikran `record_evidence_package`（`seedReferenceId` = pending 项的 `id`）。
-4. 全部完成后再次 `list_pending_seed_evidence` 应为空；Workbench loading 结束并显示截图。
-
-### 1b. 组装最小 evidence package
-
-```json
-{
-  "seedReferenceId": "<register_seed_reference 返回的 id>",
-  "frame": { "nodeId": "1:2", "name": "Checkout", "bounds": { "x": 0, "y": 0, "width": 390, "height": 844 } },
-  "evidenceViews": { "rawData": "available", "screenshot": "available" },
-  "screenshot": { "dataUrl": "data:image/png;base64,..." },
-  "surfaceBounds": { "width": 390, "height": 844 }
-}
-```
-
-要点：
-
-- `evidenceViews.rawData` / `screenshot` 必须是 `"available"` | `"missing"`。
-- `screenshot === "available"` 时必须带 `screenshot.artifactPath` 和/或 `dataUrl`；`missing` 时不要带 payload。
-- **Workbench 截图**：`dataUrl` 或项目内 `artifactPath` 均可；后者由 Runtime 经 `GET /api/artifacts/...?session=` 提供（需与 Workbench 同一 session）。
-
-### 1c. 调用 `record_evidence_package`
-
-预期 `ok: true` + `record`（`figma_evidence_surfaces`）+ `event_id`（`evidence_package_recorded`）+
-`workbench_url`。
-
-故意坏包应 `ok: false` + 结构化 error，且**不写** surface 行（并有 `invalid_output` 审计）。
-
-### 1d. Workbench 核对
-
-打开返回的 `workbench_url`（或 seed 注册后已打开的 Workbench）：
-
-1. **在 evidence 到达前**：投影应显示 **awaiting-evidence loading**（seed 已在、尚无截图 surface），并带提示 **“Waiting for Agent evidence capture”**（Agent 路径与 UI plus 路径相同）。
-2. **`record_evidence_package` 成功后**：loading 结束，tldraw 上出现 / 更新 Figma Evidence Surface，并显示截图（`dataUrl` 或 artifact URL）。可截屏留证。
-
-### 1e. 落盘抽查（绑定项目的 `.ikran/`）
-
-```bash
-PROJ=<create_or_open_project 绑定的文件夹>
-grep evidence_package_recorded "$PROJ/.ikran/events.jsonl"
-node --input-type=module -e "import{DatabaseSync}from'node:sqlite';const db=new DatabaseSync('$PROJ/.ikran/ikran.db');console.log(db.prepare('SELECT id,frame_name,frame_node_id,seed_reference_id FROM figma_evidence_surfaces').all());db.close()"
-```
-
-## 2. 失败分类（记 open gap 时用）
-
-| 标签 | 典型现象 |
+| 状态 | 说明 |
 |---|---|
-| `blocked by Figma access` | Figma MCP 未授权 / 无权限 / 读不到 seed page 或截图 |
-| `blocked by schema` | package 被拒（缺 frame、screenshot available 无 payload、URL 非法、dataUrl 过大等）→ `invalid_output`、无 surface |
-| `blocked by host MCP tool discovery` | host 不暴露 `record_evidence_package`（或只暴露部分 Ikran tools） |
-| `blocked by IKRAN_STATE_DIR mismatch` | tool 写成功但 UI / 另一进程看不到同一 `.ikran` 状态 |
-| `blocked by Agent orchestration` | seed 已注册（Agent 或 UI）但 Agent 未 `list_pending_seed_evidence` / 未继续 4096 截图 / `record_evidence_package`，Workbench 一直 loading |
+| `automated pass` | deterministic/unit/Playwright 证据通过，不代表真实 Figma 已验证 |
+| `real pass` | 本手册使用真实 PAT、真实 Figma API 与真实 Agent host 通过 |
+| `blocked` | 已尝试，但受权限、网络、host discovery 或真实数据限制 |
+| `not attempted` | 本轮没有执行真实步骤 |
 
-缺失 evidence view：在 package 里标 `"missing"`，并在冒烟日志写清是 access 还是 Agent 未取到。
+## 冒烟报告模板
 
-## 3. Open gaps（实现侧已知）
-
-- **Real Agent 未进 CI**：Playwright 覆盖 MCP valid / invalid / 零 Figma 触网、awaiting-evidence → screenshot；真实 Figma MCP 仍靠本手册。
-- Figma MCP 可能只返回 raw 或 screenshot 之一——用 explicit missing，勿猜。
-- Workbench 可通过 `GET /api/artifacts/<path>?session=…` 加载 `artifactPath` 截图（与 `dataUrl` 二选一即可）。
-- **截图像素 vs 设计尺寸**：投影按截图 natural 像素 sizing（+ chrome），不按 `surface_bounds` 设计单位放大。
-  取图时必须用 `get_screenshot` 的 `maxDimension: 4096`（产品约定；Figma 默认 1024 会明显偏糊）；Workbench 长边显示上限同为 4096。
-- **约定归属**：seed→evidence 编排（含 UI pending + `list_pending_seed_evidence`）与 4096 约定在 Ikran MCP（`bin/ikran-mcp.mjs`），不在 `workflow/` Skills。
-
-## 4. 冒烟日志模板
-
-```
+```text
 日期：
-MCP： [ ] --prod（build + 重启）  [ ] dev（reload MCP）
-  - reload 后工具列表有 record_evidence_package？ [ ] 是  [ ] 否 → blocked by host MCP tool discovery
-  - reload 后工具列表有 list_pending_seed_evidence？ [ ] 是  [ ] 否 → blocked by host MCP tool discovery
-  - Figma MCP 可用？ [ ] 是  [ ] 否 → blocked by Figma access
+构建 / commit：
+测试项目：
 
-前置：
-  - create_or_open_project？ [ ] 是（项目：____）
-  - seed 注册路径： [ ] Agent register_seed_reference  [ ] Workbench plus/EnterPanel（HTTP）
-  - seed id：____
-  - IKRAN_STATE_DIR 与 UI 一致？ [ ] 是  [ ] 否 → blocked by IKRAN_STATE_DIR mismatch
+Automated：
+- tool/endpoint retirement：pass / fail
+- deterministic one-process vertical：pass / fail
+- parity / no-loopback / transaction / SSE / no-secret：pass / fail
+- npm run check：pass / fail / blocked（原因：____）
 
-Real Agent：
-  - （Agent 路径）同会话：seed 后继续 get_screenshot(maxDimension:4096)？ [ ] 是  [ ] 否 / N/A
-  - （UI 路径）open_workbench / 协助 seed 后调用 list_pending_seed_evidence？ [ ] 是  [ ] 否 / N/A → blocked by Agent orchestration
-  - 对每条 pending：get_screenshot(maxDimension:4096) → record_evidence_package？ [ ] 是  [ ] 否 → blocked by Agent orchestration
-  - Figma MCP 读到真实 seed page / 截图？ [ ] 是  [ ] 否（gap：____）
-  - evidenceViews 显式 available/missing？ [ ] 是
-  - record_evidence_package ok + surface？ [ ] 是  [ ] 否（error：____ → schema?）
-  - Workbench：awaiting-evidence loading + “Waiting for Agent evidence capture”，后显示截图？ [ ] 是  [ ] 否
-  - 落盘：evidence_package_recorded + figma_evidence_surfaces 行？ [ ] 是
+Real：
+- PAT connect + restart persistence：real pass / blocked / not attempted
+- two Workbench pastes + canonical duplicate reuse：real pass / blocked / not attempted
+- Agent add_seed_reference + SSE：real pass / blocked / not attempted
+- region candidates + host Figma MCP + primary confirmation：real pass / blocked / not attempted
+- explicit Refresh + historical replay：real pass / blocked / not attempted
 
-备注 / open gaps：
+Secret review：pass / fail
+备注：
 ```
 
-## 5. 实现侧已完成的自动化验证（非 Real Agent）
+## 本仓库自动化证据
 
-- `record_evidence_package` HTTP + MCP；schema 失败 → `invalid_output`、无半写 surface。
-- Workbench 轮询 `/api/evidence-package` 并投影（`dataUrl` / artifact URL 可显示截图）。
-- Seed 无截图 surface 时投影 awaiting-evidence loading（含 “Waiting for Agent evidence capture”）；evidence 到达后显示截图（`tests/seed-evidence-workbench.spec.ts`）。
-- UI / HTTP 注册 seed → `/api/pending-seed-evidence` 非空 → `record_evidence_package` 后 pending 清空（同 spec）。
-- `list_pending_seed_evidence` MCP + `tests/pending-seed-evidence-unit.spec.ts`。
-- `tests/evidence-package-unit.spec.ts`、`tests/evidence-package-mcp.spec.ts`：valid / invalid / Runtime 不触网 Figma。
+- `tests/unit/seed-capture.test.ts`：同进程 command-kernel capture、multi-reference、canonical duplicate reuse、candidate query、explicit Refresh、事务回滚与 no-secret persistence；不替代完整 HTTP+MCP+SSE vertical。
+- `tests/http-mcp-command-parity.spec.ts`：Active MCP discovery 与 HTTP/MCP contract。
+- `tests/seed-evidence-workbench.spec.ts`：Runtime capture、SSE/Workbench projection，以及 retired endpoints。
+- `tests/unit/pending-seed-evidence.test.ts` 与 `tests/unit/evidence-package.test.ts`：仅保护历史数据读取/回放兼容，不构成 Active 写入口。

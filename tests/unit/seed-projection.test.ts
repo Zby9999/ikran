@@ -77,14 +77,14 @@ test.describe("artifactScreenshotUrl", () => {
 });
 
 test.describe("buildSeedProjectionTargets", () => {
-  test("seed without surface → awaiting spinner + seed meta", () => {
+  test("historical seed without surface → unavailable guide + seed meta", () => {
     const targets = buildSeedProjectionTargets([SEED], [], "sess");
     expect(targets).toHaveLength(1);
     expect(targets[0]).toMatchObject({
       shapeKey: "seed-1",
       canvasRecordId: "seed-reference:seed-1",
       awaitingEvidence: true,
-      awaitingUx: "spinner",
+      awaitingUx: "guide",
       screenshotDataUrl: "",
       w: SEED_REFERENCE_PROJECTION_DEFAULT_W,
       h: SEED_REFERENCE_PROJECTION_DEFAULT_H,
@@ -96,7 +96,7 @@ test.describe("buildSeedProjectionTargets", () => {
     });
   });
 
-  test("ui seed awaiting uses guide UX", () => {
+  test("historical initiator does not change unavailable UX", () => {
     const [t] = buildSeedProjectionTargets([UI_SEED], [], "sess");
     expect(t.awaitingUx).toBe("guide");
   });
@@ -151,7 +151,7 @@ test.describe("buildSeedProjectionTargets", () => {
       "figma-evidence-surface:orphan"
     );
     expect(targets[0].meta.kind).toBe("figma_evidence_surface");
-    expect(targets[0].awaitingUx).toBe("spinner");
+    expect(targets[0].awaitingUx).toBe("guide");
   });
 });
 

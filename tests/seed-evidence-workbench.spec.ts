@@ -652,7 +652,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     }
   });
 
-  test("Active capture leaves no pending-seed-evidence; POST evidence-package stays retired", async ({
+  test("legacy pending reader and Agent evidence writer stay retired after Active capture", async ({
     page,
     runtime,
     folder
@@ -670,15 +670,8 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       { "x-ikran-session": token },
       runtime.port
     );
-    expect(pending.status).toBe(200);
-    const pendingBody = JSON.parse(pending.body) as {
-      ok: boolean;
-      records: Array<{ id: string }>;
-    };
-    expect(pendingBody.ok).toBe(true);
-    expect(pendingBody.records.map((r) => r.id)).not.toContain(
-      captured.record.id
-    );
+    expect(pending.status).toBe(410);
+    expect(JSON.parse(pending.body).error).toBe("endpoint_retired");
 
     const retired = await rawPost(
       "/api/evidence-package",
