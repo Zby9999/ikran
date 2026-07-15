@@ -51,6 +51,7 @@ import {
   findStructuralOverlayFrameAtPoint
 } from "./structural-overlay";
 import { expandStructureRegionRect } from "@/lib/runtime/region-annotation-display";
+import { getStructuralSelection } from "./structural-selection-session";
 
 export const REGION_ANNOTATION_TOOL_ID = "region-annotation" as const;
 
@@ -142,7 +143,8 @@ function rectFromOriginCurrent(
 function structuralRectAtPoint(
   shape: SeedReferenceProjectionShape,
   mediaBox: PageRect,
-  pagePoint: { x: number; y: number }
+  pagePoint: { x: number; y: number },
+  preferredNodeId?: string | null
 ): { rect: NormalizedRect; nodeId: string } | null {
   if (mediaBox.w <= 0 || mediaBox.h <= 0) return null;
   const imageBox =
@@ -154,10 +156,14 @@ function structuralRectAtPoint(
     frameBoundsJson: shape.props.frameBoundsJson,
     positionalNodesJson: shape.props.positionalNodesJson
   });
-  const frame = findStructuralOverlayFrameAtPoint(frames, {
-    x: (pagePoint.x - imageBox.x) / imageBox.w,
-    y: (pagePoint.y - imageBox.y) / imageBox.h
-  });
+  const frame = findStructuralOverlayFrameAtPoint(
+    frames,
+    {
+      x: (pagePoint.x - imageBox.x) / imageBox.w,
+      y: (pagePoint.y - imageBox.y) / imageBox.h
+    },
+    preferredNodeId
+  );
   if (!frame) return null;
   return {
     nodeId: frame.nodeId,
@@ -242,7 +248,8 @@ export function createRegionAnnotationToolClass(
         structuralTarget: structuralRectAtPoint(
           hit.shape,
           hit.mediaBox,
-          origin
+          origin,
+          getStructuralSelection(editor, String(hit.shape.id))
         ),
         draftShapeId: String(draftShapeId)
       };

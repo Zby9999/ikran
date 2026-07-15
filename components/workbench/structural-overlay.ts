@@ -17,6 +17,8 @@ export type StructuralOverlayRect = {
 export type StructuralOverlayFrame = {
   nodeId: string;
   parentNodeId: string | null;
+  /** Nearest ancestor that is also projected as a selectable overlay frame. */
+  selectableParentNodeId: string | null;
   name: string;
   type: string;
   depth: number;
@@ -107,8 +109,9 @@ export function buildStructuralOverlayFrames(input: {
   const frameBounds = parseBounds(input.frameBoundsJson);
   if (!frameBounds) return [];
 
+  const nodes = parsePositionalNodes(input.positionalNodesJson);
   const frames: StructuralOverlayFrame[] = [];
-  for (const node of parsePositionalNodes(input.positionalNodesJson)) {
+  for (const node of nodes) {
     // The capture root is the screenshot itself, not a useful overlay target.
     if (
       typeof node.id !== "string" ||
@@ -134,6 +137,7 @@ export function buildStructuralOverlayFrames(input: {
     frames.push({
       nodeId: node.id,
       parentNodeId: node.parentId,
+      selectableParentNodeId: null,
       name: node.name,
       type: node.type,
       depth: node.depth,
@@ -144,6 +148,19 @@ export function buildStructuralOverlayFrames(input: {
         h: clipped.height / frameBounds.height
       }
     });
+  }
+
+  const selectableIds = new Set(frames.map((frame) => frame.nodeId));
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  for (const frame of frames) {
+    let ancestorId = frame.parentNodeId;
+    while (ancestorId) {
+      if (selectableIds.has(ancestorId)) {
+        frame.selectableParentNodeId = ancestorId;
+        break;
+      }
+      ancestorId = nodesById.get(ancestorId)?.parentId ?? null;
+    }
   }
 
   // Parents first for stable projection; deeper nodes remain the hit-test
@@ -159,20 +176,20 @@ export function buildStructuralOverlayFrames(input: {
 
 export function findStructuralOverlayFrameAtPoint(
   frames: StructuralOverlayFrame[],
-  point: { x: number; y: number }
+  point: { x: number; y: number },
+  preferredNodeId?: string | null
 ): StructuralOverlayFrame | null {
   if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  const preferred = preferredNodeId
+    ? frames.find((frame) => frame.nodeId === preferredNodeId) ?? null
+    : null;
+  if (preferred && pointInsideStructuralFrame(preferred, point)) {
+    return preferred;
+  }
   let winner: StructuralOverlayFrame | null = null;
   for (const frame of frames) {
+    if (!pointInsideStructuralFrame(frame, point)) continue;
     const { rect } = frame;
-    if (
-      point.x < rect.x ||
-      point.y < rect.y ||
-      point.x > rect.x + rect.w ||
-      point.y > rect.y + rect.h
-    ) {
-      continue;
-    }
     if (!winner) {
       winner = frame;
       continue;
@@ -187,4 +204,32 @@ export function findStructuralOverlayFrameAtPoint(
     }
   }
   return winner;
+}
+
+function pointInsideStructuralFrame(
+  frame: StructuralOverlayFrame,
+  point: { x: number; y: number }
+): boolean {
+  const { rect } = frame;
+  return (
+    point.x >= rect.x &&
+    point.y >= rect.y &&
+    point.x <= rect.x + rect.w &&
+    point.y <= rect.y + rect.h
+  );
+}
+
+/** Tab drill-up: clamp at the highest selectable ancestor. */
+export function parentStructuralOverlayFrame(
+  frames: StructuralOverlayFrame[],
+  nodeId: string
+): StructuralOverlayFrame | null {
+  const current = frames.find((frame) => frame.nodeId === nodeId) ?? null;
+  if (!current) return null;
+  if (!current.selectableParentNodeId) return current;
+  return (
+    frames.find(
+      (frame) => frame.nodeId === current.selectableParentNodeId
+    ) ?? current
+  );
 }

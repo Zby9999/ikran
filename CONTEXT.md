@@ -58,8 +58,12 @@ The Workbench projection that maps a Figma positional node index onto its
 captured screenshot so semantic nodes can be hovered, highlighted, selected,
 and used as annotation targets. Default selection favors Frame, Section,
 Component, Instance, Text, Image, and meaningfully named Group nodes; low-level
-Vector/Path nodes require explicit drill-down. Hover, selection, and breadcrumb
-navigation are ephemeral UI state, not research facts.
+Vector/Path nodes do not enter the default hit-test. `Tab` drills the current
+hover target upward through selectable parents and clamps at the highest one;
+moving the pointer resets to the deepest target at the new position. The canvas
+does not render node name/type/breadcrumb chrome; Agents read that identity from
+Runtime positional evidence and host Figma MCP. Hover and Tab selection are
+ephemeral UI state, not research facts.
 _Avoid_: sliced screenshot, persisted hover state
 
 **Figma implementation context**:

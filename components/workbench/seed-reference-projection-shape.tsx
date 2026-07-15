@@ -82,8 +82,10 @@ import {
   buildStructuralOverlayFrames,
   fitStructuralImageBox,
   findStructuralOverlayFrameAtPoint,
+  parentStructuralOverlayFrame,
   structuralHoverDisplayRect
 } from "./structural-overlay";
+import { setStructuralSelection } from "./structural-selection-session";
 
 export {
   SEED_REF_FRAME_CHROME_H,
@@ -210,6 +212,8 @@ function SeedReferenceProjectionFrame({
   } | null>(null);
   const mediaRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+  const lastStructuralPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const structuralDrilledRef = useRef(false);
   const seedActions = useWorkbenchSeedActions();
   const editor = useEditor();
   const isSelected = useValue(
@@ -324,7 +328,13 @@ function SeedReferenceProjectionFrame({
   useEffect(() => {
     if (structuralEnabled) return;
     setHoveredStructuralNodeId(null);
-  }, [structuralEnabled]);
+    setStructuralSelection(editor, String(shape.id), null);
+  }, [editor, shape.id, structuralEnabled]);
+
+  useEffect(
+    () => () => setStructuralSelection(editor, String(shape.id), null),
+    [editor, shape.id]
+  );
 
   const structuralPoint = useCallback(
     (event: { clientX: number; clientY: number }) => {
@@ -362,9 +372,45 @@ function SeedReferenceProjectionFrame({
 
   const handleStructuralPointerMove = (event: PointerEvent<HTMLDivElement>) => {
     if (!structuralEnabled) return;
+    const last = lastStructuralPointerRef.current;
+    const samePoint =
+      last != null &&
+      Math.abs(last.x - event.clientX) < 0.5 &&
+      Math.abs(last.y - event.clientY) < 0.5;
+    if (structuralDrilledRef.current && samePoint) return;
+    lastStructuralPointerRef.current = { x: event.clientX, y: event.clientY };
+    structuralDrilledRef.current = false;
     const frame = structuralFrameFromEvent(event);
-    setHoveredStructuralNodeId(frame?.nodeId ?? null);
+    const nodeId = frame?.nodeId ?? null;
+    setHoveredStructuralNodeId(nodeId);
+    setStructuralSelection(editor, String(shape.id), nodeId);
   };
+
+  useEffect(() => {
+    if (!structuralEnabled || !hoveredStructuralNodeId) return;
+    const handleTabParent = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || event.shiftKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      const parent = parentStructuralOverlayFrame(
+        structuralFrames,
+        hoveredStructuralNodeId
+      );
+      if (!parent) return;
+      structuralDrilledRef.current = true;
+      setHoveredStructuralNodeId(parent.nodeId);
+      setStructuralSelection(editor, String(shape.id), parent.nodeId);
+    };
+    window.addEventListener("keydown", handleTabParent, true);
+    return () => window.removeEventListener("keydown", handleTabParent, true);
+  }, [
+    editor,
+    hoveredStructuralNodeId,
+    shape.id,
+    structuralEnabled,
+    structuralFrames
+  ]);
 
   const stopShapePointer = (event: SyntheticEvent) => {
     event.stopPropagation();
@@ -631,7 +677,12 @@ function SeedReferenceProjectionFrame({
         data-structural-overlay={structuralFrames.length > 0 ? "true" : "false"}
         data-hovered-structural-node-id={hoveredStructuralNodeId ?? undefined}
         onPointerMove={handleStructuralPointerMove}
-        onPointerLeave={() => setHoveredStructuralNodeId(null)}
+        onPointerLeave={() => {
+          lastStructuralPointerRef.current = null;
+          structuralDrilledRef.current = false;
+          setHoveredStructuralNodeId(null);
+          setStructuralSelection(editor, String(shape.id), null);
+        }}
       >
         {hasScreenshot ? (
           // eslint-disable-next-line @next/next/no-img-element -- Runtime data URL or same-origin /api/artifacts

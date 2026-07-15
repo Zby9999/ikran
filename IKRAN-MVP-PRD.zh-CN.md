@@ -300,9 +300,9 @@ Ikran 的核心不变量：
 - Workbench 不提供右侧通用 chat；Agent host chat 承担开放澄清。
 - Figma Connection Gate 关闭时显示设计师提供的连接面板并锁定画布；粘贴 Figma link 直接报错且不产生记录。
 - Gate 打开后，Workbench canvas 接受 Figma selection link paste；具体连接、导入、错误与 refresh UI 必须遵循设计师提供的 Figma reference，不由实现自主设计。
-- Figma screenshot 上可投影 structural overlay；hover、selected bounds、breadcrumb 和 stale warning 的具体视觉与交互必须在实施前取得设计师 Figma reference，缺失时停止相应 UI 实施并请求设计。
-- 默认 selectable nodes 为 Frame、Section、Component、Instance、Text、Image 和有意义命名的 Group；Vector/Path 等底层节点仅在显式 drill-down 中出现。
-- structural overlay 的 hover、临时选择与 breadcrumb navigation 属于 ephemeral UI state，不进入 Runtime semantic records 或 research export。
+- Figma screenshot 上可投影 structural overlay；hover 默认命中当前位置最深的 selectable node，`Tab` 逐级切到 selectable parent、到顶后保持，鼠标移动到新位置时重置为该处最深节点；stale warning 的具体视觉遵循设计师 Figma reference。
+- 默认 selectable nodes 为 Frame、Section、Component、Instance、Text、Image 和有意义命名的 Group；Vector/Path 等底层节点不进入默认 hit-test。
+- 画布不额外显示 node name/type/breadcrumb；Agent 通过 Runtime positional evidence 与宿主 Figma MCP 读取节点身份和父级信息。structural overlay 的 hover 与 Tab 临时选择属于 ephemeral UI state，不进入 Runtime semantic records 或 research export。
 - 项目保存一个 Design Language Description；Seed Reference 保存可选 Reference Note。Description 可晚于 capture 填写，但为空时阻止正式 Design Intent Alignment。
 
 ### Evidence Surface 与 Region Annotation
@@ -334,7 +334,7 @@ Ikran 的核心不变量：
 - PAT 不进入项目 SQLite、`.ikran/`、artifact、日志、事件 payload 或 research export；API/MCP 不得回传凭证。
 - 未连接或连接验证失败时 Figma Connection Gate 保持关闭，画布锁定，paste/add 请求 fail closed 且不创建 Seed Reference。
 - Runtime 仅摄取 Figma positional evidence：截图、canonical source identity 与区域定位所需的最低 node identity/name/type/bounds 数据。
-- positional node index 可包含 parent identity、depth、visibility/selectability 与 clip/render bounds，以支持 structural overlay、hit-testing、breadcrumb 和 refresh correspondence；不得借此扩大为完整 implementation context。
+- positional node index 可包含 parent identity、depth、visibility/selectability 与 clip/render bounds，以支持 structural overlay、hit-testing、`Tab` parent drill-up 和 refresh correspondence；不得借此扩大为完整 implementation context。
 - Runtime 不预取 implementation context。布局、样式、组件、变量及其他实现级细节由 Agent 根据 source identity/candidates 按需通过宿主 Figma MCP 获取。
 - Runtime capture 是 positional evidence 的唯一 Active 产品来源；Agent 不上传或声明 Figma screenshot/evidence package。
 - 新 Seed Reference、初始 positional evidence、Figma Evidence Surface 与成功事件原子提交；无效 link、403/404、限流或 capture 失败不留下半成品记录或成功研究事实。
@@ -461,7 +461,7 @@ Workbench paste + MCP client
 - 显式 Refresh 在同一 lineage 中追加新 evidence version；重复 paste 不 refresh，历史 Surface/annotation 可回放。
 - Design Language Description 为空不阻塞 capture，但阻塞正式 Design Intent Alignment；Reference Note 可选。
 - annotation rect 可得到确定性排序 node candidates；Runtime 不自动确认 primary node。
-- screenshot structural overlay 默认只命中语义节点；hover 高亮、层级 drill-down 与 breadcrumb 不写研究事实。
+- screenshot structural overlay 默认只命中语义节点；hover 高亮与 `Tab` parent drill-up 不写研究事实，node name/type/parent 只供 Runtime/Agent 读取，不增加画布 chrome。
 - Annotation 可分别锚定 whole Surface、明确 Figma node 或自由 Region；node target 必须包含 captured evidence version。
 - Refresh 有 correspondence 时可提示 current node；无 correspondence 时历史 Node Annotation 标记 stale 并向设计师提示，不自动迁移。
 - tldraw shape 能投影 canvas record，shape id 不成为语义事实源。

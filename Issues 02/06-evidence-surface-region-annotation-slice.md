@@ -6,7 +6,7 @@
 
 此 slice 不做 Question card gate，只证明 anchored annotation record 是一等事实源。
 
-在实施 node hover/highlight、target selection、breadcrumb、annotation affordance 和 stale state 前，必须取得设计师对应的 Figma UI/interaction reference；缺失时停止相关 UI 实施并请求设计。
+Node selection 采用设计师确认的无额外 metadata chrome 交互：hover 默认最深 selectable node，`Tab` 向父级切换、到顶保持，鼠标移动重置；Agent 从 Runtime/Figma MCP 读取 node name/type/parent。
 
 ### 2026-07-10 后续架构收口
 
@@ -31,7 +31,7 @@
 - [x] Refresh 有可信 correspondence 时，Node Annotation 可显示 current 对应 node，但 persisted target 仍锚定 captured evidence version，不自动迁移。
 - [x] Refresh 无 correspondence 时，Node Annotation 标记 stale，并按设计师 Figma reference 明确提示；历史 Annotation 仍可查看和回放，不删除、不改写为无效。（原生 `figma-node` 与 Agent-confirmed region `primary_node_id` 均覆盖；Alert 保持 5 秒后渐隐。）
 - [x] Workbench 可创建设计师标注，并显示为 tldraw custom shape。
-- [ ] Workbench node selection 高亮与最终 `figma-node` Annotation target 一致，提交前设计师能确认 node name/type/breadcrumb。
+- [x] Workbench node selection 高亮与最终 `figma-node` Annotation target 一致；`Tab` 可逐级切换到 selectable parent 并提交当前高亮节点。画布不显示 node name/type/breadcrumb，Agent 可读取相应 positional identity。
 - [x] Agent 创建的标注通过 SSE/refresh 出现在 Workbench。
 - [x] 标注类型可为 question、assumption、observed fact、generalization risk，且不影响完成状态。
 - [x] 测试覆盖缺少 surface anchor、无效 rect、有效 Agent annotation、有效 designer annotation。
@@ -39,7 +39,7 @@
 
 ## Real Agent validation
 
-- [ ] 设计师在真实 Figma Evidence Surface 上分别创建至少一个 node target 和一个 free-region target，node highlight/breadcrumb 与真实 Figma source 可人工核对。
+- [x] 设计师在真实 Figma Evidence Surface 上分别创建至少一个 node target 和一个 free-region target；node 默认最深命中、`Tab` parent 切换与最终 target id 可核对，Agent 可读取 node name/type/parent。（Browser Use：真实 Redo Surface 默认命中 `260:3315` Text，`Tab` 切换到 `260:3314` Frame 后点击，SQLite 持久化 `target_kind=figma-node`、`target_node_id=260:3314`；同一 Surface 拖拽持久化为 `figma-region`。移动鼠标后重新命中最深节点；临时 records 验证后已删除，Annotation 总数恢复为 23。）
 - [x] 真实 Agent 基于 Runtime-captured 真实 Figma evidence 创建至少一个 anchored Annotation，并核验至少一个 Runtime candidate 或诚实记录空 candidates。（真实 Annotation `14e67fed-c375-4e01-8844-f4d928a9bc86` 返回 `260:3315` Text 与可解释 ancestors；Agent 经宿主 Figma MCP 核验并确认 primary node。）
 - [x] 在受控真实 Figma source 中移除/替换已注释 node 后 Refresh；Workbench 显示 stale warning，且旧 evidence version 与 Node Annotation 仍可回放。
 - [x] Workbench 能显示该 annotation，并能回连 semantic record id。（Browser Use 实机核验当前 14 个 Annotation projection 均带有 Runtime `record id`；SQLite 中对应 designer node/region records 可回连。）
@@ -62,11 +62,11 @@
 
 实现提交：`be75fcb`（已推送 `main`）。最终整体验证为 `npm run check` 完整通过（typecheck；53 unit files / 414 tests；64 e2e tests），Issue 06 的定向 Playwright/MCP coverage 继续通过；Code Review 最终无 blocking finding。
 
-Real Agent validation 已完成 1/4 项：Browser Use 实机读取当前 Workbench 投影，14 个 Annotation shape 均具有 Runtime semantic record id，并可与 SQLite 中的 designer `figma-node` / `figma-region` records 回连。仍未勾选：stale warning 的具体视觉提示，以及 node breadcrumb/确认信息，需要设计师 Figma UI/interaction reference；真实 Agent anchored Annotation、candidate 核验和受控 source mutation/Refresh 仍需要真实 Figma source 与 Agent host。本次未用 mock/deterministic 结果冒充。
+Real Agent validation 已完成 4/4 项：真实 Agent anchored Annotation、candidate/Figma MCP 核验、受控 source mutation + Refresh/missing/stale、Workbench semantic record 回连，以及真实 designer node/free-region 创建均已完成。节点交互按设计师最终决策收口为无额外 metadata UI 的 `Tab` parent drill-up；node name/type/parent 仅供 Agent 通过 positional evidence 与宿主 Figma MCP 读取。本次未用 mock/deterministic 结果冒充真实验证。
 
 ## Blocked by
 
-- 剩余 node selection highlight/breadcrumb 与设计师 node/free-region 双 target 人工验收仍受对应完整 Figma interaction reference/人工步骤约束；真实 Agent anchored Annotation 与受控 stale 路径已完成。
+- 无剩余 blocker；真实 Figma Evidence Surface 的 node/free-region、`Tab` parent target id 与鼠标移动重置均已通过 Browser Use 复验，无需新增 metadata/breadcrumb UI。
 
 ## Performance follow-up — 2026-07-15
 
@@ -77,3 +77,5 @@ Real Agent validation 已完成 1/4 项：Browser Use 实机读取当前 Workben
 ## Real Agent closeout — 2026-07-15
 
 真实 Agent 与真实 Figma source 已完成 candidate → Figma MCP → primary confirmation → source deletion → Refresh/missing/stale 纵切。根因修复为：`figma-region` 在 Agent 明确确认 `primary_node_id` 后，该节点身份参与后续 current evidence correspondence；旧实现只检查 `target_kind=figma-node`，因此真实区域标记删除节点后不会 stale。Workbench warning 同时接受 stale 的原生 node target 与 confirmed region，保持 5 秒后以 300 ms 渐隐。Browser Use 实测 4.5 秒仍可见、5.4 秒已消失；Figma MCP 对受控删除节点 `260:3315` 返回 not found。最终 `npm run check` 通过（60 unit files / 438 tests；65 e2e tests）。
+
+最终交互复验：Browser Use 在真实 Redo Surface 上确认 hover 默认命中最深节点 `260:3315`，连续 `Tab` 路径为 `260:3315 → 260:3314 → 260:3313 → 260:3312 → 260:3310`，顶层继续 `Tab` 保持 `260:3310`；鼠标移动后重置到 `260:3315`。切换一次父级并点击后，Runtime 持久化 `260:3314`；拖拽仍生成 `figma-region`。两条临时记录通过 Runtime DELETE 清理，数据库恢复到验证前的 23 条 Annotation，Workbench 最后恢复为 Select 模式。

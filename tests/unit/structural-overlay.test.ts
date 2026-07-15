@@ -3,6 +3,7 @@ import {
   buildStructuralOverlayFrames,
   fitStructuralImageBox,
   findStructuralOverlayFrameAtPoint,
+  parentStructuralOverlayFrame,
   structuralHoverDisplayRect
 } from "../../components/workbench/structural-overlay";
 import { displayRectForRegionAnnotation } from "../../lib/runtime/region-annotation-display";
@@ -159,6 +160,69 @@ describe("structural overlay", () => {
       "parent"
     );
     expect(findStructuralOverlayFrameAtPoint(frames, { x: 0.02, y: 0.02 })).toBeNull();
+
+    expect(
+      parentStructuralOverlayFrame(frames, "child")?.nodeId
+    ).toBe("parent");
+    expect(
+      parentStructuralOverlayFrame(frames, "parent")?.nodeId
+    ).toBe("parent");
+    expect(
+      findStructuralOverlayFrameAtPoint(
+        frames,
+        { x: 0.25, y: 0.17 },
+        "parent"
+      )?.nodeId
+    ).toBe("parent");
+  });
+
+  test("Tab parent skips non-selectable ancestors", () => {
+    const frames = buildStructuralOverlayFrames({
+      frameBoundsJson: FRAME_BOUNDS,
+      positionalNodesJson: JSON.stringify([
+        {
+          id: "root",
+          parentId: null,
+          name: "Page",
+          type: "FRAME",
+          depth: 0,
+          visible: true,
+          bounds: { x: 100, y: 200, width: 400, height: 800 }
+        },
+        {
+          id: "parent",
+          parentId: "root",
+          name: "Card",
+          type: "FRAME",
+          depth: 1,
+          visible: true,
+          bounds: { x: 140, y: 280, width: 320, height: 240 }
+        },
+        {
+          id: "vector-wrapper",
+          parentId: "parent",
+          name: "Path",
+          type: "VECTOR",
+          depth: 2,
+          visible: true,
+          bounds: { x: 170, y: 300, width: 160, height: 80 }
+        },
+        {
+          id: "child",
+          parentId: "vector-wrapper",
+          name: "Title",
+          type: "TEXT",
+          depth: 3,
+          visible: true,
+          bounds: { x: 180, y: 320, width: 120, height: 40 }
+        }
+      ])
+    });
+
+    expect(frames.map((frame) => frame.nodeId)).toEqual(["parent", "child"]);
+    expect(
+      parentStructuralOverlayFrame(frames, "child")?.nodeId
+    ).toBe("parent");
   });
 
   test("malformed positional evidence fails closed", () => {

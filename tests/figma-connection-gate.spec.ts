@@ -284,7 +284,7 @@ test("05C: header refresh button is leftmost and appends a new evidence version"
   );
 });
 
-test("05C: Annotation mode activates structural hover without persisting state", async ({
+test("05C: Tab drills structural hover to its parent and commits that node", async ({
   page,
   runtime,
   folder
@@ -298,7 +298,7 @@ test("05C: Annotation mode activates structural hover without persisting state",
     "/api/seed-capture",
     {
       figmaSeedReference:
-        "https://www.figma.com/design/AbCdEfGh/Mock?node-id=7-8"
+        "https://www.figma.com/design/AbCdEfGh/Mock?node-id=7-9"
     },
     {
       host: `localhost:${runtime.port}`,
@@ -318,7 +318,7 @@ test("05C: Annotation mode activates structural hover without persisting state",
   expect(box).not.toBeNull();
   if (!box) return;
 
-  // Mock child Frame is x=.1, y=.1, w=.5, h=.4 in the captured root.
+  // Mock Text sits inside a child Frame at this point.
   const point = {
     x: box.x + box.width * 0.3,
     y: box.y + box.height * 0.25
@@ -330,13 +330,37 @@ test("05C: Annotation mode activates structural hover without persisting state",
     "seed-reference-structural-highlight-hovered"
   );
   await expect(hovered).toBeVisible();
-  await expect(hovered).toHaveAttribute("data-node-id", /child-frame$/);
+  await expect(hovered).toHaveAttribute("data-node-id", /child-text$/);
   await expect(hovered).toHaveCSS("border-top-style", "none");
   await expect(hovered).toHaveCSS("background-color", "rgba(25, 209, 34, 0.4)");
   const hoveredBox = await hovered.boundingBox();
   expect(hoveredBox).not.toBeNull();
   expect(listEvents(folder)).toEqual(eventsBeforeHover);
   expect(listRegionAnnotations(folder)).toEqual(annotationsBeforeHover);
+
+  await page.keyboard.press("Tab");
+  await expect(hovered).toHaveAttribute("data-node-id", /child-frame$/);
+  // Clamp at the highest selectable overlay node instead of cycling.
+  await page.keyboard.press("Tab");
+  await expect(hovered).toHaveAttribute("data-node-id", /child-frame$/);
+
+  await page.mouse.click(point.x, point.y);
+  let committedAnnotation: ReturnType<typeof listRegionAnnotations>[number] | undefined;
+  await expect
+    .poll(() => {
+      try {
+        const records = listRegionAnnotations(folder);
+        committedAnnotation = records.at(-1);
+        return records.length;
+      } catch {
+        return -1;
+      }
+    })
+    .toBe(annotationsBeforeHover.length + 1);
+  expect(committedAnnotation).toMatchObject({
+    target_kind: "figma-node",
+    target_node_id: "7:9:child-frame"
+  });
 });
 
 test("paste/add fail closed when gate closed — no SQLite rows", async ({

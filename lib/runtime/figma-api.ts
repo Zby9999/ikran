@@ -526,6 +526,30 @@ export function createMockFigmaApiClient(): FigmaApiClient {
                     }
                   }
                 ]
+              : []),
+            ...(nodeId === "7:9"
+              ? [
+                  {
+                    id: `${nodeId}:child-frame`,
+                    parentId: nodeId,
+                    name: "Mock child frame",
+                    type: "FRAME",
+                    depth: 1,
+                    visible: true,
+                    selectable: true,
+                    bounds: { x: 32, y: 24, width: 160, height: 96 }
+                  },
+                  {
+                    id: `${nodeId}:child-text`,
+                    parentId: `${nodeId}:child-frame`,
+                    name: "Mock child text",
+                    type: "TEXT",
+                    depth: 2,
+                    visible: true,
+                    selectable: true,
+                    bounds: { x: 64, y: 48, width: 64, height: 24 }
+                  }
+                ]
               : [])
           ],
           surfaceBounds: { width: 320, height: 240 }

@@ -4,9 +4,9 @@
 
 ## What to build
 
-让设计师显式 Refresh 一个 Seed Reference，在同一 append-only evidence lineage 中捕获新的 positional-evidence version，并保留历史 Surface。Workbench 将 positional node index 投影为 screenshot 上的 Figma structural overlay：设计师可以 hover、highlight、选择语义节点并通过 breadcrumb/drill-down 确认 target。Runtime 使用 current positional index 对任意 surface rect 做确定性的空间相交和候选排序；Agent 可读取 Seed/selected-node/region context，随后自主调用宿主 Figma MCP 获取 implementation context。本 issue 同时提供跨 evidence versions 的 node correspondence/missing 结果；Issue 06 负责把它应用到持久 Annotation 和 stale warning。
+让设计师显式 Refresh 一个 Seed Reference，在同一 append-only evidence lineage 中捕获新的 positional-evidence version，并保留历史 Surface。Workbench 将 positional node index 投影为 screenshot 上的 Figma structural overlay：设计师可以 hover/highlight 最深语义节点，并用 `Tab` 逐级切换到 selectable parent 后确认 target；画布不显示 node name/type/breadcrumb。Runtime 使用 current positional index 对任意 surface rect 做确定性的空间相交和候选排序；Agent 可读取 Seed/selected-node/region context，随后自主调用宿主 Figma MCP 获取 implementation context。本 issue 同时提供跨 evidence versions 的 node correspondence/missing 结果；Issue 06 负责把它应用到持久 Annotation 和 stale warning。
 
-在实施 hover/highlight、selected bounds、breadcrumb 和 drill-down 前，必须取得设计师对应的 Figma UI/interaction reference；缺失时停止这些 UI 改动并请求设计，不得自主补视觉方案。
+Structural overlay 不增加节点元数据 UI；交互采用设计师确认的键盘契约：默认最深 selectable node，`Tab` 向父级切换并在顶层保持，鼠标移动重置。
 
 ## User stories covered
 
@@ -20,8 +20,8 @@
 - [x] Refresh 后历史 Surface 仍可访问，不会被 current Surface 覆盖或删除。
 - [x] positional node index 只包含定位与结构选择所需的 node identity/parent identity/name/type/depth/visibility/selectability/bounds/clip-render bounds，不包含预取的 styles、variables、component implementation 或完整文件树。
 - [x] structural overlay 默认只允许选择 Frame、Section、Component、Instance、Text、Image 与有意义命名的 Group；Vector/Path 不污染默认 hit-test，只能通过显式 drill-down 访问。
-- [ ] hover 一个 selectable node 时只高亮该 captured node bounds；重叠节点可通过 breadcrumb、父层级或重复/显式 drill-down 切换，行为与设计师 Figma reference 一致。
-- [x] hover、临时 selection、highlight 与 breadcrumb navigation 不创建 Runtime record/event，也不进入 research export。
+- [x] hover 一个 selectable node 时只高亮该 captured node bounds；默认选最深节点，`Tab` 逐级切换到 selectable parent、到顶后保持，鼠标移动到新位置时重置；点击提交当前高亮 node。
+- [x] hover、`Tab` 临时 selection 与 highlight 不创建 Runtime record/event，也不进入 research export；画布不显示 node name/type/breadcrumb，Agent 可读取对应 positional identity。
 - [x] Workbench 使用一张原始 evidence screenshot + overlay；默认不为每个 node 生成或持久化独立截图，只有选中/提交时可按需生成 crop。
 - [x] 给定 surface + raw semantic rect，Runtime 返回稳定排序的 candidates，并至少包含 node id、bounds、overlap/containment signal；无相交节点时返回空 candidates，而不是发明 primary node。
 - [x] candidate ranking 对固定 fixtures 可重复；坐标换算覆盖截图/media bounds、normalized rect、嵌套 nodes 和边界 clamp。
@@ -41,7 +41,7 @@
 
 ## Blocked by
 
-- Runtime Refresh 与真实 Agent/Figma handoff 无 blocker；仅剩完整 breadcrumb/父层级/drill-down UI AC 需要对应设计师 Figma interaction reference。
+- 无剩余 blocker；visible node metadata/breadcrumb 已由设计师明确从范围中移除，以 `Tab` parent drill-up + Agent-readable identity 取代。
 
 ## Completion report — 2026-07-14
 
@@ -57,4 +57,4 @@
 
 真实节点 `yNZdUYsVVUKuaEVl6YhoRA / 260:3308` 经 Browser Use Refresh 成功，Workbench 显示设计师更新后的 Redo frame；SQLite 证明 append-only lineage、current pointer 与历史 Surface 均正确，锚定旧 evidence version 的 6 个 Annotation records 继续保留并在 Workbench 投影。Real Figma / real Agent AC 当前完成 1/6，其余项目保持未勾选。验证：`npm run check` 完整通过（typecheck；53 unit files / 415 tests；64 e2e tests），新增 proxy transport 回归测试先红后绿，`git diff --check` 通过。
 
-2026-07-15 real-Agent closeout：真实自由 rect 返回可解释的 leaf-first candidates 与 containment signals；Cursor Agent 使用宿主 Figma MCP 独立核验 primary candidate，Runtime 未预取 implementation context。受控删除后 correspondence 明确 missing，历史 captured evidence/Annotation 保持可回放。真实路径明确分层为 Ikran MCP semantic write、Runtime positional evidence、宿主 Figma MCP implementation context、Agent primary judgment，以及只用于 UI invalidation 的 SSE。Real Figma / real Agent AC 现为 5/6；唯一未完成项是完整 breadcrumb/drill-down 视觉交互。
+2026-07-15 real-Agent closeout：真实自由 rect 返回可解释的 leaf-first candidates 与 containment signals；Cursor Agent 使用宿主 Figma MCP 独立核验 primary candidate，Runtime 未预取 implementation context。受控删除后 correspondence 明确 missing，历史 captured evidence/Annotation 保持可回放。真实路径明确分层为 Ikran MCP semantic write、Runtime positional evidence、宿主 Figma MCP implementation context、Agent primary judgment，以及只用于 UI invalidation 的 SSE。随后设计师将最后一项交互收口为无额外 metadata UI 的 `Tab` parent drill-up。Browser Use 在真实 Redo Surface 上复验 `260:3315 → 260:3314 → 260:3313 → 260:3312 → 260:3310`，顶层 clamp、鼠标移动重置以及点击提交当前 parent node 均通过；real Figma / real Agent AC 6/6 完成。
