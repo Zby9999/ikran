@@ -5,12 +5,12 @@ import {
   workbenchToastPhaseAt
 } from "../../components/workbench/workbench-toast-alert";
 
-test("Workbench alerts stay visible for two seconds, then fade and disappear", () => {
-  expect(WORKBENCH_TOAST_VISIBLE_MS).toBe(2_000);
+test("Workbench alerts stay visible for five seconds, then fade and disappear", () => {
+  expect(WORKBENCH_TOAST_VISIBLE_MS).toBe(5_000);
   expect(WORKBENCH_TOAST_FADE_MS).toBe(300);
   expect(workbenchToastPhaseAt(0)).toBe("visible");
-  expect(workbenchToastPhaseAt(1_999)).toBe("visible");
-  expect(workbenchToastPhaseAt(2_000)).toBe("exiting");
-  expect(workbenchToastPhaseAt(2_299)).toBe("exiting");
-  expect(workbenchToastPhaseAt(2_300)).toBe("hidden");
+  expect(workbenchToastPhaseAt(4_999)).toBe("visible");
+  expect(workbenchToastPhaseAt(5_000)).toBe("exiting");
+  expect(workbenchToastPhaseAt(5_299)).toBe("exiting");
+  expect(workbenchToastPhaseAt(5_300)).toBe("hidden");
 });

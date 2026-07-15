@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-export const WORKBENCH_TOAST_VISIBLE_MS = 2_000;
+export const WORKBENCH_TOAST_VISIBLE_MS = 5_000;
 export const WORKBENCH_TOAST_FADE_MS = 300;
 
 export type WorkbenchToastPhase = "visible" | "exiting" | "hidden";

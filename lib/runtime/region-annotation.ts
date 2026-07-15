@@ -525,6 +525,17 @@ function mapAnnotationRow(row: Record<string, unknown>): RegionAnnotationRecord 
       : "figma-region";
   const targetNodeId =
     row.target_node_id == null ? null : String(row.target_node_id);
+  const primaryNodeId =
+    row.primary_node_id == null ? null : String(row.primary_node_id);
+  // A free region has no node identity until an Agent explicitly confirms its
+  // primary candidate. From that point on, the confirmation is just as
+  // authoritative for refresh correspondence as a native figma-node target.
+  const correspondenceNodeId =
+    targetKind === "figma-node"
+      ? targetNodeId
+      : targetKind === "figma-region"
+        ? primaryNodeId
+        : null;
   const currentEvidenceVersionId =
     row.current_evidence_version_id == null
       ? null
@@ -535,11 +546,11 @@ function mapAnnotationRow(row: Record<string, unknown>): RegionAnnotationRecord 
       : String(row.current_positional_nodes_json)
   );
   const currentNode =
-    targetKind === "figma-node" && targetNodeId
-      ? currentNodes.find((node) => node.id === targetNodeId) ?? null
+    correspondenceNodeId
+      ? currentNodes.find((node) => node.id === correspondenceNodeId) ?? null
       : null;
   const currentRect =
-    currentNode && targetNodeId
+    currentNode && correspondenceNodeId
       ? normalizedNodeRect(
           row.current_frame_bounds_json == null
             ? null
@@ -547,11 +558,11 @@ function mapAnnotationRow(row: Record<string, unknown>): RegionAnnotationRecord 
           row.current_positional_nodes_json == null
             ? null
             : String(row.current_positional_nodes_json),
-          targetNodeId
+          correspondenceNodeId
         )
       : null;
   const correspondenceStatus =
-    targetKind !== "figma-node"
+    correspondenceNodeId == null
       ? "not_applicable"
       : currentRect
         ? "corresponding"
@@ -585,8 +596,7 @@ function mapAnnotationRow(row: Record<string, unknown>): RegionAnnotationRecord 
     rect_y: Number(row.rect_y),
     rect_w: Number(row.rect_w),
     rect_h: Number(row.rect_h),
-    primary_node_id:
-      row.primary_node_id == null ? null : String(row.primary_node_id),
+    primary_node_id: primaryNodeId,
     candidates_json:
       row.candidates_json == null ? null : String(row.candidates_json),
     created_at: String(row.created_at),

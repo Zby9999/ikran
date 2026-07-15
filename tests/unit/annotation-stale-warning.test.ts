@@ -66,3 +66,22 @@ test("does not warn for current node or free-region Annotations", () => {
     ])
   ).toBeNull();
 });
+
+test("warns when an Agent-confirmed region loses its primary Figma node", () => {
+  expect(
+    staleAnnotationWarning([
+      annotation({
+        target_kind: "figma-region",
+        target_node_id: null,
+        primary_node_id: "3:4",
+        current_node_id: null,
+        current_rect_x: null,
+        current_rect_y: null,
+        current_rect_w: null,
+        current_rect_h: null,
+        correspondence_status: "missing",
+        stale: true
+      })
+    ])
+  ).toBe("An annotated Figma node no longer exists in the current version.");
+});

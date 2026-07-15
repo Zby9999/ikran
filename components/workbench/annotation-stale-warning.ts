@@ -8,7 +8,9 @@ export function staleAnnotationWarning(
 ): string | null {
   return annotations.some(
     (annotation) =>
-      annotation.target_kind === "figma-node" && annotation.stale
+      annotation.stale &&
+      (annotation.target_kind === "figma-node" ||
+        annotation.primary_node_id != null)
   )
     ? STALE_ANNOTATION_WARNING
     : null;

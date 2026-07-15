@@ -369,7 +369,60 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
       expect(confirmed.confirmation.annotation_id).toBe(created.record.id);
       expect(confirmed.confirmation.evidence_version_id).toBe(surfaceId);
       expect(confirmed.confirmation.source_node_id).toBe("12:34");
-      expect(listRegionAnnotations(dir)[0].primary_node_id).toBe("12:34");
+      const listed = listRegionAnnotations(dir)[0];
+      expect(listed.primary_node_id).toBe("12:34");
+      expect(listed.current_node_id).toBe("12:34");
+      expect(listed.correspondence_status).toBe("corresponding");
+      expect(listed.stale).toBe(false);
+    });
+  });
+
+  test("confirmed region becomes stale when its primary node is absent from the current evidence", () => {
+    withTempProject((dir) => {
+      const capturedSurfaceId = seedSurface(dir);
+      addPositionalFixture(dir, capturedSurfaceId, [
+        {
+          id: "12:34",
+          parentId: "1:2",
+          name: "CTA",
+          type: "FRAME",
+          depth: 1,
+          visible: true,
+          bounds: { x: 140, y: 400, width: 120, height: 160 }
+        }
+      ]);
+      const created = createRegionAnnotation(dir, {
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: capturedSurfaceId,
+          rect: { x: 0.1, y: 0.25, w: 0.3, h: 0.2 }
+        },
+        author: "agent",
+        body: "Likely CTA"
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+
+      const confirmed = confirmAnnotationPrimaryNode(dir, {
+        annotationId: created.record.id,
+        evidenceVersionId: capturedSurfaceId,
+        sourceNodeId: "12:34"
+      });
+      expect(confirmed.ok).toBe(true);
+
+      const refreshed = recordEvidencePackage(
+        dir,
+        minimalPackage({ frame: { nodeId: "1:2", name: "Refreshed" } })
+      );
+      expect(refreshed.ok).toBe(true);
+      if (!refreshed.ok) return;
+      addPositionalFixture(dir, refreshed.record.id, []);
+
+      const replayed = listRegionAnnotations(dir)[0];
+      expect(replayed.primary_node_id).toBe("12:34");
+      expect(replayed.current_evidence_version_id).toBe(refreshed.record.id);
+      expect(replayed.correspondence_status).toBe("missing");
+      expect(replayed.stale).toBe(true);
     });
   });
 
