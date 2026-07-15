@@ -27,14 +27,14 @@
 
 - [x] 使用真实 PAT 打开 Figma Connection Gate，重启 Runtime 后仍连接；报告不包含 secret。（Browser Use 受控重启后 Connection Gate 仍为 `open`，两个既有 Surface 继续投影；核验过程未读取或输出 PAT。）
 - [x] 设计师在无 Agent 参与时粘贴至少两个真实 Figma nodes，均得到可视 Surface；重复 link 不重复创建。（Browser Use 实机复验：Workbench 保持 2 个可视 Surface；粘贴 canonical-equivalent link 后仍为 2 个 current Seed References，Surface id 未变化。）
-- [ ] 真实 Agent 通过新 MCP tool 添加另一个 node，并在 Workbench 中通过 SSE 出现。
-- [ ] 设计师创建真实 Figma Region Annotation；Runtime 返回 candidates；Agent 通过宿主 Figma MCP 获取 implementation context 并确认 primary node。
+- [x] 真实 Agent 通过新 MCP tool 添加另一个 node，并在 Workbench 中通过 SSE 出现。（Cursor 真实 Agent 调用 `add_seed_reference`；Runtime log 无对应 HTTP POST，Workbench 由 `/api/events` SSE invalidation 后读取并显示新记录。）
+- [x] 设计师创建真实 Figma Region Annotation；Runtime 返回 candidates；Agent 通过宿主 Figma MCP 获取 implementation context 并确认 primary node。（Annotation `14e67fed-c375-4e01-8844-f4d928a9bc86` 返回精确 Text `260:3315` 及逐层 ancestors；宿主 Figma MCP 在受控删除后确认该 node 已不存在。）
 - [x] 显式 Refresh 生成新 current evidence version，历史 Surface 与 annotation 仍可回放。（真实节点 `260:3308` 在修复 proxy-aware transport 后约 4.46 秒完成；旧 Surface 与锚定旧 evidence version 的 Annotation records 保留，新截图已在 Workbench 投影。）
 - [x] smoke 报告逐项标记 automated pass、real pass、blocked、not attempted；不得用 deterministic adapter 结果替代真实 Figma API、真实 Keychain 或真实 Agent host 结果。
 
 ## Blocked by
 
-- Automated scope 无 blocker；剩余两项 real smoke 需要真实 Agent host。安装级 PAT 重启持久化与真实 Figma Refresh 已通过。
+- 本 issue 无剩余 blocker；仍未完成的后续 prototype/artifact 阶段由各自 issue 跟踪。
 
 ## Comments
 
@@ -52,3 +52,5 @@
 Real smoke 已完成 4/6 项。Browser Use 实机验证中，Annotation 模式下两个真实 Figma Surface 均可见；Structure Overlay 命中节点 `197:58`，hover highlight 使用与结构化 Annotation 一致的较小外扩 margin；粘贴 canonical-equivalent Figma link 后 current Seed Reference 数量和 Surface id 均未变化，因此重复复用项标记为 real pass。随后受控重启 Runtime，Workbench 的 Figma Connection Gate 仍为 `open`，两个既有 Surface 继续投影，证明真实 PAT 安装级持久化通过；核验过程未读取或输出 secret。
 
 2026-07-15 follow-up：显式 Refresh 的 `figma_api_timeout` 已定位为 Node 全局 `fetch` 未读取标准 proxy env，导致 Figma signed S3 screenshot body 走不可用直连；Runtime Figma client 改为 Undici `EnvHttpProxyAgent` 后，不降低截图体积的真实节点 `260:3308` 在约 4.46 秒完成 Refresh。current Surface 从 `c9fde43b…` 前进至 `08ae2dd9…`，历史 Surface、lineage 与锚定旧 evidence version 的 Annotation records 保留，Workbench 显示更新后的 Redo frame。`npm run check` 完整通过（typecheck；53 unit files / 415 tests；64 e2e tests）。真实 Agent add/SSE 与真实 candidate→Figma MCP→primary confirmation 仍为 `not attempted`；deterministic adapter 结果没有计作 real pass。
+
+2026-07-15 real-Agent closeout：Cursor 真实 Agent 已通过 Active `add_seed_reference` 完成 stdio → Unix socket semantic write；Runtime log 证明该写入未走 HTTP loopback，Workbench 仅使用 SSE 接收 commit 后的 record invalidation。设计师随后创建真实 Region Annotation，Runtime 对真实矩形返回以 `260:3315` Text 为首、向外逐层排列的确定性 candidates；Agent 完成宿主 Figma MCP handoff 与 primary confirmation。受控删除后 Figma MCP 对该 node 返回 not found，Refresh/current evidence 将确认节点判为 missing/stale，Workbench 显示 warning。至此本 issue 6/6 real smoke 完成。

@@ -29,7 +29,7 @@
 - [x] Figma annotation 可在尚未确认 primary node 时创建；Runtime 只返回确定性排序 candidates，不自行写入 `primaryNodeId`。
 - [x] Agent 经宿主 Figma MCP 核验 candidate 后，可确认 `primaryNodeId`，且确认记录回连 annotation、surface version 与 source node。
 - [x] Refresh 有可信 correspondence 时，Node Annotation 可显示 current 对应 node，但 persisted target 仍锚定 captured evidence version，不自动迁移。
-- [ ] Refresh 无 correspondence 时，Node Annotation 标记 stale，并按设计师 Figma reference 明确提示；历史 Annotation 仍可查看和回放，不删除、不改写为无效。
+- [x] Refresh 无 correspondence 时，Node Annotation 标记 stale，并按设计师 Figma reference 明确提示；历史 Annotation 仍可查看和回放，不删除、不改写为无效。（原生 `figma-node` 与 Agent-confirmed region `primary_node_id` 均覆盖；Alert 保持 5 秒后渐隐。）
 - [x] Workbench 可创建设计师标注，并显示为 tldraw custom shape。
 - [ ] Workbench node selection 高亮与最终 `figma-node` Annotation target 一致，提交前设计师能确认 node name/type/breadcrumb。
 - [x] Agent 创建的标注通过 SSE/refresh 出现在 Workbench。
@@ -40,7 +40,7 @@
 ## Real Agent validation
 
 - [ ] 设计师在真实 Figma Evidence Surface 上分别创建至少一个 node target 和一个 free-region target，node highlight/breadcrumb 与真实 Figma source 可人工核对。
-- [ ] 真实 Agent 基于 Runtime-captured 真实 Figma evidence 创建至少一个 anchored Annotation，并核验至少一个 Runtime candidate 或诚实记录空 candidates。
+- [x] 真实 Agent 基于 Runtime-captured 真实 Figma evidence 创建至少一个 anchored Annotation，并核验至少一个 Runtime candidate 或诚实记录空 candidates。（真实 Annotation `14e67fed-c375-4e01-8844-f4d928a9bc86` 返回 `260:3315` Text 与可解释 ancestors；Agent 经宿主 Figma MCP 核验并确认 primary node。）
 - [x] 在受控真实 Figma source 中移除/替换已注释 node 后 Refresh；Workbench 显示 stale warning，且旧 evidence version 与 Node Annotation 仍可回放。
 - [x] Workbench 能显示该 annotation，并能回连 semantic record id。（Browser Use 实机核验当前 14 个 Annotation projection 均带有 Runtime `record id`；SQLite 中对应 designer node/region records 可回连。）
 
@@ -66,10 +66,14 @@ Real Agent validation 已完成 1/4 项：Browser Use 实机读取当前 Workben
 
 ## Blocked by
 
-- Automated 剩余两项受缺失的设计师 Figma UI/interaction reference 阻塞；Real Agent 剩余三项需要可控的真实 Figma source 与真实 Agent host。
+- 剩余 node selection highlight/breadcrumb 与设计师 node/free-region 双 target 人工验收仍受对应完整 Figma interaction reference/人工步骤约束；真实 Agent anchored Annotation 与受控 stale 路径已完成。
 
 ## Performance follow-up — 2026-07-15
 
 - [x] 已修复已选 designer Annotation 的删除交互延迟：Runtime DELETE 成功后，画布立即移除 marker；全量 Workbench refresh 改为后台自愈，失败仍以现有错误提示呈现，不会把已确认删除的 marker 恢复到画布。
 
 验证：新增 Runtime client 回归测试，覆盖 DELETE 成功不等待 evidence/layout/readiness 全量 batch，以及后台 refresh 失败仍报告错误。Browser Use 在真实 Workbench 创建并清理临时 Annotation 后，marker 在 64 ms 内移除；修复前相同路径为 650–1,590 ms。
+
+## Real Agent closeout — 2026-07-15
+
+真实 Agent 与真实 Figma source 已完成 candidate → Figma MCP → primary confirmation → source deletion → Refresh/missing/stale 纵切。根因修复为：`figma-region` 在 Agent 明确确认 `primary_node_id` 后，该节点身份参与后续 current evidence correspondence；旧实现只检查 `target_kind=figma-node`，因此真实区域标记删除节点后不会 stale。Workbench warning 同时接受 stale 的原生 node target 与 confirmed region，保持 5 秒后以 300 ms 渐隐。Browser Use 实测 4.5 秒仍可见、5.4 秒已消失；Figma MCP 对受控删除节点 `260:3315` 返回 not found。最终 `npm run check` 通过（60 unit files / 438 tests；65 e2e tests）。

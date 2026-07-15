@@ -71,6 +71,7 @@ import {
   SEED_REF_FRAME_CHROME_W,
   clampSeedReferenceResizeToNaturalSize,
   defaultDisplaySizeFromNaturalPixels,
+  fitSeedReferenceFrameToScreenshot,
   maxDisplaySizeFromNaturalPixels,
   sizeFromNaturalPixels
 } from "./seed-reference-resize-clamp";
@@ -411,23 +412,13 @@ function SeedReferenceProjectionFrame({
     const naturalUnchanged =
       shape.props.naturalMediaW === nw && shape.props.naturalMediaH === nh;
 
-    // Designer-positioned / restored frames keep display size; only record
-    // natural pixels for resize clamp.
-    if (shape.props.layoutLocked) {
-      if (naturalUnchanged) return;
-      editor.updateShape<SeedReferenceProjectionShape>({
-        id: shape.id,
-        type: SEED_REFERENCE_PROJECTION_TYPE,
-        props: {
-          naturalMediaW: nw,
-          naturalMediaH: nh
-        }
-      });
-      applySeedProjectionReflow(editor);
-      return;
-    }
-
-    const next = defaultDisplaySizeFromNaturalPixels(nw, nh);
+    const next = fitSeedReferenceFrameToScreenshot({
+      frameW: shape.props.w,
+      frameH: shape.props.h,
+      nextNaturalW: nw,
+      nextNaturalH: nh,
+      layoutLocked: shape.props.layoutLocked
+    });
     const sizeUnchanged =
       Math.abs(shape.props.w - next.w) < 1 &&
       Math.abs(shape.props.h - next.h) < 1;

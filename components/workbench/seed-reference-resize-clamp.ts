@@ -88,6 +88,47 @@ export function sizeFromNaturalPixels(
   return defaultDisplaySizeFromNaturalPixels(naturalWidth, naturalHeight);
 }
 
+/**
+ * Size a projection after its screenshot loads.
+ *
+ * Auto-laid-out frames use the normal import size. A designer-positioned or
+ * restored frame keeps its current display long edge, but adopts the new
+ * screenshot aspect ratio. This preserves the user's canvas scale while
+ * preventing letterbox whitespace after a refreshed Figma frame gets shorter
+ * or narrower. The media is never enlarged past its intrinsic pixels.
+ */
+export function fitSeedReferenceFrameToScreenshot({
+  frameW,
+  frameH,
+  nextNaturalW,
+  nextNaturalH,
+  layoutLocked
+}: {
+  frameW: number;
+  frameH: number;
+  nextNaturalW: number;
+  nextNaturalH: number;
+  layoutLocked: boolean;
+}): { w: number; h: number } {
+  if (!layoutLocked) {
+    return defaultDisplaySizeFromNaturalPixels(nextNaturalW, nextNaturalH);
+  }
+
+  const currentMediaLongEdge = Math.max(
+    0,
+    frameW - SEED_REF_FRAME_CHROME_W,
+    frameH - SEED_REF_FRAME_CHROME_H
+  );
+  const nextNaturalLongEdge = Math.max(nextNaturalW, nextNaturalH);
+  const displayLongEdge = Math.min(currentMediaLongEdge, nextNaturalLongEdge);
+  const { mediaW, mediaH } = fitMediaToMaxEdge(
+    nextNaturalW,
+    nextNaturalH,
+    displayLongEdge
+  );
+  return frameSizeFromMedia(mediaW, mediaH);
+}
+
 export function clampSeedReferenceResizeToNaturalSize({
   x,
   y,

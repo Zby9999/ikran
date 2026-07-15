@@ -3,6 +3,7 @@ import {
   clampSeedReferenceResizeToNaturalSize,
   DEFAULT_DISPLAY_MEDIA_EDGE,
   defaultDisplaySizeFromNaturalPixels,
+  fitSeedReferenceFrameToScreenshot,
   MAX_SCREENSHOT_MEDIA_EDGE,
   maxDisplaySizeFromNaturalPixels,
   SEED_REF_FRAME_CHROME_H,
@@ -11,6 +12,30 @@ import {
 } from "../../components/workbench/seed-reference-resize-clamp";
 
 test.describe("seed reference projection resize clamp", () => {
+  test("a locked frame keeps its display scale but hugs a shorter refreshed screenshot", () => {
+    const resized = fitSeedReferenceFrameToScreenshot({
+      frameW: 1092,
+      frameH: 1116,
+      nextNaturalW: 1080,
+      nextNaturalH: 540,
+      layoutLocked: true
+    });
+
+    expect(resized).toEqual({ w: 1092, h: 576 });
+  });
+
+  test("a locked resized frame keeps its smaller canvas scale on refresh", () => {
+    const resized = fitSeedReferenceFrameToScreenshot({
+      frameW: 552,
+      frameH: 576,
+      nextNaturalW: 2160,
+      nextNaturalH: 1080,
+      layoutLocked: true
+    });
+
+    expect(resized).toEqual({ w: 552, h: 306 });
+  });
+
   test("default display fits a 4096 capture to the 1080 long edge", () => {
     const display = defaultDisplaySizeFromNaturalPixels(4096, 2304);
     expect(display.w).toBe(DEFAULT_DISPLAY_MEDIA_EDGE + SEED_REF_FRAME_CHROME_W);
