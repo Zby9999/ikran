@@ -438,13 +438,13 @@
   height: 20px;
 }
 
-.seed-ref-frame__figma-link-wrap {
+.seed-ref-frame__action-wrap {
   position: relative;
   flex: 0 0 auto;
 }
 
-/* Figma Address hint (Figma 284:415) — fade + slide up on figma-link hover. */
-.seed-ref-frame__figma-hint-anchor {
+/* Header action hint (Figma Address 284:415) — fade + slide up on hover/focus. */
+.seed-ref-frame__action-hint-anchor {
   position: absolute;
   left: 50%;
   bottom: calc(100% + 4px);
@@ -457,14 +457,19 @@
     translate 160ms ease;
 }
 
-.seed-ref-frame__figma-link-wrap:hover:not(:has(.seed-ref-frame__figma-link:disabled))
-  .seed-ref-frame__figma-hint-anchor,
-.seed-ref-frame__figma-link-wrap:focus-within .seed-ref-frame__figma-hint-anchor {
+.seed-ref-frame__action-wrap:hover:not(:has(button:disabled)):not(
+    :has([aria-expanded="true"])
+  )
+  .seed-ref-frame__action-hint-anchor,
+.seed-ref-frame__action-wrap:focus-within:not(:has(button:disabled)):not(
+    :has([aria-expanded="true"])
+  )
+  .seed-ref-frame__action-hint-anchor {
   opacity: 1;
   translate: -50% 0;
 }
 
-.seed-ref-frame__figma-hint {
+.seed-ref-frame__action-hint {
   box-sizing: border-box;
   display: block;
   padding: 4px 8px;
@@ -526,8 +531,21 @@
   color: #731b73;
 }
 
-.seed-ref-frame__refresh--active .seed-ref-frame__refresh-icon {
-  animation: seed-ref-refresh-spin 0.8s linear infinite;
+.seed-ref-frame__refresh--active {
+  cursor: wait;
+  opacity: 1;
+}
+
+.seed-ref-frame__refresh-spinner {
+  box-sizing: border-box;
+  display: block;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid rgba(115, 27, 115, 0.25);
+  border-top-color: #731b73;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: seed-ref-refresh-spin 0.7s linear infinite;
 }
 
 @keyframes seed-ref-refresh-spin {

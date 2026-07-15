@@ -622,6 +622,10 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       await expect(
         projection.getByTestId("seed-reference-projection-figma-hint")
       ).toBeVisible();
+      await projection.getByTestId("seed-reference-projection-notes").hover();
+      await expect(
+        projection.getByTestId("seed-reference-projection-notes-hint")
+      ).toBeVisible();
       await page.evaluate(() => {
         window.open = ((url) => {
           document.body.dataset.openedFigmaUrl = String(url);

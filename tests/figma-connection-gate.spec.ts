@@ -239,12 +239,11 @@ test("05C: header refresh button is leftmost and appends a new evidence version"
 
   const frame = page.getByTestId("seed-reference-projection");
   await expect(frame).toBeVisible({ timeout: 10000 });
-  const refresh = frame.getByRole("button", { name: "Refresh evidence" });
+  const refresh = frame.getByRole("button", { name: "Refresh" });
   await expect(refresh).toBeVisible();
-  await expect(frame.locator(".seed-ref-frame__header-actions > :first-child")).toHaveAttribute(
-    "data-testid",
-    "seed-reference-projection-refresh"
-  );
+  await expect(
+    frame.locator(".seed-ref-frame__header-actions > :first-child button")
+  ).toHaveAttribute("data-testid", "seed-reference-projection-refresh");
 
   const refreshResponse = page.waitForResponse(
     (response) =>

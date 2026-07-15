@@ -64,7 +64,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { SeedReferenceDescriptionPanel } from "./seed-reference-description-panel";
 import { SeedReferenceNotesPanel } from "./seed-reference-notes-panel";
-import { SeedRefFrameFigmaHint } from "./seed-ref-frame-figma-hint";
+import { SeedRefFrameActionHint } from "./seed-ref-frame-action-hint";
 import { SeedRefFrameFigmaIcon } from "./seed-ref-frame-figma-icon";
 import {
   SEED_REF_FRAME_CHROME_H,
@@ -472,33 +472,51 @@ function SeedReferenceProjectionFrame({
           {title}
         </p>
         <div className="seed-ref-frame__header-actions">
-          <Button
-            type="button"
-            variant="ghost"
-            className={cn(
-              seedRefFrameHeaderButtonClass,
-              "seed-ref-frame__refresh",
-              refreshing && "seed-ref-frame__refresh--active"
-            )}
-            data-testid="seed-reference-projection-refresh"
-            aria-label="Refresh evidence"
-            aria-busy={refreshing}
-            disabled={!noteSeedId || !seedActions || refreshing}
-            onPointerDown={stopShapePointer}
-            onMouseDown={stopShapePointer}
-            onClick={refreshEvidence}
-          >
-            <HugeiconsIcon
-              className="seed-ref-frame__refresh-icon"
-              icon={RefreshIcon}
-              size={14}
-              color="currentColor"
-              strokeWidth={1.5}
-            />
-          </Button>
-          <div className="seed-ref-frame__figma-link-wrap">
-            <div className="seed-ref-frame__figma-hint-anchor" aria-hidden="true">
-              <SeedRefFrameFigmaHint />
+          <div className="seed-ref-frame__action-wrap">
+            <div className="seed-ref-frame__action-hint-anchor" aria-hidden="true">
+              <SeedRefFrameActionHint
+                label="Refresh"
+                testId="seed-reference-projection-refresh-hint"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              className={cn(
+                seedRefFrameHeaderButtonClass,
+                "seed-ref-frame__refresh",
+                refreshing && "seed-ref-frame__refresh--active"
+              )}
+              data-testid="seed-reference-projection-refresh"
+              aria-label="Refresh"
+              aria-busy={refreshing}
+              disabled={!noteSeedId || !seedActions || refreshing}
+              onPointerDown={stopShapePointer}
+              onMouseDown={stopShapePointer}
+              onClick={refreshEvidence}
+            >
+              {refreshing ? (
+                <span
+                  className="seed-ref-frame__refresh-spinner"
+                  aria-hidden="true"
+                />
+              ) : (
+                <HugeiconsIcon
+                  className="seed-ref-frame__refresh-icon"
+                  icon={RefreshIcon}
+                  size={14}
+                  color="currentColor"
+                  strokeWidth={1.5}
+                />
+              )}
+            </Button>
+          </div>
+          <div className="seed-ref-frame__action-wrap">
+            <div className="seed-ref-frame__action-hint-anchor" aria-hidden="true">
+              <SeedRefFrameActionHint
+                label="Figma Address"
+                testId="seed-reference-projection-figma-hint"
+              />
             </div>
             <Button
               type="button"
@@ -514,69 +532,85 @@ function SeedReferenceProjectionFrame({
               <SeedRefFrameFigmaIcon />
             </Button>
           </div>
-          <Button
-            type="button"
-            variant="ghost"
-            className={cn(
-              seedRefFrameHeaderButtonClass,
-              "seed-ref-frame__notes",
-              notesOpen && "seed-ref-frame__notes--open"
-            )}
-            data-testid="seed-reference-projection-notes"
-            aria-label="Notes"
-            aria-expanded={notesOpen}
-            disabled={!noteSeedId}
-            onPointerDown={stopShapePointer}
-            onMouseDown={stopShapePointer}
-            onClick={toggleNotes}
-          >
-            <HugeiconsIcon
-              className="seed-ref-frame__notes-icon"
-              icon={NoteIcon}
-              size={14}
-              color="currentColor"
-              strokeWidth={1.5}
-            />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            className={cn(
-              seedRefFrameHeaderButtonClass,
-              "seed-ref-frame__info",
-              descriptionOpen && "seed-ref-frame__info--open"
-            )}
-            data-testid="seed-reference-projection-info"
-            aria-label="Design language description"
-            aria-expanded={descriptionOpen}
-            onPointerDown={stopShapePointer}
-            onMouseDown={stopShapePointer}
-            onClick={toggleDescription}
-          >
-            <svg
-              className="seed-ref-frame__info-icon"
-              width="14"
-              height="14"
-              viewBox="0 0 14 14"
-              fill="none"
-              aria-hidden="true"
+          <div className="seed-ref-frame__action-wrap">
+            <div className="seed-ref-frame__action-hint-anchor" aria-hidden="true">
+              <SeedRefFrameActionHint
+                label="Notes"
+                testId="seed-reference-projection-notes-hint"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              className={cn(
+                seedRefFrameHeaderButtonClass,
+                "seed-ref-frame__notes",
+                notesOpen && "seed-ref-frame__notes--open"
+              )}
+              data-testid="seed-reference-projection-notes"
+              aria-label="Notes"
+              aria-expanded={notesOpen}
+              disabled={!noteSeedId}
+              onPointerDown={stopShapePointer}
+              onMouseDown={stopShapePointer}
+              onClick={toggleNotes}
             >
-              <circle
-                cx="7"
-                cy="7"
-                r="5.5625"
-                stroke="#731b73"
-                strokeWidth="0.875"
+              <HugeiconsIcon
+                className="seed-ref-frame__notes-icon"
+                icon={NoteIcon}
+                size={14}
+                color="currentColor"
+                strokeWidth={1.5}
               />
-              <path
-                d="M7 6.25V9.5"
-                stroke="#731b73"
-                strokeWidth="0.875"
-                strokeLinecap="round"
+            </Button>
+          </div>
+          <div className="seed-ref-frame__action-wrap">
+            <div className="seed-ref-frame__action-hint-anchor" aria-hidden="true">
+              <SeedRefFrameActionHint
+                label="Description"
+                testId="seed-reference-projection-info-hint"
               />
-              <circle cx="7" cy="4.5" r="0.7" fill="#731b73" />
-            </svg>
-          </Button>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              className={cn(
+                seedRefFrameHeaderButtonClass,
+                "seed-ref-frame__info",
+                descriptionOpen && "seed-ref-frame__info--open"
+              )}
+              data-testid="seed-reference-projection-info"
+              aria-label="Design language description"
+              aria-expanded={descriptionOpen}
+              onPointerDown={stopShapePointer}
+              onMouseDown={stopShapePointer}
+              onClick={toggleDescription}
+            >
+              <svg
+                className="seed-ref-frame__info-icon"
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                aria-hidden="true"
+              >
+                <circle
+                  cx="7"
+                  cy="7"
+                  r="5.5625"
+                  stroke="#731b73"
+                  strokeWidth="0.875"
+                />
+                <path
+                  d="M7 6.25V9.5"
+                  stroke="#731b73"
+                  strokeWidth="0.875"
+                  strokeLinecap="round"
+                />
+                <circle cx="7" cy="4.5" r="0.7" fill="#731b73" />
+              </svg>
+            </Button>
+          </div>
           {descriptionOpen ? (
             <SeedReferenceDescriptionPanel
               description={description}
