@@ -6,7 +6,7 @@ import "./seed-evidence-workbench.css";
 // CSS chunk; failing to load that chunk aborted the whole canvas (ChunkLoadError).
 import "tldraw/tldraw.css";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkbenchRuntime } from "@/components/runtime/use-workbench-runtime";
 import { FolderChrome } from "./folder-chrome";
 import { FigmaVerificationPanelController } from "./figma-verification-panel";
@@ -14,6 +14,12 @@ import { useFigmaPasteCapture } from "./use-figma-paste-capture";
 import { staleAnnotationWarning } from "./annotation-stale-warning";
 import { WorkbenchToastAlert } from "./workbench-toast-alert";
 import { RuntimeShutdownControl } from "./runtime-shutdown-control";
+import {
+  ALIGNMENT_STAGES,
+  AlignmentStagePanel,
+  type AlignmentCoverage,
+  type AlignmentStageId
+} from "./alignment-stage-panel";
 
 // tldraw touches the DOM during render, so the canvas shell is loaded with
 // `next/dynamic({ ssr: false })` to keep Next.js SSR happy.
@@ -43,6 +49,7 @@ export function SeedEvidenceWorkbench({
     annotations,
     layout,
     designLanguageDescription,
+    alignment,
     status: runtimeStatus,
     error,
     createAnnotation,
@@ -53,6 +60,9 @@ export function SeedEvidenceWorkbench({
     flushWorkbenchLayout,
     updateSeedReferenceNote,
     updateDesignLanguageDescription,
+    recordDesignerAnswer,
+    appendAgentAnnotationInformation,
+    completeDesignIntentAlignment,
     getFigmaConnection,
     connectFigma,
     captureSeedReference
@@ -102,6 +112,20 @@ export function SeedEvidenceWorkbench({
   const [canvasStage, setCanvasStage] = useState<"sign-seed" | "extraction">(
     "sign-seed"
   );
+  const [alignmentStage, setAlignmentStage] =
+    useState<AlignmentStageId>("layout");
+
+  const alignmentCoverage = useMemo(() => {
+    const byStage = new Map(
+      (alignment?.coverage.sections ?? []).map((section) => [
+        section.section,
+        section.complete
+      ])
+    );
+    return Object.fromEntries(
+      ALIGNMENT_STAGES.map(({ id }) => [id, byStage.get(id) === true])
+    ) as AlignmentCoverage;
+  }, [alignment]);
 
   const showGate = gateStatus !== "open" || !canvasEntered;
   const canvasLocked = showGate;
@@ -256,6 +280,22 @@ export function SeedEvidenceWorkbench({
       <WorkbenchToastAlert message={toast.message} testId={toast.testId} />
       <RuntimeShutdownControl session={session} />
 
+      {canvasStage === "extraction" && alignment ? (
+        <div className="seed-workbench__alignment-stages">
+          <AlignmentStagePanel
+            completed={alignment.alignment.status === "completed"}
+            coverage={alignmentCoverage}
+            currentStage={alignmentStage}
+            onComplete={() => {
+              void completeDesignIntentAlignment().then((result) => {
+                if (!result.ok) showPhaseError(result.error);
+              });
+            }}
+            onStageChange={setAlignmentStage}
+          />
+        </div>
+      ) : null}
+
       <div
         className={
           canvasLocked
@@ -270,6 +310,8 @@ export function SeedEvidenceWorkbench({
             records={records}
             surfaces={surfaces}
             annotations={annotations}
+            alignment={canvasStage === "extraction" ? alignment : null}
+            alignmentStage={alignmentStage}
             session={session}
             inFlightCaptures={inFlightCaptures}
             savedFrames={layout.frames}
@@ -286,6 +328,8 @@ export function SeedEvidenceWorkbench({
             onCreateAnnotation={createAnnotation}
             onDeleteAnnotation={deleteAnnotation}
             onDeleteSeedReference={deleteSeedReference}
+            onRecordDesignerAnswer={recordDesignerAnswer}
+            onAppendAgentAnnotationInformation={appendAgentAnnotationInformation}
           />
         ) : null}
       </div>

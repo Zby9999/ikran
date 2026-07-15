@@ -86,6 +86,8 @@ import {
   structuralHoverDisplayRect
 } from "./structural-overlay";
 import { setStructuralSelection } from "./structural-selection-session";
+import { FocusTargetMask } from "./focus-target-mask";
+import { useWorkbenchFocusMode } from "./focus-mode-context";
 
 export {
   SEED_REF_FRAME_CHROME_H,
@@ -215,6 +217,7 @@ function SeedReferenceProjectionFrame({
   const lastStructuralPointerRef = useRef<{ x: number; y: number } | null>(null);
   const structuralDrilledRef = useRef(false);
   const seedActions = useWorkbenchSeedActions();
+  const focusMode = useWorkbenchFocusMode();
   const editor = useEditor();
   const isSelected = useValue(
     "seed-ref-selected",
@@ -685,16 +688,34 @@ function SeedReferenceProjectionFrame({
         }}
       >
         {hasScreenshot ? (
-          // eslint-disable-next-line @next/next/no-img-element -- Runtime data URL or same-origin /api/artifacts
-          <img
-            ref={imageRef}
-            className="seed-ref-frame__media-img"
-            data-testid="seed-reference-projection-screenshot"
-            src={screenshotSrc}
-            alt=""
-            draggable={false}
-            onLoad={handleScreenshotLoad}
-          />
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element -- Runtime data URL or same-origin /api/artifacts */}
+            <img
+              ref={imageRef}
+              className="seed-ref-frame__media-img"
+              data-testid="seed-reference-projection-screenshot"
+              src={screenshotSrc}
+              alt=""
+              draggable={false}
+              onLoad={handleScreenshotLoad}
+            />
+            {focusMode.state.phase !== "idle" && surfaceRecordId && imageBox ? (
+              <FocusTargetMask
+                phase={focusMode.state.phase}
+                surfaceArtifactId={surfaceRecordId}
+                evidenceVersionId={surfaceRecordId}
+                targets={focusMode.state.targets}
+                onFadeOutComplete={focusMode.finishExit}
+                style={{
+                  inset: "auto",
+                  left: imageBox.left,
+                  top: imageBox.top,
+                  width: imageBox.width,
+                  height: imageBox.height
+                }}
+              />
+            ) : null}
+          </>
         ) : showGuide ? (
           <div
             className="seed-ref-frame__awaiting seed-ref-frame__awaiting--guide"

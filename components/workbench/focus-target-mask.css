@@ -1,0 +1,34 @@
+.focus-target-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 140ms ease-out;
+}
+
+.focus-target-mask[data-state="exiting"] {
+  opacity: 0;
+}
+
+.focus-target-mask__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.focus-target-mask__dimmer {
+  fill: rgb(0 0 0 / 24%);
+}
+
+@starting-style {
+  .focus-target-mask[data-state="active"] {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focus-target-mask {
+    transition-duration: 1ms;
+  }
+}

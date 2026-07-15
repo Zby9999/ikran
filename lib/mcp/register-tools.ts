@@ -5,6 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerProjectWorkspaceTools } from "./project-workspace-tools";
 import { registerRegionTools } from "./region-tools";
 import { registerSeedEvidenceTools } from "./seed-evidence-tools";
+import { registerDesignIntentAlignmentTools } from "./design-intent-alignment-tools";
 import {
   IKRAN_MCP_INSTRUCTIONS,
   type RegisterIkranToolsDeps
@@ -24,4 +25,5 @@ export function registerIkranTools(
   registerProjectWorkspaceTools(mcp, deps);
   registerSeedEvidenceTools(mcp, deps);
   registerRegionTools(mcp, deps);
+  registerDesignIntentAlignmentTools(mcp, deps);
 }

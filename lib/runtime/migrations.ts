@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 9;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -632,6 +632,58 @@ SELECT
   created_at
 FROM region_annotations
 WHERE primary_node_id IS NOT NULL AND TRIM(primary_node_id) <> '';
+      `);
+    }
+  },
+  {
+    version: 8,
+    up(db) {
+      // Issue 07: Runtime-owned six-part Design Intent Alignment records.
+      db.exec(`
+CREATE TABLE design_intent_alignment (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  status TEXT NOT NULL DEFAULT 'draft',
+  completed_at TEXT
+);
+INSERT OR IGNORE INTO design_intent_alignment (singleton, status)
+VALUES (1, 'draft');
+
+CREATE TABLE agent_alignment_annotations (
+  id TEXT PRIMARY KEY,
+  inference TEXT NOT NULL,
+  body TEXT NOT NULL,
+  additional_information_json TEXT NOT NULL DEFAULT '[]',
+  anchor_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE alignment_question_cards (
+  id TEXT PRIMARY KEY,
+  section TEXT NOT NULL,
+  observation TEXT NOT NULL,
+  question TEXT NOT NULL,
+  proposed_answer TEXT,
+  final_answer TEXT,
+  answer_source TEXT,
+  anchor_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_alignment_question_cards_section
+  ON alignment_question_cards(section);
+CREATE INDEX idx_alignment_question_cards_created_at
+  ON alignment_question_cards(created_at);
+      `);
+    }
+  },
+  {
+    version: 9,
+    up(db) {
+      // Issue 07 Figma parity: gray Agent Annotation cards have a short title.
+      db.exec(`
+ALTER TABLE agent_alignment_annotations
+  ADD COLUMN title TEXT NOT NULL DEFAULT 'Agent Annotation';
 `);
     }
   }

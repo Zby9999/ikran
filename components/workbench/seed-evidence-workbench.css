@@ -95,6 +95,13 @@
   background-color: #dcdcdc;
 }
 
+.seed-workbench__alignment-stages {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 45;
+}
+
 .seed-workbench__canvas .tl-container {
   --tl-color-background: #dcdcdc;
   background: #dcdcdc;

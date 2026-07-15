@@ -13,6 +13,7 @@ import type { RegionAnnotationRecord } from "@/lib/runtime/region-annotation";
 import type { WorkbenchLayoutDocument } from "@/lib/runtime/workbench-layout-shared";
 import { emptyWorkbenchLayout } from "@/lib/runtime/workbench-layout-shared";
 import type { NormalizedRect } from "@/components/workbench/region-annotation-geometry";
+import type { DesignIntentAlignmentSnapshot } from "@/lib/runtime/design-intent-alignment";
 import {
   createWorkbenchDataClient,
   subscribeRuntimeEvents,
@@ -108,6 +109,10 @@ function layoutSignature(layout: WorkbenchLayoutDocument): string {
   return `${layout.version}:${cam.x}:${cam.y}:${cam.z}:${frames}`;
 }
 
+function alignmentSignature(alignment: DesignIntentAlignmentSnapshot): string {
+  return JSON.stringify(alignment);
+}
+
 /**
  * Subscribe before the initial GET. A fresh connection runs an initial load,
  * then another authoritative baseline after `open`; a subscriber joining an
@@ -150,6 +155,8 @@ export function useWorkbenchRuntime(session: string) {
   );
   const [designLanguageDescription, setDesignLanguageDescription] =
     useState("");
+  const [alignment, setAlignment] =
+    useState<DesignIntentAlignmentSnapshot | null>(null);
   const [status, setStatus] = useState<WorkbenchRuntimeStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const clientRef = useRef<ReturnType<typeof createWorkbenchDataClient> | null>(
@@ -182,6 +189,11 @@ export function useWorkbenchRuntime(session: string) {
       prev === snapshot.designLanguageDescription
         ? prev
         : snapshot.designLanguageDescription
+    );
+    setAlignment((prev) =>
+      prev && alignmentSignature(prev) === alignmentSignature(snapshot.alignment)
+        ? prev
+        : snapshot.alignment
     );
   }, []);
 
@@ -400,12 +412,37 @@ export function useWorkbenchRuntime(session: string) {
     []
   );
 
+  const recordDesignerAnswer = useCallback(
+    async (questionCardId: string, finalAnswer: string): Promise<MutationResult> => {
+      const client = clientRef.current;
+      if (!client) return { ok: false, error: "runtime_client_unavailable" };
+      return client.recordDesignerAnswer(questionCardId, finalAnswer);
+    },
+    []
+  );
+
+  const appendAgentAnnotationInformation = useCallback(
+    async (annotationId: string, information: string): Promise<MutationResult> => {
+      const client = clientRef.current;
+      if (!client) return { ok: false, error: "runtime_client_unavailable" };
+      return client.appendAgentAnnotationInformation(annotationId, information);
+    },
+    []
+  );
+
+  const completeDesignIntentAlignment = useCallback(async (): Promise<MutationResult> => {
+    const client = clientRef.current;
+    if (!client) return { ok: false, error: "runtime_client_unavailable" };
+    return client.completeDesignIntentAlignment();
+  }, []);
+
   return {
     seeds,
     surfaces,
     annotations,
     layout,
     designLanguageDescription,
+    alignment,
     status,
     error,
     reload,
@@ -417,6 +454,9 @@ export function useWorkbenchRuntime(session: string) {
     flushWorkbenchLayout,
     updateSeedReferenceNote,
     updateDesignLanguageDescription,
+    recordDesignerAnswer,
+    appendAgentAnnotationInformation,
+    completeDesignIntentAlignment,
     getFigmaConnection,
     connectFigma,
     captureSeedReference

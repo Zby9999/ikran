@@ -115,6 +115,10 @@ export function openProjectDb(projectPath: string): DatabaseType {
 
   const db = new DatabaseSync(dbPath);
   try {
+    // Workbench authoritative reloads fan out across several read endpoints.
+    // Let a short-lived concurrent writer/migration release the WAL lock
+    // instead of surfacing a transient `db_error` to the designer action.
+    db.exec("PRAGMA busy_timeout = 5000");
     db.exec("PRAGMA foreign_keys = ON");
     db.exec("PRAGMA journal_mode = WAL");
 

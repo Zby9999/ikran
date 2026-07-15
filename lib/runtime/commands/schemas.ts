@@ -184,6 +184,66 @@ export const connectFigmaInputShape = {
 
 export const connectFigmaInputSchema = z.object(connectFigmaInputShape);
 
+const alignmentEvidenceLinkShape = {
+  seedReferenceId: z.string(),
+  evidenceSurfaceId: z.string(),
+  evidenceVersionId: z.string()
+} as const;
+
+const alignmentNormalizedRectSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number()
+});
+
+const alignmentEvidenceTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("surface"), ...alignmentEvidenceLinkShape }),
+  z.object({
+    kind: z.literal("node"),
+    ...alignmentEvidenceLinkShape,
+    nodeId: z.string()
+  }),
+  z.object({
+    kind: z.literal("region"),
+    ...alignmentEvidenceLinkShape,
+    rect: alignmentNormalizedRectSchema
+  })
+]);
+
+export const alignmentAnchorSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("single"), target: alignmentEvidenceTargetSchema }),
+  z.object({
+    kind: z.literal("focus-target-set"),
+    targets: z.array(alignmentEvidenceTargetSchema)
+  })
+]);
+
+export const createAlignmentQuestionCardInputSchema = z.object({
+  section: z.string(),
+  observation: z.string(),
+  question: z.string(),
+  proposedAnswer: z.string().optional(),
+  anchor: alignmentAnchorSchema
+});
+
+export const createAgentAnnotationInputSchema = z.object({
+  inference: z.string(),
+  title: z.string(),
+  body: z.string(),
+  anchor: alignmentAnchorSchema
+});
+
+export const appendAgentAnnotationInformationInputSchema = z.object({
+  annotationId: z.string(),
+  information: z.string()
+});
+
+export const recordDesignerAnswerInputSchema = z.object({
+  questionCardId: z.string(),
+  finalAnswer: z.string()
+});
+
 export type CommandInputParseResult<T> =
   | { ok: true; data: T }
   | { ok: false; reason: "invalid_params" };

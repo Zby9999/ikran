@@ -8,6 +8,7 @@ import type { RegionAnnotationRecord } from "@/lib/runtime/region-annotation";
 import type { WorkbenchLayoutDocument } from "@/lib/runtime/workbench-layout-shared";
 import { emptyWorkbenchLayout } from "@/lib/runtime/workbench-layout-shared";
 import type { NormalizedRect } from "@/components/workbench/region-annotation-geometry";
+import type { DesignIntentAlignmentSnapshot } from "@/lib/runtime/design-intent-alignment";
 
 export type RuntimeHeartbeatEvent = {
   type: "heartbeat";
@@ -167,6 +168,8 @@ export type WorkbenchRuntimeSnapshot = {
   layout: WorkbenchLayoutDocument;
   /** Project-level Design Language Description (Info tip). */
   designLanguageDescription: string;
+  /** Issue 07 — authoritative six-part Design Intent Alignment state. */
+  alignment: DesignIntentAlignmentSnapshot;
 };
 
 export type RuntimeMutationResult =
@@ -320,6 +323,15 @@ export function createWorkbenchDataClient(
             method: "GET"
           })
         ]);
+        // Alignment also opens the project DB. Fetch it after the existing
+        // batch to avoid six simultaneous migration/read connections during
+        // an SSE invalidation while a designer mutation is committing.
+        const alignmentRes = await fetchJson(
+          fetcher,
+          "/api/design-intent-alignment",
+          session,
+          { method: "GET" }
+        );
 
         if (!active) {
           return { ok: false, error: "runtime_client_disposed" };
@@ -335,7 +347,8 @@ export function createWorkbenchDataClient(
           seedRes.ok &&
           surfaceRes.ok &&
           annotationRes.ok &&
-          readinessRes.ok
+          readinessRes.ok &&
+          alignmentRes.ok
         ) {
           if (layoutRes.ok) {
             const layoutRaw = layoutRes.data.layout;
@@ -355,7 +368,8 @@ export function createWorkbenchDataClient(
             annotations:
               (annotationRes.data.records as RegionAnnotationRecord[]) ?? [],
             layout: lastLayout,
-            designLanguageDescription
+            designLanguageDescription,
+            alignment: alignmentRes.data as unknown as DesignIntentAlignmentSnapshot
           });
           options.onError(null);
           return { ok: true };
@@ -365,7 +379,8 @@ export function createWorkbenchDataClient(
           seedRes,
           surfaceRes,
           annotationRes,
-          readinessRes
+          readinessRes,
+          alignmentRes
         );
         // Surface while retrying so the canvas is not silently stale.
         options.onError(lastError);
@@ -388,7 +403,7 @@ export function createWorkbenchDataClient(
     rect: NormalizedRect;
     targetNodeId?: string;
   }): Promise<RuntimeMutationResult> => {
-    const result = await fetchJson(fetcher, "/api/region-annotation", session, {
+    const request = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -406,7 +421,23 @@ export function createWorkbenchDataClient(
         author: "designer",
         body: "Placeholder annotation"
       })
-    });
+    } satisfies RequestInit;
+    let result = await fetchJson(
+      fetcher,
+      "/api/region-annotation",
+      session,
+      request
+    );
+    for (const delay of [50, 150]) {
+      if (result.ok || result.data.error !== "db_error") break;
+      await sleep(delay);
+      result = await fetchJson(
+        fetcher,
+        "/api/region-annotation",
+        session,
+        request
+      );
+    }
     if (!result.ok) {
       return reportMutationError(
         (typeof result.data.error === "string" && result.data.error) ||
@@ -592,6 +623,59 @@ export function createWorkbenchDataClient(
     return { ok: true };
   };
 
+  const patchAlignment = async (
+    body: Record<string, unknown>,
+    fallbackError: string
+  ): Promise<RuntimeMutationResult> => {
+    const result = await fetchJson(
+      fetcher,
+      "/api/design-intent-alignment",
+      session,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      }
+    );
+    if (!result.ok) {
+      return reportMutationError(
+        (typeof result.data.error === "string" && result.data.error) ||
+          fallbackError
+      );
+    }
+    const reloaded = await loadAll();
+    if (!reloaded.ok) {
+      return reportMutationError(
+        `alignment_update_succeeded_reload_failed:${reloaded.error}`
+      );
+    }
+    return { ok: true };
+  };
+
+  const recordDesignerAnswer = (questionCardId: string, finalAnswer: string) =>
+    patchAlignment(
+      {
+        action: "record-designer-answer",
+        input: { questionCardId, finalAnswer }
+      },
+      "record_designer_answer_failed"
+    );
+
+  const appendAgentAnnotationInformation = (
+    annotationId: string,
+    information: string
+  ) =>
+    patchAlignment(
+      {
+        action: "append-agent-annotation-information",
+        input: { annotationId, information }
+      },
+      "append_agent_annotation_information_failed"
+    );
+
+  const completeDesignIntentAlignment = () =>
+    patchAlignment({ action: "complete" }, "complete_alignment_failed");
+
   return {
     loadAll,
     createAnnotation,
@@ -602,6 +686,9 @@ export function createWorkbenchDataClient(
     flushWorkbenchLayout,
     updateSeedReferenceNote,
     updateDesignLanguageDescription,
+    recordDesignerAnswer,
+    appendAgentAnnotationInformation,
+    completeDesignIntentAlignment,
     getFigmaConnection: async (): Promise<
       | { ok: true; connected: false }
       | {

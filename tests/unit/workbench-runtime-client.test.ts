@@ -54,8 +54,8 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
-/** Authoritative Workbench GET batch size (seeds/surfaces/annotations/layout/readiness). */
-const LOAD_BATCH = 5;
+/** Authoritative Workbench GET batch size, including Design Intent Alignment. */
+const LOAD_BATCH = 6;
 
 function jsonResponse(
   records: unknown[],
@@ -121,7 +121,32 @@ function readinessResponse(
   );
 }
 
+function alignmentResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      sections: [
+        "design-principle",
+        "visual-language",
+        "token",
+        "layout",
+        "component",
+        "interaction"
+      ],
+      alignment: { status: "draft", completed_at: null },
+      annotations: [],
+      question_cards: [],
+      coverage: {
+        sections: {},
+        can_complete: false
+      }
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } }
+  );
+}
+
 function batchResponse(url: string, seedRecords: unknown[]): Response {
+  if (url.includes("design-intent-alignment")) return alignmentResponse();
   if (url.includes("workbench-layout")) return layoutResponse();
   if (url.includes("project/readiness")) return readinessResponse();
   if (url.includes("seed-reference")) return jsonResponse(seedRecords);
@@ -138,6 +163,90 @@ afterEach(async () => {
 });
 
 describe("Workbench Runtime consistency", () => {
+  test("retries a transient annotation db_error without retrying unrelated failures", async () => {
+    let posts = 0;
+    const sleeps: number[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        posts += 1;
+        return new Response(
+          JSON.stringify(posts === 1 ? { ok: false, error: "db_error" } : { ok: true }),
+          {
+            status: posts === 1 ? 500 : 200,
+            headers: { "Content-Type": "application/json" }
+          }
+        );
+      }
+      return batchResponse(String(input), []);
+    });
+    const { createWorkbenchDataClient } = await import(
+      "../../components/runtime/use-workbench-runtime"
+    );
+    const client = createWorkbenchDataClient("session", {
+      fetcher,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+      onSnapshot: () => {},
+      onError: () => {}
+    });
+
+    expect(
+      await client.createAnnotation({
+        surfaceArtifactId: "surface-1",
+        rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+      })
+    ).toEqual({ ok: true });
+    expect(posts).toBe(2);
+    expect(sleeps).toEqual([50]);
+    client.dispose();
+  });
+
+  test("loads alignment and exposes answer, append, and complete mutations", async () => {
+    const snapshots: unknown[] = [];
+    const writes: unknown[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("design-intent-alignment") && init?.method === "PATCH") {
+        writes.push(JSON.parse(String(init.body)));
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return batchResponse(url, []);
+    });
+    const { createWorkbenchDataClient } = await import(
+      "../../components/runtime/use-workbench-runtime"
+    );
+    const client = createWorkbenchDataClient("session", {
+      fetcher,
+      sleep: async () => {},
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+      onError: () => {}
+    });
+
+    expect(await client.loadAll()).toEqual({ ok: true });
+    expect(snapshots.at(-1)).toMatchObject({
+      alignment: { alignment: { status: "draft" }, question_cards: [] }
+    });
+    expect(await client.recordDesignerAnswer("question-1", "Use 16px")).toEqual({ ok: true });
+    expect(await client.appendAgentAnnotationInformation("annotation-1", "Keep this exception")).toEqual({ ok: true });
+    expect(await client.completeDesignIntentAlignment()).toEqual({ ok: true });
+    expect(writes).toEqual([
+      {
+        action: "record-designer-answer",
+        input: { questionCardId: "question-1", finalAnswer: "Use 16px" }
+      },
+      {
+        action: "append-agent-annotation-information",
+        input: { annotationId: "annotation-1", information: "Keep this exception" }
+      },
+      { action: "complete" }
+    ]);
+    client.dispose();
+  });
+
   test("structural click creates an explicit figma-node target", async () => {
     let posted: unknown = null;
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -286,12 +395,14 @@ describe("Workbench Runtime consistency", () => {
     const older = client.loadAll();
     const newer = client.loadAll();
 
-    // Newer batch (indices 5–9): seed, surface, annotation, layout, readiness
+    // Both core batches start together (5 requests each); alignment follows
+    // its core batch to avoid another concurrent project-DB connection.
     responses[5].resolve(jsonResponse([{ id: "new" }]));
     responses[6].resolve(jsonResponse([]));
     responses[7].resolve(jsonResponse([]));
     responses[8].resolve(layoutResponse());
     responses[9].resolve(readinessResponse());
+    responses[10].resolve(alignmentResponse());
     await newer;
 
     responses[0].resolve(jsonResponse([{ id: "old" }]));
@@ -299,6 +410,7 @@ describe("Workbench Runtime consistency", () => {
     responses[2].resolve(jsonResponse([]));
     responses[3].resolve(layoutResponse());
     responses[4].resolve(readinessResponse());
+    responses[11].resolve(alignmentResponse());
     await older;
 
     expect(snapshots).toHaveLength(1);

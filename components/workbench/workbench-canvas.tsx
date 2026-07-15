@@ -11,7 +11,7 @@
 // This file is imported via `next/dynamic({ ssr: false })` from
 // SeedEvidenceWorkbench because `<Tldraw>` touches the DOM during render.
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type PropsWithChildren } from "react";
 import { Tldraw, type TLStateNodeConstructor, type TLUiOverrides } from "tldraw";
 import { SeedReferenceProjectionShapeUtil } from "./seed-reference-projection-shape";
 import { RegionAnnotationShapeUtil } from "./region-annotation-shape";
@@ -44,13 +44,29 @@ import type {
   WorkbenchLayoutDocument
 } from "@/lib/runtime/workbench-layout-shared";
 import type { NormalizedRect } from "./region-annotation-geometry";
+import type { DesignIntentAlignmentSnapshot } from "@/lib/runtime/design-intent-alignment";
+import {
+  AlignmentCardProjectionProvider,
+  AlignmentCardShapeUtil
+} from "./alignment-card-shape";
+import { AlignmentTargetShapeUtil } from "./alignment-target-shape";
+import { AlignmentConnectorShapeUtil } from "./alignment-connector-shape";
+import { AlignmentProjectionSync } from "./projection/alignment-projection-sync";
+import type { AlignmentStageId } from "./alignment-stage-panel";
+import {
+  useWorkbenchFocusMode,
+  WorkbenchFocusModeProvider
+} from "./focus-mode-context";
 
 export { artifactScreenshotUrl };
 
 /** Stable across renders — do not rebuild inline in WorkbenchCanvas. */
 const SHAPE_UTILS = [
   SeedReferenceProjectionShapeUtil,
-  RegionAnnotationShapeUtil
+  RegionAnnotationShapeUtil,
+  AlignmentCardShapeUtil,
+  AlignmentTargetShapeUtil,
+  AlignmentConnectorShapeUtil
 ];
 
 const OVERLAY_UTILS = [SeedSelectionForegroundOverlayUtil];
@@ -69,6 +85,8 @@ export function WorkbenchCanvas({
   records,
   surfaces = [],
   annotations = [],
+  alignment = null,
+  alignmentStage = "layout",
   session,
   inFlightCaptures = [],
   savedFrames = {},
@@ -84,12 +102,16 @@ export function WorkbenchCanvas({
   annotateMode = false,
   onCreateAnnotation,
   onDeleteAnnotation,
-  onDeleteSeedReference
+  onDeleteSeedReference,
+  onRecordDesignerAnswer,
+  onAppendAgentAnnotationInformation
 }: {
   records: SeedReferenceRecord[];
   surfaces?: FigmaEvidenceSurfaceRecord[];
   /** Runtime Region Annotation records — one-way projected to marker shapes. */
   annotations?: RegionAnnotationRecord[];
+  alignment?: DesignIntentAlignmentSnapshot | null;
+  alignmentStage?: AlignmentStageId;
   /** Startup session token — required to load artifactPath screenshots via /api/artifacts. */
   session: string;
   /** In-flight paste captures — spinner frames until Runtime responds. */
@@ -134,6 +156,14 @@ export function WorkbenchCanvas({
   /** Designer DELETE seed frame via Runtime — only remove after HTTP success. */
   onDeleteSeedReference?: (
     seedId: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onRecordDesignerAnswer?: (
+    questionCardId: string,
+    finalAnswer: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onAppendAgentAnnotationInformation?: (
+    annotationId: string,
+    information: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const createHandlerRef = useRef<
@@ -185,6 +215,11 @@ export function WorkbenchCanvas({
   );
 
   return (
+    <WorkbenchFocusModeProvider>
+    <AlignmentActionsBridge
+      onRecordDesignerAnswer={onRecordDesignerAnswer}
+      onAppendAgentAnnotationInformation={onAppendAgentAnnotationInformation}
+    >
     <WorkbenchSeedActionsProvider value={seedActions}>
     <Tldraw
       hideUi
@@ -221,6 +256,13 @@ export function WorkbenchCanvas({
         onFocused={onFocusSeedApplied}
       />
       <RegionAnnotationProjectionSync annotations={annotations} />
+      {alignment ? (
+        <AlignmentProjectionSync
+          currentStage={alignmentStage}
+          questions={alignment.question_cards}
+          annotations={alignment.annotations}
+        />
+      ) : null}
       <RegionAnnotationToolController
         annotateMode={annotateMode}
         onCreate={onCreateAnnotation}
@@ -233,5 +275,34 @@ export function WorkbenchCanvas({
       <SeedReferenceDeleteController onDelete={onDeleteSeedReference} />
     </Tldraw>
     </WorkbenchSeedActionsProvider>
+    </AlignmentActionsBridge>
+    </WorkbenchFocusModeProvider>
+  );
+}
+
+function AlignmentActionsBridge({
+  children,
+  onRecordDesignerAnswer,
+  onAppendAgentAnnotationInformation
+}: PropsWithChildren<{
+  onRecordDesignerAnswer?: (id: string, answer: string) => Promise<unknown>;
+  onAppendAgentAnnotationInformation?: (
+    id: string,
+    information: string
+  ) => Promise<unknown>;
+}>) {
+  const focusMode = useWorkbenchFocusMode();
+  return (
+    <AlignmentCardProjectionProvider
+      onSubmitAnswer={(id, answer) => {
+        void onRecordDesignerAnswer?.(id, answer);
+      }}
+      onAppendAnnotationInformation={(id, information) => {
+        void onAppendAgentAnnotationInformation?.(id, information);
+      }}
+      onFocusCardSelection={focusMode.selectFocusCard}
+    >
+      {children}
+    </AlignmentCardProjectionProvider>
   );
 }

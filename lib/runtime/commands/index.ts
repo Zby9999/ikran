@@ -52,6 +52,15 @@ export {
 } from "./workbench-layout";
 
 export {
+  appendAgentAnnotationInformationCommand,
+  completeDesignIntentAlignmentCommand,
+  createAgentAnnotationCommand,
+  createAlignmentQuestionCardCommand,
+  readDesignIntentAlignmentCommand,
+  recordDesignerAnswerCommand
+} from "./design-intent-alignment";
+
+export {
   parseCommandInput,
   createRegionAnnotationInputSchema,
   createRegionAnnotationInputShape,
@@ -71,6 +80,14 @@ export {
   connectFigmaInputShape,
   createOrOpenProjectInputShape,
   setupWorkspaceInputShape
+} from "./schemas";
+
+export {
+  alignmentAnchorSchema,
+  appendAgentAnnotationInformationInputSchema,
+  createAgentAnnotationInputSchema,
+  createAlignmentQuestionCardInputSchema,
+  recordDesignerAnswerInputSchema
 } from "./schemas";
 
 export { commandErrorHttpStatus } from "./http-status";
