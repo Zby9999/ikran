@@ -249,12 +249,16 @@ _Avoid_: log, register, commit
 
 ## Integration shape
 
-- **Agent ↔ Runtime**: traditional MCP over stdio (Agent host spawns Runtime).
-  Agent calls semantic MCP tools only — no raw `exec`, no separate geometry tool.
+- **Agent ↔ Runtime**: the Agent host spawns a transient stdio bridge. The bridge
+  forwards JSON-RPC over a local owner-only socket and ensures the persistent
+  Runtime is running; semantic MCP tools and the Workbench remain in that one
+  Runtime process. Disconnecting one bridge releases an MCP lease, not the
+  Runtime. Agent calls semantic MCP tools only — no raw `exec`, no separate
+  geometry tool.
 - **Designer ↔ Runtime**: the Web UI (HTTP REST + SSE) served by Runtime, viewed
   in any browser, ideally the Agent host's embedded browser. Designer actions
   become HTTP calls; Runtime pushes updates to the Web UI via SSE.
-- Runtime is one process doing both: stdio MCP + HTTP Web UI (localhost,
+- Runtime is one persistent process doing both: semantic MCP + HTTP Web UI (localhost,
   auto-port, startup-scoped session token in the Workbench URL), sharing one
   command kernel across the two surfaces.
 - Runtime uses the designer's **Figma Connection** only to capture Figma

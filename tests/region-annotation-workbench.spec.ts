@@ -265,19 +265,28 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     await enterWorkbench(page, { port: runtime.port, sessionToken: token });
 
     const annotate = page.getByTestId("annotate-button");
+    const select = page.getByTestId("select-button");
     await expect(annotate).toBeVisible();
+    await expect(select).toBeVisible();
+    await expect(select).toHaveAttribute("aria-pressed", "true");
+    await expect(select).toHaveAttribute("data-active", "true");
     await expect(annotate).toHaveAttribute("aria-pressed", "false");
     await annotate.click();
+    await expect(select).toHaveAttribute("aria-pressed", "false");
     await expect(annotate).toHaveAttribute("aria-pressed", "true");
     await expect(annotate).toHaveAttribute("data-active", "true");
-    await annotate.click();
+    await select.click();
+    await expect(select).toHaveAttribute("aria-pressed", "true");
     await expect(annotate).toHaveAttribute("aria-pressed", "false");
 
     // Tool hotkeys: F → Annotate, V → select.
     await page.keyboard.press("f");
+    await expect(select).toHaveAttribute("aria-pressed", "false");
     await expect(annotate).toHaveAttribute("aria-pressed", "true");
     await expect(annotate).toHaveAttribute("data-active", "true");
     await page.keyboard.press("v");
+    await expect(select).toHaveAttribute("aria-pressed", "true");
+    await expect(select).toHaveAttribute("data-active", "true");
     await expect(annotate).toHaveAttribute("aria-pressed", "false");
     await expect(annotate).not.toHaveAttribute("data-active", "true");
 

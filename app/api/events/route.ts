@@ -16,6 +16,7 @@ import {
   type RecordBusEvent
 } from "../../../lib/runtime/record-bus";
 import { authorize } from "../../../lib/runtime/session";
+import { getRuntimeControl } from "../../../lib/runtime/runtime-lifecycle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,12 +37,15 @@ export async function GET(request: NextRequest) {
   }
 
   const encoder = new TextEncoder();
+  const releaseWorkbenchLease =
+    getRuntimeControl()?.lifecycle.acquire("workbench") ?? (() => {});
   let sequence = 0;
   let closed = false;
   let interval: ReturnType<typeof setInterval> | undefined;
   let unsubscribeRecords: (() => void) | undefined;
 
   const stop = () => {
+    releaseWorkbenchLease();
     if (interval) {
       clearInterval(interval);
       interval = undefined;

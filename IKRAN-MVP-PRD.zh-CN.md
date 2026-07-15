@@ -32,10 +32,10 @@ MVP 必须在一个月内成为完整闭环的研究原型。它必须支持：
 
 Ikran 以融合形态存在：一个本地 Ikran Runtime **一进程**同时提供两个 surface：
 
-- Agent ↔ Runtime：传统 MCP over stdio。Agent host spawn Runtime，并调用语义 MCP tools。
+- Agent ↔ Runtime：Agent host spawn 短生命周期 stdio bridge；bridge 只转发 JSON-RPC，按需启动并连接持久本地 Runtime。语义 MCP server 与 Workbench 仍在同一个 Runtime 进程内。
 - Designer ↔ Runtime：HTTP Web UI（custom Next HTTP/SSE），即 Ikran workbench。Runtime 绑定 `127.0.0.1` 自动端口，生成启动级 session token，并返回 Workbench URL。
 
-stdio MCP 与 HTTP/SSE 运行在同一 Node 进程内，共享同一 command kernel；MCP 不经 localhost HTTP loopback 调用自身。Workbench 与 Agent 操作同一组 Runtime-owned records。
+语义 MCP server 与 HTTP/SSE 运行在同一 Node Runtime 进程内，共享同一 command kernel；stdio bridge 不包含语义 tool implementation，也不经 localhost HTTP loopback。单次 Agent-host transport 断开只释放 MCP lease，不关闭 Runtime 或 Workbench；Runtime 由 Workbench Shutdown、`ikran stop` 或零 lease idle timeout 结束。
 
 设计师通过自然语言让 Agent 打开 Ikran。Agent 调用 `open_workbench`，Runtime 启动或复用 HTTP surface，并返回类似下面的 URL：
 

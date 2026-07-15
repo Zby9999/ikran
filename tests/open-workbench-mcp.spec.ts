@@ -189,10 +189,10 @@ test.describe("Ikran Issue 02/01 — open_workbench MCP tool", () => {
         expect(info1.url).toBeTruthy();
         expect(info1.url).toMatch(URL_RE);
 
-        // One-process: endpoint pid === MCP child pid; owner=mcp.
+        // Persistent Runtime owner: Cursor's stdio bridge has a different PID.
         const ep = readEndpointFile(stateDir);
         expect(ep).not.toBeNull();
-        expect(ep!.pid).toBe(mcpPid);
+        expect(ep!.pid).not.toBe(mcpPid);
         expect(ep!.owner).toBe("mcp");
 
         // No second Next CLI child under the MCP process group.
@@ -232,25 +232,19 @@ test.describe("Ikran Issue 02/01 — open_workbench MCP tool", () => {
         const noToken = await fetch(`http://127.0.0.1:${port}/api/health`);
         expect(noToken.status).toBe(403);
 
-        // Lifecycle: close transport → MCP async-closes HTTP → port free +
-        // endpoint cleared.
+        // Lifecycle: close transport only releases the MCP lease. Runtime,
+        // Workbench URL and endpoint remain stable for the next Cursor bridge.
         await client.close();
         client = null;
         transport = null;
+        expect(await portOpen(port)).toBe(true);
+        expect(readEndpointFile(stateDir)?.pid).toBe(ep!.pid);
 
-        const deadline = Date.now() + 15_000;
-        let released = false;
-        while (Date.now() < deadline) {
-          if (!(await portOpen(port)) && !existsSync(path.join(stateDir, "runtime-endpoint.json"))) {
-            released = true;
-            break;
-          }
-          await new Promise((r) => setTimeout(r, 200));
-        }
-        expect(
-          released,
-          "HTTP port / endpoint file not released after MCP transport close"
-        ).toBe(true);
+        const reconnected = await spawnMcpClient(stateDir);
+        client = reconnected.client;
+        transport = reconnected.transport;
+        const reopened = resultInfo(await client.callTool({ name: "open_workbench", arguments: {} }));
+        expect(reopened.url).toBe(info1.url);
       } finally {
         try {
           await client?.close();

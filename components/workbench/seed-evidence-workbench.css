@@ -11,6 +11,78 @@
   text-rendering: optimizeLegibility;
 }
 
+/* Figma 371:571 — latest Shutdown button: 16px from left/bottom, solid pink. */
+.seed-workbench__shutdown {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 40;
+  display: flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid rgba(255, 73, 100, 0.3);
+  border-radius: 8px;
+  background: #ffe9e9;
+  color: #ff4964;
+  cursor: pointer;
+}
+.seed-workbench__shutdown:hover { background: #ffdde1; }
+.seed-workbench__shutdown:focus-visible { outline: 2px solid #ff4964; outline-offset: 2px; }
+
+/* Figma 374:589 — Smart-animated confirmation replaces the icon in place. */
+.seed-workbench__shutdown-prompt {
+  left: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  outline: none;
+  transform-origin: left center;
+}
+.seed-workbench__shutdown-prompt[data-state="open"] {
+  animation: shutdown-prompt-in 180ms cubic-bezier(.2, .8, .2, 1);
+}
+.seed-workbench__shutdown-prompt[data-state="closed"] {
+  animation: shutdown-prompt-out 140ms ease-in;
+}
+.seed-workbench__shutdown-question,
+.seed-workbench__shutdown-yes {
+  box-sizing: border-box;
+  display: flex;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 73, 100, 0.3);
+  border-radius: 8px;
+  background: #ffe9e9;
+  color: #ff4949;
+  font: 400 13px/normal Inter, sans-serif;
+  letter-spacing: -0.39px;
+  white-space: nowrap;
+}
+.seed-workbench__shutdown-yes { cursor: pointer; }
+.seed-workbench__shutdown-yes:hover { background: #ffdde1; }
+.seed-workbench__shutdown-yes:focus-visible { outline: 2px solid #ff4964; outline-offset: 2px; }
+.seed-workbench__shutdown-yes:disabled { cursor: wait; opacity: .7; }
+@keyframes shutdown-prompt-in {
+  from { opacity: 0; transform: translateX(-6px) scale(.94); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes shutdown-prompt-out {
+  from { opacity: 1; transform: translateX(0) scale(1); }
+  to { opacity: 0; transform: translateX(-4px) scale(.96); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .seed-workbench__shutdown-prompt[data-state] { animation-duration: 1ms; }
+}
+
 /* tldraw canvas 底座 (Issue 02/04). The <Tldraw> component fills this container,
    so it must have an explicit height. Fill + decorative 100px grid are drawn by
    the camera-aware Background canvas (Figma 133:129). No snap-to-grid. */
@@ -263,6 +335,13 @@
   font-weight: 400;
   line-height: 1.35;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  opacity: 1;
+  transition: opacity 300ms ease;
+}
+
+.seed-workbench__toast-error--exiting {
+  pointer-events: none;
+  opacity: 0;
 }
 
 .seed-workbench__folder-extraction {
@@ -658,8 +737,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   margin: 0;
   padding: 0;
   border: 0;

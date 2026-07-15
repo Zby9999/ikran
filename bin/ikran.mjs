@@ -1,259 +1,185 @@
 #!/usr/bin/env node
-// Ikran launcher — the `npm start` / `ikran` designer entry.
-//
-// Starts (or reuses) the local Ikran Runtime HTTP surface bound to 127.0.0.1,
-// picks an auto free port + startup-level session token, and prints the
-// canonical Workbench URL:
-//
-//   http://127.0.0.1:{port}/?session={token}&view=workbench
-//
-// Per Issue 02/01, the Workbench URL returned by the Agent (via the
-// `open_workbench` MCP tool) is the product entry. This standalone launcher
-// remains only as a designer dev convenience: it prints the same Workbench URL
-// and optionally auto-opens a browser. The printed URL is the source of truth;
-// the auto-open is a secondary convenience, not this slice's product entry.
-//
-// Task 9: HTTP-only mode in THIS launcher process (no Next child spawn). If a
-// live MCP-owned endpoint already exists, the launcher only prints/opens that
-// URL — it does NOT become a second Runtime.
-//
-// Two directories, kept separate:
-// - appDir: where the Next.js app lives (package-relative, fixed).
-// - projectFolder: the folder the designer wants to bind as their Ikran
-//   project. Defaults to cwd, or `--folder <path>`. Forwarded via IKRAN_CWD.
-//
-// Usage:
-//   ikran                  # bind the current folder; dev server; auto port; auto-open
-//   ikran --folder ~/proj  # bind a specific folder without cd-ing into it
-//   ikran --prod           # production Next (requires `npm run build` first)
-//   ikran --port 4567      # custom port (default: auto free port)
-//   ikran --host 127.0.0.1 # localhost only (default 127.0.0.1)
-//   ikran --no-open        # start without opening a browser (CI / smoke)
-//   ikran --dev            # explicitly use the dev server (default)
+// User-facing launcher for the persistent Ikran Runtime. The launcher itself
+// exits after printing/opening the Workbench; Runtime + MCP stay co-owned by
+// bin/ikran-runtime.mjs until explicit or idle shutdown.
 
 import { spawn } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import http from "node:http";
+import { closeSync, existsSync, mkdirSync, openSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  closeHttpServer,
-  openWorkbench,
-  readRuntimeEndpoint,
-  removeRuntimeEndpoint
+  probeRuntimeAlive,
+  readRuntimeEndpoint
 } from "../lib/runtime/runtime-endpoint.mjs";
 
 const argv = process.argv.slice(2);
+const command = ["status", "stop", "restart"].includes(argv[0]) ? argv.shift() : "start";
 const hasFlag = (name) => argv.includes(name);
 const option = (name, fallback) => {
   const index = argv.indexOf(name);
   return index >= 0 ? argv[index + 1] : fallback;
 };
-
-// A required-value option: errors out if the flag is present without a value
-// or its value looks like another flag. Returns null when the flag is absent.
 function requireOption(name) {
   const index = argv.indexOf(name);
   if (index < 0) return null;
   const value = argv[index + 1];
   if (!value || value.startsWith("-")) {
-    console.error(
-      `[ikran] ${name} requires a value (got ${
-        value === undefined ? "nothing" : `"${value}"`
-      }).`
-    );
+    console.error(`[ikran] ${name} requires a value.`);
     printUsage();
     process.exit(1);
   }
   return value;
 }
-
 function printUsage() {
-  console.error(`Usage: ikran [options]
+  console.error(`Usage: ikran [start|status|stop|restart] [options]
 
-  (default)          bind the current folder; dev server; auto port; auto-open
-  --folder <path>    bind a specific folder without cd-ing into it
-  --prod             production mode (requires "npm run build" first)
-  --port <port>      custom port (default: auto free port)
+  --folder <path>    bind a project folder
+  --prod             production mode
+  --port <port>      custom port
   --host <host>      localhost only (default 127.0.0.1)
-  --no-open          start without opening a browser (CI / smoke)
-  --dev              explicitly use the dev server (default)`);
+  --no-open          do not open a browser`);
 }
 
 const prod = hasFlag("--prod");
 const host = option("--host", process.env.IKRAN_HOST || "127.0.0.1");
 const autoOpen = !hasFlag("--no-open");
 const folderFlag = requireOption("--folder");
-const LOCALHOST_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
-const bareHost =
-  host.startsWith("[") && host.endsWith("]") && host.includes(":")
-    ? host.slice(1, -1)
-    : host;
-
-if (!LOCALHOST_HOSTS.has(bareHost)) {
-  console.error(
-    `[ikran] Refusing to bind to "${host}". Ikran only supports localhost (127.0.0.1 / localhost / ::1).`
-  );
+const bareHost = host.startsWith("[") && host.endsWith("]") && host.includes(":")
+  ? host.slice(1, -1)
+  : host;
+if (!new Set(["127.0.0.1", "localhost", "::1"]).has(bareHost)) {
+  console.error(`[ikran] Refusing to bind to "${host}". Ikran is localhost-only.`);
   process.exit(1);
 }
 
-// Port resolution: --port > IKRAN_PORT env > auto free port (picked inside
-// openWorkbench when no explicit port is given).
 const portArg = option("--port", null);
-const explicitPort =
-  portArg !== null ? Number(portArg) : process.env.IKRAN_PORT
-    ? Number(process.env.IKRAN_PORT)
-    : null;
+const explicitPort = portArg !== null
+  ? Number(portArg)
+  : process.env.IKRAN_PORT ? Number(process.env.IKRAN_PORT) : undefined;
 const port = Number.isFinite(explicitPort) && explicitPort > 0 ? explicitPort : undefined;
-
-// appDir = package root (the directory that contains `app/` and `package.json`).
-// Resolved relative to this launcher so `npx ikran` works from any cwd.
 const launcherDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(launcherDir, "..");
+const runtimeBin = path.join(launcherDir, "ikran-runtime.mjs");
 if (!existsSync(path.join(appDir, "app"))) {
-  console.error(
-    `[ikran] Could not locate the Ikran app directory at ${appDir}. The package layout may be broken.`
-  );
+  console.error(`[ikran] Could not locate the Ikran app directory at ${appDir}.`);
   process.exit(1);
 }
 
-// projectFolder = the folder the designer intends to bind as their Ikran
-// project. `--folder` wins; otherwise use the cwd the command was invoked from.
-let projectFolder;
-if (folderFlag) {
-  projectFolder = path.resolve(folderFlag);
-  try {
-    if (!statSync(projectFolder).isDirectory()) {
-      console.error(`[ikran] --folder "${folderFlag}" is not a directory.`);
-      process.exit(1);
-    }
-  } catch {
-    console.error(`[ikran] --folder "${folderFlag}" does not exist.`);
+const projectFolder = folderFlag ? path.resolve(folderFlag) : path.resolve(process.cwd());
+try {
+  if (!statSync(projectFolder).isDirectory()) throw new Error("not_directory");
+} catch {
+  console.error(`[ikran] Project folder "${projectFolder}" does not exist or is not a directory.`);
+  process.exit(1);
+}
+const stateDir = process.env.IKRAN_STATE_DIR || path.join(homedir(), ".ikran");
+
+function requestRuntimeStop(endpoint) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: endpoint.host,
+      port: endpoint.port,
+      path: "/api/runtime/stop",
+      method: "POST",
+      headers: { host: `${endpoint.host}:${endpoint.port}`, "x-ikran-session": endpoint.token }
+    }, (res) => {
+      res.resume();
+      res.on("end", () => resolve(res.statusCode === 202));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+async function liveEndpoint() {
+  const endpoint = readRuntimeEndpoint(stateDir);
+  if (!endpoint) return null;
+  return await probeRuntimeAlive(endpoint.host, endpoint.port, endpoint.token) ? endpoint : null;
+}
+
+if (command === "status") {
+  const endpoint = await liveEndpoint();
+  if (!endpoint) {
+    console.log("[ikran] Runtime is not running.");
     process.exit(1);
   }
-} else {
-  projectFolder = path.resolve(process.cwd());
+  console.log(`[ikran] Runtime is running (pid ${endpoint.pid}) at ${endpoint.host}:${endpoint.port}.`);
+  process.exit(0);
 }
 
-// Reuse state dir: where runtime-endpoint.json lives so a later `open_workbench`
-// call (or a second `ikran`) can reuse this Runtime. Defaults to the user's
-// Ikran state dir (~/.ikran, the same convention as lib/runtime/paths.ts), so the
-// endpoint file survives a launcher restart and lives outside any one project.
-const stateDir =
-  process.env.IKRAN_STATE_DIR || path.join(homedir(), ".ikran");
-
-// ---- Lifecycle / cleanup -------------------------------------------------
-// Only tear down HTTP THIS launcher owns. If openWorkbench reused a live MCP
-// endpoint (owned:false), leave it alone on exit.
-let result = null;
-/** @type {Promise<void> | null} */
-let cleanupPromise = null;
-
-async function cleanup() {
-  if (cleanupPromise) return cleanupPromise;
-  cleanupPromise = (async () => {
-    if (result && result.owned) {
-      try {
-        await closeHttpServer();
-      } catch (err) {
-        console.error(`[ikran] cleanup error: ${err?.message || err}`);
-      }
-      try {
-        const ep = readRuntimeEndpoint(stateDir);
-        if (ep && ep.pid === process.pid) {
-          removeRuntimeEndpoint(stateDir);
-        }
-      } catch {
-        /* ignore */
-      }
+if (command === "stop" || command === "restart") {
+  const endpoint = await liveEndpoint();
+  if (endpoint) {
+    const accepted = await requestRuntimeStop(endpoint).catch(() => false);
+    if (!accepted) {
+      console.error("[ikran] Runtime did not accept the shutdown request.");
+      process.exit(1);
     }
-  })();
-  return cleanupPromise;
+    const deadline = Date.now() + 10_000;
+    while (await liveEndpoint() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (await liveEndpoint()) {
+      console.error("[ikran] Runtime did not stop within 10 seconds.");
+      process.exit(1);
+    }
+    console.log("[ikran] Runtime stopped.");
+  } else if (command === "stop") {
+    console.log("[ikran] Runtime is not running.");
+  }
+  if (command === "stop") process.exit(0);
 }
 
-/** @type {Promise<void> | null} */
-let shuttingDown = null;
-
-async function shutdown(code) {
-  if (shuttingDown) return shuttingDown;
-  shuttingDown = (async () => {
-    await cleanup();
-    process.exit(code);
-  })();
-  return shuttingDown;
+let endpoint = await liveEndpoint();
+if (endpoint && port && endpoint.port !== port) {
+  console.error(`[ikran] Runtime is already running on port ${endpoint.port}, not requested port ${port}.`);
+  process.exit(1);
 }
-
-process.on("SIGINT", () => {
-  void shutdown(130);
-});
-process.on("SIGTERM", () => {
-  void shutdown(143);
-});
-
-// ---- Start / reuse --------------------------------------------------------
-openWorkbench({
-  stateDir,
-  host,
-  prod,
-  cwd: appDir,
-  nextDistDir: process.env.IKRAN_NEXT_DIST_DIR,
-  extraEnv: { IKRAN_CWD: projectFolder },
-  timeoutMs: 60_000,
-  port,
-  owner: "standalone"
-})
-  .then((r) => {
-    result = r;
-
-    // The Workbench URL is the canonical product entry. Print it prominently.
-    console.log(`[ikran] Workbench URL: ${r.url}`);
-    console.log(
-      `[ikran] Local-only. Open in any browser (ideal: your Agent host's embedded browser).`
-    );
-    if (r.spawned) {
-      console.log(
-        `[ikran] Runtime ready on 127.0.0.1:${r.port} (in-process Next ${prod ? "prod" : "dev"}).`
-      );
-    } else if (r.owned === false) {
-      console.log(
-        `[ikran] Reused a live MCP-owned Runtime on 127.0.0.1:${r.port} (print/open only; not a second Runtime).`
-      );
-    } else {
-      console.log(`[ikran] Reused an already-running Runtime on 127.0.0.1:${r.port}.`);
-    }
-
-    if (autoOpen) {
-      openBrowser(r.url);
-    }
-
-    // When we only reused someone else's endpoint, exit after print/open —
-    // we are not hosting HTTP.
-    if (!r.owned) {
-      // Give the browser-open spawn a tick, then exit cleanly.
-      setTimeout(() => process.exit(0), 200);
-    }
-  })
-  .catch((err) => {
-    console.error(`[ikran] ${err.message}`);
-    void cleanup().then(() => process.exit(1));
+if (!endpoint) {
+  mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+  const logPath = path.join(stateDir, "runtime.log");
+  const logFd = openSync(logPath, "a", 0o600);
+  const runtimeArgs = [runtimeBin, "--host", host];
+  if (prod) runtimeArgs.push("--prod");
+  if (port) runtimeArgs.push("--port", String(port));
+  const child = spawn(process.execPath, runtimeArgs, {
+    cwd: appDir,
+    env: { ...process.env, IKRAN_CWD: projectFolder },
+    detached: true,
+    stdio: ["ignore", "ignore", logFd]
   });
+  closeSync(logFd);
+  let startupError;
+  let startupExit;
+  child.once("error", (error) => { startupError = error; });
+  child.once("exit", (code) => { startupExit = code; });
+  const deadline = Date.now() + 60_000;
+  while (!endpoint && !startupError && startupExit === undefined && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    endpoint = await liveEndpoint();
+  }
+  child.unref();
+  if (!endpoint) {
+    const detail = startupError?.message || (startupExit !== undefined ? `exit ${startupExit}` : "startup timeout");
+    console.error(`[ikran] Runtime failed to start (${detail}). See ${logPath}.`);
+    process.exit(1);
+  }
+}
+
+const url = `http://${endpoint.host}:${endpoint.port}/?session=${encodeURIComponent(endpoint.token)}&view=workbench`;
+console.log(`[ikran] Workbench URL: ${url}`);
+console.log(`[ikran] Runtime ready (pid ${endpoint.pid}); use \`ikran stop\` or the Workbench Shutdown control to stop it.`);
+if (autoOpen) openBrowser(url);
 
 function openBrowser(url) {
-  const platform = process.platform;
-  let command;
-  if (platform === "darwin") {
-    command = ["open", url];
-  } else if (platform === "win32") {
-    command = ["cmd", "/c", "start", "", url];
-  } else {
-    command = ["xdg-open", url];
-  }
+  const command = process.platform === "darwin"
+    ? ["open", url]
+    : process.platform === "win32" ? ["cmd", "/c", "start", "", url] : ["xdg-open", url];
   try {
-    spawn(command[0], command.slice(1), {
-      detached: true,
-      stdio: "ignore"
-    }).unref();
+    spawn(command[0], command.slice(1), { detached: true, stdio: "ignore" }).unref();
   } catch {
-    // Best-effort. The user can open the printed URL manually.
+    // Best-effort: the canonical URL is printed above.
   }
 }

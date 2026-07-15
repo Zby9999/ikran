@@ -100,7 +100,7 @@ test.describe("Task 11 — SSE record invalidation", () => {
     sse.close();
   });
 
-  test("delete success + reload failure shows role=alert and keeps marker", async ({
+  test("delete success + background reload failure shows role=alert and removes marker", async ({
     page,
     runtime,
     folder
@@ -158,8 +158,10 @@ test.describe("Task 11 — SSE record invalidation", () => {
       "open"
     );
 
-    const marker = page.getByTestId("region-annotation").first();
-    await expect(marker).toHaveAttribute("data-runtime-record-id", annotationId);
+    const marker = page.locator(
+      `[data-testid="region-annotation"][data-runtime-record-id="${annotationId}"]`
+    );
+    await expect(marker).toHaveCount(1);
 
     let deleteSucceeded = false;
     await page.route("**/api/region-annotation**", async (route) => {
@@ -186,8 +188,6 @@ test.describe("Task 11 — SSE record invalidation", () => {
     await expect(alert).toBeVisible();
     await expect(alert).toHaveAttribute("role", "alert");
     await expect(alert).toContainText("reload_failed");
-    await expect(
-      page.getByTestId("region-annotation").first()
-    ).toHaveAttribute("data-runtime-record-id", annotationId);
+    await expect(marker).toHaveCount(0);
   });
 });

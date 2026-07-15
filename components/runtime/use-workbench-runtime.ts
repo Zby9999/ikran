@@ -58,25 +58,42 @@ function surfaceSignature(records: FigmaEvidenceSurfaceRecord[]): string {
     .join("|");
 }
 
-function annotationSignature(records: RegionAnnotationRecord[]): string {
-  return records
-    .map(
-      (r) =>
-        [
-          r.id,
-          r.surface_id ?? "",
-          r.surface_artifact_id ?? "",
-          r.author,
-          r.type,
-          r.rect_x,
-          r.rect_y,
-          r.rect_w,
-          r.rect_h,
-          r.geometry_version ?? "",
-          r.from_point ? "1" : "0"
-        ].join(":")
-    )
-    .join("|");
+export function annotationSignature(records: RegionAnnotationRecord[]): string {
+  // Refresh does not rewrite the captured annotation row, but list-time
+  // correspondence adds a new current evidence id / node / rect (or stale
+  // status). Those derived fields drive marker placement, so they must
+  // invalidate the React state just like persisted annotation fields do.
+  return JSON.stringify(
+    records.map((r) => [
+      r.id,
+      r.surface_id,
+      r.surface_artifact_id,
+      r.surface_node_id,
+      r.target_kind,
+      r.target_evidence_version_id,
+      r.target_node_id,
+      r.current_evidence_version_id,
+      r.current_node_id,
+      r.current_rect_x,
+      r.current_rect_y,
+      r.current_rect_w,
+      r.current_rect_h,
+      r.correspondence_status,
+      r.stale,
+      r.author,
+      r.type,
+      r.body,
+      r.rect_x,
+      r.rect_y,
+      r.rect_w,
+      r.rect_h,
+      r.primary_node_id,
+      r.candidates_json,
+      r.created_at,
+      r.geometry_version,
+      r.from_point
+    ])
+  );
 }
 
 function layoutSignature(layout: WorkbenchLayoutDocument): string {

@@ -3,7 +3,8 @@
 import {
   ArrowLeft01Icon,
   ArtboardToolIcon,
-  CrosshairIcon
+  CrosshairIcon,
+  Cursor02Icon
 } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import { SmallIconButton } from "./small-icon-button";
@@ -36,6 +37,9 @@ export type FolderChromeProps = {
   onFollowAgent?: () => void;
   /** When true, Follow Agent button shows selected/active state (Figma 325:422). */
   followAgentActive?: boolean;
+  onSelect?: () => void;
+  /** When true, Select button shows selected/active state (Figma 329:461). */
+  selectActive?: boolean;
   onAnnotate?: () => void;
   /** When true, Annotate button shows selected/active state (Figma 325:422). */
   annotateActive?: boolean;
@@ -50,6 +54,8 @@ export function FolderChrome({
   onNextPhase,
   onFollowAgent,
   followAgentActive = false,
+  onSelect,
+  selectActive = false,
   onAnnotate,
   annotateActive = false
 }: FolderChromeProps) {
@@ -91,6 +97,14 @@ export function FolderChrome({
               data-active={followAgentActive ? "true" : undefined}
               aria-pressed={followAgentActive}
               onClick={onFollowAgent}
+            />
+            <SmallIconButton
+              icon={Cursor02Icon}
+              label="Select (V)"
+              data-testid="select-button"
+              data-active={selectActive ? "true" : undefined}
+              aria-pressed={selectActive}
+              onClick={onSelect}
             />
             <SmallIconButton
               icon={ArtboardToolIcon}

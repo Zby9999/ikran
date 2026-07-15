@@ -1,8 +1,7 @@
 // Task 9 — standalone launcher (`bin/ikran.mjs`) one-process smoke.
 //
-// Proves: launcher starts HTTP in its own process (endpoint.pid === launcher
-// pid, owner=standalone); when a live MCP endpoint exists, launcher only
-// prints/opens and does not become a second Runtime.
+// Proves: launcher starts/reuses the detached persistent Runtime owner and
+// exits without taking either the Workbench or MCP surface down.
 
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
@@ -45,7 +44,7 @@ function runLauncher(
       stderr += d.toString();
     });
     child.on("error", reject);
-    // When launcher owns HTTP it stays alive — kill after we see the URL.
+    // Legacy launchers stayed alive; keep the timeout as a failure guard.
     const timer = setTimeout(() => {
       try {
         child.kill("SIGTERM");
@@ -56,14 +55,7 @@ function runLauncher(
     const onReady = () => {
       if (stdout.includes("Workbench URL:")) {
         clearTimeout(timer);
-        // Give endpoint file a moment to flush, then signal.
-        setTimeout(() => {
-          try {
-            child.kill("SIGTERM");
-          } catch {
-            /* ignore */
-          }
-        }, 300);
+        // The persistent launcher exits by itself after printing the URL.
       }
     };
     child.stdout?.on("data", onReady);
@@ -74,25 +66,18 @@ function runLauncher(
   });
 }
 
-test.describe("Task 9 — ikran launcher one-process", () => {
-  test("launcher hosts HTTP in-process (owner=standalone)", async () => {
+test.describe("Ikran persistent Runtime launcher", () => {
+  test("launcher starts the detached Runtime owner and exits", async () => {
     test.setTimeout(90_000);
     const stateDir = mkdtempSync(path.join(tmpdir(), "ikran-launcher-"));
     try {
       const r = await runLauncher(stateDir);
       expect(r.stdout).toMatch(/Workbench URL: http:\/\/127\.0\.0\.1:\d+\/\?session=/);
-      expect(r.stdout).toMatch(/in-process Next prod/);
+      expect(r.stdout).toMatch(/Runtime ready \(pid \d+\)/);
       const ep = readEndpointFile(stateDir);
-      // After SIGTERM cleanup, endpoint may be gone — assert from stdout pid
-      // match only if file still present; otherwise assert it was cleaned.
-      if (ep) {
-        expect(ep.owner).toBe("standalone");
-        expect(ep.pid).toBe(r.pid);
-      } else {
-        expect(existsSync(path.join(stateDir, "runtime-endpoint.json"))).toBe(
-          false
-        );
-      }
+      expect(ep?.owner).toBe("mcp");
+      expect(ep?.pid).not.toBe(r.pid);
+      expect(existsSync(path.join(stateDir, "runtime-mcp.sock"))).toBe(true);
     } finally {
       killRecordedRuntime(stateDir);
       rmSync(stateDir, { recursive: true, force: true });
@@ -114,15 +99,16 @@ test.describe("Task 9 — ikran launcher one-process", () => {
         .structuredContent;
       expect(sc?.url).toBeTruthy();
       const mcpEp = readEndpointFile(stateDir);
-      expect(mcpEp?.pid).toBe(mcpPid);
+      expect(mcpEp?.pid).not.toBe(mcpPid);
       expect(mcpEp?.owner).toBe("mcp");
+      const runtimePid = mcpEp?.pid;
 
       const r = await runLauncher(stateDir);
-      expect(r.stdout).toMatch(/Reused a live MCP-owned Runtime/);
+      expect(r.stdout).toMatch(/Runtime ready \(pid \d+\)/);
       expect(r.stdout).toContain(sc!.url!);
-      // Endpoint still owned by MCP — pid unchanged.
+      // Endpoint remains the same persistent Runtime — bridge pid is irrelevant.
       const epAfter = readEndpointFile(stateDir);
-      expect(epAfter?.pid).toBe(mcpPid);
+      expect(epAfter?.pid).toBe(runtimePid);
       expect(epAfter?.owner).toBe("mcp");
 
       await handle.client.close();

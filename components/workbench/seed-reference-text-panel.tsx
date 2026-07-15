@@ -10,8 +10,7 @@ import {
 import {
   Delete02Icon,
   Edit02Icon,
-  MultiplicationSignIcon,
-  SaveIcon
+  MultiplicationSignIcon
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEditor, useValue } from "tldraw";
@@ -100,8 +99,16 @@ export function SeedReferenceTextPanel({
     return true;
   };
 
-  const handleSave = () => {
-    if (saving || !canWrite || !dirty) return;
+  const handleEdit = () => {
+    if (saving || !canWrite) return;
+    if (!editing) {
+      setEditing(true);
+      return;
+    }
+    if (!dirty) {
+      setEditing(false);
+      return;
+    }
     void persist(draft).then((ok) => {
       if (ok) setEditing(false);
     });
@@ -150,25 +157,6 @@ export function SeedReferenceTextPanel({
         <div className="seed-ref-frame__notes-header">
           <p className="seed-ref-frame__notes-label">{label}</p>
           <div className="seed-ref-frame__notes-header-actions">
-            {dirty ? (
-              <button
-                type="button"
-                className="seed-ref-frame__notes-icon-btn"
-                data-testid={`${testIdPrefix}-save`}
-                aria-label={`Save ${actionLabel}`}
-                disabled={saving || !canWrite}
-                onPointerDown={stop}
-                onMouseDown={stop}
-                onClick={handleSave}
-              >
-                <HugeiconsIcon
-                  icon={SaveIcon}
-                  size={14}
-                  color="currentColor"
-                  strokeWidth={1.5}
-                />
-              </button>
-            ) : null}
             <button
               type="button"
               className="seed-ref-frame__notes-icon-btn"
@@ -200,9 +188,7 @@ export function SeedReferenceTextPanel({
               disabled={saving || !canWrite}
               onPointerDown={stop}
               onMouseDown={stop}
-              onClick={() => {
-                if (!saving) setEditing((current) => !current);
-              }}
+              onClick={handleEdit}
             >
               <HugeiconsIcon
                 icon={Edit02Icon}

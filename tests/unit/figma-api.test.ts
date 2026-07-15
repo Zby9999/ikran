@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { createServer } from "node:http";
+import { connect } from "node:net";
+import type { AddressInfo } from "node:net";
+import type { Duplex } from "node:stream";
 import {
   createFigmaApiClient,
   resetFigmaApiClientForTests
@@ -317,6 +321,108 @@ test("capturePositionalEvidence times out while reading an unfinished screenshot
   ).toEqual({ ok: false, reason: "figma_api_timeout" });
   expect(screenshotSignal).not.toBeNull();
   expect((screenshotSignal as AbortSignal | null)?.aborted).toBe(true);
+});
+
+test("default Figma transport honors standard proxy env for screenshot downloads", async () => {
+  let targetPort = 0;
+  const target = createServer((req, res) => {
+    const url = new URL(req.url ?? "/", `http://127.0.0.1:${targetPort}`);
+    if (url.pathname.includes("/nodes")) {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ nodes: { "1:2": { document: VALID_DOCUMENT } } }));
+      return;
+    }
+    if (url.pathname.includes("/images/")) {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          images: { "1:2": `http://127.0.0.1:${targetPort}/shot.png` }
+        })
+      );
+      return;
+    }
+    if (url.pathname === "/shot.png") {
+      res.writeHead(200, {
+        "content-type": "image/png",
+        "content-length": String(TINY_PNG.byteLength)
+      });
+      res.end(Buffer.from(TINY_PNG));
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) =>
+    target.listen(0, "127.0.0.1", resolve)
+  );
+  targetPort = (target.address() as AddressInfo).port;
+
+  let proxyConnects = 0;
+  const sockets = new Set<Duplex>();
+  const proxy = createServer();
+  proxy.on("connect", (req, downstream, head) => {
+    proxyConnects += 1;
+    const [host, portRaw] = (req.url ?? "").split(":");
+    const upstream = connect(Number(portRaw), host, () => {
+      downstream.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+      if (head.length > 0) upstream.write(head);
+      downstream.pipe(upstream);
+      upstream.pipe(downstream);
+    });
+    sockets.add(downstream);
+    sockets.add(upstream);
+    downstream.on("close", () => sockets.delete(downstream));
+    upstream.on("close", () => sockets.delete(upstream));
+    upstream.on("error", () => downstream.destroy());
+  });
+  await new Promise<void>((resolve) =>
+    proxy.listen(0, "127.0.0.1", resolve)
+  );
+  const proxyPort = (proxy.address() as AddressInfo).port;
+
+  const proxyKeys = [
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy"
+  ] as const;
+  const previous = Object.fromEntries(
+    proxyKeys.map((key) => [key, process.env[key]])
+  );
+  const proxyUrl = `http://127.0.0.1:${proxyPort}`;
+  process.env.HTTP_PROXY = proxyUrl;
+  process.env.HTTPS_PROXY = proxyUrl;
+  process.env.http_proxy = proxyUrl;
+  process.env.https_proxy = proxyUrl;
+  process.env.NO_PROXY = "";
+  process.env.no_proxy = "";
+
+  try {
+    const client = createFigmaApiClient({
+      baseUrl: `http://127.0.0.1:${targetPort}`,
+      apiTimeoutMs: 2_000,
+      screenshotTimeoutMs: 2_000
+    });
+    const result = await client.capturePositionalEvidence({
+      token: "figd_x",
+      fileKey: "file",
+      nodeId: "1:2"
+    });
+    expect(result.ok).toBe(true);
+    expect(proxyConnects).toBeGreaterThan(0);
+  } finally {
+    for (const key of proxyKeys) {
+      const value = previous[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    for (const socket of sockets) socket.destroy();
+    await Promise.all([
+      new Promise<void>((resolve) => proxy.close(() => resolve())),
+      new Promise<void>((resolve) => target.close(() => resolve()))
+    ]);
+  }
 });
 
 test("malformed root missing type fails closed", async () => {

@@ -93,13 +93,14 @@ describe("architecture — MCP no HTTP loopback (Task 10)", () => {
     ).toEqual([]);
   });
 
-  test("bin/ikran-mcp.mjs uses the official single tsx entry", () => {
-    const text = readFileSync(path.join(ROOT, "bin/ikran-mcp.mjs"), "utf8");
+  test("persistent Runtime uses the official tsx entry; stdio bridge stays thin", () => {
+    const text = readFileSync(path.join(ROOT, "bin/ikran-runtime.mjs"), "utf8");
     expect(text).toMatch(/import\s+["']tsx["']/);
     expect(text).not.toMatch(/tsx\/(?:esm|cjs)\/api/);
     expect(text).toMatch(/register-tools/);
-    // Significantly smaller than the pre-Task-10 ~1200-line proxy file.
-    expect(text.split("\n").length).toBeLessThan(350);
+    const bridge = readFileSync(path.join(ROOT, "bin/ikran-mcp.mjs"), "utf8");
+    expect(bridge).toMatch(/process\.stdin\.pipe\(socket\)/);
+    expect(bridge.split("\n").length).toBeLessThan(100);
   });
 
   test("top-level register-tools is composition-only and small", () => {

@@ -439,12 +439,17 @@ export function createWorkbenchDataClient(
       );
     }
 
-    const reloaded = await loadAll();
-    if (!reloaded.ok) {
-      return reportMutationError(
-        `delete_succeeded_reload_failed:${reloaded.error}`
-      );
-    }
+    // A successful DELETE is already authoritative. The canvas controller
+    // removes the selected marker only after this method resolves, so waiting
+    // for the full Workbench batch here makes a tiny delete wait on unrelated
+    // evidence screenshots, layout, and readiness requests. Keep the
+    // consistency refresh (SSE also schedules one) but never put it on the
+    // direct manipulation path.
+    void loadAll().then((reloaded) => {
+      if (!reloaded.ok) {
+        reportMutationError(`delete_succeeded_reload_failed:${reloaded.error}`);
+      }
+    });
     return { ok: true };
   };
 

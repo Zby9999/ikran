@@ -41,7 +41,7 @@
 
 - [ ] 设计师在真实 Figma Evidence Surface 上分别创建至少一个 node target 和一个 free-region target，node highlight/breadcrumb 与真实 Figma source 可人工核对。
 - [ ] 真实 Agent 基于 Runtime-captured 真实 Figma evidence 创建至少一个 anchored Annotation，并核验至少一个 Runtime candidate 或诚实记录空 candidates。
-- [ ] 在受控真实 Figma source 中移除/替换已注释 node 后 Refresh；Workbench 显示 stale warning，且旧 evidence version 与 Node Annotation 仍可回放。
+- [x] 在受控真实 Figma source 中移除/替换已注释 node 后 Refresh；Workbench 显示 stale warning，且旧 evidence version 与 Node Annotation 仍可回放。
 - [x] Workbench 能显示该 annotation，并能回连 semantic record id。（Browser Use 实机核验当前 14 个 Annotation projection 均带有 Runtime `record id`；SQLite 中对应 designer node/region records 可回连。）
 
 ## Likely difficulties for Agent
@@ -67,3 +67,9 @@ Real Agent validation 已完成 1/4 项：Browser Use 实机读取当前 Workben
 ## Blocked by
 
 - Automated 剩余两项受缺失的设计师 Figma UI/interaction reference 阻塞；Real Agent 剩余三项需要可控的真实 Figma source 与真实 Agent host。
+
+## Performance follow-up — 2026-07-15
+
+- [x] 已修复已选 designer Annotation 的删除交互延迟：Runtime DELETE 成功后，画布立即移除 marker；全量 Workbench refresh 改为后台自愈，失败仍以现有错误提示呈现，不会把已确认删除的 marker 恢复到画布。
+
+验证：新增 Runtime client 回归测试，覆盖 DELETE 成功不等待 evidence/layout/readiness 全量 batch，以及后台 refresh 失败仍报告错误。Browser Use 在真实 Workbench 创建并清理临时 Annotation 后，marker 在 64 ms 内移除；修复前相同路径为 650–1,590 ms。

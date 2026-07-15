@@ -1,5 +1,5 @@
 // Task 11 consistency guards: connection-ready baselines, latest-request wins,
-// and mutation success is not reported when authoritative reload fails.
+// and post-mutation authoritative refresh behavior.
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -306,51 +306,123 @@ describe("Workbench Runtime consistency", () => {
     client.dispose();
   });
 
-  test.each(["create", "delete"] as const)(
-    "%s mutation returns false when post-success authoritative reload fails",
-    async (operation) => {
-      const errors: Array<string | null> = [];
-      const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-        if (init?.method === "POST" || init?.method === "DELETE") {
-          return new Response(JSON.stringify({ ok: true }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-        return jsonResponse([], {
-          ok: false,
-          status: 500,
-          error: "reload_failed"
+  test("create mutation returns false when post-success authoritative reload fails", async () => {
+    const errors: Array<string | null> = [];
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
         });
-      });
-      const { createWorkbenchDataClient } = await import(
-        "../../components/runtime/use-workbench-runtime"
-      );
-      const client = createWorkbenchDataClient("session", {
-        fetcher,
-        sleep: async () => {},
-        onSnapshot: () => {},
-        onError: (error) => errors.push(error)
-      });
-
-      const result =
-        operation === "create"
-          ? await client.createAnnotation({
-              surfaceArtifactId: "surface-1",
-              rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
-            })
-          : await client.deleteAnnotation("annotation-1");
-
-      expect(result).toEqual({
+      }
+      return jsonResponse([], {
         ok: false,
-        error: `${operation}_succeeded_reload_failed:reload_failed`
+        status: 500,
+        error: "reload_failed"
       });
-      expect(errors.at(-1)).toBe(
-        `${operation}_succeeded_reload_failed:reload_failed`
-      );
+    });
+    const { createWorkbenchDataClient } = await import(
+      "../../components/runtime/use-workbench-runtime"
+    );
+    const client = createWorkbenchDataClient("session", {
+      fetcher,
+      sleep: async () => {},
+      onSnapshot: () => {},
+      onError: (error) => errors.push(error)
+    });
+
+    const result = await client.createAnnotation({
+      surfaceArtifactId: "surface-1",
+      rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "create_succeeded_reload_failed:reload_failed"
+    });
+    expect(errors.at(-1)).toBe("create_succeeded_reload_failed:reload_failed");
+    client.dispose();
+  });
+
+  test("annotation delete reports a failed background refresh without delaying success", async () => {
+    const errors: Array<string | null> = [];
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "DELETE") {
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return jsonResponse([], {
+        ok: false,
+        status: 500,
+        error: "reload_failed"
+      });
+    });
+    const { createWorkbenchDataClient } = await import(
+      "../../components/runtime/use-workbench-runtime"
+    );
+    const client = createWorkbenchDataClient("session", {
+      fetcher,
+      sleep: async () => {},
+      onSnapshot: () => {},
+      onError: (error) => errors.push(error)
+    });
+
+    await expect(client.deleteAnnotation("annotation-1")).resolves.toEqual({
+      ok: true
+    });
+    await vi.waitFor(() =>
+      expect(errors.at(-1)).toBe("delete_succeeded_reload_failed:reload_failed")
+    );
+    client.dispose();
+  });
+
+  test("annotation delete returns after the authoritative DELETE without waiting for a full reload", async () => {
+    const evidenceResponse = deferred<Response>();
+    let deleteCompleted = false;
+    let reloadStarted = false;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "DELETE") {
+        deleteCompleted = true;
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.includes("evidence-package")) {
+        reloadStarted = true;
+        return evidenceResponse.promise;
+      }
+      return batchResponse(url, []);
+    });
+    const { createWorkbenchDataClient } = await import(
+      "../../components/runtime/use-workbench-runtime"
+    );
+    const client = createWorkbenchDataClient("session", {
+      fetcher,
+      onSnapshot: () => {},
+      onError: () => {}
+    });
+
+    let settled = false;
+    const deletion = client.deleteAnnotation("annotation-1").then((result) => {
+      settled = true;
+      return result;
+    });
+
+    try {
+      await vi.waitFor(() => expect(deleteCompleted).toBe(true));
+      await vi.waitFor(() => expect(reloadStarted).toBe(true));
+      await vi.waitFor(() => expect(settled).toBe(true), { timeout: 100 });
+      expect(await deletion).toEqual({ ok: true });
+    } finally {
+      evidenceResponse.resolve(jsonResponse([]));
+      await deletion;
       client.dispose();
     }
-  );
+  });
 
   test("loadAll retries full batch with exponential backoff then succeeds", async () => {
     const sleeps: number[] = [];

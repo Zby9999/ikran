@@ -5,6 +5,7 @@ import {
   isDefaultSelectableFigmaNode,
   type PositionalEvidenceNode
 } from "./figma-positional-evidence";
+import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 
 export type FigmaAccountIdentity = {
   /** Non-sensitive account handle / email for UI status. Never a token. */
@@ -57,6 +58,31 @@ export type FigmaApiClient = {
 const DEFAULT_BASE = "https://api.figma.com";
 
 type FetchLike = typeof fetch;
+
+/**
+ * Node's global fetch does not consistently honor HTTP_PROXY / HTTPS_PROXY
+ * unless the process is started with a version-specific CLI flag. Figma's
+ * render endpoint returns a signed S3 URL, so a machine that requires its
+ * standard outbound proxy can reach api.figma.com but stall forever while
+ * reading the screenshot body. Keep proxy handling local to the Figma client
+ * and preserve NO_PROXY semantics through Undici's environment agent.
+ */
+function createRuntimeFigmaFetch(): FetchLike {
+  const httpProxy = process.env.http_proxy ?? process.env.HTTP_PROXY;
+  const httpsProxy = process.env.https_proxy ?? process.env.HTTPS_PROXY;
+  if (!httpProxy && !httpsProxy) return fetch;
+
+  const dispatcher = new EnvHttpProxyAgent({
+    httpProxy,
+    httpsProxy,
+    noProxy: process.env.no_proxy ?? process.env.NO_PROXY
+  });
+  return ((input, init) =>
+    undiciFetch(input as Parameters<typeof undiciFetch>[0], {
+      ...(init as Parameters<typeof undiciFetch>[1]),
+      dispatcher
+    }) as unknown as Promise<Response>) as FetchLike;
+}
 
 const DEFAULT_API_TIMEOUT_MS = 10_000;
 const DEFAULT_SCREENSHOT_TIMEOUT_MS = 30_000;
@@ -277,7 +303,7 @@ export function createFigmaApiClient(
     screenshotTimeoutMs?: number;
   }
 ): FigmaApiClient {
-  const fetchImpl = options?.fetchImpl ?? fetch;
+  const fetchImpl = options?.fetchImpl ?? createRuntimeFigmaFetch();
   const baseUrl = options?.baseUrl ?? resolveBaseUrl();
   const apiTimeoutMs = options?.apiTimeoutMs ?? DEFAULT_API_TIMEOUT_MS;
   const screenshotTimeoutMs =

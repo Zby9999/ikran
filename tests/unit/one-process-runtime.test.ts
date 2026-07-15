@@ -67,10 +67,21 @@ describe("architecture — one-process Runtime (no Next child spawn)", () => {
       expect(text, rel).not.toMatch(/next\/dist\/bin\/next/);
       expect(text, rel).not.toMatch(/process\.kill\s*\(\s*-/);
     }
-    // MCP must not detach a process group (no Next child). Launcher may still
-    // use detached:true only for best-effort browser open (open/xdg-open).
+    // The stdio bridge may detach the persistent Runtime owner. The owner still
+    // hosts Next in-process and never spawns a Next CLI child.
     const mcp = readFileSync(path.join(ROOT, "bin/ikran-mcp.mjs"), "utf8");
-    expect(mcp).not.toMatch(/detached:\s*true/);
+    expect(mcp).toMatch(/ikran-runtime\.mjs/);
+  });
+
+  test("the CLI launcher starts the same persistent Runtime owner", () => {
+    const launcher = readFileSync(path.join(ROOT, "bin/ikran.mjs"), "utf8");
+    expect(launcher).toMatch(/ikran-runtime\.mjs/);
+    expect(launcher).not.toMatch(/openWorkbench\s*\(/);
+  });
+
+  test("shared seed capture commands acquire the graceful-shutdown job lease", () => {
+    const commands = readFileSync(path.join(ROOT, "lib/runtime/commands/seed-capture.ts"), "utf8");
+    expect(commands).toMatch(/withRuntimeJob/);
   });
 
   test("production runtime surface does not import child_process spawn for Next", () => {
@@ -78,8 +89,9 @@ describe("architecture — one-process Runtime (no Next child spawn)", () => {
     for (const dir of PROD_SCAN) {
       for (const file of walkFiles(path.join(ROOT, dir))) {
         const rel = path.relative(ROOT, file);
-        // Browser-open convenience in ikran.mjs may still spawn `open`/`xdg-open`.
-        if (rel === "bin/ikran.mjs") continue;
+        // Launcher opens a browser; the stdio bridge starts the persistent
+        // Runtime owner. Neither child is a Next CLI process.
+        if (rel === "bin/ikran.mjs" || rel === "bin/ikran-mcp.mjs") continue;
         const text = readFileSync(file, "utf8");
         if (
           /from\s+["']node:child_process["']/.test(text) &&

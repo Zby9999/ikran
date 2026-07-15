@@ -11,6 +11,9 @@ import { useWorkbenchRuntime } from "@/components/runtime/use-workbench-runtime"
 import { FolderChrome } from "./folder-chrome";
 import { FigmaVerificationPanelController } from "./figma-verification-panel";
 import { useFigmaPasteCapture } from "./use-figma-paste-capture";
+import { staleAnnotationWarning } from "./annotation-stale-warning";
+import { WorkbenchToastAlert } from "./workbench-toast-alert";
+import { RuntimeShutdownControl } from "./runtime-shutdown-control";
 
 // tldraw touches the DOM during render, so the canvas shell is loaded with
 // `next/dynamic({ ssr: false })` to keep Next.js SSR happy.
@@ -181,6 +184,17 @@ export function SeedEvidenceWorkbench({
 
   const seedCount = records.length + inFlightCaptures.length;
   const folderPhase = canvasLocked ? null : canvasStage;
+  const staleWarning = staleAnnotationWarning(annotations);
+  const toast = error
+    ? { message: error, testId: "workbench-runtime-error" }
+    : pasteError
+      ? { message: pasteError, testId: "workbench-paste-error" }
+      : staleWarning
+        ? {
+            message: staleWarning,
+            testId: "workbench-stale-annotation-warning"
+          }
+        : { message: null, testId: "workbench-toast" };
 
   return (
     <main
@@ -208,6 +222,8 @@ export function SeedEvidenceWorkbench({
           }}
           onFollowAgent={() => setFollowAgentMode((v) => !v)}
           followAgentActive={followAgentMode}
+          selectActive={!annotateMode}
+          onSelect={() => setAnnotateMode(false)}
           annotateActive={annotateMode}
           onAnnotate={() => setAnnotateMode((v) => !v)}
           extraction={
@@ -237,28 +253,8 @@ export function SeedEvidenceWorkbench({
         ) : null}
       </div>
 
-      {error ? (
-        <p
-          className="seed-workbench__toast-error"
-          role="alert"
-          aria-live="polite"
-          data-testid="workbench-runtime-error"
-        >
-          {error}
-        </p>
-      ) : null}
-
-      {pasteError ? (
-        <p
-          className="seed-workbench__toast-error"
-          role="alert"
-          aria-live="polite"
-          data-testid="workbench-paste-error"
-        >
-          {/* No Figma error-state node yet (05A) — plain alert copy only. */}
-          {pasteError}
-        </p>
-      ) : null}
+      <WorkbenchToastAlert message={toast.message} testId={toast.testId} />
+      <RuntimeShutdownControl session={session} />
 
       <div
         className={

@@ -244,6 +244,39 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     rmSync(path.join(runtime.stateDir, "runtime-state.json"), { force: true });
   });
 
+  test("Shutdown expands to the Figma confirmation, dismisses outside, and stops only on Yes", async ({
+    page,
+    runtime,
+    folder
+  }) => {
+    const token = await captureToken(page, runtime.baseURL);
+    await bindFolder(token, folder, runtime.port);
+    await page.reload();
+    await enterWorkbench(page, { port: runtime.port, sessionToken: token });
+
+    let stopRequests = 0;
+    await page.route("**/api/runtime/stop", async (route) => {
+      stopRequests += 1;
+      await route.fulfill({ status: 202, contentType: "application/json", body: '{"ok":true,"status":"stopping"}' });
+    });
+
+    const trigger = page.getByTestId("runtime-shutdown");
+    await trigger.click();
+    const confirmation = page.getByTestId("runtime-shutdown-confirmation");
+    await expect(confirmation).toBeVisible();
+    await expect(confirmation).toContainText("Are you sure you want to shut down ikran?");
+    await expect(confirmation.getByRole("button", { name: "Yes" })).toBeVisible();
+
+    await page.mouse.click(500, 100);
+    await expect(confirmation).toBeHidden();
+    await expect(trigger).toBeVisible();
+    expect(stopRequests).toBe(0);
+
+    await trigger.click();
+    await confirmation.getByRole("button", { name: "Yes" }).click();
+    await expect.poll(() => stopRequests).toBe(1);
+  });
+
   test("Start Building opens tldraw; Agent-captured seed projects; no UI seed write", async ({
     page,
     runtime,
