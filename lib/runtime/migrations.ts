@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 10;
+export const CURRENT_SCHEMA_VERSION = 11;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -845,6 +845,20 @@ INSERT INTO project_workflow
 VALUES (1, 'seed-reference-registration', NULL, NULL);
         `);
       }
+    }
+  },
+  {
+    version: 11,
+    up(db) {
+      // Issue 07B: each Agent-authored question belongs to one Alignment
+      // attempt and has a stable delivery key for safe MCP retries.
+      db.exec(`
+ALTER TABLE alignment_question_cards
+  ADD COLUMN agent_idempotency_key TEXT;
+CREATE UNIQUE INDEX idx_alignment_question_attempt_delivery
+  ON alignment_question_cards(alignment_attempt_id, agent_idempotency_key)
+  WHERE alignment_attempt_id IS NOT NULL AND agent_idempotency_key IS NOT NULL;
+      `);
     }
   }
 ];

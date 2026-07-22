@@ -42,6 +42,7 @@ function questionShape(expanded = false): AlignmentCardShape {
       evidenceAnchor: "Figma node 44:120",
       expanded,
       editing: false,
+      readOnly: false,
       focusSelectionJson: JSON.stringify({
         cardId: "question-1",
         targets: [

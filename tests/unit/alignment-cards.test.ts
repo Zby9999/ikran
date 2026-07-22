@@ -130,6 +130,23 @@ describe("AlignmentQuestionCard", () => {
     expect(html).not.toContain(">↑<");
   });
 
+  test("keeps projected preparation questions visible but read-only", () => {
+    const html = renderToStaticMarkup(
+      createElement(AlignmentQuestionCard, {
+        ...question,
+        expanded: true,
+        readOnly: true,
+        proposedAnswer: "Keep the inset on desktop.",
+        onExpandedChange: vi.fn(),
+        onSubmitAnswer: vi.fn()
+      })
+    );
+
+    expect(html).toContain('data-read-only="true"');
+    expect(html).toMatch(/<textarea[^>]*disabled=""/);
+    expect(html).toMatch(/aria-label="Submit answer 5"[^>]*disabled=""/);
+  });
+
   test("shows a final answer while keeping an answered card editable", () => {
     const collapsed = renderToStaticMarkup(
       createElement(AlignmentQuestionCard, {

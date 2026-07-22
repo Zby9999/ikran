@@ -263,6 +263,9 @@ export function WorkbenchCanvas({
       {alignment ? (
         <AlignmentProjectionSync
           currentStage={alignmentStage}
+          readOnly={
+            alignment.preparation.workflow.stage !== "alignment-answering"
+          }
           questions={alignment.question_cards}
           annotations={alignment.annotations}
         />

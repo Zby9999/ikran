@@ -72,6 +72,7 @@ export type AlignmentStagePanelProps = {
   onStageChange: (stage: AlignmentStageId) => void;
   onComplete: () => void;
   completed?: boolean;
+  completionEnabled?: boolean;
   className?: string;
 };
 
@@ -81,10 +82,13 @@ export function AlignmentStagePanel({
   onStageChange,
   onComplete,
   completed = false,
+  completionEnabled = true,
   className
 }: AlignmentStagePanelProps) {
   const canComplete =
-    !completed && ALIGNMENT_STAGES.every(({ id }) => coverage[id]);
+    completionEnabled &&
+    !completed &&
+    ALIGNMENT_STAGES.every(({ id }) => coverage[id]);
 
   return (
     <nav

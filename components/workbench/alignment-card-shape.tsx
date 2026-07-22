@@ -45,6 +45,7 @@ declare module "@tldraw/tlschema" {
       expanded: boolean;
       editing: boolean;
       focusSelectionJson: string;
+      readOnly: boolean;
     };
   }
 }
@@ -285,6 +286,7 @@ export function AlignmentCardShapeView({
           onSubmitAnswer={(answer) =>
             actions?.onSubmitAnswer(meta.runtimeRecordId, answer)
           }
+          readOnly={props.readOnly}
         />
       ) : (
         <AgentAnnotationCard
@@ -354,7 +356,8 @@ export class AlignmentCardShapeUtil extends BaseBoxShapeUtil<AlignmentCardShape>
     evidenceAnchor: T.string,
     expanded: T.boolean,
     editing: T.boolean,
-    focusSelectionJson: T.string
+    focusSelectionJson: T.string,
+    readOnly: T.boolean
   };
 
   getDefaultProps(): AlignmentCardShape["props"] {
@@ -375,7 +378,8 @@ export class AlignmentCardShapeUtil extends BaseBoxShapeUtil<AlignmentCardShape>
       evidenceAnchor: "",
       expanded: false,
       editing: false,
-      focusSelectionJson: ""
+      focusSelectionJson: "",
+      readOnly: false
     };
   }
 

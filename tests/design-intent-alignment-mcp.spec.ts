@@ -7,9 +7,10 @@ import { killRecordedRuntime, sc, spawnMcpClient } from "./helpers/mcp";
 import { registerSeedReference } from "../lib/runtime/seed-reference";
 import { recordEvidencePackage } from "../lib/runtime/evidence-package";
 import { setDesignLanguageDescription } from "../lib/runtime/project-readiness";
+import { openRecordSse } from "./helpers/sse";
 
 test("Issue 07 semantic MCP surface is discoverable", async () => {
-  test.setTimeout(60_000);
+  test.setTimeout(120_000);
   const stateDir = mkdtempSync(path.join(tmpdir(), "ikran-alignment-mcp-"));
   const projectDir = mkdtempSync(path.join(tmpdir(), "ikran-alignment-project-"));
   let client: Client | null = null;
@@ -20,6 +21,8 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     expect(names).toEqual(
       expect.arrayContaining([
         "create_alignment_question_card",
+        "claim_alignment_preparation",
+        "finalize_alignment_preparation",
         "create_agent_annotation",
         "append_agent_annotation_information",
         "record_designer_answer",
@@ -35,6 +38,7 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     expect(opened.ok).toBe(true);
     const token = String(opened.session);
     const workbenchUrl = String(opened.workbench_url);
+    const runtimePort = Number(new URL(workbenchUrl).port);
 
     expect(
       setDesignLanguageDescription(projectDir, "A calm, precise product language").ok
@@ -53,26 +57,89 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     expect(evidence.ok).toBe(true);
     if (!evidence.ok) return;
 
-    const created = sc(await client.callTool({
-      name: "create_alignment_question_card",
-      arguments: {
-        section: "token",
-        observation: "Accent usage is sparse",
-        question: "Reserve accent for primary actions?",
-        proposedAnswer: "Yes",
-        anchor: {
-          kind: "single",
-          target: {
-            kind: "surface",
-            seedReferenceId: seed.record.id,
-            evidenceSurfaceId: evidence.record.id,
-            evidenceVersionId: evidence.record.id
-          }
-        }
+    const preparedResponse = await fetch(
+      new URL("/api/design-intent-alignment", workbenchUrl),
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          "x-ikran-session": token
+        },
+        body: JSON.stringify({ action: "prepare" })
       }
+    );
+    expect(preparedResponse.status).toBe(200);
+
+    const claimed = sc(await client.callTool({
+      name: "claim_alignment_preparation",
+      arguments: {}
     }));
-    expect(created.ok).toBe(true);
-    const cardId = String((created.record as { id: string }).id);
+    expect(claimed.ok).toBe(true);
+    const attemptId = String((claimed.attempt as { id: string }).id);
+    expect(claimed).toMatchObject({
+      command: { status: "claimed" },
+      attempt: { status: "preparing" },
+      input_snapshot: {
+        data: { design_language_description: "A calm, precise product language" }
+      }
+    });
+
+    const sse = await openRecordSse(runtimePort, token);
+    let firstCardId = "";
+    for (const section of [
+      "design-principle",
+      "visual-language",
+      "token",
+      "layout",
+      "component",
+      "interaction"
+    ]) {
+      for (let index = 1; index <= 2; index += 1) {
+        const recordEvent = sse.waitForRecord();
+        const created = sc(await client.callTool({
+          name: "create_alignment_question_card",
+          arguments: {
+            alignmentAttemptId: attemptId,
+            idempotencyKey: `${section}-${index}`,
+            section,
+            observation: `${section} ${index}`,
+            question: `Question ${index} for ${section}?`,
+            proposedAnswer: `Proposed answer ${index}`,
+            anchor: {
+              kind: "single",
+              target: {
+                kind: "surface",
+                seedReferenceId: seed.record.id,
+                evidenceSurfaceId: evidence.record.id,
+                evidenceVersionId: evidence.record.id
+              }
+            }
+          }
+        }));
+        expect(created.ok).toBe(true);
+        const cardId = String((created.record as { id: string }).id);
+        if (!firstCardId) firstCardId = cardId;
+        await expect(recordEvent).resolves.toMatchObject({
+          kind: "alignment",
+          action: "created",
+          id: cardId
+        });
+      }
+    }
+
+    const preparingRead = await fetch(
+      new URL("/api/design-intent-alignment", workbenchUrl),
+      { headers: { "x-ikran-session": token } }
+    );
+    expect(preparingRead.status).toBe(200);
+    const preparingBody = await preparingRead.json() as {
+      preparation: { workflow: { stage: string } };
+      question_cards: unknown[];
+      coverage: { can_complete: boolean };
+    };
+    expect(preparingBody.preparation.workflow.stage).toBe("alignment-preparing");
+    expect(preparingBody.question_cards).toHaveLength(12);
+    expect(preparingBody.coverage.can_complete).toBe(false);
 
     const answeredResponse = await fetch(
       new URL("/api/design-intent-alignment", workbenchUrl),
@@ -84,23 +151,59 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
         },
         body: JSON.stringify({
           action: "record-designer-answer",
-          input: { questionCardId: cardId, finalAnswer: "同意" }
+          input: { questionCardId: firstCardId, finalAnswer: "同意" }
         })
       }
     );
-    expect(answeredResponse.status).toBe(200);
+    expect(answeredResponse.status).toBe(409);
+
+    const finalizedEvent = sse.waitForRecord();
+    const finalized = sc(await client.callTool({
+      name: "finalize_alignment_preparation",
+      arguments: { alignmentAttemptId: attemptId }
+    }));
+    expect(finalized).toMatchObject({
+      ok: true,
+      workflow: { stage: "alignment-answering" },
+      attempt: { status: "answering" },
+      command: { status: "completed" }
+    });
+    await expect(finalizedEvent).resolves.toMatchObject({
+      kind: "alignment",
+      action: "updated",
+      id: attemptId
+    });
+
+    const answeredAfterFinalize = await fetch(
+      new URL("/api/design-intent-alignment", workbenchUrl),
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          "x-ikran-session": token
+        },
+        body: JSON.stringify({
+          action: "record-designer-answer",
+          input: { questionCardId: firstCardId, finalAnswer: "同意" }
+        })
+      }
+    );
+    expect(answeredAfterFinalize.status).toBe(200);
 
     const read = sc(await client.callTool({
       name: "read_design_intent_alignment",
       arguments: {}
     }));
     const card = (read.question_cards as Array<Record<string, unknown>>)
-      .find((candidate) => candidate.id === cardId);
+      .find((candidate) => candidate.id === firstCardId);
     expect(card).toMatchObject({
       final_answer: "同意",
       answer_source: "designer-edited",
       status: "answered"
     });
+    expect((read.preparation as { workflow: { stage: string } }).workflow.stage)
+      .toBe("alignment-answering");
+    sse.close();
   } finally {
     try {
       await client?.close();

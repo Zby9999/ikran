@@ -73,6 +73,7 @@ export type AgentAnnotationRecord = {
 
 export type QuestionCardRecord = {
   id: string;
+  alignment_attempt_id: string | null;
   section: AlignmentSection;
   observation: string;
   question: string;
@@ -103,6 +104,10 @@ type FailureReason =
   | "empty_final_answer"
   | "not_found"
   | "coverage_incomplete"
+  | "alignment_attempt_required"
+  | "alignment_command_not_claimed"
+  | "stale_alignment_attempt"
+  | "alignment_not_answering"
   | "alignment_completed"
   | "db_error";
 
@@ -332,6 +337,10 @@ function mapQuestion(db: DatabaseType, row: Record<string, unknown>): QuestionCa
   if (!resolved.ok) throw new Error(`invalid persisted alignment anchor: ${resolved.reason}`);
   return {
     id: String(row.id),
+    alignment_attempt_id:
+      typeof row.alignment_attempt_id === "string"
+        ? row.alignment_attempt_id
+        : null,
     section: String(row.section) as AlignmentSection,
     observation: String(row.observation),
     question: String(row.question),
@@ -377,13 +386,22 @@ function coverageFor(cards: QuestionCardRecord[]) {
 export function createQuestionCard(
   projectPath: string,
   input: {
+    alignmentAttemptId?: unknown;
+    idempotencyKey?: unknown;
     section?: unknown;
     observation?: unknown;
     question?: unknown;
     proposedAnswer?: unknown;
     anchor?: unknown;
   }
-): { ok: true; record: QuestionCardRecord; event_id: string } | Failure {
+):
+  | {
+      ok: true;
+      reused: boolean;
+      record: QuestionCardRecord;
+      event_id: string | null;
+    }
+  | Failure {
   if (!isSection(input?.section)) return { ok: false, reason: "invalid_section" };
   const section = input.section;
   const observation = text(input.observation);
@@ -393,6 +411,8 @@ export function createQuestionCard(
   }
   const question = text(input.question);
   if (!question) return { ok: false, reason: "empty_question" };
+  const alignmentAttemptId = text(input.alignmentAttemptId);
+  const idempotencyKey = text(input.idempotencyKey);
   const proposedAnswer = input.proposedAnswer === undefined ? null : text(input.proposedAnswer);
   const id = randomUUID();
   const now = new Date().toISOString();
@@ -401,30 +421,97 @@ export function createQuestionCard(
       if (!descriptionExists(db)) {
         return { ok: false, reason: "design_language_description_required" } as Failure;
       }
+      if (!alignmentAttemptId || !idempotencyKey) {
+        return { ok: false, reason: "alignment_attempt_required" } as Failure;
+      }
       if (alignmentIsCompleted(db)) {
         return { ok: false, reason: "alignment_completed" } as Failure;
       }
-      const anchor = resolveAnchorOnDb(db, input.anchor, true);
+      const preparation = getAlignmentPreparationOnDb(db);
+      if (
+        preparation.current_attempt?.id !== alignmentAttemptId ||
+        !preparation.input_snapshot
+      ) {
+        return { ok: false, reason: "stale_alignment_attempt" } as Failure;
+      }
+      const duplicate = db
+        .prepare(
+          `SELECT * FROM alignment_question_cards
+           WHERE alignment_attempt_id = ? AND agent_idempotency_key = ?`
+        )
+        .get(alignmentAttemptId, idempotencyKey) as
+        | Record<string, unknown>
+        | undefined;
+      if (duplicate) {
+        return {
+          ok: true as const,
+          reused: true,
+          record: mapQuestion(db, duplicate),
+          event_id: null
+        };
+      }
+      if (
+        preparation.current_attempt.status !== "preparing" ||
+        preparation.workflow.stage !== "alignment-preparing"
+      ) {
+        return { ok: false, reason: "stale_alignment_attempt" } as Failure;
+      }
+      const command = preparation.commands.find(
+        (candidate) =>
+          candidate.command_type === "prepare_design_intent_alignment"
+      );
+      if (command?.status !== "claimed") {
+        return { ok: false, reason: "alignment_command_not_claimed" } as Failure;
+      }
+      const anchor = resolveAnchorOnDb(db, input.anchor, false);
       if (!anchor.ok) return anchor;
+      const snapshotEvidence = new Set(
+        preparation.input_snapshot.data.seed_references.map(
+          (seed) => `${seed.id}:${seed.evidence_version.id}`
+        )
+      );
+      const anchorTargets =
+        anchor.anchor.kind === "single"
+          ? [anchor.anchor.target]
+          : anchor.anchor.targets;
+      if (
+        anchorTargets.some(
+          (target) =>
+            !snapshotEvidence.has(
+              `${target.seedReferenceId}:${target.evidenceVersionId}`
+            )
+        )
+      ) {
+        return { ok: false, reason: "invalid_anchor_linkage" } as Failure;
+      }
       const count = db
-        .prepare("SELECT COUNT(*) AS count FROM alignment_question_cards WHERE section = ?")
-        .get(section) as { count: number };
+        .prepare(
+          `SELECT COUNT(*) AS count FROM alignment_question_cards
+           WHERE section = ? AND alignment_attempt_id = ?`
+        )
+        .get(section, alignmentAttemptId) as { count: number };
       if (count.count >= 5) return { ok: false, reason: "section_card_limit" } as Failure;
       db.prepare(
         `INSERT INTO alignment_question_cards
          (id, section, observation, question, proposed_answer, final_answer,
-          answer_source, anchor_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)`
-      ).run(id, section, observation, question, proposedAnswer, JSON.stringify(anchor.anchor), now, now);
+          answer_source, anchor_json, created_at, updated_at,
+          alignment_attempt_id, agent_idempotency_key)
+         VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)`
+      ).run(id, section, observation, question, proposedAnswer, JSON.stringify(anchor.anchor), now, now, alignmentAttemptId, idempotencyKey);
       const event = logEventOnDb(db, "question_card_created", {
         question_card_id: id,
         section
       });
       const row = db.prepare("SELECT * FROM alignment_question_cards WHERE id = ?").get(id) as Record<string, unknown>;
-      return { ok: true as const, record: mapQuestion(db, row), event_id: event.event_id };
+      return { ok: true as const, reused: false, record: mapQuestion(db, row), event_id: event.event_id };
     });
-    if (result.ok) {
-      emitRecordEvent({ kind: "alignment", action: "created", id, projectPath: path.resolve(projectPath) });
+    if (result.ok && !result.reused) {
+      emitRecordEvent({
+        kind: "alignment",
+        action: "created",
+        id: result.record.id,
+        projectPath: path.resolve(projectPath)
+      });
     }
     return result;
   } catch {
@@ -525,6 +612,13 @@ export function recordDesignerAnswer(
   try {
     const result = withProjectTransaction(projectPath, (db) => {
       if (alignmentIsCompleted(db)) return { ok: false, reason: "alignment_completed" } as Failure;
+      const preparation = getAlignmentPreparationOnDb(db);
+      if (
+        preparation.current_attempt &&
+        preparation.workflow.stage !== "alignment-answering"
+      ) {
+        return { ok: false, reason: "alignment_not_answering" } as Failure;
+      }
       const exists = db.prepare("SELECT 1 AS ok FROM alignment_question_cards WHERE id = ?").get(questionCardId);
       if (!exists) return { ok: false, reason: "not_found" } as Failure;
       const now = new Date().toISOString();
@@ -666,7 +760,10 @@ export function getDesignIntentAlignment(projectPath: string) {
       question_cards: questionCards,
       coverage: {
         ...coverage,
-        can_complete: state.status !== "completed" && coverage.can_complete
+        can_complete:
+          state.status !== "completed" &&
+          preparation.workflow.stage === "alignment-answering" &&
+          coverage.can_complete
       }
     };
   } finally {
@@ -685,6 +782,13 @@ export function completeDesignIntentAlignment(
     const result = withProjectTransaction(projectPath, (db) => {
       if (!descriptionExists(db)) return { ok: false, reason: "design_language_description_required" } as Failure;
       if (alignmentIsCompleted(db)) return { ok: false, reason: "alignment_completed" } as Failure;
+      const preparation = getAlignmentPreparationOnDb(db);
+      if (
+        preparation.current_attempt &&
+        preparation.workflow.stage !== "alignment-answering"
+      ) {
+        return { ok: false, reason: "alignment_not_answering" } as Failure;
+      }
       const cards = listQuestionsOnDb(db);
       if (!coverageFor(cards).can_complete) return { ok: false, reason: "coverage_incomplete" } as Failure;
       const now = new Date().toISOString();

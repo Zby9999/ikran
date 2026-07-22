@@ -68,6 +68,11 @@ export {
 } from "./alignment-preparation";
 
 export {
+  claimAlignmentPreparationCommand,
+  finalizeAlignmentPreparationCommand
+} from "./alignment-agent-command";
+
+export {
   parseCommandInput,
   createRegionAnnotationInputSchema,
   createRegionAnnotationInputShape,
@@ -94,6 +99,7 @@ export {
   appendAgentAnnotationInformationInputSchema,
   createAgentAnnotationInputSchema,
   createAlignmentQuestionCardInputSchema,
+  finalizeAlignmentPreparationInputSchema,
   recordDesignerAnswerInputSchema,
   updateAlignmentQuestionAnchorInputSchema,
   updateAlignmentQuestionTitleInputSchema

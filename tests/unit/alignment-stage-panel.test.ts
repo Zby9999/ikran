@@ -105,6 +105,23 @@ describe("AlignmentStagePanel", () => {
     expect(html).not.toMatch(/aria-label="Complete alignment"[^>]*disabled/);
   });
 
+  test("keeps Complete disabled while Runtime preparation is read-only", () => {
+    const coverage = getAlignmentCoverage(
+      Object.fromEntries(ALIGNMENT_STAGES.map(({ id }) => [id, [true]]))
+    );
+    const html = renderToStaticMarkup(
+      createElement(AlignmentStagePanel, {
+        currentStage: "interaction",
+        coverage,
+        completionEnabled: false,
+        onStageChange: vi.fn(),
+        onComplete: vi.fn()
+      })
+    );
+
+    expect(html).toMatch(/aria-label="Complete alignment"[^>]*disabled/);
+  });
+
   test("keeps completed alignment reviewable without allowing Complete twice", () => {
     const coverage = getAlignmentCoverage(
       Object.fromEntries(ALIGNMENT_STAGES.map(({ id }) => [id, [true]]))

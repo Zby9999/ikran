@@ -60,6 +60,7 @@ export type AlignmentQuestionCardProps = {
   onFocusPreview?: () => void;
   onPointerInteraction?: (event: SyntheticEvent) => void;
   onSubmitAnswer: (answer: string) => void;
+  readOnly?: boolean;
   className?: string;
 };
 
@@ -96,6 +97,7 @@ export function AlignmentQuestionCard({
   onFocusPreview,
   onPointerInteraction,
   onSubmitAnswer,
+  readOnly = false,
   className
 }: AlignmentQuestionCardProps) {
   const editorId = useId();
@@ -116,7 +118,7 @@ export function AlignmentQuestionCard({
   function submitAnswer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const answer = draft.trim();
-    if (answer) onSubmitAnswer(answer);
+    if (!readOnly && answer) onSubmitAnswer(answer);
   }
 
   return (
@@ -125,6 +127,7 @@ export function AlignmentQuestionCard({
       data-expanded={expanded}
       data-stage={stage}
       data-status={savedAnswer ? "answered" : "unanswered"}
+      data-read-only={readOnly}
       onMouseDown={(event) =>
         stopAlignmentCardPointer(event, onPointerInteraction)
       }
@@ -163,6 +166,7 @@ export function AlignmentQuestionCard({
           <textarea
             aria-label={`Answer question ${number}`}
             id={editorId}
+            disabled={readOnly}
             onChange={(event) => setDraft(event.currentTarget.value)}
             placeholder="Add your design intent..."
             rows={2}
@@ -171,7 +175,7 @@ export function AlignmentQuestionCard({
           <Button
             aria-label={`Submit answer ${number}`}
             className={styles.answerSubmit}
-            disabled={!draft.trim()}
+            disabled={readOnly || !draft.trim()}
             size="icon"
             type="submit"
           >

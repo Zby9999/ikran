@@ -299,6 +299,7 @@ export function SeedEvidenceWorkbench({
         <div className="seed-workbench__alignment-stages">
           <AlignmentStagePanel
             completed={alignment.alignment.status === "completed"}
+            completionEnabled={alignment.coverage.can_complete}
             coverage={alignmentCoverage}
             currentStage={alignmentStage}
             onComplete={() => {

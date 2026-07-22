@@ -28,6 +28,8 @@ export type EventType =
   | "agent_annotation_updated"
   | "designer_answer_submitted"
   | "alignment_preparation_started"
+  | "agent_command_claimed"
+  | "alignment_preparation_completed"
   | "design_intent_alignment_completed"
   | "seed_extraction_stage_completed"
   | "draft_design_system_generated"

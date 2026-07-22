@@ -8,7 +8,12 @@
 const CONFLICT_REASONS = new Set([
   "project_mismatch",
   "alignment_attempt_active",
-  "alignment_completed"
+  "alignment_completed",
+  "alignment_not_answering",
+  "alignment_attempt_required",
+  "alignment_command_not_claimed",
+  "stale_alignment_attempt",
+  "no_pending_alignment_command"
 ]);
 const NOT_FOUND_REASONS = new Set(["not_found"]);
 const GONE_REASONS = new Set(["endpoint_retired"]);

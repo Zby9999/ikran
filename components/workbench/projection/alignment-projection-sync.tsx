@@ -191,20 +191,22 @@ export function syncAlignmentProjectionShapes(
 
 export function AlignmentProjectionSync({
   currentStage,
+  readOnly,
   questions,
   annotations
 }: {
   currentStage: AlignmentStageId;
+  readOnly: boolean;
   questions: AlignmentQuestionCardRecord[];
   annotations: AlignmentAgentAnnotationRecord[];
 }) {
   const editor = useEditor();
-  const recordsRef = useRef({ currentStage, questions, annotations });
-  recordsRef.current = { currentStage, questions, annotations };
+  const recordsRef = useRef({ currentStage, readOnly, questions, annotations });
+  recordsRef.current = { currentStage, readOnly, questions, annotations };
 
   useEffect(() => {
-    syncAlignmentProjectionShapes(editor, { currentStage, questions, annotations });
-  }, [editor, currentStage, questions, annotations]);
+    syncAlignmentProjectionShapes(editor, { currentStage, readOnly, questions, annotations });
+  }, [editor, currentStage, readOnly, questions, annotations]);
 
   useEffect(() => {
     return editor.store.listen(

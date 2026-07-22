@@ -1,6 +1,6 @@
 # 07B — Agent command 驱动六部分 Alignment Preparation
 
-**Status:** ready-for-agent
+**Status:** complete
 
 ## Parent
 
@@ -18,16 +18,20 @@
 
 ## Acceptance criteria
 
-- [ ] Agent 可通过语义 MCP surface 读取并领取 pending `prepare_design_intent_alignment` command；返回内容包含 attempt 与 snapshot identity，以及完成任务所需的稳定语义上下文。
-- [ ] Agent 创建的 Question cards 全部绑定当前 attempt 与 snapshot evidence；每个 section 有二到五个有效问题，并继续满足 Issue 07 的标题、anchor、proposed answer 与 schema 约束。
-- [ ] Agent 可分批提交问题；`preparing` 期间已提交内容在 Workbench 中只读可见，不能提前回答、接受 proposed answer 或点击 `Complete`。
-- [ ] 只有六个 section 全部满足数量与有效性要求时，Agent 才能显式 finalize preparation；finalize 与 command completion 在一致的持久化边界内把 attempt 变为 `answering`。
-- [ ] 进入 `answering` 后，设计师可以自由切换、提前查看和回看六个 section，并按 Issue 07 的规则回答问题。
-- [ ] command claim、问题提交和 finalize 均可安全重试；重复 delivery 不复制卡片，过期或非 current attempt 的 Agent 写入被明确拒绝。
-- [ ] Agent/MCP 断开不会删除已经提交的问题或 pending command；恢复后可以从 durable state 继续，而不是从聊天记录猜测进度。
-- [ ] preparing/read-only/answering 的实现只改变现有控件行为和非视觉状态语义，不新增或重新设计任何可见 surface。
-- [ ] one-process vertical test 覆盖 MCP claim/写入/finalize、HTTP read、SSE projection，以及从只读 `preparing` 到可回答 `answering` 的完整状态边界。
+- [x] Agent 可通过语义 MCP surface 读取并领取 pending `prepare_design_intent_alignment` command；返回内容包含 attempt 与 snapshot identity，以及完成任务所需的稳定语义上下文。
+- [x] Agent 创建的 Question cards 全部绑定当前 attempt 与 snapshot evidence；每个 section 有二到五个有效问题，并继续满足 Issue 07 的标题、anchor、proposed answer 与 schema 约束。
+- [x] Agent 可分批提交问题；`preparing` 期间已提交内容在 Workbench 中只读可见，不能提前回答、接受 proposed answer 或点击 `Complete`。
+- [x] 只有六个 section 全部满足数量与有效性要求时，Agent 才能显式 finalize preparation；finalize 与 command completion 在一致的持久化边界内把 attempt 变为 `answering`。
+- [x] 进入 `answering` 后，设计师可以自由切换、提前查看和回看六个 section，并按 Issue 07 的规则回答问题。
+- [x] command claim、问题提交和 finalize 均可安全重试；重复 delivery 不复制卡片，过期或非 current attempt 的 Agent 写入被明确拒绝。
+- [x] Agent/MCP 断开不会删除已经提交的问题或 pending command；恢复后可以从 durable state 继续，而不是从聊天记录猜测进度。
+- [x] preparing/read-only/answering 的实现只改变现有控件行为和非视觉状态语义，不新增或重新设计任何可见 surface。
+- [x] one-process vertical test 覆盖 MCP claim/写入/finalize、HTTP read、SSE projection，以及从只读 `preparing` 到可回答 `answering` 的完整状态边界。
 
 ## Blocked by
 
 - `07A-runtime-owned-alignment-handoff.md`
+
+## Completion report — 2026-07-22
+
+已加入可恢复的 MCP claim/finalize surface、attempt 与 snapshot evidence 绑定、逐卡幂等 delivery 和六部分 coverage gate；preparing 投影复用现有 Question card 与 Complete 控件并保持只读，finalize 后原子进入 answering。验证通过：TypeScript typecheck、9 个相关 Vitest 文件共 90 项、one-process MCP→HTTP→SSE production 纵向测试，以及 Agent 使用 Browser Use 对 preparing 禁用态、answering 解锁和 section 切换的真实审查。

@@ -17,14 +17,54 @@ import {
   appendAgentAnnotationInformation,
   completeDesignIntentAlignment,
   createAgentAnnotation,
-  createQuestionCard,
+  createQuestionCard as createQuestionCardRuntime,
   getDesignIntentAlignment,
   recordDesignerAnswer,
   updateQuestionCardAnchor,
   updateQuestionCardTitle
 } from "../../lib/runtime/design-intent-alignment";
+import { prepareDesignIntentAlignment } from "../../lib/runtime/alignment-preparation";
+import {
+  claimAlignmentPreparationCommand,
+  finalizeAlignmentPreparation
+} from "../../lib/runtime/alignment-agent-command";
 
 const FIGMA = "https://www.figma.com/design/AbCdEf/Checkout?node-id=1:2";
+let questionDelivery = 0;
+
+function createQuestionCard(
+  projectPath: string,
+  input: Parameters<typeof createQuestionCardRuntime>[1]
+) {
+  let preparation = getDesignIntentAlignment(projectPath).preparation;
+  if (preparation.workflow.stage === "seed-reference-registration") {
+    const prepared = prepareDesignIntentAlignment(projectPath);
+    if (prepared.ok) preparation = getDesignIntentAlignment(projectPath).preparation;
+  }
+  if (preparation.workflow.stage === "alignment-preparing") {
+    claimAlignmentPreparationCommand(projectPath);
+  }
+  questionDelivery += 1;
+  return createQuestionCardRuntime(projectPath, {
+    ...input,
+    alignmentAttemptId: preparation.current_attempt?.id,
+    idempotencyKey: `legacy-unit-${questionDelivery}`
+  });
+}
+
+function forceAnsweringFixture(projectPath: string): void {
+  const preparation = getDesignIntentAlignment(projectPath).preparation;
+  if (!preparation.current_attempt) throw new Error("missing alignment attempt");
+  const db = openProjectDb(projectPath);
+  try {
+    db.prepare("UPDATE alignment_attempts SET status = 'answering' WHERE id = ?")
+      .run(preparation.current_attempt.id);
+    db.prepare("UPDATE project_workflow SET stage = 'alignment-answering' WHERE singleton = 1")
+      .run();
+  } finally {
+    closeProjectDb(db);
+  }
+}
 
 function withProject(fn: (projectPath: string, link: { seedReferenceId: string; surfaceId: string }) => void) {
   const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-alignment-"));
@@ -390,6 +430,8 @@ describe("Design Intent Alignment Runtime contract", () => {
       expect(card.ok).toBe(true);
       if (!card.ok) return;
 
+      forceAnsweringFixture(projectPath);
+
       const answer = recordDesignerAnswer(projectPath, {
         questionCardId: card.record.id,
         finalAnswer: "Yes, but allow it for selected navigation too"
@@ -505,9 +547,14 @@ describe("Design Intent Alignment Runtime contract", () => {
       }
 
       const before = getDesignIntentAlignment(projectPath);
-      expect(before.coverage.can_complete).toBe(true);
+      expect(before.coverage.can_complete).toBe(false);
       expect(before.coverage.sections.every((section) => section.complete)).toBe(true);
       expect(before.question_cards.every((card) => card.status === "unanswered")).toBe(true);
+
+      const preparation = before.preparation.current_attempt;
+      expect(preparation).not.toBeNull();
+      if (!preparation) return;
+      expect(finalizeAlignmentPreparation(projectPath, preparation.id).ok).toBe(true);
 
       const completed = completeDesignIntentAlignment(projectPath);
       expect(completed.ok).toBe(true);

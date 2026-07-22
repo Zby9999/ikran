@@ -226,6 +226,8 @@ export const alignmentAnchorSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const createAlignmentQuestionCardInputSchema = z.object({
+  alignmentAttemptId: z.string(),
+  idempotencyKey: z.string(),
   section: z.string(),
   observation: z
     .string()
@@ -235,6 +237,10 @@ export const createAlignmentQuestionCardInputSchema = z.object({
   question: z.string(),
   proposedAnswer: z.string().optional(),
   anchor: alignmentAnchorSchema
+});
+
+export const finalizeAlignmentPreparationInputSchema = z.object({
+  alignmentAttemptId: z.string()
 });
 
 export const createAgentAnnotationInputSchema = z.object({

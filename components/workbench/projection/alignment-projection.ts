@@ -70,6 +70,7 @@ export type AlignmentSeedFrame = {
 
 export type AlignmentProjectionInput = {
   currentStage: AlignmentStageId;
+  readOnly: boolean;
   questions: AlignmentQuestionCardRecord[];
   annotations: AlignmentAgentAnnotationRecord[];
   seedFrames: AlignmentSeedFrame[];
@@ -109,6 +110,7 @@ export type AlignmentCardProjection = {
     evidenceAnchor: string;
     expanded: boolean;
     editing: boolean;
+    readOnly: boolean;
     focusSelection: FocusCardSelection | null;
   };
 };
@@ -360,6 +362,7 @@ export function buildAlignmentProjectionPlan(
         evidenceAnchor: evidenceLabel(target),
         expanded: false,
         editing: false,
+        readOnly: input.readOnly,
         focusSelection: focusSelectionFor(item.record.id, item.record.anchor)
       }
     };

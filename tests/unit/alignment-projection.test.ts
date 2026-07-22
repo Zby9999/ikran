@@ -9,6 +9,7 @@ import { alignmentCardShapeProps } from "../../components/workbench/projection/a
 
 const input: AlignmentProjectionInput = {
   currentStage: "layout",
+  readOnly: false,
   seedFrames: [
     {
       id: "shape:seed-1",
