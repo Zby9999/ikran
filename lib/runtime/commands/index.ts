@@ -72,6 +72,8 @@ export {
   finalizeAlignmentPreparationCommand
 } from "./alignment-agent-command";
 
+export { abandonCurrentAlignmentAttemptCommand } from "./alignment-attempt-lifecycle";
+
 export {
   parseCommandInput,
   createRegionAnnotationInputSchema,

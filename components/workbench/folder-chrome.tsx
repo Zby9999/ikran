@@ -24,6 +24,7 @@ export type FolderChromePhase = "sign-seed" | "extraction";
 export type FolderChromeProps = {
   folderName: string;
   onBack: () => void;
+  backLabel?: string;
   /**
    * `null` — compact Default (back + name only).
    * `sign-seed` — Sign Seed Design + seed count + Next Phase.
@@ -48,6 +49,7 @@ export type FolderChromeProps = {
 export function FolderChrome({
   folderName,
   onBack,
+  backLabel = "Back to setup",
   phase = null,
   seedCount = 0,
   extraction = null,
@@ -80,7 +82,7 @@ export function FolderChrome({
           <SmallIconButton
             className="seed-workbench__folder-back"
             icon={ArrowLeft01Icon}
-            label="Back to setup"
+            label={backLabel}
             onClick={onBack}
           />
           <span className="seed-workbench__folder-name">{folderName || "Folder Name"}</span>

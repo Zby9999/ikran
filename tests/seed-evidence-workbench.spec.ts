@@ -13,6 +13,14 @@ import {
   rawPost as httpPost
 } from "./helpers/http";
 import { connectFigmaForTests } from "./helpers/figma-connection";
+import {
+  claimAlignmentPreparationCommand,
+  finalizeAlignmentPreparation
+} from "../lib/runtime/alignment-agent-command";
+import {
+  ALIGNMENT_SECTIONS,
+  createQuestionCard
+} from "../lib/runtime/design-intent-alignment";
 
 // Issue 02/04 — tldraw Workbench shell + Agent-first seed projection.
 //
@@ -485,6 +493,126 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       "alignment-preparing"
     );
     await expect(workbench).toHaveAttribute("data-canvas-stage", "extraction");
+  });
+
+  test("07D: Back abandons preparing/answering attempts and regenerated questions replace current reads", async ({
+    page,
+    runtime,
+    folder
+  }) => {
+    const token = await captureToken(page, runtime.baseURL);
+    await bindFolder(token, folder, runtime.port);
+    const captured = await agentCaptureSeed(token, runtime.port, {
+      referenceNote: "Attempt one"
+    });
+    await rawPatch(
+      "/api/project/readiness",
+      { designLanguageDescription: "Regenerated alignment" },
+      { "x-ikran-session": token, "content-type": "application/json" },
+      runtime.port
+    );
+    await page.reload();
+    await enterWorkbench(page, { port: runtime.port, sessionToken: token });
+    await page.getByTestId("sign-seed-next-phase").click();
+
+    const readAttempt = async () => {
+      const response = await rawGet(
+        "/api/design-intent-alignment",
+        { "x-ikran-session": token },
+        runtime.port
+      );
+      return JSON.parse(response.body).preparation.current_attempt.id as string;
+    };
+    const anchor = {
+      kind: "single",
+      target: {
+        kind: "surface",
+        seedReferenceId: captured.record.id,
+        evidenceSurfaceId: captured.surface.id,
+        evidenceVersionId: captured.surface.id
+      }
+    };
+    const claim = async () => {
+      for (let retry = 0; retry < 5; retry += 1) {
+        const result = claimAlignmentPreparationCommand(folder);
+        if (result.ok || result.reason !== "db_error") return result;
+        await page.waitForTimeout(25);
+      }
+      return claimAlignmentPreparationCommand(folder);
+    };
+    const create = async (attemptId: string, section: string, index: number) => {
+      for (let retry = 0; retry < 5; retry += 1) {
+        const result = createQuestionCard(folder, {
+          alignmentAttemptId: attemptId,
+          idempotencyKey: `${attemptId}:${section}:${index}`,
+          section,
+          observation: `${section} ${index}`,
+          question: `Question ${index} for ${section}?`,
+          proposedAnswer: `Proposal ${index}`,
+          anchor
+        });
+        if (result.ok || result.reason !== "db_error") return result;
+        await page.waitForTimeout(25);
+      }
+      return createQuestionCard(folder, {
+        alignmentAttemptId: attemptId,
+        idempotencyKey: `${attemptId}:${section}:${index}`,
+        section,
+        observation: `${section} ${index}`,
+        question: `Question ${index} for ${section}?`,
+        proposedAnswer: `Proposal ${index}`,
+        anchor
+      });
+    };
+
+    const firstAttempt = await readAttempt();
+    expect((await claim()).ok).toBe(true);
+    const oldPreparingCard = await create(firstAttempt, "design-principle", 1);
+    expect(oldPreparingCard.ok).toBe(true);
+    await page.reload();
+    await enterWorkbench(page, { port: runtime.port, sessionToken: token });
+    await page.getByRole("button", { name: "Back to Seed Reference" }).click();
+    await expect(page.getByTestId("seed-workbench")).toHaveAttribute(
+      "data-alignment-workflow-stage",
+      "seed-reference-registration"
+    );
+    await expect(page.getByTestId("sign-seed-next-phase")).toBeVisible();
+    await expect(page.getByText("design-principle 1", { exact: true })).toHaveCount(0);
+
+    await page.getByTestId("sign-seed-next-phase").click();
+    const secondAttempt = await readAttempt();
+    expect(secondAttempt).not.toBe(firstAttempt);
+    expect((await claim()).ok).toBe(true);
+    let firstAnsweringCard = "";
+    for (const section of ALIGNMENT_SECTIONS) {
+      for (let index = 1; index <= 2; index += 1) {
+        const created = await create(secondAttempt, section, index);
+        expect(created, JSON.stringify(created)).toMatchObject({ ok: true });
+        if (created.ok && !firstAnsweringCard) firstAnsweringCard = created.record.id;
+      }
+    }
+    expect(finalizeAlignmentPreparation(folder, secondAttempt).ok).toBe(true);
+    await page.reload();
+    await enterWorkbench(page, { port: runtime.port, sessionToken: token });
+    await expect(page.getByTestId("seed-workbench")).toHaveAttribute(
+      "data-alignment-workflow-stage",
+      "alignment-answering"
+    );
+    await page.getByRole("button", { name: "Back to Seed Reference" }).click();
+    await expect(page.getByTestId("seed-workbench")).toHaveAttribute(
+      "data-alignment-workflow-stage",
+      "seed-reference-registration"
+    );
+    expect(createQuestionCard(folder, {
+      alignmentAttemptId: secondAttempt,
+      idempotencyKey: "stale-write",
+      section: "layout",
+      observation: "Stale write",
+      question: "Should this be rejected?",
+      proposedAnswer: "Yes",
+      anchor
+    })).toEqual({ ok: false, reason: "stale_alignment_attempt" });
+    expect(firstAnsweringCard).toBeTruthy();
   });
 
   test("empty Workbench is FolderChrome + empty canvas; no seed-add / URL / intent inputs", async ({

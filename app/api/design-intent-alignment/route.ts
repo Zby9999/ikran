@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { authorize } from "../../../lib/runtime/session";
 import {
   appendAgentAnnotationInformationCommand,
+  abandonCurrentAlignmentAttemptCommand,
   appendAgentAnnotationInformationInputSchema,
   commandErrorHttpStatus,
   completeDesignIntentAlignmentCommand,
@@ -86,6 +87,15 @@ export async function PATCH(request: NextRequest) {
   const action = raw.action;
   if (action === "prepare") {
     const result = prepareDesignIntentAlignmentCommand(ctx.projectPath);
+    return result.ok
+      ? NextResponse.json(result)
+      : NextResponse.json(
+          { ok: false, error: result.reason },
+          { status: commandErrorHttpStatus(result.reason) }
+        );
+  }
+  if (action === "return-to-seed-reference") {
+    const result = abandonCurrentAlignmentAttemptCommand(ctx.projectPath);
     return result.ok
       ? NextResponse.json(result)
       : NextResponse.json(

@@ -68,6 +68,7 @@ export function SeedEvidenceWorkbench({
     updateSeedReferenceNote,
     updateDesignLanguageDescription,
     prepareDesignIntentAlignment,
+    returnToSeedReference,
     recordDesignerAnswer,
     appendAgentAnnotationInformation,
     completeDesignIntentAlignment,
@@ -254,7 +255,21 @@ export function SeedEvidenceWorkbench({
       <div className="seed-workbench__folder-stack">
         <FolderChrome
           folderName={folderName}
-          onBack={onBack}
+          backLabel={
+            canvasStage === "extraction"
+              ? "Back to Seed Reference"
+              : "Back to setup"
+          }
+          onBack={
+            canvasStage === "extraction"
+              ? () => {
+                  announceWorkbenchSemanticActivity();
+                  void returnToSeedReference().then((result) => {
+                    if (!result.ok) showPhaseError(result.error);
+                  });
+                }
+              : onBack
+          }
           phase={folderPhase}
           seedCount={seedCount}
           onNextPhase={() => {

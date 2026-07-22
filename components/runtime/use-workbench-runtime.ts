@@ -427,6 +427,12 @@ export function useWorkbenchRuntime(session: string) {
     return client.prepareDesignIntentAlignment();
   }, []);
 
+  const returnToSeedReference = useCallback(async (): Promise<MutationResult> => {
+    const client = clientRef.current;
+    if (!client) return { ok: false, error: "runtime_client_unavailable" };
+    return client.returnToSeedReference();
+  }, []);
+
   const appendAgentAnnotationInformation = useCallback(
     async (annotationId: string, information: string): Promise<MutationResult> => {
       const client = clientRef.current;
@@ -461,6 +467,7 @@ export function useWorkbenchRuntime(session: string) {
     updateSeedReferenceNote,
     updateDesignLanguageDescription,
     prepareDesignIntentAlignment,
+    returnToSeedReference,
     recordDesignerAnswer,
     appendAgentAnnotationInformation,
     completeDesignIntentAlignment,

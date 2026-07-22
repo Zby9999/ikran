@@ -13,7 +13,8 @@ const CONFLICT_REASONS = new Set([
   "alignment_attempt_required",
   "alignment_command_not_claimed",
   "stale_alignment_attempt",
-  "no_pending_alignment_command"
+  "no_pending_alignment_command",
+  "no_active_alignment_attempt"
 ]);
 const NOT_FOUND_REASONS = new Set(["not_found"]);
 const GONE_REASONS = new Set(["endpoint_retired"]);

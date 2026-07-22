@@ -354,9 +354,17 @@ function mapQuestion(db: DatabaseType, row: Record<string, unknown>): QuestionCa
   };
 }
 
-function listQuestionsOnDb(db: DatabaseType): QuestionCardRecord[] {
+function listQuestionsOnDb(
+  db: DatabaseType,
+  alignmentAttemptId: string | null
+): QuestionCardRecord[] {
+  if (!alignmentAttemptId) return [];
   return (
-    db.prepare("SELECT * FROM alignment_question_cards ORDER BY created_at ASC, id ASC").all() as Record<string, unknown>[]
+    db.prepare(
+      `SELECT * FROM alignment_question_cards
+       WHERE alignment_attempt_id = ?
+       ORDER BY created_at ASC, id ASC`
+    ).all(alignmentAttemptId) as Record<string, unknown>[]
   ).map((row) => mapQuestion(db, row));
 }
 
@@ -613,14 +621,19 @@ export function recordDesignerAnswer(
     const result = withProjectTransaction(projectPath, (db) => {
       if (alignmentIsCompleted(db)) return { ok: false, reason: "alignment_completed" } as Failure;
       const preparation = getAlignmentPreparationOnDb(db);
-      if (
-        preparation.current_attempt &&
-        preparation.workflow.stage !== "alignment-answering"
-      ) {
+      if (!preparation.current_attempt) {
+        return { ok: false, reason: "stale_alignment_attempt" } as Failure;
+      }
+      if (preparation.workflow.stage !== "alignment-answering") {
         return { ok: false, reason: "alignment_not_answering" } as Failure;
       }
-      const exists = db.prepare("SELECT 1 AS ok FROM alignment_question_cards WHERE id = ?").get(questionCardId);
-      if (!exists) return { ok: false, reason: "not_found" } as Failure;
+      const existing = db.prepare(
+        "SELECT alignment_attempt_id FROM alignment_question_cards WHERE id = ?"
+      ).get(questionCardId) as { alignment_attempt_id: string | null } | undefined;
+      if (!existing) return { ok: false, reason: "not_found" } as Failure;
+      if (existing.alignment_attempt_id !== preparation.current_attempt.id) {
+        return { ok: false, reason: "stale_alignment_attempt" } as Failure;
+      }
       const now = new Date().toISOString();
       db.prepare(
         `UPDATE alignment_question_cards
@@ -745,13 +758,16 @@ export function updateQuestionCardAnchor(
 export function getDesignIntentAlignment(projectPath: string) {
   const db = openProjectDb(projectPath);
   try {
-    const questionCards = listQuestionsOnDb(db);
+    const preparation = getAlignmentPreparationOnDb(db);
+    const questionCards = listQuestionsOnDb(
+      db,
+      preparation.current_attempt?.id ?? null
+    );
     const annotations = (
       db.prepare("SELECT * FROM agent_alignment_annotations ORDER BY created_at ASC, id ASC").all() as Record<string, unknown>[]
     ).map((row) => mapAnnotation(db, row));
     const state = db.prepare("SELECT status, completed_at FROM design_intent_alignment WHERE singleton = 1").get() as { status: "draft" | "completed"; completed_at: string | null };
     const coverage = coverageFor(questionCards);
-    const preparation = getAlignmentPreparationOnDb(db);
     return {
       sections: ALIGNMENT_SECTIONS,
       alignment: state,
@@ -789,7 +805,10 @@ export function completeDesignIntentAlignment(
       ) {
         return { ok: false, reason: "alignment_not_answering" } as Failure;
       }
-      const cards = listQuestionsOnDb(db);
+      const cards = listQuestionsOnDb(
+        db,
+        preparation.current_attempt?.id ?? null
+      );
       if (!coverageFor(cards).can_complete) return { ok: false, reason: "coverage_incomplete" } as Failure;
       const now = new Date().toISOString();
       const proposed = cards.filter((card) => card.final_answer === null && text(card.proposed_answer) !== null);
@@ -817,7 +836,10 @@ export function completeDesignIntentAlignment(
       return {
         ok: true as const,
         alignment: { status: "completed" as const, completed_at: now },
-        question_cards: listQuestionsOnDb(db),
+        question_cards: listQuestionsOnDb(
+          db,
+          preparation.current_attempt?.id ?? null
+        ),
         event_id: event.event_id
       };
     });

@@ -202,7 +202,7 @@ describe("Workbench Runtime consistency", () => {
     client.dispose();
   });
 
-  test("loads alignment and exposes prepare, answer, append, and complete mutations", async () => {
+  test("loads alignment and exposes prepare, return, answer, append, and complete mutations", async () => {
     const snapshots: unknown[] = [];
     const writes: unknown[] = [];
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -231,11 +231,13 @@ describe("Workbench Runtime consistency", () => {
       alignment: { alignment: { status: "draft" }, question_cards: [] }
     });
     expect(await client.prepareDesignIntentAlignment()).toEqual({ ok: true });
+    expect(await client.returnToSeedReference()).toEqual({ ok: true });
     expect(await client.recordDesignerAnswer("question-1", "Use 16px")).toEqual({ ok: true });
     expect(await client.appendAgentAnnotationInformation("annotation-1", "Keep this exception")).toEqual({ ok: true });
     expect(await client.completeDesignIntentAlignment()).toEqual({ ok: true });
     expect(writes).toEqual([
       { action: "prepare" },
+      { action: "return-to-seed-reference" },
       {
         action: "record-designer-answer",
         input: { questionCardId: "question-1", finalAnswer: "Use 16px" }

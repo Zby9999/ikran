@@ -679,6 +679,12 @@ export function createWorkbenchDataClient(
   const prepareDesignIntentAlignment = () =>
     patchAlignment({ action: "prepare" }, "prepare_alignment_failed");
 
+  const returnToSeedReference = () =>
+    patchAlignment(
+      { action: "return-to-seed-reference" },
+      "return_to_seed_reference_failed"
+    );
+
   return {
     loadAll,
     createAnnotation,
@@ -690,6 +696,7 @@ export function createWorkbenchDataClient(
     updateSeedReferenceNote,
     updateDesignLanguageDescription,
     prepareDesignIntentAlignment,
+    returnToSeedReference,
     recordDesignerAnswer,
     appendAgentAnnotationInformation,
     completeDesignIntentAlignment,

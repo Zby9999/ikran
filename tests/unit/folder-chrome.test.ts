@@ -36,4 +36,16 @@ describe("FolderChrome tool group", () => {
     expect(html).toContain('data-active="true"');
     expect(html).toContain('aria-pressed="true"');
   });
+
+  test("can retarget the existing Back affordance without adding UI", () => {
+    const html = renderToStaticMarkup(createElement(FolderChrome, {
+      folderName: "Folder Name",
+      phase: "extraction",
+      backLabel: "Back to Seed Reference",
+      onBack: vi.fn()
+    }));
+
+    expect(html).toContain('aria-label="Back to Seed Reference"');
+    expect(html).not.toContain("Back to Seed Reference</");
+  });
 });
