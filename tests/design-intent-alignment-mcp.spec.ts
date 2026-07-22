@@ -27,7 +27,8 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
         "append_agent_annotation_information",
         "record_designer_answer",
         "complete_design_intent_alignment",
-        "read_design_intent_alignment"
+        "read_design_intent_alignment",
+        "wait_for_agent_command"
       ])
     );
 
@@ -174,6 +175,7 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
       id: attemptId
     });
 
+    const answeredEvent = sse.waitForRecord();
     const answeredAfterFinalize = await fetch(
       new URL("/api/design-intent-alignment", workbenchUrl),
       {
@@ -189,6 +191,11 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
       }
     );
     expect(answeredAfterFinalize.status).toBe(200);
+    await expect(answeredEvent).resolves.toMatchObject({
+      kind: "alignment",
+      action: "updated",
+      id: firstCardId
+    });
 
     const read = sc(await client.callTool({
       name: "read_design_intent_alignment",
@@ -203,6 +210,39 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     });
     expect((read.preparation as { workflow: { stage: string } }).workflow.stage)
       .toBe("alignment-answering");
+
+    const completedEvent = sse.waitForRecord();
+    const completed = sc(await client.callTool({
+      name: "complete_design_intent_alignment",
+      arguments: {}
+    }));
+    expect(completed).toMatchObject({
+      ok: true,
+      workflow: { stage: "initial-design-system-preparing" },
+      attempt: { id: attemptId, status: "completed" },
+      command: {
+        command_type: "prepare_initial_design_system",
+        status: "pending"
+      }
+    });
+    await expect(completedEvent).resolves.toMatchObject({
+      kind: "alignment",
+      action: "updated",
+      id: "design-intent-alignment"
+    });
+
+    const nextCommand = sc(await client.callTool({
+      name: "wait_for_agent_command",
+      arguments: {}
+    }));
+    expect(nextCommand).toMatchObject({
+      ok: true,
+      reason: "command_available",
+      command: {
+        command_type: "prepare_initial_design_system",
+        alignment_attempt_id: attemptId
+      }
+    });
     sse.close();
   } finally {
     try {

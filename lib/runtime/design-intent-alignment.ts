@@ -793,21 +793,36 @@ export type DesignIntentAlignmentSnapshot = ReturnType<
 
 export function completeDesignIntentAlignment(
   projectPath: string
-): { ok: true; alignment: { status: "completed"; completed_at: string }; question_cards: QuestionCardRecord[]; event_id: string } | Failure {
+):
+  | {
+      ok: true;
+      reused: false;
+      alignment: { status: "completed"; completed_at: string };
+      question_cards: QuestionCardRecord[];
+      workflow: ReturnType<typeof getAlignmentPreparationOnDb>["workflow"];
+      attempt: NonNullable<
+        ReturnType<typeof getAlignmentPreparationOnDb>["current_attempt"]
+      >;
+      command: ReturnType<typeof getAlignmentPreparationOnDb>["commands"][number];
+      event_id: string;
+    }
+  | Failure {
   try {
     const result = withProjectTransaction(projectPath, (db) => {
       if (!descriptionExists(db)) return { ok: false, reason: "design_language_description_required" } as Failure;
       if (alignmentIsCompleted(db)) return { ok: false, reason: "alignment_completed" } as Failure;
       const preparation = getAlignmentPreparationOnDb(db);
       if (
-        preparation.current_attempt &&
+        !preparation.current_attempt ||
+        preparation.current_attempt.status !== "answering" ||
         preparation.workflow.stage !== "alignment-answering"
       ) {
         return { ok: false, reason: "alignment_not_answering" } as Failure;
       }
+      const attempt = preparation.current_attempt;
       const cards = listQuestionsOnDb(
         db,
-        preparation.current_attempt?.id ?? null
+        attempt.id
       );
       if (!coverageFor(cards).can_complete) return { ok: false, reason: "coverage_incomplete" } as Failure;
       const now = new Date().toISOString();
@@ -829,17 +844,58 @@ export function completeDesignIntentAlignment(
       db.prepare(
         "UPDATE design_intent_alignment SET status = 'completed', completed_at = ? WHERE singleton = 1"
       ).run(now);
+      db.prepare(
+        `UPDATE alignment_attempts
+         SET status = 'completed', completed_at = ?, updated_at = ?
+         WHERE id = ? AND status = 'answering'`
+      ).run(now, now, attempt.id);
+      db.prepare(
+        `UPDATE project_workflow
+         SET stage = 'initial-design-system-preparing', updated_at = ?
+         WHERE singleton = 1`
+      ).run(now);
+
+      const completedCards = listQuestionsOnDb(db, attempt.id);
+      const commandId = randomUUID();
+      const commandPayload = {
+        alignment_attempt_id: attempt.id,
+        input_snapshot_id: attempt.input_snapshot_id,
+        alignment_completed_at: now,
+        question_cards: completedCards
+      };
+      db.prepare(
+        `INSERT INTO agent_commands
+         (id, command_type, status, alignment_attempt_id, payload_json,
+          idempotency_key, created_at, updated_at, claimed_at, completed_at,
+          cancelled_at)
+         VALUES (?, 'prepare_initial_design_system', 'pending', ?, ?, ?, ?, ?,
+                 NULL, NULL, NULL)`
+      ).run(
+        commandId,
+        attempt.id,
+        JSON.stringify(commandPayload),
+        `prepare-initial-design-system:${attempt.id}`,
+        now,
+        now
+      );
       const event = logEventOnDb(db, "design_intent_alignment_completed", {
+        alignment_attempt_id: attempt.id,
+        input_snapshot_id: attempt.input_snapshot_id,
+        agent_command_id: commandId,
         accepted_proposal_count: proposed.length,
         question_count: cards.length
       });
+      const completed = getAlignmentPreparationOnDb(db);
       return {
         ok: true as const,
+        reused: false as const,
         alignment: { status: "completed" as const, completed_at: now },
-        question_cards: listQuestionsOnDb(
-          db,
-          preparation.current_attempt?.id ?? null
-        ),
+        question_cards: completedCards,
+        workflow: completed.workflow,
+        attempt: completed.current_attempt!,
+        command: completed.commands.find(
+          (candidate) => candidate.id === commandId
+        )!,
         event_id: event.event_id
       };
     });

@@ -17,6 +17,7 @@ import {
   claimAlignmentPreparationCommand,
   finalizeAlignmentPreparation
 } from "../lib/runtime/alignment-agent-command";
+import { waitForAgentCommand } from "../lib/runtime/adaptive-agent-wait";
 import {
   ALIGNMENT_SECTIONS,
   createQuestionCard
@@ -613,6 +614,166 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       anchor
     })).toEqual({ ok: false, reason: "stale_alignment_attempt" });
     expect(firstAnsweringCard).toBeTruthy();
+  });
+
+  test("07E: Complete atomically advances to durable Initial Design System preparation", async ({
+    page,
+    runtime,
+    folder
+  }) => {
+    const token = await captureToken(page, runtime.baseURL);
+    await bindFolder(token, folder, runtime.port);
+    const captured = await agentCaptureSeed(token, runtime.port, {
+      referenceNote: "Completion handoff"
+    });
+    await rawPatch(
+      "/api/project/readiness",
+      { designLanguageDescription: "Completion handoff" },
+      { "x-ikran-session": token, "content-type": "application/json" },
+      runtime.port
+    );
+    await page.reload();
+    await enterWorkbench(page, { port: runtime.port, sessionToken: token });
+    await page.getByTestId("sign-seed-next-phase").click();
+
+    const preparationResponse = await rawGet(
+      "/api/design-intent-alignment",
+      { "x-ikran-session": token },
+      runtime.port
+    );
+    const attemptId = JSON.parse(preparationResponse.body).preparation
+      .current_attempt.id as string;
+    let claim = claimAlignmentPreparationCommand(folder);
+    for (let retry = 0; !claim.ok && claim.reason === "db_error" && retry < 4; retry += 1) {
+      await page.waitForTimeout(25);
+      claim = claimAlignmentPreparationCommand(folder);
+    }
+    expect(claim.ok).toBe(true);
+    const anchor = {
+      kind: "single",
+      target: {
+        kind: "surface",
+        seedReferenceId: captured.record.id,
+        evidenceSurfaceId: captured.surface.id,
+        evidenceVersionId: captured.surface.id
+      }
+    };
+    for (const section of ALIGNMENT_SECTIONS) {
+      for (let index = 1; index <= 2; index += 1) {
+        let created = createQuestionCard(folder, {
+          alignmentAttemptId: attemptId,
+          idempotencyKey: `07e:${section}:${index}`,
+          section,
+          observation: `${section} ${index}`,
+          question: `Question ${index} for ${section}?`,
+          proposedAnswer: `Proposal ${index} for ${section}`,
+          anchor
+        });
+        for (let retry = 0; !created.ok && created.reason === "db_error" && retry < 4; retry += 1) {
+          await page.waitForTimeout(25);
+          created = createQuestionCard(folder, {
+            alignmentAttemptId: attemptId,
+            idempotencyKey: `07e:${section}:${index}`,
+            section,
+            observation: `${section} ${index}`,
+            question: `Question ${index} for ${section}?`,
+            proposedAnswer: `Proposal ${index} for ${section}`,
+            anchor
+          });
+        }
+        expect(created, JSON.stringify(created)).toMatchObject({ ok: true });
+      }
+    }
+    expect(finalizeAlignmentPreparation(folder, attemptId).ok).toBe(true);
+
+    await page.reload();
+    await enterWorkbench(page, { port: runtime.port, sessionToken: token });
+    const workbench = page.getByTestId("seed-workbench");
+    await expect(workbench).toHaveAttribute(
+      "data-alignment-workflow-stage",
+      "alignment-answering"
+    );
+    await page.getByRole("button", { name: "Open question 1 editor" }).click();
+    await page.getByRole("textbox", { name: "Answer question 1" }).fill(
+      "Designer-approved final answer"
+    );
+    await page.getByRole("button", { name: "Submit answer 1" }).click();
+    await expect.poll(async () => {
+      const response = await rawGet(
+        "/api/design-intent-alignment",
+        { "x-ikran-session": token },
+        runtime.port
+      );
+      return JSON.parse(response.body).question_cards[0].final_answer;
+    }).toBe("Designer-approved final answer");
+
+    const waiting = waitForAgentCommand(folder, { windowMs: 5_000 });
+    await page.getByRole("navigation", {
+      name: "Design intent alignment stages"
+    }).hover();
+    await page.getByRole("button", { name: "Complete alignment" }).click();
+    await expect(workbench).toHaveAttribute(
+      "data-alignment-workflow-stage",
+      "initial-design-system-preparing"
+    );
+    await expect(workbench).toHaveAttribute(
+      "data-agent-command-status",
+      "pending"
+    );
+    await expect(waiting).resolves.toMatchObject({
+      reason: "command_available",
+      command: {
+        command_type: "prepare_initial_design_system",
+        alignment_attempt_id: attemptId
+      }
+    });
+
+    const completedResponse = await rawGet(
+      "/api/design-intent-alignment",
+      { "x-ikran-session": token },
+      runtime.port
+    );
+    const completed = JSON.parse(completedResponse.body) as {
+      alignment: { status: string };
+      preparation: {
+        workflow: { stage: string };
+        current_attempt: { status: string };
+        commands: Array<{
+          command_type: string;
+          status: string;
+          payload: { question_cards: unknown[] };
+        }>;
+      };
+    };
+    expect(completed).toMatchObject({
+      alignment: { status: "completed" },
+      preparation: {
+        workflow: { stage: "initial-design-system-preparing" },
+        current_attempt: { status: "completed" },
+        commands: expect.arrayContaining([
+          expect.objectContaining({
+            command_type: "prepare_initial_design_system",
+            status: "pending"
+          })
+        ])
+      }
+    });
+    expect(
+      completed.preparation.commands.find(
+        (command) => command.command_type === "prepare_initial_design_system"
+      )?.payload.question_cards
+    ).toHaveLength(12);
+
+    await page.reload();
+    await enterWorkbench(page, { port: runtime.port, sessionToken: token });
+    await expect(workbench).toHaveAttribute(
+      "data-alignment-workflow-stage",
+      "initial-design-system-preparing"
+    );
+    await expect(workbench).toHaveAttribute(
+      "data-agent-command-status",
+      "pending"
+    );
   });
 
   test("empty Workbench is FolderChrome + empty canvas; no seed-add / URL / intent inputs", async ({

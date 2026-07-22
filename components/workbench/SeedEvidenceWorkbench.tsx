@@ -124,6 +124,10 @@ export function SeedEvidenceWorkbench({
     workflowStage === "seed-reference-registration"
       ? "sign-seed"
       : "extraction";
+  const nextAgentCommandStatus =
+    alignment?.preparation.commands.find(
+      (command) => command.command_type === "prepare_initial_design_system"
+    )?.status ?? "none";
   const [alignmentStage, setAlignmentStage] =
     useState<AlignmentStageId>(DEFAULT_ALIGNMENT_STAGE);
 
@@ -251,6 +255,7 @@ export function SeedEvidenceWorkbench({
       data-figma-gate={canvasLocked ? "closed" : "open"}
       data-canvas-stage={canvasLocked ? undefined : canvasStage}
       data-alignment-workflow-stage={workflowStage}
+      data-agent-command-status={nextAgentCommandStatus}
     >
       <div className="seed-workbench__folder-stack">
         <FolderChrome
