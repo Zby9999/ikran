@@ -162,3 +162,61 @@ export function listEvents(projectPath: string, type?: EventType): LoggedEvent[]
     closeProjectDb(db);
   }
 }
+
+/**
+ * Select canonical events that may participate in a future successful research
+ * package. The canonical event log itself remains a complete audit trail;
+ * abandoned Alignment lineage is filtered only at this derived boundary.
+ * Issue 15 owns research-package eligibility and file generation.
+ */
+export function listResearchEligibleEvents(projectPath: string): LoggedEvent[] {
+  const db = openProjectDb(projectPath);
+  try {
+    const abandonedAttemptIds = new Set(
+      (db
+        .prepare("SELECT id FROM alignment_attempts WHERE status = 'abandoned'")
+        .all() as Array<{ id: string }>).map((row) => row.id)
+    );
+    if (abandonedAttemptIds.size === 0) return listEvents(projectPath);
+
+    const abandonedCardIds = new Set(
+      (db
+        .prepare(
+          `SELECT id FROM alignment_question_cards
+           WHERE alignment_attempt_id IN
+             (SELECT id FROM alignment_attempts WHERE status = 'abandoned')`
+        )
+        .all() as Array<{ id: string }>).map((row) => row.id)
+    );
+    const abandonedCommandIds = new Set(
+      (db
+        .prepare(
+          `SELECT id FROM agent_commands
+           WHERE alignment_attempt_id IN
+             (SELECT id FROM alignment_attempts WHERE status = 'abandoned')`
+        )
+        .all() as Array<{ id: string }>).map((row) => row.id)
+    );
+
+    return listEvents(projectPath).filter((event) => {
+      if (event.type === "alignment_attempt_abandoned") return false;
+      const attemptId = event.payload.alignment_attempt_id;
+      if (
+        typeof attemptId === "string" &&
+        abandonedAttemptIds.has(attemptId)
+      ) {
+        return false;
+      }
+      const cardId = event.payload.question_card_id;
+      if (typeof cardId === "string" && abandonedCardIds.has(cardId)) {
+        return false;
+      }
+      const commandId = event.payload.agent_command_id;
+      return !(
+        typeof commandId === "string" && abandonedCommandIds.has(commandId)
+      );
+    });
+  } finally {
+    closeProjectDb(db);
+  }
+}

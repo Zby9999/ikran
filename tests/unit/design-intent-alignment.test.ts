@@ -266,6 +266,30 @@ describe("Design Intent Alignment Runtime contract", () => {
       });
 
       expect(result).toEqual({ ok: false, reason: "question_title_too_long" });
+      expect(createQuestionCard(projectPath, {
+        section: "design-principle",
+        observation: "Hierarchy",
+        question: "Should hierarchy guide the system?",
+        anchor: singleTarget(link)
+      })).toEqual({ ok: false, reason: "invalid_question_title" });
+      expect(createQuestionCard(projectPath, {
+        section: "design-principle",
+        observation: "Should hierarchy guide system?",
+        question: "Should hierarchy guide the system?",
+        anchor: singleTarget(link)
+      })).toEqual({ ok: false, reason: "invalid_question_title" });
+      expect(createQuestionCard(projectPath, {
+        section: "design-principle",
+        observation: "Hierarchy guides the system",
+        question: "Hierarchy guides the system?",
+        anchor: singleTarget(link)
+      })).toEqual({ ok: false, reason: "invalid_question_title" });
+      expect(createQuestionCard(projectPath, {
+        section: "design-principle",
+        observation: "Calm editorial hierarchy across all surfaces",
+        question: "Should hierarchy guide the system?",
+        anchor: singleTarget(link)
+      })).toEqual({ ok: false, reason: "invalid_question_title" });
     });
   });
 
@@ -316,7 +340,7 @@ describe("Design Intent Alignment Runtime contract", () => {
 
       const surface = createQuestionCard(projectPath, {
         section: "interaction",
-        observation: "The whole frame establishes interaction context",
+        observation: "Whole frame interaction context",
         question: "Keep this interaction model across the surface?",
         anchor: {
           kind: "single",
@@ -422,7 +446,7 @@ describe("Design Intent Alignment Runtime contract", () => {
       setDesignLanguageDescription(projectPath, "A calm, precise product language");
       const card = createQuestionCard(projectPath, {
         section: "token",
-        observation: "The accent color is used sparingly",
+        observation: "Sparse accent color usage",
         question: "Reserve accent for primary actions?",
         proposedAnswer: "Yes, reserve it for primary actions",
         anchor: singleTarget(link)
@@ -464,7 +488,7 @@ describe("Design Intent Alignment Runtime contract", () => {
       const card = createQuestionCard(projectPath, {
         section: "design-principle",
         observation: "Editorial identity",
-        question: "Should editorial expression guide the system?",
+        question: "Should expression guide systems?",
         anchor: singleTarget(link)
       });
       expect(card.ok).toBe(true);
@@ -481,6 +505,14 @@ describe("Design Intent Alignment Runtime contract", () => {
       expect(getDesignIntentAlignment(projectPath).question_cards[0].observation)
         .toBe("Authored identity");
       expect(listEvents(projectPath, "question_card_title_updated")).toHaveLength(1);
+      expect(updateQuestionCardTitle(projectPath, {
+        questionCardId: card.record.id,
+        title: "Should expression guide systems?"
+      })).toEqual({ ok: false, reason: "invalid_question_title" });
+      expect(updateQuestionCardTitle(projectPath, {
+        questionCardId: card.record.id,
+        title: "Should expression guide systems"
+      })).toEqual({ ok: false, reason: "invalid_question_title" });
     });
   });
 
@@ -525,6 +557,41 @@ describe("Design Intent Alignment Runtime contract", () => {
         target: expect.objectContaining({ kind: "surface" })
       });
       expect(listEvents(projectPath, "question_card_anchor_updated")).toHaveLength(1);
+    });
+  });
+
+  test("rejects anchor repair against evidence created after the attempt snapshot", () => {
+    withProject((projectPath, link) => {
+      setDesignLanguageDescription(projectPath, "A calm, precise product language");
+      const card = createQuestionCard(projectPath, {
+        section: "layout",
+        observation: "Stable layout anchor",
+        question: "Should layouts preserve this anchor?",
+        anchor: singleTarget(link)
+      });
+      expect(card.ok).toBe(true);
+      if (!card.ok) return;
+
+      const refreshed = recordEvidencePackage(projectPath, {
+        seedReferenceId: link.seedReferenceId,
+        frame: { nodeId: "1:2", name: "Checkout refreshed" },
+        evidenceViews: { rawData: "available", screenshot: "missing" }
+      });
+      expect(refreshed.ok).toBe(true);
+      if (!refreshed.ok) return;
+
+      expect(updateQuestionCardAnchor(projectPath, {
+        questionCardId: card.record.id,
+        anchor: {
+          kind: "single",
+          target: {
+            kind: "surface",
+            seedReferenceId: link.seedReferenceId,
+            evidenceSurfaceId: refreshed.record.id,
+            evidenceVersionId: refreshed.record.id
+          }
+        }
+      })).toEqual({ ok: false, reason: "invalid_anchor_linkage" });
     });
   });
 

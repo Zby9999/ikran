@@ -3,7 +3,6 @@ import {
   appendAgentAnnotationInformationCommand,
   appendAgentAnnotationInformationInputSchema,
   claimAlignmentPreparationCommand,
-  completeDesignIntentAlignmentCommand,
   createAgentAnnotationCommand,
   createAgentAnnotationInputSchema,
   createAlignmentQuestionCardCommand,
@@ -130,15 +129,6 @@ export function registerDesignIntentAlignmentTools(
     if (!ctx.ok) return ctx.result;
     const result = updateAlignmentQuestionAnchorCommand(ctx.projectPath, args);
     return result.ok ? success(ctx.rt, result) : failureResult("update_alignment_question_anchor", result.reason, ctx.rt);
-  });
-
-  mcp.registerTool("complete_design_intent_alignment", {
-    description: "Atomically complete Alignment after all six sections have 2–5 covered questions, accepting every remaining non-empty Agent proposal as final with auditable source. No arguments."
-  }, async () => {
-    const ctx = await active("complete_design_intent_alignment");
-    if (!ctx.ok) return ctx.result;
-    const result = completeDesignIntentAlignmentCommand(ctx.projectPath);
-    return result.ok ? success(ctx.rt, result) : failureResult("complete_design_intent_alignment", result.reason, ctx.rt);
   });
 
   mcp.registerTool("read_design_intent_alignment", {

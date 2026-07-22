@@ -103,6 +103,10 @@ export function openProjectDb(projectPath: string): DatabaseType {
   if (existedNonEmpty) {
     const peek = new DatabaseSync(dbPath);
     try {
+      // Presence and SSE-driven Workbench requests may briefly hold a writer
+      // while another Agent command opens the same project. The version peek
+      // needs the same contention tolerance as the main connection.
+      peek.exec("PRAGMA busy_timeout = 5000");
       currentVersion = getUserVersion(peek);
     } finally {
       closeProjectDb(peek);

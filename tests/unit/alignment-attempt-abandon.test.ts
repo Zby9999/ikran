@@ -12,9 +12,12 @@ import {
   completeDesignIntentAlignment,
   createQuestionCard,
   getDesignIntentAlignment,
-  recordDesignerAnswer
+  recordDesignerAnswer,
+  updateQuestionCardAnchor,
+  updateQuestionCardTitle
 } from "../../lib/runtime/design-intent-alignment";
 import { recordEvidencePackage } from "../../lib/runtime/evidence-package";
+import { listEvents, listResearchEligibleEvents } from "../../lib/runtime/events";
 import { setDesignLanguageDescription } from "../../lib/runtime/project-readiness";
 import { registerSeedReference } from "../../lib/runtime/seed-reference";
 
@@ -87,6 +90,14 @@ describe("Alignment attempt abandonment", () => {
         cancelled_command_count: 1
       });
       expect(getDesignIntentAlignment(context.projectPath).question_cards).toEqual([]);
+      expect(listEvents(context.projectPath, "question_card_created")).toHaveLength(1);
+      expect(
+        listResearchEligibleEvents(context.projectPath).some(
+          (event) =>
+            event.payload.question_card_id ===
+            (oldCard.ok ? oldCard.record.id : "")
+        )
+      ).toBe(false);
       expect(createQuestionCard(context.projectPath, {
         ...cardInput(context, "design-principle", 2)
       })).toEqual({ ok: false, reason: "stale_alignment_attempt" });
@@ -95,6 +106,14 @@ describe("Alignment attempt abandonment", () => {
       expect(recordDesignerAnswer(context.projectPath, {
         questionCardId: oldCard.ok ? oldCard.record.id : "",
         finalAnswer: "Must not write"
+      })).toEqual({ ok: false, reason: "stale_alignment_attempt" });
+      expect(updateQuestionCardTitle(context.projectPath, {
+        questionCardId: oldCard.ok ? oldCard.record.id : "",
+        title: "Mutated audit title"
+      })).toEqual({ ok: false, reason: "stale_alignment_attempt" });
+      expect(updateQuestionCardAnchor(context.projectPath, {
+        questionCardId: oldCard.ok ? oldCard.record.id : "",
+        anchor: cardInput(context).anchor
       })).toEqual({ ok: false, reason: "stale_alignment_attempt" });
 
       const reopened = prepareDesignIntentAlignment(context.projectPath);

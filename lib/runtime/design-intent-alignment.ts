@@ -21,6 +21,27 @@ export const ALIGNMENT_SECTIONS = [
 
 export const ALIGNMENT_QUESTION_TITLE_MAX_LENGTH = 48;
 
+function questionTitleWordCount(value: string): number {
+  const segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
+  return Array.from(segmenter.segment(value)).filter(
+    (segment) => segment.isWordLike
+  ).length;
+}
+
+function normalizedQuestionText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[^\p{Letter}\p{Number}]+/gu, "");
+}
+
+function questionTitleIsValid(value: string, question?: string): boolean {
+  const words = questionTitleWordCount(value);
+  if (words < 2 || words > 5) return false;
+  if (/[.!?。！？]\s*$/u.test(value)) return false;
+  return !question || normalizedQuestionText(value) !== normalizedQuestionText(question);
+}
+
 export type AlignmentSection = (typeof ALIGNMENT_SECTIONS)[number];
 export type AnswerSource =
   | "designer-edited"
@@ -90,6 +111,7 @@ type FailureReason =
   | "design_language_description_required"
   | "invalid_section"
   | "empty_observation"
+  | "invalid_question_title"
   | "question_title_too_long"
   | "whole_surface_requires_surface_anchor"
   | "empty_question"
@@ -419,6 +441,9 @@ export function createQuestionCard(
   }
   const question = text(input.question);
   if (!question) return { ok: false, reason: "empty_question" };
+  if (!questionTitleIsValid(observation, question)) {
+    return { ok: false, reason: "invalid_question_title" };
+  }
   const alignmentAttemptId = text(input.alignmentAttemptId);
   const idempotencyKey = text(input.idempotencyKey);
   const proposedAnswer = input.proposedAnswer === undefined ? null : text(input.proposedAnswer);
@@ -508,6 +533,7 @@ export function createQuestionCard(
       ).run(id, section, observation, question, proposedAnswer, JSON.stringify(anchor.anchor), now, now, alignmentAttemptId, idempotencyKey);
       const event = logEventOnDb(db, "question_card_created", {
         question_card_id: id,
+        alignment_attempt_id: alignmentAttemptId,
         section
       });
       const row = db.prepare("SELECT * FROM alignment_question_cards WHERE id = ?").get(id) as Record<string, unknown>;
@@ -642,6 +668,7 @@ export function recordDesignerAnswer(
       ).run(finalAnswer, now, questionCardId);
       const event = logEventOnDb(db, "designer_answer_submitted", {
         question_card_id: questionCardId,
+        alignment_attempt_id: preparation.current_attempt.id,
         answer_source: "designer-edited"
       });
       const row = db.prepare("SELECT * FROM alignment_question_cards WHERE id = ?").get(questionCardId) as Record<string, unknown>;
@@ -665,21 +692,43 @@ export function updateQuestionCardTitle(
   if (Array.from(title).length > ALIGNMENT_QUESTION_TITLE_MAX_LENGTH) {
     return { ok: false, reason: "question_title_too_long" };
   }
+  if (!questionTitleIsValid(title)) {
+    return { ok: false, reason: "invalid_question_title" };
+  }
   try {
     const result = withProjectTransaction(projectPath, (db) => {
       if (alignmentIsCompleted(db)) {
         return { ok: false, reason: "alignment_completed" } as Failure;
       }
+      const preparation = getAlignmentPreparationOnDb(db);
+      if (
+        !preparation.current_attempt ||
+        preparation.current_attempt.status !== "preparing" ||
+        preparation.workflow.stage !== "alignment-preparing"
+      ) {
+        return { ok: false, reason: "stale_alignment_attempt" } as Failure;
+      }
       const existing = db
-        .prepare("SELECT observation FROM alignment_question_cards WHERE id = ?")
-        .get(questionCardId) as { observation: string } | undefined;
+        .prepare(
+          "SELECT observation, question, alignment_attempt_id FROM alignment_question_cards WHERE id = ?"
+        )
+        .get(questionCardId) as
+        | { observation: string; question: string; alignment_attempt_id: string | null }
+        | undefined;
       if (!existing) return { ok: false, reason: "not_found" } as Failure;
+      if (existing.alignment_attempt_id !== preparation.current_attempt.id) {
+        return { ok: false, reason: "stale_alignment_attempt" } as Failure;
+      }
+      if (!questionTitleIsValid(title, existing.question)) {
+        return { ok: false, reason: "invalid_question_title" } as Failure;
+      }
       const now = new Date().toISOString();
       db.prepare(
         "UPDATE alignment_question_cards SET observation = ?, updated_at = ? WHERE id = ?"
       ).run(title, now, questionCardId);
       const event = logEventOnDb(db, "question_card_title_updated", {
         question_card_id: questionCardId,
+        alignment_attempt_id: preparation.current_attempt.id,
         previous_title: existing.observation,
         new_title: title
       });
@@ -717,18 +766,54 @@ export function updateQuestionCardAnchor(
       if (alignmentIsCompleted(db)) {
         return { ok: false, reason: "alignment_completed" } as Failure;
       }
+      const preparation = getAlignmentPreparationOnDb(db);
+      if (
+        !preparation.current_attempt ||
+        !preparation.input_snapshot ||
+        preparation.current_attempt.status !== "preparing" ||
+        preparation.workflow.stage !== "alignment-preparing"
+      ) {
+        return { ok: false, reason: "stale_alignment_attempt" } as Failure;
+      }
       const existing = db
-        .prepare("SELECT anchor_json FROM alignment_question_cards WHERE id = ?")
-        .get(questionCardId) as { anchor_json: string } | undefined;
+        .prepare(
+          "SELECT anchor_json, alignment_attempt_id FROM alignment_question_cards WHERE id = ?"
+        )
+        .get(questionCardId) as
+        | { anchor_json: string; alignment_attempt_id: string | null }
+        | undefined;
       if (!existing) return { ok: false, reason: "not_found" } as Failure;
-      const anchor = resolveAnchorOnDb(db, input.anchor, true);
+      if (existing.alignment_attempt_id !== preparation.current_attempt.id) {
+        return { ok: false, reason: "stale_alignment_attempt" } as Failure;
+      }
+      const anchor = resolveAnchorOnDb(db, input.anchor, false);
       if (!anchor.ok) return anchor;
+      const snapshotEvidence = new Set(
+        preparation.input_snapshot.data.seed_references.map(
+          (seed) => `${seed.id}:${seed.evidence_version.id}`
+        )
+      );
+      const anchorTargets =
+        anchor.anchor.kind === "single"
+          ? [anchor.anchor.target]
+          : anchor.anchor.targets;
+      if (
+        anchorTargets.some(
+          (target) =>
+            !snapshotEvidence.has(
+              `${target.seedReferenceId}:${target.evidenceVersionId}`
+            )
+        )
+      ) {
+        return { ok: false, reason: "invalid_anchor_linkage" } as Failure;
+      }
       const now = new Date().toISOString();
       db.prepare(
         "UPDATE alignment_question_cards SET anchor_json = ?, updated_at = ? WHERE id = ?"
       ).run(JSON.stringify(anchor.anchor), now, questionCardId);
       const event = logEventOnDb(db, "question_card_anchor_updated", {
         question_card_id: questionCardId,
+        alignment_attempt_id: preparation.current_attempt.id,
         previous_anchor: JSON.parse(existing.anchor_json),
         new_anchor: anchor.anchor
       });
@@ -838,6 +923,7 @@ export function completeDesignIntentAlignment(
         update.run(now, card.id);
         logEventOnDb(db, "designer_answer_submitted", {
           question_card_id: card.id,
+          alignment_attempt_id: attempt.id,
           answer_source: "agent-proposed-designer-accepted"
         });
       }

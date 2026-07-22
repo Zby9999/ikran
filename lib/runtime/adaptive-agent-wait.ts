@@ -134,6 +134,7 @@ export async function waitForAgentCommand(
     signal?: AbortSignal;
     windowMs?: number;
     now?: () => number;
+    readPendingCommand?: (projectPath: string) => PendingAgentCommand | null;
   } = {}
 ): Promise<
   | { ok: true; reason: "command_available"; command: PendingAgentCommand }
@@ -142,8 +143,17 @@ export async function waitForAgentCommand(
       reason: "idle_no_command" | "page_closed_no_command" | "cancelled";
       command: null;
     }
+  | { ok: false; reason: "command_read_failed"; command: null }
 > {
-  const immediate = findEarliestPendingAgentCommand(projectPath);
+  const readPendingCommand =
+    options.readPendingCommand ?? findEarliestPendingAgentCommand;
+  let immediate: PendingAgentCommand | null = null;
+  try {
+    immediate = readPendingCommand(projectPath);
+  } catch {
+    // A transient read failure must not crash the Runtime or strand a waiter.
+    // Presence, record-bus activity, and the lease deadline will retry below.
+  }
   if (immediate) {
     return { ok: true, reason: "command_available", command: immediate };
   }
@@ -166,19 +176,27 @@ export async function waitForAgentCommand(
       options.signal?.removeEventListener("abort", onAbort);
       resolve(value);
     };
-    const checkCommand = () => {
-      const command = findEarliestPendingAgentCommand(projectPath);
+    const checkCommand = (): "found" | "empty" | "failed" => {
+      let command: PendingAgentCommand | null = null;
+      try {
+        command = readPendingCommand(projectPath);
+      } catch {
+        return "failed";
+      }
       if (command) {
         finish({ ok: true, reason: "command_available", command });
-        return true;
+        return "found";
       }
-      return false;
+      return "empty";
     };
     const schedule = () => {
       if (timer) clearTimeout(timer);
       const decision = waitLeaseDecision(lease, now());
       if (decision.done) {
-        if (!checkCommand()) {
+        const commandState = checkCommand();
+        if (commandState === "failed") {
+          finish({ ok: false, reason: "command_read_failed", command: null });
+        } else if (commandState === "empty") {
           finish({ ok: true, reason: decision.reason, command: null });
         }
         return;
@@ -186,7 +204,7 @@ export async function waitForAgentCommand(
       timer = setTimeout(schedule, Math.max(1, decision.remainingMs));
     };
     const unsubscribePresence = subscribePresence(projectPath, (presence) => {
-      if (checkCommand()) return;
+      if (checkCommand() === "found") return;
       lease = applyPresenceToLease(lease, presence, now(), windowMs);
       schedule();
     });

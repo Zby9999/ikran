@@ -36,3 +36,5 @@
 ## Completion report — 2026-07-22
 
 已把现有 Folder Chrome Back 在 Alignment 阶段接到 Runtime abandon 事务：attempt 变为 abandoned、未完成 command cancelled、workflow 返回 Seed 登记；历史行保留但 current read、后续回答与后续 Design System 输入只认 current attempt。验证通过：TypeScript typecheck、5 个相关 Vitest 文件共 35 项、preparing/answering 返回与重建的 production Workbench 纵向测试，以及 Agent 使用 Browser Use 对现有 Back、Seed 状态恢复与再次 Next Phase 的真实审查。
+
+07G 最终审查补充了 derived research-event eligibility 回归：canonical events 继续保留 abandoned lineage 供审计，但 future research package 的选择边界会排除 abandoned attempt、questions、answers 与 commands；Issue 15 仍负责完整递归资格门槛和 `.ikran/export/` 文件生成。

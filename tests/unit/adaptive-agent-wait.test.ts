@@ -219,4 +219,69 @@ describe("adaptive Agent wait lease", () => {
       rmSync(projectPath, { recursive: true, force: true });
     }
   });
+
+  test("a transient pending-command read error recovers on the next signal", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-wait-read-error-"));
+    let reads = 0;
+    try {
+      initializeProjectDb(projectPath);
+      const waiting = waitForAgentCommand(projectPath, {
+        windowMs: 180,
+        readPendingCommand: () => {
+          reads += 1;
+          if (reads === 1) throw new Error("transient database lock");
+          return {
+            id: "recovered-command",
+            command_type: "prepare_design_intent_alignment",
+            alignment_attempt_id: "attempt-1",
+            payload: {},
+            created_at: "2026-07-22T00:00:00.000Z"
+          };
+        }
+      });
+      reportWorkbenchPresence(projectPath, {
+        visible: true,
+        focused: true,
+        recentInteraction: true,
+        dirty: false,
+        semanticActivity: false,
+        closed: false
+      });
+      await expect(waiting).resolves.toEqual({
+        ok: true,
+        reason: "command_available",
+        command: expect.objectContaining({ id: "recovered-command" })
+      });
+      expect(reads).toBe(2);
+    } finally {
+      vi.useRealTimers();
+      rmSync(projectPath, { recursive: true, force: true });
+    }
+  });
+
+  test("a persistent pending-command read failure is never reported as idle", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-wait-read-failed-"));
+    try {
+      initializeProjectDb(projectPath);
+      const waiting = waitForAgentCommand(projectPath, {
+        windowMs: 180,
+        readPendingCommand: () => {
+          throw new Error("persistent database lock");
+        }
+      });
+      await vi.advanceTimersByTimeAsync(180);
+      await expect(waiting).resolves.toEqual({
+        ok: false,
+        reason: "command_read_failed",
+        command: null
+      });
+    } finally {
+      vi.useRealTimers();
+      rmSync(projectPath, { recursive: true, force: true });
+    }
+  });
 });

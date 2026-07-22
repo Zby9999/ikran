@@ -46,6 +46,13 @@ export function useWorkbenchPresence(session: string): void {
     const markSemantic = () => { dirty = false; semanticActivity = true; lastInteractionAt = Date.now(); report(); };
     const reportState = () => report();
     const close = () => report(true);
+    let heartbeat: number | null = null;
+    const scheduleHeartbeat = () => {
+      heartbeat = window.setTimeout(() => {
+        reportState();
+        scheduleHeartbeat();
+      }, PRESENCE_REPORT_MS);
+    };
 
     document.addEventListener("pointerdown", markInteraction, true);
     document.addEventListener("keydown", markInteraction, true);
@@ -56,10 +63,10 @@ export function useWorkbenchPresence(session: string): void {
     window.addEventListener("blur", reportState);
     window.addEventListener("pagehide", close);
     window.addEventListener(SEMANTIC_ACTIVITY_EVENT, markSemantic);
-    const interval = window.setInterval(reportState, PRESENCE_REPORT_MS);
+    scheduleHeartbeat();
     report();
     return () => {
-      window.clearInterval(interval);
+      if (heartbeat !== null) window.clearTimeout(heartbeat);
       document.removeEventListener("pointerdown", markInteraction, true);
       document.removeEventListener("keydown", markInteraction, true);
       document.removeEventListener("input", markDirty, true);
@@ -69,7 +76,6 @@ export function useWorkbenchPresence(session: string): void {
       window.removeEventListener("blur", reportState);
       window.removeEventListener("pagehide", close);
       window.removeEventListener(SEMANTIC_ACTIVITY_EVENT, markSemantic);
-      report(true);
     };
   }, [session]);
 }

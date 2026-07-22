@@ -13,7 +13,12 @@ const test = base.extend<{ folder: string }>({
   folder: async ({}, use) => {
     const folder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-05a-"));
     await use(folder);
-    rmSync(folder, { recursive: true, force: true });
+    rmSync(folder, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 50
+    });
   }
 });
 

@@ -36,7 +36,12 @@ const test = base.extend<{ folder: string }>({
   folder: async ({}, use) => {
     const folder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-04-"));
     await use(folder);
-    rmSync(folder, { recursive: true, force: true });
+    rmSync(folder, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 50
+    });
   }
 });
 
@@ -684,7 +689,12 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
         expect(created, JSON.stringify(created)).toMatchObject({ ok: true });
       }
     }
-    expect(finalizeAlignmentPreparation(folder, attemptId).ok).toBe(true);
+    let finalized = finalizeAlignmentPreparation(folder, attemptId);
+    for (let retry = 0; !finalized.ok && finalized.reason === "db_error" && retry < 4; retry += 1) {
+      await page.waitForTimeout(25);
+      finalized = finalizeAlignmentPreparation(folder, attemptId);
+    }
+    expect(finalized, JSON.stringify(finalized)).toMatchObject({ ok: true });
 
     await page.reload();
     await enterWorkbench(page, { port: runtime.port, sessionToken: token });

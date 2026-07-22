@@ -26,11 +26,11 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
         "create_agent_annotation",
         "append_agent_annotation_information",
         "record_designer_answer",
-        "complete_design_intent_alignment",
         "read_design_intent_alignment",
         "wait_for_agent_command"
       ])
     );
+    expect(names).not.toContain("complete_design_intent_alignment");
 
     const opened = sc(await client.callTool({
       name: "create_or_open_project",
@@ -212,10 +212,19 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
       .toBe("alignment-answering");
 
     const completedEvent = sse.waitForRecord();
-    const completed = sc(await client.callTool({
-      name: "complete_design_intent_alignment",
-      arguments: {}
-    }));
+    const completeResponse = await fetch(
+      new URL("/api/design-intent-alignment", workbenchUrl),
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          "x-ikran-session": token
+        },
+        body: JSON.stringify({ action: "complete" })
+      }
+    );
+    expect(completeResponse.status).toBe(200);
+    const completed = await completeResponse.json() as Record<string, unknown>;
     expect(completed).toMatchObject({
       ok: true,
       workflow: { stage: "initial-design-system-preparing" },
