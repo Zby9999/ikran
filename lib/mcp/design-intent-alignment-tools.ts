@@ -10,6 +10,10 @@ import {
   readDesignIntentAlignmentCommand,
   recordDesignerAnswerCommand,
   recordDesignerAnswerInputSchema,
+  updateAlignmentQuestionAnchorCommand,
+  updateAlignmentQuestionAnchorInputSchema,
+  updateAlignmentQuestionTitleCommand,
+  updateAlignmentQuestionTitleInputSchema,
   requireActiveProjectCommand
 } from "../runtime/commands";
 import { failureResult, type RegisterIkranToolsDeps } from "./shared";
@@ -32,7 +36,7 @@ export function registerDesignIntentAlignmentTools(
   };
 
   mcp.registerTool("create_alignment_question_card", {
-    description: "Create one Runtime-owned Design Intent Alignment Question card in one of the six allowed sections. Requires a current evidence-linked single anchor or explicit focus target set.",
+    description: "Create one Runtime-owned Design Intent Alignment Question card in one of the six allowed sections. The observation field is the card title: use a concise 2–5 word noun phrase (48 characters maximum), never a sentence. For a whole-Frame question use a single surface target; never approximate it with a nearly full-size region. For one specific element or component, prefer its exact positional node; use a free region only when no exact node represents the target. Use focus-target-set for repeated or shared elements (such as color or typography) across one or more components/Frames; Workbench enters Focus Mode on card hover or click without moving the camera.",
     inputSchema: createAlignmentQuestionCardInputSchema
   }, async (args) => {
     const ctx = await active("create_alignment_question_card");
@@ -69,6 +73,26 @@ export function registerDesignIntentAlignmentTools(
     if (!ctx.ok) return ctx.result;
     const result = recordDesignerAnswerCommand(ctx.projectPath, args);
     return result.ok ? success(ctx.rt, result) : failureResult("record_designer_answer", result.reason, ctx.rt);
+  });
+
+  mcp.registerTool("update_alignment_question_title", {
+    description: "Replace a Question card's title with a concise 2–5 word noun phrase (48 characters maximum). Use this to correct a verbose or sentence-like generated title.",
+    inputSchema: updateAlignmentQuestionTitleInputSchema
+  }, async (args) => {
+    const ctx = await active("update_alignment_question_title");
+    if (!ctx.ok) return ctx.result;
+    const result = updateAlignmentQuestionTitleCommand(ctx.projectPath, args);
+    return result.ok ? success(ctx.rt, result) : failureResult("update_alignment_question_title", result.reason, ctx.rt);
+  });
+
+  mcp.registerTool("update_alignment_question_anchor", {
+    description: "Replace a Question card's evidence anchor. Use a single surface target for a whole-Frame question (no Annotation, Focus Mode, or connector), a node/region for one specific element or component, and a focus-target-set for repeated/shared elements across components or Frames. Focus Mode activates on hover or click without moving the camera.",
+    inputSchema: updateAlignmentQuestionAnchorInputSchema
+  }, async (args) => {
+    const ctx = await active("update_alignment_question_anchor");
+    if (!ctx.ok) return ctx.result;
+    const result = updateAlignmentQuestionAnchorCommand(ctx.projectPath, args);
+    return result.ok ? success(ctx.rt, result) : failureResult("update_alignment_question_anchor", result.reason, ctx.rt);
   });
 
   mcp.registerTool("complete_design_intent_alignment", {

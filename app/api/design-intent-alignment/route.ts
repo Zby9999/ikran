@@ -14,6 +14,10 @@ import {
   readDesignIntentAlignmentCommand,
   recordDesignerAnswerCommand,
   recordDesignerAnswerInputSchema,
+  updateAlignmentQuestionAnchorCommand,
+  updateAlignmentQuestionAnchorInputSchema,
+  updateAlignmentQuestionTitleCommand,
+  updateAlignmentQuestionTitleInputSchema,
   requireActiveProjectCommand
 } from "../../../lib/runtime/commands";
 
@@ -90,6 +94,14 @@ export async function PATCH(request: NextRequest) {
     const parsed = parseCommandInput(recordDesignerAnswerInputSchema, raw.input);
     if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.reason }, { status: 400 });
     result = recordDesignerAnswerCommand(ctx.projectPath, parsed.data);
+  } else if (action === "update-question-card-title") {
+    const parsed = parseCommandInput(updateAlignmentQuestionTitleInputSchema, raw.input);
+    if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.reason }, { status: 400 });
+    result = updateAlignmentQuestionTitleCommand(ctx.projectPath, parsed.data);
+  } else if (action === "update-question-card-anchor") {
+    const parsed = parseCommandInput(updateAlignmentQuestionAnchorInputSchema, raw.input);
+    if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.reason }, { status: 400 });
+    result = updateAlignmentQuestionAnchorCommand(ctx.projectPath, parsed.data);
   } else if (action === "append-agent-annotation-information") {
     const parsed = parseCommandInput(appendAgentAnnotationInformationInputSchema, raw.input);
     if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.reason }, { status: 400 });

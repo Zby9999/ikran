@@ -46,13 +46,17 @@ import type {
 import type { NormalizedRect } from "./region-annotation-geometry";
 import type { DesignIntentAlignmentSnapshot } from "@/lib/runtime/design-intent-alignment";
 import {
+  AlignmentCardInteractionController,
   AlignmentCardProjectionProvider,
   AlignmentCardShapeUtil
 } from "./alignment-card-shape";
 import { AlignmentTargetShapeUtil } from "./alignment-target-shape";
 import { AlignmentConnectorShapeUtil } from "./alignment-connector-shape";
 import { AlignmentProjectionSync } from "./projection/alignment-projection-sync";
-import type { AlignmentStageId } from "./alignment-stage-panel";
+import {
+  DEFAULT_ALIGNMENT_STAGE,
+  type AlignmentStageId
+} from "./alignment-stage-panel";
 import {
   useWorkbenchFocusMode,
   WorkbenchFocusModeProvider
@@ -86,7 +90,7 @@ export function WorkbenchCanvas({
   surfaces = [],
   annotations = [],
   alignment = null,
-  alignmentStage = "layout",
+  alignmentStage = DEFAULT_ALIGNMENT_STAGE,
   session,
   inFlightCaptures = [],
   savedFrames = {},
@@ -263,6 +267,7 @@ export function WorkbenchCanvas({
           annotations={alignment.annotations}
         />
       ) : null}
+      <AlignmentCardInteractionController />
       <RegionAnnotationToolController
         annotateMode={annotateMode}
         onCreate={onCreateAnnotation}

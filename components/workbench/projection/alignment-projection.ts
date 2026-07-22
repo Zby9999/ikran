@@ -15,6 +15,7 @@ export type AlignmentTargetRect = {
 };
 
 export type AlignmentEvidenceTarget = {
+  kind?: "surface" | "node" | "region";
   seedReferenceId: string;
   evidenceSurfaceId: string;
   evidenceVersionId: string;
@@ -156,6 +157,23 @@ export const ALIGNMENT_CARD_STACK_GAP = 12;
 export const ALIGNMENT_QUESTION_CARD_H = 236;
 export const ALIGNMENT_ANNOTATION_CARD_H = 180;
 
+type CardCollisionBox = { y: number; h: number };
+
+function resolveCardCollisionY(
+  desiredY: number,
+  h: number,
+  occupied: readonly CardCollisionBox[]
+): number {
+  let y = desiredY;
+  for (const box of [...occupied].sort((a, b) => a.y - b.y)) {
+    const overlaps =
+      y < box.y + box.h + ALIGNMENT_CARD_STACK_GAP &&
+      y + h + ALIGNMENT_CARD_STACK_GAP > box.y;
+    if (overlaps) y = box.y + box.h + ALIGNMENT_CARD_STACK_GAP;
+  }
+  return y;
+}
+
 const STAGE_COLORS: Record<AlignmentStageId, string> = {
   "design-principle": "#c97759",
   "visual-language": "#4178ba",
@@ -253,6 +271,7 @@ export function buildAlignmentProjectionPlan(
 ): AlignmentProjectionShape[] {
   const plan: AlignmentProjectionShape[] = [];
   const nextYByFrame = new Map<string, number>();
+  const occupiedCardsByFrame = new Map<string, CardCollisionBox[]>();
   const visibleCards: Array<
     | { kind: "question"; record: AlignmentQuestionCardRecord; number: number }
     | {
@@ -280,7 +299,6 @@ export function buildAlignmentProjectionPlan(
     if (!target) continue;
     const frame = frameForTarget(input.seedFrames, target);
     if (!frame) continue;
-    const y = nextYByFrame.get(frame.id) ?? frame.y;
     const h =
       item.kind === "question"
         ? ALIGNMENT_QUESTION_CARD_H
@@ -288,6 +306,30 @@ export function buildAlignmentProjectionPlan(
     const cardId = `alignment-card:${item.record.id}`;
     const stage =
       item.kind === "question" ? item.record.section : input.currentStage;
+    const rect =
+      item.kind === "question" &&
+      item.record.anchor.kind === "single" &&
+      target.kind !== "surface"
+        ? rectForTarget(target)
+        : null;
+    const mediaX = frame.mediaX ?? frame.x;
+    const mediaY = frame.mediaY ?? frame.y;
+    const mediaW = frame.mediaW ?? frame.w;
+    const mediaH = frame.mediaH ?? frame.h;
+    const targetGeometry = rect
+      ? {
+          x: mediaX + rect.x * mediaW,
+          y: mediaY + rect.y * mediaH,
+          w: rect.w * mediaW,
+          h: rect.h * mediaH
+        }
+      : null;
+    const fallbackY = nextYByFrame.get(frame.id) ?? frame.y;
+    const desiredY = targetGeometry
+      ? targetGeometry.y + targetGeometry.h / 2 - h / 2
+      : fallbackY;
+    const occupied = occupiedCardsByFrame.get(frame.id) ?? [];
+    const y = resolveCardCollisionY(desiredY, h, occupied);
     const card: AlignmentCardProjection = {
       type: "alignment-card",
       id: cardId,
@@ -322,24 +364,31 @@ export function buildAlignmentProjectionPlan(
       }
     };
     plan.push(card);
-    nextYByFrame.set(frame.id, y + h + ALIGNMENT_CARD_STACK_GAP);
+    occupied.push({ y, h });
+    occupiedCardsByFrame.set(frame.id, occupied);
+    nextYByFrame.set(
+      frame.id,
+      Math.max(
+        nextYByFrame.get(frame.id) ?? frame.y,
+        y + h + ALIGNMENT_CARD_STACK_GAP
+      )
+    );
 
     // Multi-place focus sets are rendered by focus mode only. Neutral Agent
     // annotations also do not add stage-colored target chrome.
-    if (item.kind !== "question" || item.record.anchor.kind !== "single") {
+    if (
+      item.kind !== "question" ||
+      item.record.anchor.kind !== "single" ||
+      target.kind === "surface" ||
+      !targetGeometry
+    ) {
       continue;
     }
-    const rect = rectForTarget(target);
-    if (!rect) continue;
     const targetId = `alignment-target:${item.record.id}`;
-    const mediaX = frame.mediaX ?? frame.x;
-    const mediaY = frame.mediaY ?? frame.y;
-    const mediaW = frame.mediaW ?? frame.w;
-    const mediaH = frame.mediaH ?? frame.h;
-    const targetX = mediaX + rect.x * mediaW;
-    const targetY = mediaY + rect.y * mediaH;
-    const targetW = rect.w * mediaW;
-    const targetH = rect.h * mediaH;
+    const targetX = targetGeometry.x;
+    const targetY = targetGeometry.y;
+    const targetW = targetGeometry.w;
+    const targetH = targetGeometry.h;
     const targetShape: AlignmentTargetProjection = {
       type: "alignment-target",
       id: targetId,
@@ -351,25 +400,26 @@ export function buildAlignmentProjectionPlan(
     };
     plan.push(targetShape);
 
-    const start = { x: targetX + targetW, y: targetY + targetH / 2 };
-    const end = { x: card.x, y: card.y + Math.min(40, card.props.h / 2) };
+    const connectorY = card.y + card.props.h / 2;
+    const start = { x: targetX + targetW, y: connectorY };
+    const end = { x: card.x, y: connectorY };
     const connectorId = `alignment-connector:${item.record.id}`;
     const connectorX = Math.min(start.x, end.x);
-    const connectorY = Math.min(start.y, end.y);
+    const connectorShapeY = Math.min(start.y, end.y);
     plan.push({
       type: "alignment-connector",
       id: connectorId,
       x: connectorX,
-      y: connectorY,
+      y: connectorShapeY,
       isLocked: true,
       meta: metaFor(item.record.id, connectorId, target),
       props: {
         w: Math.max(1, Math.abs(end.x - start.x)),
         h: Math.max(1, Math.abs(end.y - start.y)),
         startX: start.x - connectorX,
-        startY: start.y - connectorY,
+        startY: start.y - connectorShapeY,
         endX: end.x - connectorX,
-        endY: end.y - connectorY,
+        endY: end.y - connectorShapeY,
         stage
       }
     });

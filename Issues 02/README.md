@@ -1,6 +1,6 @@
 # Ikran MVP Issues 02
 
-来源：`IKRAN-MVP-PRD.zh-CN.md`，并对照旧 `issues/` 重排。PRD 是唯一产品标准；issue 执行不需要读取其他设计记录。当前架构收口见 ADR 0002 与 ADR 0003。
+来源：`IKRAN-MVP-PRD.zh-CN.md`，并对照旧 `issues/` 重排。PRD 是唯一产品标准；issue 执行不需要读取其他设计记录。当前架构收口见 ADR 0002、ADR 0003 与 ADR 0004。
 
 这些 issue 是 tracer-bullet vertical slices，覆盖从历史项目状态迁移到 Agent host + MCP + Workbench URL + tldraw 产品形态。每个阶段都有真实 Agent 接入点，不把真实验证集中到项目末尾。
 
@@ -20,6 +20,13 @@
 5D. `05D-retire-agent-evidence-real-smoke.md` - 退役 Agent-Supplied Evidence 与真实转型 Smoke
 6. `06-evidence-surface-region-annotation-slice.md` - Evidence Surface 与 Region Annotation Vertical Slice
 7. `07-design-intent-alignment-six-part-gate.md` - 六部分 Design Intent Alignment Gate
+7A. `07A-runtime-owned-alignment-handoff.md` - Runtime-owned Next phase 与 Alignment Preparation
+7B. `07B-agent-command-alignment-preparation.md` - Agent command 驱动六部分 Alignment Preparation
+7C. `07C-adaptive-agent-wait-workbench-presence.md` - 三分钟 Adaptive Agent Wait 与 Workbench Presence
+7D. `07D-alignment-attempt-abandon-regenerate.md` - 返回 Seed Reference、废弃 Attempt 与重新生成问题
+7E. `07E-complete-initial-design-system-handoff.md` - Complete 与 Initial Design System Preparation Handoff
+7F. `07F-agent-host-activation-feasibility-spike.md` - Agent Host Activation Feasibility Spike
+7G. `07G-alignment-command-real-agent-smoke.md` - Alignment Command Staged Real-Agent Smoke
 8. `08-source-artifact-declaration-validation.md` - Source Artifact Declaration 与三类校验
 9. `09-draft-design-system-derived-view.md` - Draft Design System 与 Derived View JSON
 10. `10-seed-prototype-preview-record-preview.md` - Seed Prototype Preview 与 `record_preview`

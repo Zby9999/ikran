@@ -12,9 +12,9 @@ import { SquircleChrome } from "./squircle-chrome";
 import { cn } from "@/lib/utils";
 
 export type FolderChromeExtraction = {
-  stageRemaining: number;
+  stageCompleted: number;
   stageTotal: number;
-  overallRemaining: number;
+  overallCompleted: number;
   overallTotal: number;
 };
 
@@ -161,13 +161,13 @@ export function FolderChrome({
                 className="seed-workbench__folder-extraction-stage"
                 data-testid="extraction-stage-progress"
               >
-                {extraction.stageRemaining}/{extraction.stageTotal}
+                {extraction.stageCompleted}/{extraction.stageTotal}
               </span>
               <span
                 className="seed-workbench__folder-extraction-overall"
                 data-testid="extraction-overall-progress"
               >
-                {extraction.overallRemaining}/{extraction.overallTotal}
+                {extraction.overallCompleted}/{extraction.overallTotal}
               </span>
             </div>
           </div>

@@ -1,12 +1,19 @@
 "use client";
 
-import { createContext, useContext, type PropsWithChildren } from "react";
+import {
+  createContext,
+  useEffect,
+  useContext,
+  type PropsWithChildren,
+  type SyntheticEvent
+} from "react";
 import {
   BaseBoxShapeUtil,
   HTMLContainer,
   T,
-  createShapeId,
+  type Editor,
   type TLShape,
+  type TLShapeId,
   useEditor
 } from "tldraw";
 
@@ -46,6 +53,99 @@ export const ALIGNMENT_CARD_TYPE = "alignment-card" as const;
 export const ALIGNMENT_CARD_COLLAPSED_WIDTH = 320;
 export const ALIGNMENT_CARD_EXPANDED_WIDTH = 360;
 
+type AlignmentEditorCard = {
+  id: string;
+  cardKind: "question" | "agent-annotation";
+  expanded: boolean;
+  editing: boolean;
+};
+
+export function alignmentCardEditorUpdates(
+  cards: readonly AlignmentEditorCard[],
+  activeId: string | null
+) {
+  return cards.flatMap((card) => {
+    const active = card.id === activeId;
+    const expanded = card.cardKind === "question" && active;
+    const editing = card.cardKind === "agent-annotation" && active;
+    if (card.expanded === expanded && card.editing === editing) return [];
+    return [{
+      id: card.id,
+      expanded,
+      editing,
+      w: expanded || editing
+        ? ALIGNMENT_CARD_EXPANDED_WIDTH
+        : ALIGNMENT_CARD_COLLAPSED_WIDTH
+    }];
+  });
+}
+
+export function setOnlyOpenAlignmentCard(
+  editor: Editor,
+  activeId: string | null
+) {
+  const shapes = editor
+    .getCurrentPageShapes()
+    .filter((shape): shape is AlignmentCardShape => shape.type === ALIGNMENT_CARD_TYPE);
+  const updates = alignmentCardEditorUpdates(
+    shapes.map((shape) => ({
+      id: String(shape.id),
+      cardKind: shape.props.cardKind,
+      expanded: shape.props.expanded,
+      editing: shape.props.editing
+    })),
+    activeId
+  );
+  if (updates.length === 0) return;
+  editor.run(
+    () => {
+      for (const update of updates) {
+        editor.updateShape<AlignmentCardShape>({
+          id: update.id as TLShapeId,
+          type: ALIGNMENT_CARD_TYPE,
+          props: {
+            expanded: update.expanded,
+            editing: update.editing,
+            w: update.w
+          }
+        });
+      }
+    },
+    { ignoreShapeLock: true }
+  );
+}
+
+type BlankCanvasTarget = {
+  classList?: { contains: (value: string) => boolean };
+  closest?: (selector: string) => unknown;
+};
+
+export function isAlignmentCanvasBlankTarget(target: unknown): boolean {
+  if (!target || typeof target !== "object") return false;
+  const candidate = target as BlankCanvasTarget;
+  return Boolean(
+    candidate.classList?.contains("tl-background") ||
+      candidate.closest?.(".tl-background__wrapper")
+  );
+}
+
+export function AlignmentCardInteractionController() {
+  const editor = useEditor();
+
+  useEffect(() => {
+    setOnlyOpenAlignmentCard(editor, null);
+    const onPointerDown = (event: PointerEvent) => {
+      if (isAlignmentCanvasBlankTarget(event.target)) {
+        setOnlyOpenAlignmentCard(editor, null);
+      }
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [editor]);
+
+  return null;
+}
+
 export interface AlignmentCardShape extends TLShape<"alignment-card"> {
   meta: AlignmentProjectionMeta;
 }
@@ -81,9 +181,10 @@ export function normalizeAlignmentCardDimensions(input: {
   w: number;
   h: number;
   expanded: boolean;
+  editing: boolean;
 }) {
   return {
-    w: input.expanded
+    w: input.expanded || input.editing
       ? ALIGNMENT_CARD_EXPANDED_WIDTH
       : ALIGNMENT_CARD_COLLAPSED_WIDTH,
     h: input.h
@@ -113,11 +214,18 @@ function parseFocusSelection(value: string): FocusCardSelection | null {
   }
 }
 
+export function activateAlignmentCardFocus(
+  selection: FocusCardSelection | null,
+  onFocusCardSelection?: (selection: FocusCardSelection) => void
+) {
+  if (selection) onFocusCardSelection?.(selection);
+}
+
 type AlignmentCardShapeViewProps = {
   shape: AlignmentCardShape;
   onExpandedChange: (expanded: boolean) => void;
   onEditingChange: (editing: boolean) => void;
-  onSingleAnchorSelected?: () => void;
+  onPointerInteraction?: (event: SyntheticEvent) => void;
 };
 
 /** Pure render seam used by the ShapeUtil and unit tests. */
@@ -125,7 +233,7 @@ export function AlignmentCardShapeView({
   shape,
   onExpandedChange,
   onEditingChange,
-  onSingleAnchorSelected
+  onPointerInteraction
 }: AlignmentCardShapeViewProps) {
   const actions = useAlignmentCardProjectionActions();
   const props = shape.props;
@@ -134,8 +242,7 @@ export function AlignmentCardShapeView({
   const dimensions = normalizeAlignmentCardDimensions(props);
 
   const selectFocusCard = () => {
-    if (focusSelection) actions?.onFocusCardSelection(focusSelection);
-    else if (props.cardKind === "question") onSingleAnchorSelected?.();
+    activateAlignmentCardFocus(focusSelection, actions?.onFocusCardSelection);
   };
 
   return (
@@ -149,7 +256,6 @@ export function AlignmentCardShapeView({
       data-node-id={meta.nodeId}
       data-stage={props.stage}
       data-card-kind={props.cardKind}
-      onClick={selectFocusCard}
       style={{
         width: dimensions.w,
         height: dimensions.h,
@@ -172,7 +278,10 @@ export function AlignmentCardShapeView({
               : undefined
           }
           expanded={props.expanded}
+          onActivate={selectFocusCard}
+          onFocusPreview={focusSelection ? selectFocusCard : undefined}
           onExpandedChange={onExpandedChange}
+          onPointerInteraction={onPointerInteraction}
           onSubmitAnswer={(answer) =>
             actions?.onSubmitAnswer(meta.runtimeRecordId, answer)
           }
@@ -186,6 +295,7 @@ export function AlignmentCardShapeView({
           evidenceAnchor={props.evidenceAnchor}
           editing={props.editing}
           onEditingChange={onEditingChange}
+          onPointerInteraction={onPointerInteraction}
           onAppendInformation={(information) =>
             actions?.onAppendAnnotationInformation(meta.runtimeRecordId, information)
           }
@@ -197,39 +307,22 @@ export function AlignmentCardShapeView({
 
 function AlignmentCardShapeComponent({ shape }: { shape: AlignmentCardShape }) {
   const editor = useEditor();
-  const updateProps = (partial: Partial<AlignmentCardShape["props"]>) => {
-    editor.run(
-      () => {
-        editor.updateShape<AlignmentCardShape>({
-          id: shape.id,
-          type: ALIGNMENT_CARD_TYPE,
-          props: partial
-        });
-      },
-      { ignoreShapeLock: true }
-    );
-  };
   return (
     <AlignmentCardShapeView
       shape={shape}
       onExpandedChange={(expanded) =>
-        updateProps({
-          expanded,
-          w: expanded
-            ? ALIGNMENT_CARD_EXPANDED_WIDTH
-            : ALIGNMENT_CARD_COLLAPSED_WIDTH
-        })
+        setOnlyOpenAlignmentCard(
+          editor,
+          expanded ? String(shape.id) : null
+        )
       }
-      onEditingChange={(editing) => updateProps({ editing })}
-      onSingleAnchorSelected={() => {
-        const target = editor.getShape(
-          createShapeId(`alignment-target:${shape.meta.runtimeRecordId}`)
-        );
-        if (!target) return;
-        editor.setSelectedShapes([target.id]);
-        const bounds = editor.getShapePageBounds(target);
-        if (bounds) editor.zoomToBounds(bounds, { inset: 96 });
-      }}
+      onEditingChange={(editing) =>
+        setOnlyOpenAlignmentCard(
+          editor,
+          editing ? String(shape.id) : null
+        )
+      }
+      onPointerInteraction={editor.markEventAsHandled}
     />
   );
 }

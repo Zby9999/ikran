@@ -6,6 +6,9 @@ import {
   AlignmentCardProjectionProvider,
   AlignmentCardShapeUtil,
   AlignmentCardShapeView,
+  activateAlignmentCardFocus,
+  alignmentCardEditorUpdates,
+  isAlignmentCanvasBlankTarget,
   normalizeAlignmentCardDimensions,
   type AlignmentCardShape
 } from "../../components/workbench/alignment-card-shape";
@@ -64,17 +67,85 @@ function questionShape(expanded = false): AlignmentCardShape {
 }
 
 describe("AlignmentCardShapeUtil", () => {
+  test("does not focus or move the canvas for ordinary annotation-backed cards", () => {
+    const onFocusCardSelection = vi.fn();
+
+    activateAlignmentCardFocus(null, onFocusCardSelection);
+
+    expect(onFocusCardSelection).not.toHaveBeenCalled();
+  });
+
+  test("keeps focus-mode activation for shared-element cards", () => {
+    const onFocusCardSelection = vi.fn();
+    const selection = {
+      cardId: "question-1",
+      targets: []
+    };
+
+    activateAlignmentCardFocus(selection, onFocusCardSelection);
+
+    expect(onFocusCardSelection).toHaveBeenCalledOnce();
+    expect(onFocusCardSelection).toHaveBeenCalledWith(selection);
+  });
+
+  test("keeps only one Question or Agent Annotation editor open", () => {
+    const cards = [
+      { id: "question-1", cardKind: "question" as const, expanded: false, editing: false },
+      { id: "question-2", cardKind: "question" as const, expanded: true, editing: false },
+      { id: "annotation-1", cardKind: "agent-annotation" as const, expanded: false, editing: true },
+      { id: "annotation-2", cardKind: "agent-annotation" as const, expanded: false, editing: false }
+    ];
+
+    expect(alignmentCardEditorUpdates(cards, "question-1")).toEqual([
+      { id: "question-1", expanded: true, editing: false, w: 360 },
+      { id: "question-2", expanded: false, editing: false, w: 320 },
+      { id: "annotation-1", expanded: false, editing: false, w: 320 }
+    ]);
+    expect(alignmentCardEditorUpdates(cards, "annotation-2")).toEqual([
+      { id: "question-2", expanded: false, editing: false, w: 320 },
+      { id: "annotation-1", expanded: false, editing: false, w: 320 },
+      { id: "annotation-2", expanded: false, editing: true, w: 360 }
+    ]);
+    expect(alignmentCardEditorUpdates(cards, null)).toEqual([
+      { id: "question-2", expanded: false, editing: false, w: 320 },
+      { id: "annotation-1", expanded: false, editing: false, w: 320 }
+    ]);
+  });
+
+  test("recognizes only tldraw background clicks as blank-canvas dismissal", () => {
+    expect(isAlignmentCanvasBlankTarget({
+      classList: { contains: (value: string) => value === "tl-background" },
+      closest: () => null
+    })).toBe(true);
+    expect(isAlignmentCanvasBlankTarget({
+      classList: { contains: () => false },
+      closest: (selector: string) => selector === ".tl-background__wrapper" ? {} : null
+    })).toBe(true);
+    expect(isAlignmentCanvasBlankTarget({
+      classList: { contains: () => false },
+      closest: () => null
+    })).toBe(false);
+  });
+
   test("enforces the Figma collapsed and expanded widths", () => {
     expect(normalizeAlignmentCardDimensions({
       w: 999,
       h: 236,
-      expanded: false
+      expanded: false,
+      editing: false
     })).toEqual({ w: 320, h: 236 });
     expect(normalizeAlignmentCardDimensions({
       w: 1,
       h: 236,
-      expanded: true
+      expanded: true,
+      editing: false
     })).toEqual({ w: 360, h: 236 });
+    expect(normalizeAlignmentCardDimensions({
+      w: 320,
+      h: 180,
+      expanded: false,
+      editing: true
+    })).toEqual({ w: 360, h: 180 });
 
     const util = Object.create(
       AlignmentCardShapeUtil.prototype
@@ -106,9 +177,11 @@ describe("AlignmentCardShapeUtil", () => {
 
     expect(html).toContain('data-testid="alignment-card-shape"');
     expect(html).toContain('data-runtime-record-id="question-1"');
+    expect(html).toContain('data-evidence-version-id="version-1"');
     expect(html).toContain('data-stage="layout"');
     expect(html).toContain("Cards use a stable inset.");
     expect(html).toContain("Should the inset remain 20px?");
+    expect(html).not.toContain("Figma node 44:120");
     expect(html).toContain('style="width:320px;height:236px');
   });
 });

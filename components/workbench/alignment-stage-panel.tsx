@@ -15,10 +15,45 @@ export const ALIGNMENT_STAGES = [
 ] as const;
 
 export type AlignmentStageId = (typeof ALIGNMENT_STAGES)[number]["id"];
+export const DEFAULT_ALIGNMENT_STAGE: AlignmentStageId = ALIGNMENT_STAGES[0].id;
 export type AlignmentCoverage = Record<AlignmentStageId, boolean>;
 export type AlignmentQuestionCoverage = Partial<
   Record<AlignmentStageId, readonly boolean[]>
 >;
+
+export type AlignmentQuestionProgress = {
+  stageCompleted: number;
+  stageTotal: number;
+  overallCompleted: number;
+  overallTotal: number;
+};
+
+export function getAlignmentQuestionProgress(
+  coverage: {
+    sections: readonly {
+      section: AlignmentStageId;
+      question_count: number;
+      covered_count: number;
+      complete: boolean;
+    }[];
+    total_questions: number;
+    can_complete: boolean;
+  },
+  currentStage: AlignmentStageId
+): AlignmentQuestionProgress {
+  const stage = coverage.sections.find(
+    (section) => section.section === currentStage
+  );
+  return {
+    stageCompleted: stage?.covered_count ?? 0,
+    stageTotal: stage?.question_count ?? 0,
+    overallCompleted: coverage.sections.reduce(
+      (total, section) => total + section.covered_count,
+      0
+    ),
+    overallTotal: coverage.total_questions
+  };
+}
 
 export function getAlignmentCoverage(
   questions: AlignmentQuestionCoverage

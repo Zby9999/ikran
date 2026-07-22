@@ -18,6 +18,8 @@ export const ALIGNMENT_SECTIONS = [
   "interaction"
 ] as const;
 
+export const ALIGNMENT_QUESTION_TITLE_MAX_LENGTH = 48;
+
 export type AlignmentSection = (typeof ALIGNMENT_SECTIONS)[number];
 export type AnswerSource =
   | "designer-edited"
@@ -86,6 +88,8 @@ type FailureReason =
   | "design_language_description_required"
   | "invalid_section"
   | "empty_observation"
+  | "question_title_too_long"
+  | "whole_surface_requires_surface_anchor"
   | "empty_question"
   | "empty_body"
   | "empty_title"
@@ -175,6 +179,16 @@ function validNormalizedRect(value: unknown): NormalizedMaskRect | null {
   return rect as NormalizedMaskRect;
 }
 
+function coversWholeSurface(rect: NormalizedMaskRect): boolean {
+  const edgeTolerance = 0.025;
+  return (
+    rect.x <= edgeTolerance &&
+    rect.y <= edgeTolerance &&
+    rect.x + rect.width >= 1 - edgeTolerance &&
+    rect.y + rect.height >= 1 - edgeTolerance
+  );
+}
+
 function clamp(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
@@ -232,6 +246,9 @@ function resolveAnchorOnDb(
       : text(target.nodeId)
         ? "node"
         : null;
+    if (parsed.kind === "focus-target-set" && kind === "surface") {
+      return { ok: false, reason: "invalid_focus_target_set" };
+    }
     let resolved: EvidenceTarget;
     if (kind === "surface") {
       resolved = {
@@ -244,6 +261,9 @@ function resolveAnchorOnDb(
     } else if (kind === "region") {
       const rect = validNormalizedRect(target.rect);
       if (!rect) return { ok: false, reason: "invalid_anchor_target" };
+      if (parsed.kind === "single" && coversWholeSurface(rect)) {
+        return { ok: false, reason: "whole_surface_requires_surface_anchor" };
+      }
       resolved = {
         kind,
         seedReferenceId,
@@ -367,6 +387,9 @@ export function createQuestionCard(
   const section = input.section;
   const observation = text(input.observation);
   if (!observation) return { ok: false, reason: "empty_observation" };
+  if (Array.from(observation).length > ALIGNMENT_QUESTION_TITLE_MAX_LENGTH) {
+    return { ok: false, reason: "question_title_too_long" };
+  }
   const question = text(input.question);
   if (!question) return { ok: false, reason: "empty_question" };
   const proposedAnswer = input.proposedAnswer === undefined ? null : text(input.proposedAnswer);
@@ -517,6 +540,107 @@ export function recordDesignerAnswer(
       return { ok: true as const, record: mapQuestion(db, row), event_id: event.event_id };
     });
     if (result.ok) emitRecordEvent({ kind: "alignment", action: "updated", id: questionCardId, projectPath: path.resolve(projectPath) });
+    return result;
+  } catch {
+    return { ok: false, reason: "db_error" };
+  }
+}
+
+export function updateQuestionCardTitle(
+  projectPath: string,
+  input: { questionCardId?: unknown; title?: unknown }
+): { ok: true; record: QuestionCardRecord; event_id: string } | Failure {
+  const questionCardId = text(input?.questionCardId);
+  if (!questionCardId) return { ok: false, reason: "not_found" };
+  const title = text(input.title);
+  if (!title) return { ok: false, reason: "empty_observation" };
+  if (Array.from(title).length > ALIGNMENT_QUESTION_TITLE_MAX_LENGTH) {
+    return { ok: false, reason: "question_title_too_long" };
+  }
+  try {
+    const result = withProjectTransaction(projectPath, (db) => {
+      if (alignmentIsCompleted(db)) {
+        return { ok: false, reason: "alignment_completed" } as Failure;
+      }
+      const existing = db
+        .prepare("SELECT observation FROM alignment_question_cards WHERE id = ?")
+        .get(questionCardId) as { observation: string } | undefined;
+      if (!existing) return { ok: false, reason: "not_found" } as Failure;
+      const now = new Date().toISOString();
+      db.prepare(
+        "UPDATE alignment_question_cards SET observation = ?, updated_at = ? WHERE id = ?"
+      ).run(title, now, questionCardId);
+      const event = logEventOnDb(db, "question_card_title_updated", {
+        question_card_id: questionCardId,
+        previous_title: existing.observation,
+        new_title: title
+      });
+      const row = db
+        .prepare("SELECT * FROM alignment_question_cards WHERE id = ?")
+        .get(questionCardId) as Record<string, unknown>;
+      return {
+        ok: true as const,
+        record: mapQuestion(db, row),
+        event_id: event.event_id
+      };
+    });
+    if (result.ok) {
+      emitRecordEvent({
+        kind: "alignment",
+        action: "updated",
+        id: questionCardId,
+        projectPath: path.resolve(projectPath)
+      });
+    }
+    return result;
+  } catch {
+    return { ok: false, reason: "db_error" };
+  }
+}
+
+export function updateQuestionCardAnchor(
+  projectPath: string,
+  input: { questionCardId?: unknown; anchor?: unknown }
+): { ok: true; record: QuestionCardRecord; event_id: string } | Failure {
+  const questionCardId = text(input?.questionCardId);
+  if (!questionCardId) return { ok: false, reason: "not_found" };
+  try {
+    const result = withProjectTransaction(projectPath, (db) => {
+      if (alignmentIsCompleted(db)) {
+        return { ok: false, reason: "alignment_completed" } as Failure;
+      }
+      const existing = db
+        .prepare("SELECT anchor_json FROM alignment_question_cards WHERE id = ?")
+        .get(questionCardId) as { anchor_json: string } | undefined;
+      if (!existing) return { ok: false, reason: "not_found" } as Failure;
+      const anchor = resolveAnchorOnDb(db, input.anchor, true);
+      if (!anchor.ok) return anchor;
+      const now = new Date().toISOString();
+      db.prepare(
+        "UPDATE alignment_question_cards SET anchor_json = ?, updated_at = ? WHERE id = ?"
+      ).run(JSON.stringify(anchor.anchor), now, questionCardId);
+      const event = logEventOnDb(db, "question_card_anchor_updated", {
+        question_card_id: questionCardId,
+        previous_anchor: JSON.parse(existing.anchor_json),
+        new_anchor: anchor.anchor
+      });
+      const row = db
+        .prepare("SELECT * FROM alignment_question_cards WHERE id = ?")
+        .get(questionCardId) as Record<string, unknown>;
+      return {
+        ok: true as const,
+        record: mapQuestion(db, row),
+        event_id: event.event_id
+      };
+    });
+    if (result.ok) {
+      emitRecordEvent({
+        kind: "alignment",
+        action: "updated",
+        id: questionCardId,
+        projectPath: path.resolve(projectPath)
+      });
+    }
     return result;
   } catch {
     return { ok: false, reason: "db_error" };

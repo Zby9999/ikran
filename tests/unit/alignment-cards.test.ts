@@ -6,7 +6,10 @@ import { describe, expect, test, vi } from "vitest";
 import {
   AgentAnnotationCard,
   ALIGNMENT_CARD_SEED_GAP_PX,
-  AlignmentQuestionCard
+  AlignmentQuestionCard,
+  activateAlignmentQuestionCard,
+  previewAlignmentQuestionFocus,
+  stopAlignmentCardPointer
 } from "../../components/workbench/alignment-cards";
 
 const question = {
@@ -18,6 +21,36 @@ const question = {
 };
 
 describe("AlignmentQuestionCard", () => {
+  test("isolates pointer gestures from the tldraw canvas", () => {
+    const stopPropagation = vi.fn();
+    const markHandled = vi.fn();
+
+    stopAlignmentCardPointer({ stopPropagation }, markHandled);
+
+    expect(stopPropagation).toHaveBeenCalledOnce();
+    expect(markHandled).toHaveBeenCalledOnce();
+  });
+
+  test("opens the editor and runs the card-specific activation together", () => {
+    const onExpandedChange = vi.fn();
+    const onActivate = vi.fn();
+
+    activateAlignmentQuestionCard(onExpandedChange, onActivate);
+
+    expect(onExpandedChange).toHaveBeenCalledWith(true);
+    expect(onActivate).toHaveBeenCalledOnce();
+  });
+
+  test("hover previews focus mode without opening the answer editor", () => {
+    const onExpandedChange = vi.fn();
+    const onFocusPreview = vi.fn();
+
+    previewAlignmentQuestionFocus(onFocusPreview);
+
+    expect(onFocusPreview).toHaveBeenCalledOnce();
+    expect(onExpandedChange).not.toHaveBeenCalled();
+  });
+
   test("publishes the Figma card-to-seed spacing for canvas wiring", () => {
     expect(ALIGNMENT_CARD_SEED_GAP_PX).toBe(20);
   });
@@ -62,9 +95,16 @@ describe("AlignmentQuestionCard", () => {
 
     expect(html).toContain('data-status="unanswered"');
     expect(html).toContain('data-expanded="false"');
-    expect(html).toContain("Checkout frame · node 44:120");
-    expect(html).toContain("5. Font issue");
+    expect(html).not.toContain("Checkout frame · node 44:120");
+    expect(html).toContain("5.");
     expect(html.match(/Font issue/g)).toHaveLength(1);
+    expect(html).toContain('data-slot="question-copy"');
+    expect(html.indexOf("Font issue")).toBeGreaterThan(
+      html.indexOf('data-slot="question-copy"')
+    );
+    expect(html.indexOf(question.question)).toBeGreaterThan(
+      html.indexOf("Font issue")
+    );
     expect(html).not.toContain("Agent observation");
     expect(html).toContain(question.question);
     expect(html).not.toContain("agent-proposed-designer-accepted");
@@ -127,6 +167,12 @@ describe("AlignmentQuestionCard", () => {
     expect(css).toMatch(/\.questionCard\s*{[^}]*width:\s*320px/s);
     expect(css).toMatch(/\.questionCard\[data-expanded="true"\]\s*{[^}]*width:\s*360px/s);
     expect(css).toMatch(/\.answerEditor\s*{[^}]*height:\s*56px/s);
+    expect(css).toMatch(/\.questionNumber\s*{[^}]*font-weight:\s*400/s);
+    expect(css).toMatch(/\.questionObservation\s*{[^}]*font-weight:\s*400/s);
+    expect(css).toMatch(/\.annotationHeading\s*{[^}]*font-weight:\s*400/s);
+    expect(css).toMatch(/\.annotationCard\s*{[^}]*border:\s*1px solid #6e6e6e/s);
+    expect(css).toMatch(/\.annotationCard\[data-editing="true"\]\s*{[^}]*width:\s*360px/s);
+    expect(css).toMatch(/\.annotationEditor\s*{[^}]*height:\s*56px/s);
   });
 });
 
@@ -147,7 +193,7 @@ describe("AgentAnnotationCard", () => {
 
     expect(html).toContain('data-kind="agent-annotation"');
     expect(html).toContain("4. Root Layout");
-    expect(html).toContain("Figma node");
+    expect(html).not.toContain("Figma node");
     expect(html).toContain("The root layout is a 1280px desktop canvas.");
     expect(html).toContain("Keep the 20px outer inset.");
   });
@@ -168,9 +214,13 @@ describe("AgentAnnotationCard", () => {
 
     expect(html).toContain("The root layout is a 1280px desktop canvas.");
     expect(html).toContain('aria-label="Add information to agent annotation"');
-    expect(html).toContain("Add information");
+    expect(html).toContain('placeholder="Add your design intent..."');
+    expect(html).toContain('aria-label="Submit agent annotation information"');
     expect(html).toContain("<textarea");
     expect(html).toContain("></textarea>");
+    expect(html).toContain("<svg");
+    expect(html).not.toContain(">Cancel<");
+    expect(html).not.toContain(">Add information<");
     expect(html).not.toContain("required");
   });
 });

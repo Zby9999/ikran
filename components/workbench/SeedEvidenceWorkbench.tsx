@@ -16,7 +16,9 @@ import { WorkbenchToastAlert } from "./workbench-toast-alert";
 import { RuntimeShutdownControl } from "./runtime-shutdown-control";
 import {
   ALIGNMENT_STAGES,
+  DEFAULT_ALIGNMENT_STAGE,
   AlignmentStagePanel,
+  getAlignmentQuestionProgress,
   type AlignmentCoverage,
   type AlignmentStageId
 } from "./alignment-stage-panel";
@@ -113,7 +115,7 @@ export function SeedEvidenceWorkbench({
     "sign-seed"
   );
   const [alignmentStage, setAlignmentStage] =
-    useState<AlignmentStageId>("layout");
+    useState<AlignmentStageId>(DEFAULT_ALIGNMENT_STAGE);
 
   const alignmentCoverage = useMemo(() => {
     const byStage = new Map(
@@ -126,6 +128,18 @@ export function SeedEvidenceWorkbench({
       ALIGNMENT_STAGES.map(({ id }) => [id, byStage.get(id) === true])
     ) as AlignmentCoverage;
   }, [alignment]);
+  const alignmentQuestionProgress = useMemo(
+    () =>
+      alignment
+        ? getAlignmentQuestionProgress(alignment.coverage, alignmentStage)
+        : {
+            stageCompleted: 0,
+            stageTotal: 0,
+            overallCompleted: 0,
+            overallTotal: 0
+          },
+    [alignment, alignmentStage]
+  );
 
   const showGate = gateStatus !== "open" || !canvasEntered;
   const canvasLocked = showGate;
@@ -252,12 +266,7 @@ export function SeedEvidenceWorkbench({
           onAnnotate={() => setAnnotateMode((v) => !v)}
           extraction={
             canvasStage === "extraction"
-              ? {
-                  stageRemaining: 3,
-                  stageTotal: 5,
-                  overallRemaining: 27,
-                  overallTotal: 32
-                }
+              ? alignmentQuestionProgress
               : null
           }
         />

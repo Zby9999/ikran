@@ -23,6 +23,8 @@ export type EventType =
   | "annotation_created"
   | "annotation_primary_confirmed"
   | "question_card_created"
+  | "question_card_title_updated"
+  | "question_card_anchor_updated"
   | "agent_annotation_updated"
   | "designer_answer_submitted"
   | "design_intent_alignment_completed"

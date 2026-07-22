@@ -7,7 +7,7 @@
 Agent 基于 Figma Evidence Surface 和 Region Annotation 创建两类可视卡片：
 
 - 灰色 Agent Annotation：承载 `align-design-intent` 中 Confirmed from design 与 Reasonable inference。两类在 Workbench 中不做视觉区分，默认供设计师浏览，也允许点击后附加或编辑信息；它们不是必答问题，不参与 Alignment gate。
-- 六部分阶段色 Question card：承载 Open questions / undecided。每个部分二到五张，包含 Agent observation、Agent question、evidence anchor、可选 `proposed_answer` 和 final answer。开放澄清留在 Agent host chat；Workbench 只需保证设计师提交的回答被 Runtime 持久化并可由 Agent 持续读取。
+- 六部分阶段色 Question card：承载 Open questions / undecided。每个部分二到五张，包含简短标题（wire/storage 兼容字段仍为 `observation`）、Agent question、evidence anchor、可选 `proposed_answer` 和 final answer。标题应为 2–5 个词的有效名词短语，不得写成句子或重复问题，且最长 48 个字符。开放澄清留在 Agent host chat；Workbench 只需保证设计师提交的回答被 Runtime 持久化并可由 Agent 持续读取。
 
 具体 UI、颜色和交互以设计师 Figma 为准：主参考 `97:740`，阶段面板 states `269:211`，Question card variants `155:273`，多处/跨 Frame focus mode `177:426`。
 
@@ -34,8 +34,10 @@ Alignment 面向项目当前 Seed Reference collection，而不是唯一 seed pa
 - [ ] 每个部分包含二到五张 Question card。
 - [ ] 每张 Question card 必须有 evidence anchor，不能只写“这里”。
 - [ ] Question card anchor 可指向 collection 中任一 current Figma Evidence Surface，并保留对应 Seed Reference / evidence version linkage。
-- [ ] 单一 node/region 目标使用明确 anchor 与虚线连接；跨 Frame 或同一 Frame 多处重复元素使用显式 focus target set，不显示虚线/Annotation，点击卡片后压暗非目标区域并保留所有目标原色。
-- [ ] 卡片包含 Agent observation、Agent question；可含 Agent `proposed_answer`；Alignment 完成时必须有非空 final answer。开放 conversation 留在 Agent host chat，不在 Workbench 增加通用 chat/thread UI。
+- [ ] 单一具体元素或组件优先使用 positional evidence 中的明确 node target；只有没有准确节点可表达目标时才使用 region。以 Annotation 直接标记目标，并从目标水平引出 Question card，不得用手工估算 region 代替已有节点。
+- [ ] 多次出现或多个组件共享的元素（如颜色、字体）使用显式 focus target set；Hover 或点击 Question card 后进入 Focus Mode，所有目标保持高亮、其他区域压暗，不显示虚线/普通 Annotation，也不强制移动镜头。
+- [ ] 针对整个 Frame 的问题必须使用显式 surface target，只显示 Question card，不生成 Annotation、覆盖框或虚线；不得用接近全幅的 region 模拟 surface。
+- [ ] 卡片包含 2–5 个词、最长 48 字符的简短标题与 Agent question；标题不是句子且不重复问题。可含 Agent `proposed_answer`；Alignment 完成时必须有非空 final answer。开放 conversation 留在 Agent host chat，不在 Workbench 增加通用 chat/thread UI。
 - [ ] 禁止空问题与空 final answer；允许「同意/对」等非空短答。
 - [ ] 设计师提交或修改答案后 Runtime 立即持久化并广播 record invalidation；Agent 可通过语义 MCP read surface 获取最新 Agent Annotations、Question cards 与 answers。
 - [ ] 设计师提交答案 → answer source = designer edited；全局 `Complete` 接受所有未修改非空预填 → answer source = Agent 提议 / 设计师接受。
@@ -44,7 +46,7 @@ Alignment 面向项目当前 Seed Reference collection，而不是唯一 seed pa
 - [ ] 卡片状态只有 unanswered 和 answered。
 - [ ] 点击全局 `Complete` 时原子接受剩余 proposed answers；所有六部分卡片形成非空 final answer 后，seed extraction 才允许进入 design-system draft。
 - [ ] Question card 收起宽度为 320px；卡片与所关联 Seed Reference 的布局间距为 20px；展开、已回答和阶段配色遵循 Figma variants。
-- [ ] 选择普通 anchor 卡片时 Workbench 聚焦对应 Evidence Surface anchor；选择 focus target set 卡片时进入 focus mode。再次点击当前 focus card 保持 focus；点击另一卡切换目标；点击画布空白或按 `Esc` 退出；遮罩只做短淡入淡出，不循环闪烁。
+- [ ] 点击普通 node/region anchor 卡片时只展开编辑器，保留原位 Annotation 与水平虚线，不选择目标、不改变镜头位置；Hover 或点击 focus target set 卡片时进入 focus mode，同样不改变镜头位置。再次点击当前 focus card 保持 focus；点击另一卡切换目标；点击画布空白或按 `Esc` 退出；遮罩只做短淡入淡出，不循环闪烁。
 - [ ] 测试覆盖六部分计数、coverage/global Complete gate、proposed/final/answer source、Agent Annotation 不阻塞、Content 不阻塞、single/focus-set anchor validation、answer read surface 与 focus-mode 退出规则。
 
 ## Real Agent validation

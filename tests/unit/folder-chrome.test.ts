@@ -5,6 +5,23 @@ import { describe, expect, test, vi } from "vitest";
 import { FolderChrome } from "../../components/workbench/folder-chrome";
 
 describe("FolderChrome tool group", () => {
+  test("renders completed/current and completed/overall extraction counts", () => {
+    const html = renderToStaticMarkup(createElement(FolderChrome, {
+      folderName: "Folder Name",
+      phase: "extraction",
+      extraction: {
+        stageCompleted: 3,
+        stageTotal: 5,
+        overallCompleted: 7,
+        overallTotal: 9
+      },
+      onBack: vi.fn()
+    }));
+
+    expect(html).toMatch(/extraction-stage-progress[^>]*>3\/5</);
+    expect(html).toMatch(/extraction-overall-progress[^>]*>7\/9</);
+  });
+
   test("renders the Figma select tool with the shared active-button state", () => {
     const html = renderToStaticMarkup(createElement(FolderChrome, {
       folderName: "Folder Name",

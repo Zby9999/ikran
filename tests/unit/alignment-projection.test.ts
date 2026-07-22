@@ -1,9 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  ALIGNMENT_CARD_STACK_GAP,
   buildAlignmentProjectionPlan,
   type AlignmentProjectionInput
 } from "../../components/workbench/projection/alignment-projection";
+import { alignmentCardShapeProps } from "../../components/workbench/projection/alignment-projection-sync";
 
 const input: AlignmentProjectionInput = {
   currentStage: "layout",
@@ -127,7 +129,6 @@ describe("buildAlignmentProjectionPlan", () => {
     ]);
     expect(cards.map((shape) => shape.props.number)).toEqual([1, 2, 3]);
     expect(cards.map((shape) => shape.x)).toEqual([500, 500, 500]);
-    expect(cards[1]!.y).toBeGreaterThan(cards[0]!.y);
     expect(cards[2]!.y).toBeGreaterThan(cards[1]!.y);
     expect(cards.every((shape) => shape.isLocked)).toBe(true);
     expect(cards[0]!.meta).toMatchObject({
@@ -144,6 +145,11 @@ describe("buildAlignmentProjectionPlan", () => {
       props: { w: 108, h: 48 }
     });
     expect(connectors).toHaveLength(1);
+    expect(connectors[0]!.props.startY).toBe(connectors[0]!.props.endY);
+    expect(connectors[0]!.props.h).toBe(1);
+    expect(cards[0]!.y + cards[0]!.props.h / 2).toBe(
+      targets[0]!.y + targets[0]!.props.h / 2
+    );
     expect(
       targets.some((shape) =>
         shape.meta.runtimeRecordId.includes("question-focus")
@@ -190,5 +196,100 @@ describe("buildAlignmentProjectionPlan", () => {
         }
       ]
     });
+  });
+
+  test("does not materialize annotation chrome for a whole-frame question", () => {
+    const surfaceInput: AlignmentProjectionInput = {
+      ...input,
+      questions: [
+        {
+          ...input.questions[0]!,
+          id: "question-surface",
+          anchor: {
+            kind: "single",
+            target: {
+              kind: "surface",
+              seedReferenceId: "seed-1",
+              evidenceSurfaceId: "surface-1",
+              evidenceVersionId: "version-1",
+              resolvedRect: { x: 0, y: 0, w: 1, h: 1 }
+            }
+          }
+        }
+      ],
+      annotations: []
+    };
+    const plan = buildAlignmentProjectionPlan(surfaceInput);
+
+    expect(plan.filter((shape) => shape.type === "alignment-card")).toHaveLength(1);
+    expect(plan.filter((shape) => shape.type === "alignment-target")).toHaveLength(0);
+    expect(plan.filter((shape) => shape.type === "alignment-connector")).toHaveLength(0);
+  });
+
+  test("separates cards that resolve to the same anchor while keeping connectors horizontal", () => {
+    const repeatedAnchorInput: AlignmentProjectionInput = {
+      ...input,
+      questions: [
+        input.questions[0]!,
+        {
+          ...input.questions[0]!,
+          id: "question-layout-repeated",
+          question: "Should the repeated use follow the same rule?"
+        }
+      ],
+      annotations: []
+    };
+    const plan = buildAlignmentProjectionPlan(repeatedAnchorInput);
+    const cards = plan.filter((shape) => shape.type === "alignment-card");
+    const connectors = plan.filter(
+      (shape) => shape.type === "alignment-connector"
+    );
+
+    expect(cards).toHaveLength(2);
+    expect(cards[1]!.y).toBeGreaterThanOrEqual(
+      cards[0]!.y + cards[0]!.props.h + ALIGNMENT_CARD_STACK_GAP
+    );
+    expect(connectors).toHaveLength(2);
+    expect(
+      connectors.every(
+        (connector) =>
+          connector.props.startY === connector.props.endY &&
+          connector.props.h === 1
+      )
+    ).toBe(true);
+  });
+
+  test("serializes focus selection without leaking projection-only props into tldraw", () => {
+    const focusCard = buildAlignmentProjectionPlan(input).find(
+      (shape) =>
+        shape.type === "alignment-card" &&
+        shape.meta.runtimeRecordId === "question-focus"
+    );
+
+    expect(focusCard?.type).toBe("alignment-card");
+    if (focusCard?.type !== "alignment-card") return;
+
+    const props = alignmentCardShapeProps(focusCard.props);
+
+    expect(props).not.toHaveProperty("focusSelection");
+    expect(JSON.parse(props.focusSelectionJson)).toEqual(
+      focusCard.props.focusSelection
+    );
+  });
+
+  test("omits an empty focus selection from normal tldraw cards", () => {
+    const normalCard = buildAlignmentProjectionPlan(input).find(
+      (shape) =>
+        shape.type === "alignment-card" &&
+        shape.meta.runtimeRecordId === "question-layout"
+    );
+
+    expect(normalCard?.type).toBe("alignment-card");
+    if (normalCard?.type !== "alignment-card") return;
+
+    const props = alignmentCardShapeProps(normalCard.props);
+
+    expect(props).not.toHaveProperty("focusSelection");
+    expect(props.focusSelectionJson).toBe("");
   });
 });

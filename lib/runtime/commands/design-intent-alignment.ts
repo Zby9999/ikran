@@ -4,5 +4,7 @@ export {
   createAgentAnnotation as createAgentAnnotationCommand,
   createQuestionCard as createAlignmentQuestionCardCommand,
   getDesignIntentAlignment as readDesignIntentAlignmentCommand,
-  recordDesignerAnswer as recordDesignerAnswerCommand
+  recordDesignerAnswer as recordDesignerAnswerCommand,
+  updateQuestionCardAnchor as updateAlignmentQuestionAnchorCommand,
+  updateQuestionCardTitle as updateAlignmentQuestionTitleCommand
 } from "../design-intent-alignment";

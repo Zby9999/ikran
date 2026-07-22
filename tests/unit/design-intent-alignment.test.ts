@@ -19,7 +19,9 @@ import {
   createAgentAnnotation,
   createQuestionCard,
   getDesignIntentAlignment,
-  recordDesignerAnswer
+  recordDesignerAnswer,
+  updateQuestionCardAnchor,
+  updateQuestionCardTitle
 } from "../../lib/runtime/design-intent-alignment";
 
 const FIGMA = "https://www.figma.com/design/AbCdEf/Checkout?node-id=1:2";
@@ -165,6 +167,34 @@ describe("Design Intent Alignment Runtime contract", () => {
       });
       expect(oneTargetSet).toEqual({ ok: false, reason: "invalid_focus_target_set" });
 
+      const surfaceInFocusSet = createQuestionCard(projectPath, {
+        section: "layout",
+        observation: "Shared layout language",
+        question: "Should these references share one layout language?",
+        anchor: {
+          kind: "focus-target-set",
+          targets: [
+            {
+              kind: "surface",
+              seedReferenceId: link.seedReferenceId,
+              evidenceSurfaceId: link.surfaceId,
+              evidenceVersionId: link.surfaceId
+            },
+            {
+              kind: "region",
+              seedReferenceId: link.seedReferenceId,
+              evidenceSurfaceId: link.surfaceId,
+              evidenceVersionId: link.surfaceId,
+              rect: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 }
+            }
+          ]
+        }
+      });
+      expect(surfaceInFocusSet).toEqual({
+        ok: false,
+        reason: "invalid_focus_target_set"
+      });
+
       const missingNode = createQuestionCard(projectPath, {
         section: "layout",
         observation: "Unknown source node",
@@ -181,6 +211,21 @@ describe("Design Intent Alignment Runtime contract", () => {
         }
       });
       expect(missingNode).toEqual({ ok: false, reason: "invalid_anchor_target" });
+    });
+  });
+
+  test("requires a concise question-card title instead of a sentence-like observation", () => {
+    withProject((projectPath, link) => {
+      setDesignLanguageDescription(projectPath, "A calm, precise product language");
+      const result = createQuestionCard(projectPath, {
+        section: "design-principle",
+        observation:
+          "The portfolio and guideline reference both foreground authored visual identity over dense utility.",
+        question: "Should editorial expression guide the system?",
+        anchor: singleTarget(link)
+      });
+
+      expect(result).toEqual({ ok: false, reason: "question_title_too_long" });
     });
   });
 
@@ -252,6 +297,32 @@ describe("Design Intent Alignment Runtime contract", () => {
           height: 1
         });
       }
+    });
+  });
+
+  test("requires an explicit surface target for a whole-frame question", () => {
+    withProject((projectPath, link) => {
+      setDesignLanguageDescription(projectPath, "A calm, precise product language");
+      const created = createQuestionCard(projectPath, {
+        section: "layout",
+        observation: "Flexible editorial layouts",
+        question: "Should the system support both reference layouts?",
+        anchor: {
+          kind: "single",
+          target: {
+            kind: "region",
+            seedReferenceId: link.seedReferenceId,
+            evidenceSurfaceId: link.surfaceId,
+            evidenceVersionId: link.surfaceId,
+            rect: { x: 0.01, y: 0.01, width: 0.98, height: 0.98 }
+          }
+        }
+      });
+
+      expect(created).toEqual({
+        ok: false,
+        reason: "whole_surface_requires_surface_anchor"
+      });
     });
   });
 
@@ -342,6 +413,76 @@ describe("Design Intent Alignment Runtime contract", () => {
         })
       );
       unsubscribe();
+    });
+  });
+
+  test("updates a legacy question-card title through an audited command", () => {
+    withProject((projectPath, link) => {
+      setDesignLanguageDescription(projectPath, "A calm, precise product language");
+      const card = createQuestionCard(projectPath, {
+        section: "design-principle",
+        observation: "Editorial identity",
+        question: "Should editorial expression guide the system?",
+        anchor: singleTarget(link)
+      });
+      expect(card.ok).toBe(true);
+      if (!card.ok) return;
+
+      const updated = updateQuestionCardTitle(projectPath, {
+        questionCardId: card.record.id,
+        title: "Authored identity"
+      });
+
+      expect(updated.ok).toBe(true);
+      if (!updated.ok) return;
+      expect(updated.record.observation).toBe("Authored identity");
+      expect(getDesignIntentAlignment(projectPath).question_cards[0].observation)
+        .toBe("Authored identity");
+      expect(listEvents(projectPath, "question_card_title_updated")).toHaveLength(1);
+    });
+  });
+
+  test("repairs a question-card anchor through an audited Runtime command", () => {
+    withProject((projectPath, link) => {
+      setDesignLanguageDescription(projectPath, "A calm, precise product language");
+      const card = createQuestionCard(projectPath, {
+        section: "layout",
+        observation: "Large compositional zones",
+        question: "Should layouts favor a few large zones?",
+        anchor: {
+          kind: "single",
+          target: {
+            kind: "region",
+            seedReferenceId: link.seedReferenceId,
+            evidenceSurfaceId: link.surfaceId,
+            evidenceVersionId: link.surfaceId,
+            rect: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 }
+          }
+        }
+      });
+      expect(card.ok).toBe(true);
+      if (!card.ok) return;
+
+      const updated = updateQuestionCardAnchor(projectPath, {
+        questionCardId: card.record.id,
+        anchor: {
+          kind: "single",
+          target: {
+            kind: "surface",
+            seedReferenceId: link.seedReferenceId,
+            evidenceSurfaceId: link.surfaceId,
+            evidenceVersionId: link.surfaceId
+          }
+        }
+      });
+
+      expect(updated.ok).toBe(true);
+      if (!updated.ok) return;
+      expect(updated.record.anchor).toEqual({
+        kind: "single",
+        target: expect.objectContaining({ kind: "surface" })
+      });
+      expect(listEvents(projectPath, "question_card_anchor_updated")).toHaveLength(1);
     });
   });
 

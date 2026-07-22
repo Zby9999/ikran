@@ -198,30 +198,40 @@ const alignmentNormalizedRectSchema = z.object({
 });
 
 const alignmentEvidenceTargetSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("surface"), ...alignmentEvidenceLinkShape }),
   z.object({
-    kind: z.literal("node"),
+    kind: z.literal("surface").describe("Whole-Frame style question only; use inside a single anchor."),
+    ...alignmentEvidenceLinkShape
+  }),
+  z.object({
+    kind: z.literal("node").describe("One specific Figma element or component. Prefer this when positional evidence exposes an exact matching node."),
     ...alignmentEvidenceLinkShape,
     nodeId: z.string()
   }),
   z.object({
-    kind: z.literal("region"),
+    kind: z.literal("region").describe("One specific free region only when no exact positional node represents the target; never use to approximate a whole Frame or an available node."),
     ...alignmentEvidenceLinkShape,
     rect: alignmentNormalizedRectSchema
   })
 ]);
 
 export const alignmentAnchorSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("single"), target: alignmentEvidenceTargetSchema }),
   z.object({
-    kind: z.literal("focus-target-set"),
+    kind: z.literal("single").describe("One surface, node, or region target."),
+    target: alignmentEvidenceTargetSchema
+  }),
+  z.object({
+    kind: z.literal("focus-target-set").describe("Two or more repeated/shared node or region targets; surface targets are invalid."),
     targets: z.array(alignmentEvidenceTargetSchema)
   })
 ]);
 
 export const createAlignmentQuestionCardInputSchema = z.object({
   section: z.string(),
-  observation: z.string(),
+  observation: z
+    .string()
+    .describe(
+      "Concise card title: a 2–5 word noun phrase, at most 48 characters. Do not use a sentence or repeat the question."
+    ),
   question: z.string(),
   proposedAnswer: z.string().optional(),
   anchor: alignmentAnchorSchema
@@ -242,6 +252,18 @@ export const appendAgentAnnotationInformationInputSchema = z.object({
 export const recordDesignerAnswerInputSchema = z.object({
   questionCardId: z.string(),
   finalAnswer: z.string()
+});
+
+export const updateAlignmentQuestionTitleInputSchema = z.object({
+  questionCardId: z.string(),
+  title: z
+    .string()
+    .describe("Replacement 2–5 word noun-phrase title, at most 48 characters.")
+});
+
+export const updateAlignmentQuestionAnchorInputSchema = z.object({
+  questionCardId: z.string(),
+  anchor: alignmentAnchorSchema
 });
 
 export type CommandInputParseResult<T> =

@@ -57,7 +57,9 @@ export {
   createAgentAnnotationCommand,
   createAlignmentQuestionCardCommand,
   readDesignIntentAlignmentCommand,
-  recordDesignerAnswerCommand
+  recordDesignerAnswerCommand,
+  updateAlignmentQuestionAnchorCommand,
+  updateAlignmentQuestionTitleCommand
 } from "./design-intent-alignment";
 
 export {
@@ -87,7 +89,9 @@ export {
   appendAgentAnnotationInformationInputSchema,
   createAgentAnnotationInputSchema,
   createAlignmentQuestionCardInputSchema,
-  recordDesignerAnswerInputSchema
+  recordDesignerAnswerInputSchema,
+  updateAlignmentQuestionAnchorInputSchema,
+  updateAlignmentQuestionTitleInputSchema
 } from "./schemas";
 
 export { commandErrorHttpStatus } from "./http-status";

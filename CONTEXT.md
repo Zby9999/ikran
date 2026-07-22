@@ -28,6 +28,38 @@ browser** views the Ikran Web UI and whose MCP client talks to Runtime over
 stdio. It owns Figma MCP access, the model, and tool approval.
 _Avoid_: client, IDE (when used loosely)
 
+**Agent command**:
+A durable, designer-authorized request for an Agent to perform a specific unit
+of Ikran workflow work, created only by an explicit semantic action. An active
+Agent may handle it immediately, and a supported Agent host may activate a turn
+for it; otherwise it remains pending until a later Agent turn can resume it.
+_Avoid_: injected prompt, transient UI event, Agent wake-up
+
+**Agent orchestration control plane**:
+The Ikran capability that tracks Agent commands and coordinates their execution
+through an Agent host without owning the model or its approval loop.
+_Avoid_: model runtime, Agent host, MCP server
+
+**Agent host adapter**:
+The host-specific bridge through which Ikran can start or resume an Agent turn
+for a pending Agent command while leaving reasoning and approvals in the Agent
+host.
+_Avoid_: MCP tool, model provider, embedded Agent
+
+**Agent host activation**:
+A host-mediated start or resumption of an Agent turn for a pending Agent
+command through an officially supported host interface. Whether a host can
+preserve the intended conversation, tools, and approvals must be established
+before Ikran relies on activation for that host.
+_Avoid_: reverse prompt injection, MCP wake-up, headless replacement Agent
+
+**Adaptive Agent wait**:
+An active Agent turn waiting for the next explicit Agent command while
+Workbench presence indicates that the designer is still engaged. Presence may
+extend the wait, but it never substitutes for the designer action that advances
+the workflow.
+_Avoid_: infinite wait, idle-triggered progression, Agent host activation
+
 **Figma Connection**:
 The designer-authorized, read-only connection that lets Runtime capture Figma
 source evidence without requiring an active Agent. It is a Runtime ingestion
@@ -128,6 +160,34 @@ Intent Alignment.
 _Avoid_: per-reference intent, repeating the description on every Seed
 Reference
 
+**Alignment preparation**:
+The transition from Seed Reference registration into Design Intent Alignment,
+during which the Agent prepares the complete Question card set across all six
+Alignment sections. Partial preparation is not yet an answerable Alignment.
+_Avoid_: Alignment section, next Alignment phase, partial Alignment
+
+**Alignment input snapshot**:
+The immutable set of Seed References, captured evidence versions, Design
+Language Description, and Reference Notes accepted when the designer enters
+Alignment preparation. The resulting questions and Initial Design System share
+this snapshot as their input boundary.
+_Avoid_: live Seed Reference collection, current project state, latest evidence
+
+**Alignment attempt**:
+One pass from an Alignment input snapshot through preparation and designer
+answering. Returning to Seed Reference registration abandons the attempt and
+requires a new snapshot and Question card set; the abandoned history remains
+auditable but is not part of the current Alignment or successful research case.
+Designer completion makes the attempt immutable input to later workflow stages.
+_Avoid_: Alignment phase, overwritten Alignment, deleted attempt
+
+**Initial Design System preparation**:
+The transition after completed Design Intent Alignment during which the Agent
+turns the aligned Seed Reference evidence and final answers into the first
+reviewable Design System. It begins even when the responsible Agent command is
+still pending.
+_Avoid_: Alignment completion, automatic Agent wake-up, Design System review
+
 **Reference Note**:
 An optional designer note explaining why a particular Seed Reference matters or
 what aspect of the shared design language it demonstrates.
@@ -210,8 +270,9 @@ lineage** of that project (including stages before the loop completed: seed,
 evidence, annotation, alignment, DS v1, first prototype, etc.) — not only the
 endpoint. Runtime records successful semantic facts throughout; the threshold
 gates export eligibility, not whether early traces exist. Failed requests,
-failed annotations, drafts, cancels, Open Gaps, and canvas layout are not
-research facts for export (ops/debug logs may still exist).
+failed annotations, drafts, cancels, abandoned Alignment attempts, Open Gaps,
+and canvas layout are not research facts for export (ops/debug logs may still
+exist).
 _Avoid_: exporting every project folder as a research case; treating the
 threshold as “discard pre-completion successful traces”
 

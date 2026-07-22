@@ -5,7 +5,8 @@ import {
   useId,
   useState,
   type CSSProperties,
-  type FormEvent
+  type FormEvent,
+  type SyntheticEvent
 } from "react";
 import { ArrowUpIcon } from "@phosphor-icons/react";
 
@@ -18,6 +19,26 @@ import {
 import styles from "./alignment-ui.module.css";
 
 export const ALIGNMENT_CARD_SEED_GAP_PX = 20;
+
+export function stopAlignmentCardPointer(
+  event: Pick<SyntheticEvent, "stopPropagation">,
+  markHandled?: (event: SyntheticEvent) => void
+) {
+  markHandled?.(event as SyntheticEvent);
+  event.stopPropagation();
+}
+
+export function activateAlignmentQuestionCard(
+  onExpandedChange: (expanded: boolean) => void,
+  onActivate?: () => void
+) {
+  onExpandedChange(true);
+  onActivate?.();
+}
+
+export function previewAlignmentQuestionFocus(onFocusPreview?: () => void) {
+  onFocusPreview?.();
+}
 
 export type AlignmentAnswerSource =
   | "designer-edited"
@@ -35,6 +56,9 @@ export type AlignmentQuestionCardProps = {
   answerSource?: AlignmentAnswerSource;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
+  onActivate?: () => void;
+  onFocusPreview?: () => void;
+  onPointerInteraction?: (event: SyntheticEvent) => void;
   onSubmitAnswer: (answer: string) => void;
   className?: string;
 };
@@ -62,12 +86,15 @@ export function AlignmentQuestionCard({
   stage,
   observation,
   question,
-  evidenceAnchor,
+  evidenceAnchor: _evidenceAnchor,
   proposedAnswer,
   finalAnswer,
   answerSource: _answerSource,
   expanded,
   onExpandedChange,
+  onActivate,
+  onFocusPreview,
+  onPointerInteraction,
   onSubmitAnswer,
   className
 }: AlignmentQuestionCardProps) {
@@ -98,23 +125,34 @@ export function AlignmentQuestionCard({
       data-expanded={expanded}
       data-stage={stage}
       data-status={savedAnswer ? "answered" : "unanswered"}
+      onMouseDown={(event) =>
+        stopAlignmentCardPointer(event, onPointerInteraction)
+      }
+      onMouseEnter={() => previewAlignmentQuestionFocus(onFocusPreview)}
+      onPointerDown={(event) =>
+        stopAlignmentCardPointer(event, onPointerInteraction)
+      }
       style={style}
     >
       <button
         aria-expanded={expanded}
         aria-label={`Open question ${number} editor`}
         className={styles.questionContent}
-        onClick={() => onExpandedChange(true)}
+        onClick={() =>
+          activateAlignmentQuestionCard(onExpandedChange, onActivate)
+        }
         type="button"
       >
         <span className={styles.questionHeading}>
-          <span>{number}. {observation}</span>
-          <span className={styles.evidenceAnchor}>{evidenceAnchor}</span>
+          <span className={styles.questionNumber}>{number}.</span>
+          <span className={styles.questionCopy} data-slot="question-copy">
+            <span className={styles.questionObservation}>{observation}</span>
+            <span className={styles.questionText}>{question}</span>
+            {!expanded && savedAnswer ? (
+              <span className={styles.finalAnswer}>{savedAnswer}</span>
+            ) : null}
+          </span>
         </span>
-        <span className={styles.questionText}>{question}</span>
-        {!expanded && savedAnswer ? (
-          <span className={styles.finalAnswer}>{savedAnswer}</span>
-        ) : null}
       </button>
 
       {expanded ? (
@@ -153,6 +191,7 @@ export type AgentAnnotationCardProps = {
   editing: boolean;
   onEditingChange: (editing: boolean) => void;
   onAppendInformation: (information: string) => void;
+  onPointerInteraction?: (event: SyntheticEvent) => void;
   evidenceAnchor?: string;
   className?: string;
 };
@@ -165,7 +204,8 @@ export function AgentAnnotationCard({
   editing,
   onEditingChange,
   onAppendInformation,
-  evidenceAnchor,
+  onPointerInteraction,
+  evidenceAnchor: _evidenceAnchor,
   className
 }: AgentAnnotationCardProps) {
   const [draft, setDraft] = useState("");
@@ -184,6 +224,12 @@ export function AgentAnnotationCard({
       className={[styles.annotationCard, className].filter(Boolean).join(" ")}
       data-editing={editing}
       data-kind="agent-annotation"
+      onMouseDown={(event) =>
+        stopAlignmentCardPointer(event, onPointerInteraction)
+      }
+      onPointerDown={(event) =>
+        stopAlignmentCardPointer(event, onPointerInteraction)
+      }
     >
       <button
         aria-label="Add information to agent annotation"
@@ -193,9 +239,6 @@ export function AgentAnnotationCard({
       >
         <span className={styles.annotationHeading}>
           <span>{number}. {title}</span>
-          {evidenceAnchor ? (
-            <span className={styles.annotationAnchor}>{evidenceAnchor}</span>
-          ) : null}
         </span>
         <span>{body}</span>
         {additionalInformation.map((information, index) => (
@@ -210,23 +253,19 @@ export function AgentAnnotationCard({
           <textarea
             aria-label="Add information to agent annotation"
             onChange={(event) => setDraft(event.currentTarget.value)}
-            placeholder="Add information..."
-            rows={4}
+            placeholder="Add your design intent..."
+            rows={2}
             value={draft}
           />
-          <div className={styles.annotationActions}>
-            <Button
-              onClick={() => onEditingChange(false)}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              Cancel
-            </Button>
-            <Button disabled={!draft.trim()} size="sm" type="submit">
-              Add information
-            </Button>
-          </div>
+          <Button
+            aria-label="Submit agent annotation information"
+            className={styles.annotationSubmit}
+            disabled={!draft.trim()}
+            size="icon"
+            type="submit"
+          >
+            <ArrowUpIcon aria-hidden="true" size={14} weight="regular" />
+          </Button>
         </form>
       ) : null}
     </aside>

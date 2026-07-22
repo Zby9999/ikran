@@ -4,11 +4,48 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
   ALIGNMENT_STAGES,
+  DEFAULT_ALIGNMENT_STAGE,
   AlignmentStagePanel,
-  getAlignmentCoverage
+  getAlignmentCoverage,
+  getAlignmentQuestionProgress
 } from "../../components/workbench/alignment-stage-panel";
 
 describe("AlignmentStagePanel", () => {
+  test("starts extraction from the first Figma stage", () => {
+    expect(DEFAULT_ALIGNMENT_STAGE).toBe("design-principle");
+  });
+
+  test("derives current-section and overall completed question counts", () => {
+    expect(
+      getAlignmentQuestionProgress(
+        {
+          sections: [
+            {
+              section: "token",
+              question_count: 5,
+              covered_count: 3,
+              complete: false
+            },
+            {
+              section: "layout",
+              question_count: 4,
+              covered_count: 4,
+              complete: true
+            }
+          ],
+          total_questions: 9,
+          can_complete: false
+        },
+        "token"
+      )
+    ).toEqual({
+      stageCompleted: 3,
+      stageTotal: 5,
+      overallCompleted: 7,
+      overallTotal: 9
+    });
+  });
+
   test("projects the fixed six-part gate and enables Complete only with full coverage", () => {
     expect(ALIGNMENT_STAGES.map((stage) => stage.label)).toEqual([
       "Design principle",

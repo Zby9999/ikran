@@ -154,17 +154,27 @@
 .questionHeading {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 6px;
   color: #000;
   line-height: normal;
 }
 
-.evidenceAnchor {
-  overflow: hidden;
-  max-width: 50%;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.questionNumber {
+  flex: 0 0 auto;
+  font-weight: 400;
+}
+
+.questionCopy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.questionObservation {
+  color: #000;
+  font-weight: 400;
 }
 
 .questionText {
@@ -224,11 +234,16 @@
 .annotationCard {
   width: 320px;
   overflow: hidden;
-  border: 1px solid #a5a5a5;
+  border: 1px solid #6e6e6e;
   border-radius: 8px;
   background: #ebebeb;
   color: #3d3d3d;
   box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+  transition: width 140ms ease, box-shadow 120ms ease;
+}
+
+.annotationCard[data-editing="true"] {
+  width: 360px;
 }
 
 .annotationBrowse {
@@ -258,11 +273,6 @@
   justify-content: space-between;
   gap: 12px;
   color: #000;
-  font-weight: 500;
-}
-
-.annotationAnchor {
-  color: #6e6e6e;
   font-weight: 400;
 }
 
@@ -272,31 +282,44 @@
 
 .annotationEditor {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
+  width: 100%;
+  height: 56px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 8px 20px;
+  border-top: 1px solid #6e6e6e;
+  background: #fff;
 }
 
 .annotationEditor textarea {
-  min-height: 84px;
-  resize: vertical;
-  border: 1px solid #a5a5a5;
-  border-radius: 6px;
+  min-width: 0;
+  height: 38px;
+  flex: 1;
+  resize: none;
+  border: 0;
   outline: 0;
-  background: #fff;
+  background: transparent;
   color: #3d3d3d;
-  font: 400 13px/1.4 Inter, sans-serif;
+  font: 400 13px/19px Inter, sans-serif;
+  letter-spacing: -0.39px;
 }
 
-.annotationEditor textarea:focus-visible {
-  border-color: #6e6e6e;
-  box-shadow: 0 0 0 2px rgb(110 110 110 / 18%);
+.annotationEditor textarea::placeholder {
+  color: #949494;
 }
 
-.annotationActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
+.annotationSubmit {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: #6e6e6e !important;
+  color: #fff !important;
+}
+
+.annotationSubmit:disabled {
+  opacity: 0.45;
 }
 
 .srOnly {

@@ -21,6 +21,7 @@ import {
 import {
   buildAlignmentProjectionPlan,
   type AlignmentAgentAnnotationRecord,
+  type AlignmentCardProjection,
   type AlignmentProjectionInput,
   type AlignmentProjectionShape,
   type AlignmentQuestionCardRecord,
@@ -71,6 +72,16 @@ function tldrawId(shape: AlignmentProjectionShape): TLShapeId {
   return createShapeId(shape.id);
 }
 
+export function alignmentCardShapeProps(
+  props: AlignmentCardProjection["props"]
+): AlignmentCardShape["props"] {
+  const { focusSelection, ...shapeProps } = props;
+  return {
+    ...shapeProps,
+    focusSelectionJson: focusSelection ? JSON.stringify(focusSelection) : ""
+  };
+}
+
 function createProjectedShape(editor: Editor, shape: AlignmentProjectionShape) {
   const id = tldrawId(shape);
   if (shape.type === ALIGNMENT_CARD_TYPE) {
@@ -81,12 +92,7 @@ function createProjectedShape(editor: Editor, shape: AlignmentProjectionShape) {
       y: shape.y,
       isLocked: true,
       meta: shape.meta,
-      props: {
-        ...shape.props,
-        focusSelectionJson: shape.props.focusSelection
-          ? JSON.stringify(shape.props.focusSelection)
-          : ""
-      }
+      props: alignmentCardShapeProps(shape.props)
     });
   } else if (shape.type === ALIGNMENT_TARGET_TYPE) {
     editor.createShape<AlignmentTargetShape>({
@@ -125,13 +131,10 @@ function updateProjectedShape(editor: Editor, shape: AlignmentProjectionShape) {
       isLocked: true,
       meta: shape.meta,
       props: {
-        ...shape.props,
-        w: expanded ? 360 : 320,
+        ...alignmentCardShapeProps(shape.props),
+        w: expanded || editing ? 360 : 320,
         expanded,
-        editing,
-        focusSelectionJson: shape.props.focusSelection
-          ? JSON.stringify(shape.props.focusSelection)
-          : ""
+        editing
       }
     });
   } else if (shape.type === ALIGNMENT_TARGET_TYPE) {
