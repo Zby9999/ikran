@@ -26,7 +26,11 @@ export default async function globalSetup() {
     await new Promise<void>((resolve, reject) => {
       const child = spawn(
         nextBin,
-        ["build"],
+        // Turbopack can remain indefinitely in the compile stage when an
+        // independent `next dev` instance is watching the same checkout. E2E
+        // must be runnable while a designer's Workbench is open, so use the
+        // production-supported webpack builder for this isolated test build.
+        ["build", "--webpack"],
         {
           env: { ...process.env, IKRAN_NEXT_DIST_DIR: SHARED_BUILD_DIR },
           stdio: ["ignore", "pipe", "pipe"],

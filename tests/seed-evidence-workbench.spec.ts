@@ -387,6 +387,106 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     expect(seedReferencePostsFromUi).toEqual([]);
   });
 
+  test("07A: Next Phase persists Alignment preparation and survives reload", async ({
+    page,
+    runtime,
+    folder
+  }) => {
+    const token = await captureToken(page, runtime.baseURL);
+    await bindFolder(token, folder, runtime.port);
+    const captured = await agentCaptureSeed(token, runtime.port, {
+      referenceNote: "Immutable preparation snapshot"
+    });
+    expect(captured.status).toBe(200);
+
+    const description = "A calm, precise product language";
+    const readiness = await rawPatch(
+      "/api/project/readiness",
+      { designLanguageDescription: description },
+      { "x-ikran-session": token, "content-type": "application/json" },
+      runtime.port
+    );
+    expect(readiness.status).toBe(200);
+
+    await page.reload();
+    await enterWorkbench(page, {
+      port: runtime.port,
+      sessionToken: token
+    });
+
+    const workbench = page.getByTestId("seed-workbench");
+    await expect(workbench).toHaveAttribute(
+      "data-alignment-workflow-stage",
+      "seed-reference-registration"
+    );
+    await expect(workbench).toHaveAttribute("data-canvas-stage", "sign-seed");
+
+    await page.getByTestId("sign-seed-next-phase").click();
+    await expect(workbench).toHaveAttribute(
+      "data-alignment-workflow-stage",
+      "alignment-preparing"
+    );
+    await expect(workbench).toHaveAttribute("data-canvas-stage", "extraction");
+    await expect(page.getByTestId("sign-seed-next-phase")).toHaveCount(0);
+
+    const alignmentResponse = await rawGet(
+      "/api/design-intent-alignment",
+      { "x-ikran-session": token },
+      runtime.port
+    );
+    expect(alignmentResponse.status).toBe(200);
+    const alignment = JSON.parse(alignmentResponse.body) as {
+      preparation: {
+        workflow: { stage: string };
+        current_attempt: { status: string };
+        input_snapshot: {
+          data: {
+            design_language_description: string;
+            seed_references: Array<{
+              id: string;
+              reference_note: string;
+              evidence_version: { id: string };
+            }>;
+          };
+        };
+        commands: Array<{ command_type: string; status: string }>;
+      };
+    };
+    expect(alignment.preparation).toMatchObject({
+      workflow: { stage: "alignment-preparing" },
+      current_attempt: { status: "preparing" },
+      input_snapshot: {
+        data: {
+          design_language_description: description,
+          seed_references: [
+            {
+              id: captured.record.id,
+              reference_note: "Immutable preparation snapshot",
+              evidence_version: { id: captured.surface.id }
+            }
+          ]
+        }
+      },
+      commands: [
+        {
+          command_type: "prepare_design_intent_alignment",
+          status: "pending"
+        }
+      ]
+    });
+
+    await page.reload();
+    await enterWorkbench(page, {
+      port: runtime.port,
+      sessionToken: token
+    });
+    await expect(workbench).toHaveAttribute(
+      "data-alignment-workflow-stage",
+      "alignment-preparing"
+    );
+    await expect(workbench).toHaveAttribute("data-canvas-stage", "extraction");
+  });
+
   test("empty Workbench is FolderChrome + empty canvas; no seed-add / URL / intent inputs", async ({
     page,
     runtime,

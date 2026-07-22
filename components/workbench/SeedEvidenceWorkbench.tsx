@@ -62,6 +62,7 @@ export function SeedEvidenceWorkbench({
     flushWorkbenchLayout,
     updateSeedReferenceNote,
     updateDesignLanguageDescription,
+    prepareDesignIntentAlignment,
     recordDesignerAnswer,
     appendAgentAnnotationInformation,
     completeDesignIntentAlignment,
@@ -110,10 +111,13 @@ export function SeedEvidenceWorkbench({
     "loading" | "closed" | "open"
   >("loading");
   const [canvasEntered, setCanvasEntered] = useState(false);
-  /** After Enter Canvas: Sign Seed Design → Next Phase → Extraction (Figma 329:429). */
-  const [canvasStage, setCanvasStage] = useState<"sign-seed" | "extraction">(
-    "sign-seed"
-  );
+  /** Runtime-owned: Seed Reference registration → Alignment preparation. */
+  const workflowStage =
+    alignment?.preparation.workflow.stage ?? "seed-reference-registration";
+  const canvasStage: "sign-seed" | "extraction" =
+    workflowStage === "seed-reference-registration"
+      ? "sign-seed"
+      : "extraction";
   const [alignmentStage, setAlignmentStage] =
     useState<AlignmentStageId>(DEFAULT_ALIGNMENT_STAGE);
 
@@ -212,7 +216,6 @@ export function SeedEvidenceWorkbench({
       } else {
         setGateStatus("closed");
         setCanvasEntered(false);
-        setCanvasStage("sign-seed");
       }
     })();
     return () => {
@@ -241,6 +244,7 @@ export function SeedEvidenceWorkbench({
       data-canvas-engine="tldraw"
       data-figma-gate={canvasLocked ? "closed" : "open"}
       data-canvas-stage={canvasLocked ? undefined : canvasStage}
+      data-alignment-workflow-stage={workflowStage}
     >
       <div className="seed-workbench__folder-stack">
         <FolderChrome
@@ -256,7 +260,9 @@ export function SeedEvidenceWorkbench({
             clearPhaseErrorTimers();
             setPhaseErrorExiting(false);
             setPhaseError(null);
-            setCanvasStage("extraction");
+            void prepareDesignIntentAlignment().then((result) => {
+              if (!result.ok) showPhaseError(result.error);
+            });
           }}
           onFollowAgent={() => setFollowAgentMode((v) => !v)}
           followAgentActive={followAgentMode}
@@ -352,7 +358,6 @@ export function SeedEvidenceWorkbench({
               onVerifiedEnter={() => {
                 setGateStatus("open");
                 setCanvasEntered(true);
-                setCanvasStage("sign-seed");
               }}
             />
           </div>

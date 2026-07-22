@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 9;
+export const CURRENT_SCHEMA_VERSION = 10;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -685,6 +685,166 @@ CREATE INDEX idx_alignment_question_cards_created_at
 ALTER TABLE agent_alignment_annotations
   ADD COLUMN title TEXT NOT NULL DEFAULT 'Agent Annotation';
 `);
+    }
+  },
+  {
+    version: 10,
+    up(db) {
+      // Issue 07A: durable workflow handoff from Seed Reference registration
+      // into an immutable Alignment input snapshot and Agent command.
+      db.exec(`
+CREATE TABLE alignment_input_snapshots (
+  id TEXT PRIMARY KEY,
+  snapshot_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TRIGGER alignment_input_snapshots_no_update
+BEFORE UPDATE ON alignment_input_snapshots
+BEGIN
+  SELECT RAISE(ABORT, 'alignment_input_snapshot_immutable');
+END;
+CREATE TRIGGER alignment_input_snapshots_no_delete
+BEFORE DELETE ON alignment_input_snapshots
+BEGIN
+  SELECT RAISE(ABORT, 'alignment_input_snapshot_immutable');
+END;
+
+CREATE TABLE alignment_attempts (
+  id TEXT PRIMARY KEY,
+  input_snapshot_id TEXT NOT NULL REFERENCES alignment_input_snapshots(id) ON DELETE RESTRICT,
+  status TEXT NOT NULL CHECK (status IN ('preparing', 'answering', 'completed', 'abandoned')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT,
+  abandoned_at TEXT
+);
+
+CREATE TABLE agent_commands (
+  id TEXT PRIMARY KEY,
+  command_type TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'claimed', 'completed', 'cancelled', 'failed')),
+  alignment_attempt_id TEXT NOT NULL REFERENCES alignment_attempts(id) ON DELETE RESTRICT,
+  payload_json TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  claimed_at TEXT,
+  completed_at TEXT,
+  cancelled_at TEXT
+);
+CREATE INDEX idx_agent_commands_status_created_at
+  ON agent_commands(status, created_at, id);
+CREATE INDEX idx_agent_commands_alignment_attempt_id
+  ON agent_commands(alignment_attempt_id);
+
+CREATE TABLE project_workflow (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  stage TEXT NOT NULL CHECK (stage IN (
+    'seed-reference-registration',
+    'alignment-preparing',
+    'alignment-answering',
+    'initial-design-system-preparing'
+  )),
+  current_alignment_attempt_id TEXT REFERENCES alignment_attempts(id) ON DELETE RESTRICT,
+  updated_at TEXT
+);
+
+ALTER TABLE alignment_question_cards
+  ADD COLUMN alignment_attempt_id TEXT REFERENCES alignment_attempts(id) ON DELETE RESTRICT;
+ALTER TABLE agent_alignment_annotations
+  ADD COLUMN alignment_attempt_id TEXT REFERENCES alignment_attempts(id) ON DELETE RESTRICT;
+      `);
+
+      const legacyState = db
+        .prepare(
+          `SELECT status, completed_at
+           FROM design_intent_alignment
+           WHERE singleton = 1`
+        )
+        .get() as { status: string; completed_at: string | null } | undefined;
+      const legacyQuestionCount = (
+        db
+          .prepare("SELECT COUNT(*) AS count FROM alignment_question_cards")
+          .get() as { count: number }
+      ).count;
+      const hasLegacyAttempt =
+        legacyQuestionCount > 0 || legacyState?.status === "completed";
+
+      if (hasLegacyAttempt) {
+        const now = legacyState?.completed_at ?? new Date().toISOString();
+        const description = db
+          .prepare(
+            `SELECT design_language_description AS value
+             FROM project_meta WHERE singleton = 1`
+          )
+          .get() as { value: string } | undefined;
+        const seedRows = db
+          .prepare(
+            `SELECT s.id, s.figma_seed_reference, s.file_key, s.node_id,
+                    s.original_design_intent AS reference_note,
+                    e.id AS evidence_version_id, e.frame_node_id,
+                    e.frame_name, e.created_at AS evidence_created_at
+             FROM seed_references s
+             LEFT JOIN figma_evidence_surfaces e ON e.id = s.current_surface_id
+             ORDER BY s.created_at ASC, s.id ASC`
+          )
+          .all() as Array<Record<string, unknown>>;
+        const snapshot = {
+          design_language_description: description?.value ?? "",
+          seed_references: seedRows.map((row) => ({
+            id: String(row.id),
+            figma_seed_reference: String(row.figma_seed_reference),
+            file_key: String(row.file_key),
+            node_id: String(row.node_id),
+            reference_note: String(row.reference_note ?? ""),
+            evidence_version:
+              typeof row.evidence_version_id === "string"
+                ? {
+                    id: row.evidence_version_id,
+                    frame_node_id: String(row.frame_node_id),
+                    frame_name: String(row.frame_name),
+                    created_at: String(row.evidence_created_at)
+                  }
+                : null
+          }))
+        };
+        db.prepare(
+          `INSERT INTO alignment_input_snapshots (id, snapshot_json, created_at)
+           VALUES ('legacy-alignment-snapshot', ?, ?)`
+        ).run(JSON.stringify(snapshot), now);
+        db.prepare(
+          `INSERT INTO alignment_attempts
+             (id, input_snapshot_id, status, created_at, updated_at, completed_at, abandoned_at)
+           VALUES ('legacy-alignment-attempt', 'legacy-alignment-snapshot', ?, ?, ?, ?, NULL)`
+        ).run(
+          legacyState?.status === "completed" ? "completed" : "answering",
+          now,
+          now,
+          legacyState?.status === "completed" ? now : null
+        );
+        db.exec(
+          `UPDATE alignment_question_cards
+           SET alignment_attempt_id = 'legacy-alignment-attempt';
+           UPDATE agent_alignment_annotations
+           SET alignment_attempt_id = 'legacy-alignment-attempt';`
+        );
+        db.prepare(
+          `INSERT INTO project_workflow
+             (singleton, stage, current_alignment_attempt_id, updated_at)
+           VALUES (1, ?, 'legacy-alignment-attempt', ?)`
+        ).run(
+          legacyState?.status === "completed"
+            ? "initial-design-system-preparing"
+            : "alignment-answering",
+          now
+        );
+      } else {
+        db.exec(`
+INSERT INTO project_workflow
+  (singleton, stage, current_alignment_attempt_id, updated_at)
+VALUES (1, 'seed-reference-registration', NULL, NULL);
+        `);
+      }
     }
   }
 ];

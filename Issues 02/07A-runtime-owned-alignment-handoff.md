@@ -1,6 +1,6 @@
 # 07A — Runtime-owned Next phase 与 Alignment Preparation
 
-**Status:** ready-for-agent
+**Status:** complete
 
 ## Parent
 
@@ -18,16 +18,20 @@
 
 ## Acceptance criteria
 
-- [ ] `Next phase` 只出现在 Seed Reference 登记与六部分问题之间，不出现在六个 Alignment section 之间。
-- [ ] Design Language Description 非空且 Seed Reference collection 满足现有进入条件时，点击 `Next phase` 原子创建 Alignment input snapshot、状态为 `preparing` 的 Alignment attempt 和一条 `prepare_design_intent_alignment` Agent command；任一步失败均不留下半成品。
-- [ ] Snapshot 精确记录当时的 Seed References、current captured evidence versions、项目级 Design Language Description 和各 Reference Notes；创建后不可被后续项目编辑原地改写。
-- [ ] Workbench 的 workflow stage 由 Runtime 状态驱动；请求成功后通过正常 HTTP/SSE 投影进入 `preparing`，刷新或重新打开 Workbench 后仍保持该状态。
-- [ ] 同一显式动作的安全重试不会重复创建 attempt、snapshot 或 command；真正重新登记 Seed Reference 后的新一次 `Next phase` 除外。
-- [ ] Agent 未连接、等待调用已断开或 Runtime 重启时，已提交的 command 仍可恢复为待处理工作。
-- [ ] 缺少 Description、没有有效 Seed Reference、已有不可兼容 active attempt 或事务失败时返回可操作错误，并保持原 workflow state。
-- [ ] 实现不新增可见 UI；现有控件的结构与视觉保持不变，只补充 durable state 所需的 disabled、ARIA 或测试语义。
-- [ ] 自动化测试以真实 Workbench 交互贯穿 HTTP command、SQLite 状态、SSE 投影与 reload，证明 `Next phase` 不是本地 React 状态。
+- [x] `Next phase` 只出现在 Seed Reference 登记与六部分问题之间，不出现在六个 Alignment section 之间。
+- [x] Design Language Description 非空且 Seed Reference collection 满足现有进入条件时，点击 `Next phase` 原子创建 Alignment input snapshot、状态为 `preparing` 的 Alignment attempt 和一条 `prepare_design_intent_alignment` Agent command；任一步失败均不留下半成品。
+- [x] Snapshot 精确记录当时的 Seed References、current captured evidence versions、项目级 Design Language Description 和各 Reference Notes；创建后不可被后续项目编辑原地改写。
+- [x] Workbench 的 workflow stage 由 Runtime 状态驱动；请求成功后通过正常 HTTP/SSE 投影进入 `preparing`，刷新或重新打开 Workbench 后仍保持该状态。
+- [x] 同一显式动作的安全重试不会重复创建 attempt、snapshot 或 command；真正重新登记 Seed Reference 后的新一次 `Next phase` 除外。
+- [x] Agent 未连接、等待调用已断开或 Runtime 重启时，已提交的 command 仍可恢复为待处理工作。
+- [x] 缺少 Description、没有有效 Seed Reference、已有不可兼容 active attempt 或事务失败时返回可操作错误，并保持原 workflow state。
+- [x] 实现不新增可见 UI；现有控件的结构与视觉保持不变，只补充 durable state 所需的 disabled、ARIA 或测试语义。
+- [x] 自动化测试以真实 Workbench 交互贯穿 HTTP command、SQLite 状态、SSE 投影与 reload，证明 `Next phase` 不是本地 React 状态。
 
 ## Blocked by
 
 - `07-design-intent-alignment-six-part-gate.md`
+
+## Completion report — 2026-07-22
+
+已将 `Next Phase` 接入 Runtime-owned workflow：单一事务冻结不可变 input snapshot、创建 Alignment attempt 与 durable pending Agent command，并由 HTTP/SSE 数据驱动 Workbench 阶段与 reload 恢复；未新增任何可见 UI。验证通过：TypeScript typecheck、6 个相关 Vitest 文件共 71 项、真实 production Workbench Playwright 纵向测试，以及独立 mock Runtime 上由 Agent 使用 Browser Use 完成的真实点击与刷新审查。

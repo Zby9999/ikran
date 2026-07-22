@@ -5,7 +5,11 @@
 // failures (`db_error` and other unexpected internals) use 500 so clients may
 // retry.
 
-const CONFLICT_REASONS = new Set(["project_mismatch"]);
+const CONFLICT_REASONS = new Set([
+  "project_mismatch",
+  "alignment_attempt_active",
+  "alignment_completed"
+]);
 const NOT_FOUND_REASONS = new Set(["not_found"]);
 const GONE_REASONS = new Set(["endpoint_retired"]);
 const GATEWAY_TIMEOUT_REASONS = new Set(["figma_api_timeout"]);

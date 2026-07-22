@@ -532,7 +532,7 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(9);
+        expect(CURRENT_SCHEMA_VERSION).toBe(10);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
@@ -545,7 +545,11 @@ test.describe("PRAGMA user_version migration runner", () => {
             "annotation_primary_confirmations",
             "design_intent_alignment",
             "agent_alignment_annotations",
-            "alignment_question_cards"
+            "alignment_question_cards",
+            "alignment_input_snapshots",
+            "alignment_attempts",
+            "agent_commands",
+            "project_workflow"
           ])
         );
         const meta = db

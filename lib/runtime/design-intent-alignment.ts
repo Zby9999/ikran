@@ -4,6 +4,7 @@ import type { DatabaseSync as DatabaseType } from "node:sqlite";
 import { closeProjectDb, openProjectDb, withProjectTransaction } from "./db";
 import { logEventOnDb } from "./events";
 import { emitRecordEvent } from "./record-bus";
+import { getAlignmentPreparationOnDb } from "./alignment-preparation";
 import {
   asEvidenceBounds,
   parsePositionalNodes
@@ -656,9 +657,11 @@ export function getDesignIntentAlignment(projectPath: string) {
     ).map((row) => mapAnnotation(db, row));
     const state = db.prepare("SELECT status, completed_at FROM design_intent_alignment WHERE singleton = 1").get() as { status: "draft" | "completed"; completed_at: string | null };
     const coverage = coverageFor(questionCards);
+    const preparation = getAlignmentPreparationOnDb(db);
     return {
       sections: ALIGNMENT_SECTIONS,
       alignment: state,
+      preparation,
       annotations,
       question_cards: questionCards,
       coverage: {

@@ -27,6 +27,7 @@ export type EventType =
   | "question_card_anchor_updated"
   | "agent_annotation_updated"
   | "designer_answer_submitted"
+  | "alignment_preparation_started"
   | "design_intent_alignment_completed"
   | "seed_extraction_stage_completed"
   | "draft_design_system_generated"

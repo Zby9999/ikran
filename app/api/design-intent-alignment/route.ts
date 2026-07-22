@@ -11,6 +11,7 @@ import {
   createAlignmentQuestionCardCommand,
   createAlignmentQuestionCardInputSchema,
   parseCommandInput,
+  prepareDesignIntentAlignmentCommand,
   readDesignIntentAlignmentCommand,
   recordDesignerAnswerCommand,
   recordDesignerAnswerInputSchema,
@@ -83,6 +84,15 @@ export async function PATCH(request: NextRequest) {
   }
   const raw = body && typeof body === "object" ? body as Record<string, unknown> : {};
   const action = raw.action;
+  if (action === "prepare") {
+    const result = prepareDesignIntentAlignmentCommand(ctx.projectPath);
+    return result.ok
+      ? NextResponse.json(result)
+      : NextResponse.json(
+          { ok: false, error: result.reason },
+          { status: commandErrorHttpStatus(result.reason) }
+        );
+  }
   if (action === "complete") {
     const result = completeDesignIntentAlignmentCommand(ctx.projectPath);
     return result.ok

@@ -676,6 +676,9 @@ export function createWorkbenchDataClient(
   const completeDesignIntentAlignment = () =>
     patchAlignment({ action: "complete" }, "complete_alignment_failed");
 
+  const prepareDesignIntentAlignment = () =>
+    patchAlignment({ action: "prepare" }, "prepare_alignment_failed");
+
   return {
     loadAll,
     createAnnotation,
@@ -686,6 +689,7 @@ export function createWorkbenchDataClient(
     flushWorkbenchLayout,
     updateSeedReferenceNote,
     updateDesignLanguageDescription,
+    prepareDesignIntentAlignment,
     recordDesignerAnswer,
     appendAgentAnnotationInformation,
     completeDesignIntentAlignment,

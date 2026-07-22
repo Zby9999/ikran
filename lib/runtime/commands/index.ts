@@ -63,6 +63,11 @@ export {
 } from "./design-intent-alignment";
 
 export {
+  prepareDesignIntentAlignmentCommand,
+  readAlignmentPreparationCommand
+} from "./alignment-preparation";
+
+export {
   parseCommandInput,
   createRegionAnnotationInputSchema,
   createRegionAnnotationInputShape,
