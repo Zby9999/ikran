@@ -11,6 +11,10 @@ import { useWorkbenchRuntime } from "@/components/runtime/use-workbench-runtime"
 import { FolderChrome } from "./folder-chrome";
 import { FigmaVerificationPanelController } from "./figma-verification-panel";
 import { useFigmaPasteCapture } from "./use-figma-paste-capture";
+import {
+  announceWorkbenchSemanticActivity,
+  useWorkbenchPresence
+} from "./use-workbench-presence";
 import { staleAnnotationWarning } from "./annotation-stale-warning";
 import { WorkbenchToastAlert } from "./workbench-toast-alert";
 import { RuntimeShutdownControl } from "./runtime-shutdown-control";
@@ -45,6 +49,7 @@ export function SeedEvidenceWorkbench({
   folderName: string;
   onBack: () => void;
 }) {
+  useWorkbenchPresence(session);
   const {
     seeds: records,
     surfaces,
@@ -260,6 +265,7 @@ export function SeedEvidenceWorkbench({
             clearPhaseErrorTimers();
             setPhaseErrorExiting(false);
             setPhaseError(null);
+            announceWorkbenchSemanticActivity();
             void prepareDesignIntentAlignment().then((result) => {
               if (!result.ok) showPhaseError(result.error);
             });
@@ -303,6 +309,7 @@ export function SeedEvidenceWorkbench({
             coverage={alignmentCoverage}
             currentStage={alignmentStage}
             onComplete={() => {
+              announceWorkbenchSemanticActivity();
               void completeDesignIntentAlignment().then((result) => {
                 if (!result.ok) showPhaseError(result.error);
               });
@@ -357,6 +364,7 @@ export function SeedEvidenceWorkbench({
             <FigmaVerificationPanelController
               connect={connectFigma}
               onVerifiedEnter={() => {
+                announceWorkbenchSemanticActivity();
                 setGateStatus("open");
                 setCanvasEntered(true);
               }}

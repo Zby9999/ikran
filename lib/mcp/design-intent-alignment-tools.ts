@@ -20,6 +20,7 @@ import {
   requireActiveProjectCommand
 } from "../runtime/commands";
 import { failureResult, type RegisterIkranToolsDeps } from "./shared";
+import { waitForAgentCommand } from "../runtime/adaptive-agent-wait";
 
 function success(rt: Awaited<ReturnType<RegisterIkranToolsDeps["ensureRuntime"]>>, value: Record<string, unknown>) {
   return {
@@ -37,6 +38,17 @@ export function registerDesignIntentAlignmentTools(
     const project = requireActiveProjectCommand();
     return project.ok ? { ok: true as const, rt, projectPath: project.project.path } : { ok: false as const, result: failureResult(tool, project.reason, rt) };
   };
+
+  mcp.registerTool("wait_for_agent_command", {
+    description: "Wait for the next durable Ikran Agent command. Returns immediately when a pending command exists; otherwise keeps an adaptive three-minute lease while the visible, focused Workbench reports real designer interaction, unsubmitted edits, or submitted semantic activity. Background connection/heartbeat alone does not renew. Cancellation or idle ends only this wait and never advances workflow or consumes a later command. No arguments."
+  }, async (extra) => {
+    const ctx = await active("wait_for_agent_command");
+    if (!ctx.ok) return ctx.result;
+    const result = await waitForAgentCommand(ctx.projectPath, {
+      signal: extra.signal
+    });
+    return success(ctx.rt, result);
+  });
 
   mcp.registerTool("claim_alignment_preparation", {
     description: "Claim the current durable prepare_design_intent_alignment command. Returns the stable command, Alignment attempt, immutable input snapshot, exact Seed Reference notes, and captured evidence identities needed to prepare all six question sections. Safe to retry after disconnect; a repeated claim returns the same claimed work. No arguments."
