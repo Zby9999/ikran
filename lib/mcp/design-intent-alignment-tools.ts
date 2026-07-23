@@ -50,7 +50,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("claim_alignment_preparation", {
-    description: "Claim the current durable prepare_design_intent_alignment command. Returns the stable command, Alignment attempt, immutable input snapshot, exact Seed Reference notes, and captured evidence identities needed to prepare all six question sections. Safe to retry after disconnect; a repeated claim returns the same claimed work. No arguments."
+    description: "Claim the current durable prepare_design_intent_alignment command. Returns the stable command, Alignment attempt, immutable input snapshot, exact Seed Reference notes, and captured evidence identities needed to prepare all six sections. In each section, create its gray Agent Annotation hypotheses first, then its colored Question cards, before moving to the next section. Safe to retry after disconnect; a repeated claim returns the same claimed work. No arguments."
   }, async () => {
     const ctx = await active("claim_alignment_preparation");
     if (!ctx.ok) return ctx.result;
@@ -59,7 +59,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("create_alignment_question_card", {
-    description: "Create one Runtime-owned Design Intent Alignment Question card for the claimed current attempt. Pass the alignmentAttemptId returned by claim_alignment_preparation and a stable idempotencyKey for this semantic question. The evidence anchor must belong to that attempt's immutable snapshot. The observation field is the card title: use a concise 2–5 word noun phrase (48 characters maximum), never a sentence. Each of the six sections must end with 2–5 questions and every question needs a non-empty proposedAnswer before finalize. For a whole-Frame question use a single surface target; never approximate it with a nearly full-size region. For one specific element or component, prefer its exact positional node; use a free region only when no exact node represents the target. Use focus-target-set for repeated or shared elements across components/Frames.",
+    description: "Create one Runtime-owned Design Intent Alignment Question card for the claimed current attempt. Before the first Question in a section, create at least one gray Agent Annotation for that same section; Runtime rejects the Question otherwise. Pass the alignmentAttemptId returned by claim_alignment_preparation and a stable idempotencyKey for this semantic question. The evidence anchor must belong to that attempt's immutable snapshot. The observation field is the card title: use a concise 2–5 word noun phrase (48 characters maximum), never a sentence. Each of the six sections must end with 2–5 questions and every question needs a non-empty proposedAnswer before finalize. For a whole-Frame question use a single surface target; never approximate it with a nearly full-size region. For one specific element or component, prefer its exact positional node; use a free region only when no exact node represents the target. Use focus-target-set for repeated or shared elements across components/Frames.",
     inputSchema: createAlignmentQuestionCardInputSchema
   }, async (args) => {
     const ctx = await active("create_alignment_question_card");
@@ -69,7 +69,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("finalize_alignment_preparation", {
-    description: "Explicitly finish the claimed Alignment preparation attempt after every one of the six sections contains 2–5 valid Question cards with proposed answers. Atomically completes the durable Agent command and moves the same attempt from preparing to answering. Safe to retry with the same alignmentAttemptId.",
+    description: "Explicitly finish the claimed Alignment preparation attempt only after every one of the six sections contains at least one gray Agent Annotation followed by 2–5 valid colored Question cards with proposed answers. Both card kinds are mandatory in each section. Atomically completes the durable Agent command and moves the same attempt from preparing to answering. Safe to retry with the same alignmentAttemptId.",
     inputSchema: finalizeAlignmentPreparationInputSchema
   }, async (args) => {
     const ctx = await active("finalize_alignment_preparation");
@@ -82,7 +82,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("create_agent_annotation", {
-    description: "Create a non-blocking gray Agent Annotation with a short non-empty title and assumption body. confirmed and reasonable inference retain audit provenance but share the same Workbench card kind.",
+    description: "Create an attempt-bound, section-bound, idempotent gray Agent Annotation with a short non-empty title and a meaningful confirmed observation or reasonable assumption body. For each section, create its Annotation before creating that section's colored Question cards. Use the same three evidence anchor modes as Questions: a single node/region for one specific target, a single surface for a whole Frame, or focus-target-set for repeated/shared elements. At least one gray Agent Annotation is mandatory in every section before Alignment preparation can finish.",
     inputSchema: createAgentAnnotationInputSchema
   }, async (args) => {
     const ctx = await active("create_agent_annotation");
@@ -102,7 +102,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("record_designer_answer", {
-    description: "Immediately persist a non-empty designer-edited final answer for a Question card with auditable answer source.",
+    description: "Persist an explicit non-empty designer confirmation for a Question card. Submitting the unchanged proposed answer records agent-proposed-designer-accepted; submitting an edited answer records designer-edited. A proposed answer alone never counts toward Alignment coverage.",
     inputSchema: recordDesignerAnswerInputSchema
   }, async (args) => {
     const ctx = await active("record_designer_answer");

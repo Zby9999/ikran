@@ -527,12 +527,85 @@ function seedV3Db(
 }
 
 test.describe("PRAGMA user_version migration runner", () => {
+  test("v12→v13 preserves populated attempt-bound Agent Annotations with a null legacy section", () => {
+    withTempProject((dir) => {
+      const initialized = openProjectDb(dir);
+      closeProjectDb(initialized);
+      const dbPath = getProjectDbPath(dir);
+      const v12 = new DatabaseSync(dbPath);
+      try {
+        v12.prepare(
+          `INSERT INTO alignment_input_snapshots (id, snapshot_json, created_at)
+           VALUES ('snapshot-v12', ?, '2026-07-23T00:00:00.000Z')`
+        ).run(
+          JSON.stringify({
+            design_language_description: "Legacy",
+            seed_references: []
+          })
+        );
+        v12.exec(`
+          INSERT INTO alignment_attempts
+            (id, input_snapshot_id, status, created_at, updated_at)
+          VALUES
+            ('attempt-v12', 'snapshot-v12', 'preparing',
+             '2026-07-23T00:00:00.000Z', '2026-07-23T00:00:00.000Z');
+          INSERT INTO agent_alignment_annotations
+            (id, inference, title, body, additional_information_json,
+             anchor_json, created_at, updated_at, alignment_attempt_id,
+             agent_idempotency_key, section)
+          VALUES
+            ('annotation-v12', 'reasonable', 'Legacy Hypothesis',
+             'Preserve this row.', '[]', '{"kind":"single","target":{"kind":"surface"}}',
+             '2026-07-23T00:00:00.000Z', '2026-07-23T00:00:00.000Z',
+             'attempt-v12', 'annotation-v12-key', 'layout');
+          DROP INDEX idx_agent_annotation_attempt_section;
+          ALTER TABLE agent_alignment_annotations DROP COLUMN section;
+          PRAGMA user_version = 12;
+        `);
+      } finally {
+        v12.close();
+      }
+
+      const migrated = openProjectDb(dir);
+      try {
+        expect(userVersion(migrated)).toBe(13);
+        expect(
+          migrated
+            .prepare(
+              `SELECT id, alignment_attempt_id, agent_idempotency_key,
+                      section, anchor_json
+               FROM agent_alignment_annotations
+               WHERE id = 'annotation-v12'`
+            )
+            .get()
+        ).toEqual({
+          id: "annotation-v12",
+          alignment_attempt_id: "attempt-v12",
+          agent_idempotency_key: "annotation-v12-key",
+          section: null,
+          anchor_json: '{"kind":"single","target":{"kind":"surface"}}'
+        });
+        const indexes = migrated
+          .prepare("PRAGMA index_list(agent_alignment_annotations)")
+          .all() as Array<{ name: string }>;
+        expect(indexes.map((index) => index.name)).toEqual(
+          expect.arrayContaining([
+            "idx_agent_annotation_attempt_delivery",
+            "idx_agent_annotation_attempt_section"
+          ])
+        );
+      } finally {
+        closeProjectDb(migrated);
+      }
+    });
+  });
+
   test("fresh DB opens at CURRENT_SCHEMA_VERSION without backup", () => {
     withTempProject((dir) => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(11);
+        expect(CURRENT_SCHEMA_VERSION).toBe(13);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
@@ -587,6 +660,13 @@ test.describe("PRAGMA user_version migration runner", () => {
           ])
         );
         expect(annCols.find((c) => c.name === "surface_id")?.notnull).toBe(1);
+        const alignmentAnnotationCols = db
+          .prepare("PRAGMA table_info(agent_alignment_annotations)")
+          .all() as Array<{ name: string; notnull: number }>;
+        expect(alignmentAnnotationCols.map((c) => c.name)).toContain("section");
+        expect(
+          alignmentAnnotationCols.find((c) => c.name === "section")?.notnull
+        ).toBe(0);
         const fkViolations = db.prepare("PRAGMA foreign_key_check").all();
         expect(fkViolations).toEqual([]);
         // Final schema: NOT NULL without ALTER DEFAULT '' (table rebuild in v2).

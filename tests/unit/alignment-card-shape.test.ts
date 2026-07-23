@@ -7,8 +7,9 @@ import {
   AlignmentCardShapeUtil,
   AlignmentCardShapeView,
   activateAlignmentCardFocus,
+  alignmentCardXForWidth,
   alignmentCardEditorUpdates,
-  isAlignmentCanvasBlankTarget,
+  isAlignmentCanvasPointerDown,
   normalizeAlignmentCardDimensions,
   type AlignmentCardShape
 } from "../../components/workbench/alignment-card-shape";
@@ -28,6 +29,7 @@ function questionShape(expanded = false): AlignmentCardShape {
     props: {
       w: expanded ? 360 : 320,
       h: 236,
+      placement: "right",
       cardKind: "question",
       stage: "layout",
       number: 1,
@@ -91,40 +93,49 @@ describe("AlignmentCardShapeUtil", () => {
 
   test("keeps only one Question or Agent Annotation editor open", () => {
     const cards = [
-      { id: "question-1", cardKind: "question" as const, expanded: false, editing: false },
-      { id: "question-2", cardKind: "question" as const, expanded: true, editing: false },
-      { id: "annotation-1", cardKind: "agent-annotation" as const, expanded: false, editing: true },
-      { id: "annotation-2", cardKind: "agent-annotation" as const, expanded: false, editing: false }
+      { id: "question-1", x: 100, w: 320, placement: "left" as const, cardKind: "question" as const, expanded: false, editing: false },
+      { id: "question-2", x: 500, w: 360, placement: "right" as const, cardKind: "question" as const, expanded: true, editing: false },
+      { id: "annotation-1", x: 60, w: 360, placement: "left" as const, cardKind: "agent-annotation" as const, expanded: false, editing: true },
+      { id: "annotation-2", x: 500, w: 320, placement: "right" as const, cardKind: "agent-annotation" as const, expanded: false, editing: false }
     ];
 
     expect(alignmentCardEditorUpdates(cards, "question-1")).toEqual([
-      { id: "question-1", expanded: true, editing: false, w: 360 },
-      { id: "question-2", expanded: false, editing: false, w: 320 },
-      { id: "annotation-1", expanded: false, editing: false, w: 320 }
+      { id: "question-1", x: 60, expanded: true, editing: false, w: 360 },
+      { id: "question-2", x: 500, expanded: false, editing: false, w: 320 },
+      { id: "annotation-1", x: 100, expanded: false, editing: false, w: 320 }
     ]);
     expect(alignmentCardEditorUpdates(cards, "annotation-2")).toEqual([
-      { id: "question-2", expanded: false, editing: false, w: 320 },
-      { id: "annotation-1", expanded: false, editing: false, w: 320 },
-      { id: "annotation-2", expanded: false, editing: true, w: 360 }
+      { id: "question-2", x: 500, expanded: false, editing: false, w: 320 },
+      { id: "annotation-1", x: 100, expanded: false, editing: false, w: 320 },
+      { id: "annotation-2", x: 500, expanded: false, editing: true, w: 360 }
     ]);
     expect(alignmentCardEditorUpdates(cards, null)).toEqual([
-      { id: "question-2", expanded: false, editing: false, w: 320 },
-      { id: "annotation-1", expanded: false, editing: false, w: 320 }
+      { id: "question-2", x: 500, expanded: false, editing: false, w: 320 },
+      { id: "annotation-1", x: 100, expanded: false, editing: false, w: 320 }
     ]);
   });
 
-  test("recognizes only tldraw background clicks as blank-canvas dismissal", () => {
-    expect(isAlignmentCanvasBlankTarget({
-      classList: { contains: (value: string) => value === "tl-background" },
-      closest: () => null
+  test("keeps the frame-facing edge fixed while a left card changes width", () => {
+    expect(alignmentCardXForWidth(100, 320, 360, "left")).toBe(60);
+    expect(alignmentCardXForWidth(60, 360, 320, "left")).toBe(100);
+    expect(alignmentCardXForWidth(500, 320, 360, "right")).toBe(500);
+  });
+
+  test("dismisses only semantic tldraw canvas pointer-down events", () => {
+    expect(isAlignmentCanvasPointerDown({
+      type: "pointer",
+      name: "pointer_down",
+      target: "canvas"
     })).toBe(true);
-    expect(isAlignmentCanvasBlankTarget({
-      classList: { contains: () => false },
-      closest: (selector: string) => selector === ".tl-background__wrapper" ? {} : null
-    })).toBe(true);
-    expect(isAlignmentCanvasBlankTarget({
-      classList: { contains: () => false },
-      closest: () => null
+    expect(isAlignmentCanvasPointerDown({
+      type: "pointer",
+      name: "pointer_down",
+      target: "shape"
+    })).toBe(false);
+    expect(isAlignmentCanvasPointerDown({
+      type: "pointer",
+      name: "pointer_up",
+      target: "canvas"
     })).toBe(false);
   });
 
@@ -153,6 +164,7 @@ describe("AlignmentCardShapeUtil", () => {
     ) as AlignmentCardShapeUtil;
     expect(util.getDefaultProps()).toMatchObject({
       w: 320,
+      placement: "right",
       cardKind: "question",
       expanded: false
     });
@@ -183,6 +195,8 @@ describe("AlignmentCardShapeUtil", () => {
     expect(html).toContain("Cards use a stable inset.");
     expect(html).toContain("Should the inset remain 20px?");
     expect(html).not.toContain("Figma node 44:120");
-    expect(html).toContain('style="width:320px;height:236px');
+    expect(html).toContain(
+      'style="width:320px;height:fit-content;top:50%;bottom:auto;transform:translateY(-50%);pointer-events:all'
+    );
   });
 });

@@ -10,6 +10,7 @@ type CommandFailureReason =
   | "no_pending_alignment_command"
   | "stale_alignment_attempt"
   | "alignment_command_not_claimed"
+  | "section_annotation_required"
   | "coverage_incomplete"
   | "db_error";
 
@@ -148,6 +149,28 @@ export function finalizeAlignmentPreparation(
               reason: "stale_alignment_attempt"
             } as CommandFailure;
       }
+      const annotations = db
+        .prepare(
+          `SELECT section
+           FROM agent_alignment_annotations
+           WHERE alignment_attempt_id = ?`
+        )
+        .all(alignmentAttemptId) as Array<{ section: string | null }>;
+      const annotatedSections = new Set(
+        annotations.flatMap((annotation) =>
+          typeof annotation.section === "string" ? [annotation.section] : []
+        )
+      );
+      if (
+        ALIGNMENT_SECTIONS.some(
+          (section) => !annotatedSections.has(section)
+        )
+      ) {
+        return {
+          ok: false,
+          reason: "section_annotation_required"
+        } as CommandFailure;
+      }
       const cards = db
         .prepare(
           `SELECT section, proposed_answer
@@ -180,6 +203,7 @@ export function finalizeAlignmentPreparation(
       const event = logEventOnDb(db, "alignment_preparation_completed", {
         agent_command_id: command.id,
         alignment_attempt_id: alignmentAttemptId,
+        agent_annotation_count: annotations.length,
         question_count: cards.length
       });
       const completed = getAlignmentPreparationOnDb(db);

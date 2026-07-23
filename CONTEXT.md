@@ -230,15 +230,29 @@ conversation thread, an optional Agent **proposed answer**, a **final answer**,
 and an **answer source**. The designer types or accepts the final answer on the
 card; open clarification happens in the Agent host's chat pane. Empty questions
 and empty final answers are rejected; short non-empty answers such as “同意/对”
-are allowed.
+are allowed. A proposed answer is only an editor prefill: the designer must
+explicitly submit every card before it is answered or contributes to coverage.
 _Avoid_: answer card (use Question card), card (used loosely)
 
+**Agent Annotation / Question card preparation pair**:
+Every Design Intent Alignment preparation attempt must contain both kinds of
+records in every gate section before it can enter answering: first at least one
+gray Agent Annotation for that section that states a meaningful confirmed
+observation or reasonable Agent assumption, then 2–5 colored Question cards for
+designer confirmation, before proceeding to the next section. Agent Annotations
+and Question cards are attempt- and section-bound. An Agent must not hide an assumption
+inside a question or present genuine uncertainty as an asserted annotation.
+Agent Annotations do not count as answered questions or question coverage.
+
 **Proposed answer / final answer / answer source**:
-- **Proposed answer**: optional Agent-prefilled answer on the Question card.
-- **Final answer**: the non-empty answer that satisfies the alignment gate.
+- **Proposed answer**: optional Agent-prefilled answer on the Question card. It
+  does not answer the card and never contributes to coverage by itself.
+- **Final answer**: the non-empty, explicitly submitted answer that satisfies
+  the alignment gate.
 - **Answer source**: how the final answer was established — for example Agent
-  proposed / designer accepted (stage “accept and continue” with unmodified
-  prefills) versus designer edited. Empty remaining answers block continue.
+  proposed / designer accepted (the designer submits an unmodified prefill)
+  versus designer edited. Empty or merely proposed answers block completion;
+  global Complete never promotes proposed answers.
 _Avoid_: treating proposed and final as the same field without source
 
 **Canvas record**:

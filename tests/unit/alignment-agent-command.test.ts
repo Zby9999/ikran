@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-import { initializeProjectDb } from "../../lib/runtime/db";
+import {
+  closeProjectDb,
+  initializeProjectDb,
+  openProjectDb
+} from "../../lib/runtime/db";
 import { recordEvidencePackage } from "../../lib/runtime/evidence-package";
 import { listEvents } from "../../lib/runtime/events";
 import { setDesignLanguageDescription } from "../../lib/runtime/project-readiness";
@@ -14,6 +18,7 @@ import {
 } from "../../lib/runtime/alignment-agent-command";
 import {
   ALIGNMENT_SECTIONS,
+  createAgentAnnotation,
   createQuestionCard,
   getDesignIntentAlignment,
   recordDesignerAnswer
@@ -103,6 +108,17 @@ describe("Alignment preparation Agent command", () => {
         proposedAnswer: "Yes, keep contrast deliberate.",
         anchor
       };
+      expect(
+        createAgentAnnotation(projectPath, {
+          alignmentAttemptId: prepared.attempt.id,
+          idempotencyKey: "design-principle-hypothesis",
+          section: "design-principle",
+          inference: "reasonable",
+          title: "Calm Hierarchy",
+          body: "The hierarchy appears intentionally calm.",
+          anchor
+        }).ok
+      ).toBe(true);
       const created = createQuestionCard(projectPath, input);
       expect(created).toMatchObject({
         ok: true,
@@ -125,7 +141,7 @@ describe("Alignment preparation Agent command", () => {
       ).toEqual({ ok: false, reason: "alignment_not_answering" });
       expect(finalizeAlignmentPreparation(projectPath, prepared.attempt.id)).toEqual({
         ok: false,
-        reason: "coverage_incomplete"
+        reason: "section_annotation_required"
       });
 
       expect(
@@ -143,6 +159,17 @@ describe("Alignment preparation Agent command", () => {
       claimAlignmentPreparationCommand(projectPath);
       let firstCardId = "";
       for (const section of ALIGNMENT_SECTIONS) {
+        expect(
+          createAgentAnnotation(projectPath, {
+            alignmentAttemptId: prepared.attempt.id,
+            idempotencyKey: `${section}-hypothesis`,
+            section,
+            inference: "reasonable",
+            title: "Section Hypothesis",
+            body: `The ${section} choices appear intentional.`,
+            anchor
+          }).ok
+        ).toBe(true);
         for (let index = 1; index <= 2; index += 1) {
           const created = createQuestionCard(projectPath, {
             alignmentAttemptId: prepared.attempt.id,
@@ -156,6 +183,32 @@ describe("Alignment preparation Agent command", () => {
           expect(created.ok).toBe(true);
           if (created.ok && !firstCardId) firstCardId = created.record.id;
         }
+      }
+      const db = openProjectDb(projectPath);
+      try {
+        db.prepare(
+          `UPDATE agent_alignment_annotations
+           SET section = NULL
+           WHERE alignment_attempt_id = ? AND section = 'interaction'`
+        ).run(prepared.attempt.id);
+      } finally {
+        closeProjectDb(db);
+      }
+      expect(
+        finalizeAlignmentPreparation(projectPath, prepared.attempt.id)
+      ).toEqual({
+        ok: false,
+        reason: "section_annotation_required"
+      });
+      const repairDb = openProjectDb(projectPath);
+      try {
+        repairDb.prepare(
+          `UPDATE agent_alignment_annotations
+           SET section = 'interaction'
+           WHERE alignment_attempt_id = ? AND agent_idempotency_key = ?`
+        ).run(prepared.attempt.id, "interaction-hypothesis");
+      } finally {
+        closeProjectDb(repairDb);
       }
 
       const finalized = finalizeAlignmentPreparation(

@@ -50,6 +50,7 @@ import {
   AlignmentCardProjectionProvider,
   AlignmentCardShapeUtil
 } from "./alignment-card-shape";
+import type { AlignmentAnswerMutationResult } from "./alignment-cards";
 import { AlignmentTargetShapeUtil } from "./alignment-target-shape";
 import { AlignmentConnectorShapeUtil } from "./alignment-connector-shape";
 import { AlignmentProjectionSync } from "./projection/alignment-projection-sync";
@@ -293,7 +294,10 @@ function AlignmentActionsBridge({
   onRecordDesignerAnswer,
   onAppendAgentAnnotationInformation
 }: PropsWithChildren<{
-  onRecordDesignerAnswer?: (id: string, answer: string) => Promise<unknown>;
+  onRecordDesignerAnswer?: (
+    id: string,
+    answer: string
+  ) => Promise<AlignmentAnswerMutationResult>;
   onAppendAgentAnnotationInformation?: (
     id: string,
     information: string
@@ -302,9 +306,13 @@ function AlignmentActionsBridge({
   const focusMode = useWorkbenchFocusMode();
   return (
     <AlignmentCardProjectionProvider
-      onSubmitAnswer={(id, answer) => {
-        void onRecordDesignerAnswer?.(id, answer);
-      }}
+      onSubmitAnswer={(id, answer) =>
+        onRecordDesignerAnswer?.(id, answer) ??
+        Promise.resolve({
+          ok: false as const,
+          error: "record_designer_answer_unavailable"
+        })
+      }
       onAppendAnnotationInformation={(id, information) => {
         void onAppendAgentAnnotationInformation?.(id, information);
       }}

@@ -44,6 +44,49 @@ function createQuestionCard(
   if (preparation.workflow.stage === "alignment-preparing") {
     claimAlignmentPreparationCommand(projectPath);
   }
+  if (
+    preparation.current_attempt &&
+    typeof input.section === "string" &&
+    ALIGNMENT_SECTIONS.includes(
+      input.section as (typeof ALIGNMENT_SECTIONS)[number]
+    )
+  ) {
+    const db = openProjectDb(projectPath);
+    let linkage: { seed_reference_id: string; surface_id: string } | undefined;
+    try {
+      linkage = db
+        .prepare(
+          `SELECT s.id AS seed_reference_id, e.id AS surface_id
+           FROM seed_references s
+           JOIN figma_evidence_surfaces e ON e.id = s.current_surface_id
+           LIMIT 1`
+        )
+        .get() as
+        | { seed_reference_id: string; surface_id: string }
+        | undefined;
+    } finally {
+      closeProjectDb(db);
+    }
+    if (linkage) {
+      createAgentAnnotation(projectPath, {
+        alignmentAttemptId: preparation.current_attempt.id,
+        idempotencyKey: `legacy-section-annotation-${input.section}`,
+        section: input.section,
+        inference: "reasonable",
+        title: "Section Hypothesis",
+        body: "A section-specific hypothesis used by this unit fixture.",
+        anchor: {
+          kind: "single",
+          target: {
+            kind: "surface",
+            seedReferenceId: linkage.seed_reference_id,
+            evidenceSurfaceId: linkage.surface_id,
+            evidenceVersionId: linkage.surface_id
+          }
+        }
+      });
+    }
+  }
   questionDelivery += 1;
   return createQuestionCardRuntime(projectPath, {
     ...input,
@@ -138,6 +181,196 @@ function singleTarget(link: { seedReferenceId: string; surfaceId: string }) {
 }
 
 describe("Design Intent Alignment Runtime contract", () => {
+  test("keeps pre-attempt legacy Agent Annotations readable without assigning a section", () => {
+    withProject((projectPath, link) => {
+      const now = new Date().toISOString();
+      const db = openProjectDb(projectPath);
+      try {
+        db.prepare(
+          `INSERT INTO agent_alignment_annotations
+             (id, inference, title, body, additional_information_json,
+              anchor_json, created_at, updated_at, alignment_attempt_id,
+              agent_idempotency_key, section)
+           VALUES (?, 'reasonable', ?, ?, '[]', ?, ?, ?, NULL, NULL, NULL)`
+        ).run(
+          "legacy-orphan-annotation",
+          "Legacy Hypothesis",
+          "This annotation predates attempt-bound preparation.",
+          JSON.stringify({
+            kind: "single",
+            target: {
+              kind: "surface",
+              seedReferenceId: link.seedReferenceId,
+              evidenceSurfaceId: link.surfaceId,
+              evidenceVersionId: link.surfaceId
+            }
+          }),
+          now,
+          now
+        );
+      } finally {
+        closeProjectDb(db);
+      }
+
+      expect(getDesignIntentAlignment(projectPath).annotations).toMatchObject([
+        {
+          id: "legacy-orphan-annotation",
+          alignment_attempt_id: null,
+          section: null,
+          title: "Legacy Hypothesis"
+        }
+      ]);
+    });
+  });
+
+  test("persists section identity and all three anchor modes for Agent Annotations", () => {
+    withProject((projectPath, link) => {
+      setDesignLanguageDescription(projectPath, "A calm, precise product language");
+      const prepared = prepareDesignIntentAlignment(projectPath);
+      expect(prepared.ok).toBe(true);
+      if (!prepared.ok) return;
+      expect(claimAlignmentPreparationCommand(projectPath).ok).toBe(true);
+
+      const inputs = [
+        {
+          section: "design-principle",
+          idempotencyKey: "annotation-node",
+          anchor: singleTarget(link)
+        },
+        {
+          section: "visual-language",
+          idempotencyKey: "annotation-surface",
+          anchor: {
+            kind: "single" as const,
+            target: {
+              kind: "surface" as const,
+              seedReferenceId: link.seedReferenceId,
+              evidenceSurfaceId: link.surfaceId,
+              evidenceVersionId: link.surfaceId
+            }
+          }
+        },
+        {
+          section: "component",
+          idempotencyKey: "annotation-focus-set",
+          anchor: {
+            kind: "focus-target-set" as const,
+            targets: [
+              singleTarget(link).target,
+              { ...singleTarget(link).target, nodeId: "10:20" }
+            ]
+          }
+        }
+      ] as const;
+
+      for (const [index, input] of inputs.entries()) {
+        const created = createAgentAnnotation(projectPath, {
+          alignmentAttemptId: prepared.attempt.id,
+          idempotencyKey: input.idempotencyKey,
+          section: input.section,
+          inference: "reasonable",
+          title: `Section hypothesis ${index + 1}`,
+          body: "This section-specific hypothesis needs designer confirmation.",
+          anchor: input.anchor
+        });
+        expect(created.ok).toBe(true);
+        if (!created.ok) continue;
+        expect(created.record.section).toBe(input.section);
+        expect(created.record.anchor.kind).toBe(input.anchor.kind);
+      }
+
+      expect(
+        getDesignIntentAlignment(projectPath).annotations.map((annotation) => ({
+          section: annotation.section,
+          anchorKind: annotation.anchor.kind
+        }))
+      ).toEqual([
+        { section: "design-principle", anchorKind: "single" },
+        { section: "visual-language", anchorKind: "single" },
+        { section: "component", anchorKind: "focus-target-set" }
+      ]);
+
+      const db = openProjectDb(projectPath);
+      try {
+        db.prepare(
+          "UPDATE agent_alignment_annotations SET section = NULL WHERE agent_idempotency_key = ?"
+        ).run("annotation-node");
+      } finally {
+        closeProjectDb(db);
+      }
+      expect(
+        getDesignIntentAlignment(projectPath).annotations[0]?.section
+      ).toBeNull();
+    });
+  });
+
+  test("requires a same-section Agent Annotation before creating a Question Card", () => {
+    withProject((projectPath, link) => {
+      setDesignLanguageDescription(projectPath, "A calm, precise product language");
+      const prepared = prepareDesignIntentAlignment(projectPath);
+      expect(prepared.ok).toBe(true);
+      if (!prepared.ok) return;
+      expect(claimAlignmentPreparationCommand(projectPath).ok).toBe(true);
+
+      const questionInput = {
+        alignmentAttemptId: prepared.attempt.id,
+        idempotencyKey: "layout-question",
+        section: "layout",
+        observation: "Flexible Grid",
+        question: "Should the grid adapt across viewport sizes?",
+        anchor: singleTarget(link)
+      } as const;
+
+      expect(createQuestionCardRuntime(projectPath, questionInput)).toEqual({
+        ok: false,
+        reason: "section_annotation_required"
+      });
+
+      expect(
+        createAgentAnnotation(projectPath, {
+          alignmentAttemptId: prepared.attempt.id,
+          idempotencyKey: "token-hypothesis",
+          section: "token",
+          inference: "reasonable",
+          title: "Sparse Accent",
+          body: "Accent color appears intentionally sparse.",
+          anchor: singleTarget(link)
+        }).ok
+      ).toBe(true);
+      expect(createQuestionCardRuntime(projectPath, questionInput)).toEqual({
+        ok: false,
+        reason: "section_annotation_required"
+      });
+
+      expect(
+        createAgentAnnotation(projectPath, {
+          alignmentAttemptId: prepared.attempt.id,
+          idempotencyKey: "layout-hypothesis",
+          section: "layout",
+          inference: "reasonable",
+          title: "Flexible Grid",
+          body: "The layout appears designed to adapt across viewport sizes.",
+          anchor: singleTarget(link)
+        }).ok
+      ).toBe(true);
+      expect(createQuestionCardRuntime(projectPath, questionInput).ok).toBe(true);
+      expect(
+        createAgentAnnotation(projectPath, {
+          alignmentAttemptId: prepared.attempt.id,
+          idempotencyKey: "late-layout-assertion",
+          section: "layout",
+          inference: "confirmed",
+          title: "Late Assertion",
+          body: "This assertion must not be added after questions start.",
+          anchor: singleTarget(link)
+        })
+      ).toEqual({
+        ok: false,
+        reason: "section_questions_already_started"
+      });
+    });
+  });
+
   test("exposes exactly the six gate sections; Content is rejected", () => {
     expect(ALIGNMENT_SECTIONS).toEqual([
       "design-principle",
@@ -390,16 +623,26 @@ describe("Design Intent Alignment Runtime contract", () => {
     });
   });
 
-  test("gray Agent Annotations share one projection, can append information, and never block coverage", () => {
+  test("gray Agent Annotations are attempt-bound, share one projection, and stay outside question coverage", () => {
     withProject((projectPath, link) => {
       setDesignLanguageDescription(projectPath, "A calm, precise product language");
+      const prepared = prepareDesignIntentAlignment(projectPath);
+      expect(prepared.ok).toBe(true);
+      if (!prepared.ok) return;
+      expect(claimAlignmentPreparationCommand(projectPath).ok).toBe(true);
       const confirmed = createAgentAnnotation(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
+        idempotencyKey: "confirmed-root-layout",
+        section: "layout",
         inference: "confirmed",
         title: "Root Layout",
         body: "The primary action is visually dominant",
         anchor: singleTarget(link)
       });
       const reasonable = createAgentAnnotation(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
+        idempotencyKey: "reasonable-border-hierarchy",
+        section: "layout",
         inference: "reasonable",
         title: "Border hierarchy",
         body: "The muted border likely reduces hierarchy noise",
@@ -409,6 +652,7 @@ describe("Design Intent Alignment Runtime contract", () => {
       expect(reasonable.ok).toBe(true);
       if (!confirmed.ok || !reasonable.ok) return;
       expect(confirmed.record.card_kind).toBe("agent-annotation");
+      expect(confirmed.record.alignment_attempt_id).toBe(prepared.attempt.id);
       expect(confirmed.record.title).toBe("Root Layout");
       expect(reasonable.record.card_kind).toBe("agent-annotation");
 
@@ -429,6 +673,9 @@ describe("Design Intent Alignment Runtime contract", () => {
 
       expect(
         createAgentAnnotation(projectPath, {
+          alignmentAttemptId: prepared.attempt.id,
+          idempotencyKey: "invalid-empty-title",
+          section: "layout",
           inference: "confirmed",
           title: "   ",
           body: "Missing title should fail",
@@ -595,7 +842,7 @@ describe("Design Intent Alignment Runtime contract", () => {
     });
   });
 
-  test("coverage requires 2–5 cards in every section and Complete atomically accepts proposals", () => {
+  test("coverage requires 2–5 explicitly submitted final answers in every section", () => {
     withProject((projectPath, link) => {
       setDesignLanguageDescription(projectPath, "A calm, precise product language");
       const ids: string[] = [];
@@ -615,13 +862,37 @@ describe("Design Intent Alignment Runtime contract", () => {
 
       const before = getDesignIntentAlignment(projectPath);
       expect(before.coverage.can_complete).toBe(false);
-      expect(before.coverage.sections.every((section) => section.complete)).toBe(true);
+      expect(before.coverage.sections.every((section) => !section.complete)).toBe(true);
+      expect(before.coverage.sections.every((section) => section.covered_count === 0)).toBe(true);
       expect(before.question_cards.every((card) => card.status === "unanswered")).toBe(true);
 
       const preparation = before.preparation.current_attempt;
       expect(preparation).not.toBeNull();
       if (!preparation) return;
       expect(finalizeAlignmentPreparation(projectPath, preparation.id).ok).toBe(true);
+
+      expect(completeDesignIntentAlignment(projectPath)).toEqual({
+        ok: false,
+        reason: "coverage_incomplete"
+      });
+
+      const answering = getDesignIntentAlignment(projectPath);
+      for (const card of answering.question_cards) {
+        const confirmed = recordDesignerAnswer(projectPath, {
+          questionCardId: card.id,
+          finalAnswer: card.proposed_answer
+        });
+        expect(confirmed.ok).toBe(true);
+        if (confirmed.ok) {
+          expect(confirmed.record.answer_source).toBe(
+            "agent-proposed-designer-accepted"
+          );
+        }
+      }
+
+      const confirmed = getDesignIntentAlignment(projectPath);
+      expect(confirmed.coverage.can_complete).toBe(true);
+      expect(confirmed.coverage.sections.every((section) => section.complete)).toBe(true);
 
       const completed = completeDesignIntentAlignment(projectPath);
       expect(completed.ok).toBe(true);

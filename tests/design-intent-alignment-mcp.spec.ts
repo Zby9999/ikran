@@ -86,7 +86,59 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     });
 
     const sse = await openRecordSse(runtimePort, token);
+    expect(sc(await client.callTool({
+      name: "create_alignment_question_card",
+      arguments: {
+        alignmentAttemptId: attemptId,
+        idempotencyKey: "premature-design-principle-question",
+        section: "design-principle",
+        observation: "Calm Hierarchy",
+        question: "Should the hierarchy remain calm?",
+        proposedAnswer: "Yes.",
+        anchor: {
+          kind: "single",
+          target: {
+            kind: "surface",
+            seedReferenceId: seed.record.id,
+            evidenceSurfaceId: evidence.record.id,
+            evidenceVersionId: evidence.record.id
+          }
+        }
+      }
+    }))).toMatchObject({
+      ok: false,
+      error: "section_annotation_required"
+    });
+    const annotationEvent = sse.waitForRecord();
+    expect(sc(await client.callTool({
+      name: "create_agent_annotation",
+      arguments: {
+        alignmentAttemptId: attemptId,
+        idempotencyKey: "alignment-assumption-1",
+        section: "design-principle",
+        inference: "reasonable",
+        title: "Existing hierarchy",
+        body: "The current visual hierarchy appears intentional.",
+        anchor: {
+          kind: "single",
+          target: {
+            kind: "surface",
+            seedReferenceId: seed.record.id,
+            evidenceSurfaceId: evidence.record.id,
+            evidenceVersionId: evidence.record.id
+          }
+        }
+      }
+    }))).toMatchObject({
+      ok: true,
+      record: { alignment_attempt_id: attemptId }
+    });
+    await expect(annotationEvent).resolves.toMatchObject({
+      kind: "alignment",
+      action: "created"
+    });
     let firstCardId = "";
+    const proposedCards: Array<{ id: string; answer: string }> = [];
     for (const section of [
       "design-principle",
       "visual-language",
@@ -95,8 +147,36 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
       "component",
       "interaction"
     ]) {
+      if (section !== "design-principle") {
+        const sectionAnnotationEvent = sse.waitForRecord();
+        expect(sc(await client.callTool({
+          name: "create_agent_annotation",
+          arguments: {
+            alignmentAttemptId: attemptId,
+            idempotencyKey: `alignment-assumption-${section}`,
+            section,
+            inference: "reasonable",
+            title: "Section Hypothesis",
+            body: `The current ${section} choices appear intentional.`,
+            anchor: {
+              kind: "single",
+              target: {
+                kind: "surface",
+                seedReferenceId: seed.record.id,
+                evidenceSurfaceId: evidence.record.id,
+                evidenceVersionId: evidence.record.id
+              }
+            }
+          }
+        }))).toMatchObject({ ok: true });
+        await expect(sectionAnnotationEvent).resolves.toMatchObject({
+          kind: "alignment",
+          action: "created"
+        });
+      }
       for (let index = 1; index <= 2; index += 1) {
         const recordEvent = sse.waitForRecord();
+        const proposedAnswer = `Proposed answer ${index}`;
         const created = sc(await client.callTool({
           name: "create_alignment_question_card",
           arguments: {
@@ -105,7 +185,7 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
             section,
             observation: `${section} ${index}`,
             question: `Question ${index} for ${section}?`,
-            proposedAnswer: `Proposed answer ${index}`,
+            proposedAnswer,
             anchor: {
               kind: "single",
               target: {
@@ -119,6 +199,7 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
         }));
         expect(created.ok).toBe(true);
         const cardId = String((created.record as { id: string }).id);
+        proposedCards.push({ id: cardId, answer: proposedAnswer });
         if (!firstCardId) firstCardId = cardId;
         await expect(recordEvent).resolves.toMatchObject({
           kind: "alignment",
@@ -210,6 +291,28 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     });
     expect((read.preparation as { workflow: { stage: string } }).workflow.stage)
       .toBe("alignment-answering");
+
+    for (const proposed of proposedCards.slice(1)) {
+      const proposedEvent = sse.waitForRecord();
+      expect(sc(await client.callTool({
+        name: "record_designer_answer",
+        arguments: {
+          questionCardId: proposed.id,
+          finalAnswer: proposed.answer
+        }
+      }))).toMatchObject({
+        ok: true,
+        record: {
+          answer_source: "agent-proposed-designer-accepted",
+          status: "answered"
+        }
+      });
+      await expect(proposedEvent).resolves.toMatchObject({
+        kind: "alignment",
+        action: "updated",
+        id: proposed.id
+      });
+    }
 
     const completedEvent = sse.waitForRecord();
     const completeResponse = await fetch(

@@ -19,7 +19,8 @@ import {
 
 import {
   AgentAnnotationCard,
-  AlignmentQuestionCard
+  AlignmentQuestionCard,
+  type AlignmentAnswerMutationResult
 } from "./alignment-cards";
 import type { AlignmentStageId } from "./alignment-stage-panel";
 import type { FocusCardSelection } from "./focus-mode";
@@ -30,6 +31,7 @@ declare module "@tldraw/tlschema" {
     "alignment-card": {
       w: number;
       h: number;
+      placement: "left" | "right";
       cardKind: "question" | "agent-annotation";
       stage: AlignmentStageId;
       number: number;
@@ -54,8 +56,22 @@ export const ALIGNMENT_CARD_TYPE = "alignment-card" as const;
 export const ALIGNMENT_CARD_COLLAPSED_WIDTH = 320;
 export const ALIGNMENT_CARD_EXPANDED_WIDTH = 360;
 
+export function alignmentCardXForWidth(
+  x: number,
+  currentWidth: number,
+  nextWidth: number,
+  placement: "left" | "right"
+) {
+  return placement === "left"
+    ? x + currentWidth - nextWidth
+    : x;
+}
+
 type AlignmentEditorCard = {
   id: string;
+  x: number;
+  w: number;
+  placement: "left" | "right";
   cardKind: "question" | "agent-annotation";
   expanded: boolean;
   editing: boolean;
@@ -70,13 +86,15 @@ export function alignmentCardEditorUpdates(
     const expanded = card.cardKind === "question" && active;
     const editing = card.cardKind === "agent-annotation" && active;
     if (card.expanded === expanded && card.editing === editing) return [];
+    const w = expanded || editing
+      ? ALIGNMENT_CARD_EXPANDED_WIDTH
+      : ALIGNMENT_CARD_COLLAPSED_WIDTH;
     return [{
       id: card.id,
+      x: alignmentCardXForWidth(card.x, card.w, w, card.placement),
       expanded,
       editing,
-      w: expanded || editing
-        ? ALIGNMENT_CARD_EXPANDED_WIDTH
-        : ALIGNMENT_CARD_COLLAPSED_WIDTH
+      w
     }];
   });
 }
@@ -91,6 +109,9 @@ export function setOnlyOpenAlignmentCard(
   const updates = alignmentCardEditorUpdates(
     shapes.map((shape) => ({
       id: String(shape.id),
+      x: shape.x,
+      w: shape.props.w,
+      placement: shape.props.placement,
       cardKind: shape.props.cardKind,
       expanded: shape.props.expanded,
       editing: shape.props.editing
@@ -104,6 +125,7 @@ export function setOnlyOpenAlignmentCard(
         editor.updateShape<AlignmentCardShape>({
           id: update.id as TLShapeId,
           type: ALIGNMENT_CARD_TYPE,
+          x: update.x,
           props: {
             expanded: update.expanded,
             editing: update.editing,
@@ -116,17 +138,19 @@ export function setOnlyOpenAlignmentCard(
   );
 }
 
-type BlankCanvasTarget = {
-  classList?: { contains: (value: string) => boolean };
-  closest?: (selector: string) => unknown;
+type AlignmentCanvasEvent = {
+  type: string;
+  name: string;
+  target?: string;
 };
 
-export function isAlignmentCanvasBlankTarget(target: unknown): boolean {
-  if (!target || typeof target !== "object") return false;
-  const candidate = target as BlankCanvasTarget;
-  return Boolean(
-    candidate.classList?.contains("tl-background") ||
-      candidate.closest?.(".tl-background__wrapper")
+export function isAlignmentCanvasPointerDown(
+  event: AlignmentCanvasEvent
+): boolean {
+  return (
+    event.type === "pointer" &&
+    event.name === "pointer_down" &&
+    event.target === "canvas"
   );
 }
 
@@ -135,13 +159,15 @@ export function AlignmentCardInteractionController() {
 
   useEffect(() => {
     setOnlyOpenAlignmentCard(editor, null);
-    const onPointerDown = (event: PointerEvent) => {
-      if (isAlignmentCanvasBlankTarget(event.target)) {
+    const onEditorEvent = (event: AlignmentCanvasEvent) => {
+      if (isAlignmentCanvasPointerDown(event)) {
         setOnlyOpenAlignmentCard(editor, null);
       }
     };
-    window.addEventListener("pointerdown", onPointerDown, true);
-    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+    editor.on("event", onEditorEvent);
+    return () => {
+      editor.off("event", onEditorEvent);
+    };
   }, [editor]);
 
   return null;
@@ -152,7 +178,10 @@ export interface AlignmentCardShape extends TLShape<"alignment-card"> {
 }
 
 export type AlignmentCardProjectionActions = {
-  onSubmitAnswer: (runtimeRecordId: string, answer: string) => void;
+  onSubmitAnswer: (
+    runtimeRecordId: string,
+    answer: string
+  ) => Promise<AlignmentAnswerMutationResult>;
   onAppendAnnotationInformation: (
     runtimeRecordId: string,
     information: string
@@ -259,7 +288,10 @@ export function AlignmentCardShapeView({
       data-card-kind={props.cardKind}
       style={{
         width: dimensions.w,
-        height: dimensions.h,
+        height: "fit-content",
+        top: "50%",
+        bottom: "auto",
+        transform: "translateY(-50%)",
         pointerEvents: "all"
       }}
     >
@@ -284,7 +316,11 @@ export function AlignmentCardShapeView({
           onExpandedChange={onExpandedChange}
           onPointerInteraction={onPointerInteraction}
           onSubmitAnswer={(answer) =>
-            actions?.onSubmitAnswer(meta.runtimeRecordId, answer)
+            actions?.onSubmitAnswer(meta.runtimeRecordId, answer) ??
+            Promise.resolve({
+              ok: false,
+              error: "record_designer_answer_unavailable"
+            })
           }
           readOnly={props.readOnly}
         />
@@ -297,6 +333,8 @@ export function AlignmentCardShapeView({
           evidenceAnchor={props.evidenceAnchor}
           editing={props.editing}
           onEditingChange={onEditingChange}
+          onActivate={selectFocusCard}
+          onFocusPreview={focusSelection ? selectFocusCard : undefined}
           onPointerInteraction={onPointerInteraction}
           onAppendInformation={(information) =>
             actions?.onAppendAnnotationInformation(meta.runtimeRecordId, information)
@@ -335,6 +373,7 @@ export class AlignmentCardShapeUtil extends BaseBoxShapeUtil<AlignmentCardShape>
   static override props = {
     w: T.number,
     h: T.number,
+    placement: T.literalEnum("left", "right"),
     cardKind: T.literalEnum("question", "agent-annotation"),
     stage: T.literalEnum(
       "design-principle",
@@ -364,6 +403,7 @@ export class AlignmentCardShapeUtil extends BaseBoxShapeUtil<AlignmentCardShape>
     return {
       w: ALIGNMENT_CARD_COLLAPSED_WIDTH,
       h: 236,
+      placement: "right",
       cardKind: "question",
       stage: "design-principle",
       number: 1,

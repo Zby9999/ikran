@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 11;
+export const CURRENT_SCHEMA_VERSION = 13;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -858,6 +858,34 @@ ALTER TABLE alignment_question_cards
 CREATE UNIQUE INDEX idx_alignment_question_attempt_delivery
   ON alignment_question_cards(alignment_attempt_id, agent_idempotency_key)
   WHERE alignment_attempt_id IS NOT NULL AND agent_idempotency_key IS NOT NULL;
+      `);
+    }
+  },
+  {
+    version: 12,
+    up(db) {
+      // Agent Annotations are mandatory preparation outputs, so retries must
+      // be attempt-bound and idempotent just like Question cards.
+      db.exec(`
+ALTER TABLE agent_alignment_annotations
+  ADD COLUMN agent_idempotency_key TEXT;
+CREATE UNIQUE INDEX idx_agent_annotation_attempt_delivery
+  ON agent_alignment_annotations(alignment_attempt_id, agent_idempotency_key)
+  WHERE alignment_attempt_id IS NOT NULL AND agent_idempotency_key IS NOT NULL;
+      `);
+    }
+  },
+  {
+    version: 13,
+    up(db) {
+      // Agent Annotations belong to one Alignment section. The nullable
+      // column keeps historical annotations readable without pretending that
+      // a legacy global annotation belongs to every section.
+      db.exec(`
+ALTER TABLE agent_alignment_annotations
+  ADD COLUMN section TEXT;
+CREATE INDEX idx_agent_annotation_attempt_section
+  ON agent_alignment_annotations(alignment_attempt_id, section);
       `);
     }
   }

@@ -44,6 +44,23 @@ export type AlignmentAnswerSource =
   | "designer-edited"
   | "agent-proposed-designer-accepted";
 
+export type AlignmentAnswerMutationResult =
+  | { ok: true }
+  | { ok: false; error?: string };
+
+export async function submitAlignmentQuestionAnswer(
+  answer: string,
+  onSubmitAnswer: (
+    answer: string
+  ) => Promise<AlignmentAnswerMutationResult>,
+  onSubmitted: (answer: string) => void
+): Promise<boolean> {
+  const result = await onSubmitAnswer(answer);
+  if (!result.ok) return false;
+  onSubmitted(answer);
+  return true;
+}
+
 export type AlignmentQuestionCardProps = {
   number: number;
   stage: AlignmentStageId;
@@ -59,7 +76,9 @@ export type AlignmentQuestionCardProps = {
   onActivate?: () => void;
   onFocusPreview?: () => void;
   onPointerInteraction?: (event: SyntheticEvent) => void;
-  onSubmitAnswer: (answer: string) => void;
+  onSubmitAnswer: (
+    answer: string
+  ) => Promise<AlignmentAnswerMutationResult>;
   readOnly?: boolean;
   className?: string;
 };
@@ -104,6 +123,9 @@ export function AlignmentQuestionCard({
   const savedAnswer = finalAnswer?.trim() ?? "";
   const initialDraft = savedAnswer || proposedAnswer || "";
   const [draft, setDraft] = useState(initialDraft);
+  const [submittedAnswer, setSubmittedAnswer] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const displayAnswer = savedAnswer || submittedAnswer;
   const stageDefinition = ALIGNMENT_STAGES.find(({ id }) => id === stage)!;
   const style = {
     "--alignment-accent": stageDefinition.color,
@@ -113,12 +135,26 @@ export function AlignmentQuestionCard({
 
   useEffect(() => {
     setDraft(savedAnswer || proposedAnswer || "");
+    if (savedAnswer) setSubmittedAnswer("");
   }, [proposedAnswer, savedAnswer]);
 
-  function submitAnswer(event: FormEvent<HTMLFormElement>) {
+  async function submitAnswer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const answer = draft.trim();
-    if (!readOnly && answer) onSubmitAnswer(answer);
+    if (readOnly || !answer || submitting) return;
+    setSubmitting(true);
+    try {
+      await submitAlignmentQuestionAnswer(
+        answer,
+        onSubmitAnswer,
+        (submitted) => {
+          setSubmittedAnswer(submitted);
+          onExpandedChange(false);
+        }
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -126,7 +162,7 @@ export function AlignmentQuestionCard({
       className={[styles.questionCard, className].filter(Boolean).join(" ")}
       data-expanded={expanded}
       data-stage={stage}
-      data-status={savedAnswer ? "answered" : "unanswered"}
+      data-status={displayAnswer ? "answered" : "unanswered"}
       data-read-only={readOnly}
       onMouseDown={(event) =>
         stopAlignmentCardPointer(event, onPointerInteraction)
@@ -151,38 +187,51 @@ export function AlignmentQuestionCard({
           <span className={styles.questionCopy} data-slot="question-copy">
             <span className={styles.questionObservation}>{observation}</span>
             <span className={styles.questionText}>{question}</span>
-            {!expanded && savedAnswer ? (
-              <span className={styles.finalAnswer}>{savedAnswer}</span>
+            {!expanded && displayAnswer ? (
+              <span className={styles.finalAnswer}>{displayAnswer}</span>
             ) : null}
           </span>
         </span>
       </button>
 
-      {expanded ? (
-        <form className={styles.answerEditor} onSubmit={submitAnswer}>
-          <label className={styles.srOnly} htmlFor={editorId}>
-            Answer question {number}
-          </label>
-          <textarea
-            aria-label={`Answer question ${number}`}
-            id={editorId}
-            disabled={readOnly}
-            onChange={(event) => setDraft(event.currentTarget.value)}
-            placeholder="Add your design intent..."
-            rows={2}
-            value={draft}
-          />
-          <Button
-            aria-label={`Submit answer ${number}`}
-            className={styles.answerSubmit}
-            disabled={readOnly || !draft.trim()}
-            size="icon"
-            type="submit"
+      <div
+        aria-hidden={!expanded}
+        className={styles.answerRegion}
+        data-open={expanded}
+        inert={!expanded}
+      >
+        <div className={styles.answerRegionInner}>
+          <form
+            className={styles.answerEditor}
+            data-submitting={submitting}
+            onSubmit={submitAnswer}
           >
-            <ArrowUpIcon aria-hidden="true" size={14} weight="regular" />
-          </Button>
-        </form>
-      ) : null}
+            <label className={styles.srOnly} htmlFor={editorId}>
+              Answer question {number}
+            </label>
+            <textarea
+              aria-label={`Answer question ${number}`}
+              id={editorId}
+              disabled={readOnly || !expanded || submitting}
+              onChange={(event) => setDraft(event.currentTarget.value)}
+              placeholder="Add your design intent..."
+              rows={2}
+              tabIndex={expanded ? 0 : -1}
+              value={draft}
+            />
+            <Button
+              aria-label={`Submit answer ${number}`}
+              className={styles.answerSubmit}
+              disabled={readOnly || !expanded || submitting || !draft.trim()}
+              size="icon"
+              tabIndex={expanded ? 0 : -1}
+              type="submit"
+            >
+              <ArrowUpIcon aria-hidden="true" size={14} weight="regular" />
+            </Button>
+          </form>
+        </div>
+      </div>
     </article>
   );
 }
@@ -195,6 +244,8 @@ export type AgentAnnotationCardProps = {
   editing: boolean;
   onEditingChange: (editing: boolean) => void;
   onAppendInformation: (information: string) => void;
+  onActivate?: () => void;
+  onFocusPreview?: () => void;
   onPointerInteraction?: (event: SyntheticEvent) => void;
   evidenceAnchor?: string;
   className?: string;
@@ -208,6 +259,8 @@ export function AgentAnnotationCard({
   editing,
   onEditingChange,
   onAppendInformation,
+  onActivate,
+  onFocusPreview,
   onPointerInteraction,
   evidenceAnchor: _evidenceAnchor,
   className
@@ -231,6 +284,7 @@ export function AgentAnnotationCard({
       onMouseDown={(event) =>
         stopAlignmentCardPointer(event, onPointerInteraction)
       }
+      onMouseEnter={() => previewAlignmentQuestionFocus(onFocusPreview)}
       onPointerDown={(event) =>
         stopAlignmentCardPointer(event, onPointerInteraction)
       }
@@ -238,7 +292,10 @@ export function AgentAnnotationCard({
       <button
         aria-label="Add information to agent annotation"
         className={styles.annotationBrowse}
-        onClick={() => onEditingChange(true)}
+        onClick={() => {
+          onEditingChange(true);
+          onActivate?.();
+        }}
         type="button"
       >
         <span className={styles.annotationHeading}>

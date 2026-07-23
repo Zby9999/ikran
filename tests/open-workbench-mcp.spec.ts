@@ -28,33 +28,53 @@ import {
 const URL_RE =
   /^http:\/\/127\.0\.0\.1:\d+\/\?session=[a-f0-9]{32,}&view=workbench$/;
 
-function resultInfo(res: unknown): { url: string; reused: boolean } {
+function resultInfo(res: unknown): {
+  url: string;
+  reused: boolean;
+  nextAction: Record<string, unknown> | null;
+  text: string;
+} {
   let url = "";
   let reused = false;
+  let nextAction: Record<string, unknown> | null = null;
+  const texts: string[] = [];
   if (typeof res === "object" && res !== null) {
     const r = res as { structuredContent?: unknown; content?: unknown };
     const sc = r.structuredContent;
     if (sc && typeof sc === "object") {
-      const s = sc as { url?: unknown; reused?: unknown };
+      const s = sc as {
+        url?: unknown;
+        reused?: unknown;
+        next_action?: unknown;
+      };
       if (typeof s.url === "string") url = s.url;
       if (typeof s.reused === "boolean") reused = s.reused;
+      if (
+        s.next_action &&
+        typeof s.next_action === "object" &&
+        !Array.isArray(s.next_action)
+      ) {
+        nextAction = s.next_action as Record<string, unknown>;
+      }
     }
-    if (!url && Array.isArray(r.content)) {
+    if (Array.isArray(r.content)) {
       for (const c of r.content) {
         const text = (c as { type?: string; text?: unknown }).text;
         if (typeof text === "string") {
-          const m = text.match(
-            /http:\/\/127\.0\.0\.1:\d+\/\?session=[a-f0-9]{32,}(?:&view=workbench)?/
-          );
-          if (m) {
-            url = m[0];
-            break;
+          texts.push(text);
+          if (!url) {
+            const m = text.match(
+              /http:\/\/127\.0\.0\.1:\d+\/\?session=[a-f0-9]{32,}(?:&view=workbench)?/
+            );
+            if (m) {
+              url = m[0];
+            }
           }
         }
       }
     }
   }
-  return { url, reused };
+  return { url, reused, nextAction, text: texts.join("\n") };
 }
 
 function portOpen(port: number): Promise<boolean> {
@@ -188,6 +208,13 @@ test.describe("Ikran Issue 02/01 — open_workbench MCP tool", () => {
         const info1 = resultInfo(first);
         expect(info1.url).toBeTruthy();
         expect(info1.url).toMatch(URL_RE);
+        expect(info1.nextAction).toEqual({
+          tool: "create_or_open_project",
+          then: "wait_for_agent_command"
+        });
+        expect(info1.text).toMatch(
+          /do not end (?:the )?turn.*wait_for_agent_command/is
+        );
 
         // Persistent Runtime owner: Cursor's stdio bridge has a different PID.
         const ep = readEndpointFile(stateDir);

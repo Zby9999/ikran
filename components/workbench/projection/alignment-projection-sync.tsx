@@ -4,7 +4,10 @@ import { useEffect, useRef } from "react";
 import { createShapeId, useEditor, type Editor, type TLShapeId } from "tldraw";
 
 import {
+  ALIGNMENT_CARD_COLLAPSED_WIDTH,
+  ALIGNMENT_CARD_EXPANDED_WIDTH,
   ALIGNMENT_CARD_TYPE,
+  alignmentCardXForWidth,
   type AlignmentCardShape
 } from "../alignment-card-shape";
 import {
@@ -123,16 +126,25 @@ function updateProjectedShape(editor: Editor, shape: AlignmentProjectionShape) {
     const current = editor.getShape<AlignmentCardShape>(id);
     const expanded = current?.props.expanded ?? false;
     const editing = current?.props.editing ?? false;
+    const expandedWidth =
+      expanded || editing
+        ? ALIGNMENT_CARD_EXPANDED_WIDTH
+        : ALIGNMENT_CARD_COLLAPSED_WIDTH;
     editor.updateShape<AlignmentCardShape>({
       id,
       type: ALIGNMENT_CARD_TYPE,
-      x: shape.x,
+      x: alignmentCardXForWidth(
+        shape.x,
+        shape.props.w,
+        expandedWidth,
+        shape.props.placement
+      ),
       y: shape.y,
       isLocked: true,
       meta: shape.meta,
       props: {
         ...alignmentCardShapeProps(shape.props),
-        w: expanded || editing ? 360 : 320,
+        w: expandedWidth,
         expanded,
         editing
       }

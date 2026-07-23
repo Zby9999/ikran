@@ -356,12 +356,16 @@ Ikran 的核心不变量：
 
 ### Question card 与阶段接受
 
+- Alignment preparation 必须逐部分生成两类卡片：每部分先生成至少一张表达该部分 Agent 已确认观察或合理假设的灰色 Agent Annotation，再生成该部分 2–5 张彩色 Question card，然后才推进到下一部分；任何部分缺少任一类都不能进入回答阶段。
+- 两类卡片都与当前 Alignment attempt 及所属部分绑定，一张 Annotation 不得跨部分复用。灰色 Agent Annotation 与彩色 Question card 使用相同的三种 evidence anchor：特定 node/region、整个 Frame surface、复用元素的 focus-target-set。
+- Agent Annotation 是 preparation gate，但不计入 Question coverage，也不需要设计师回答。
 - Agent 可在 Question card 上提供 `proposed_answer`。
-- 设计师可编辑答案，或在阶段级「接受并继续」时接受未修改的预填答案。
+- `proposed_answer` 仅预填编辑器，不代表已回答，也不计入阶段 coverage。
+- 设计师必须逐卡点击发送确认答案，即使不修改默认回答。
 - Answer source：
-  - 未修改预填答案被阶段接受 → Agent 提议 / 设计师接受。
+  - 未修改预填答案被逐卡发送确认 → Agent 提议 / 设计师接受。
   - 设计师编辑后的答案 → designer edited。
-- 仍为空则阻止继续。
+- 只有非空 `final_answer` 计入 coverage；仍为空或仅有 proposed answer 均阻止继续，全局 `Complete` 不自动接受预填。
 - 禁止空问题与空 final answer；允许填「同意/对」等非空短答。
 - 卡片状态仍以 unanswered / answered 为主；开放澄清留在 Agent host chat。
 
@@ -466,8 +470,9 @@ Workbench paste + MCP client
 - Refresh 有 correspondence 时可提示 current node；无 correspondence 时历史 Node Annotation 标记 stale 并向设计师提示，不自动迁移。
 - tldraw shape 能投影 canvas record，shape id 不成为语义事实源。
 - Region Annotation 必须包含 surface anchor；raw semantic rect 持久化，display padding 在投影层重算。
-- Question card 必须包含 anchor、Agent observation、Agent question；允许 `proposed_answer`；final answer 非空；answer source 可区分。
-- 所有 Question card answered 后才允许 seed extraction 继续；阶段「接受并继续」遵守 answer source 规则。
+- Alignment preparation 的六部分必须各自先包含至少一张灰色 Agent Annotation，再包含 2–5 张彩色 Question card；两类记录都绑定当前 attempt 与所属部分，缺少任一类不得进入 answering。
+- Question card 必须包含 anchor、Agent observation、Agent question；允许 `proposed_answer`，但它只用于预填且不计入 coverage；逐卡显式发送后的 final answer 非空；answer source 可区分。
+- 所有 Question card 经逐卡发送确认并成为 answered 后才允许 seed extraction 继续；全局 `Complete` 不自动接受 proposed answer。
 - `record_artifact_written` 后 Runtime 记录事件、校验 source artifact，并生成 derived artifact。
 - 未声明 source artifact、失败/草稿/取消/Open Gap/canvas layout 不进入 research export。
 - Preview readiness 能反映到 Workbench。

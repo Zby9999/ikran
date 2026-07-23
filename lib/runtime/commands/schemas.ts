@@ -244,6 +244,9 @@ export const finalizeAlignmentPreparationInputSchema = z.object({
 });
 
 export const createAgentAnnotationInputSchema = z.object({
+  alignmentAttemptId: z.string(),
+  idempotencyKey: z.string(),
+  section: z.string(),
   inference: z.string(),
   title: z.string(),
   body: z.string(),

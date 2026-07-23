@@ -62,11 +62,15 @@ ADR 0001 完成了产品转向：Ikran 不再 spawn 无头 CLI Agent，而是作
 - Agent display padding 在 Workbench projection 重算，不回写为语义事实。
 - 成功语义记录与 Agent annotation 原始区域可回放。
 - Annotation 类型/权限的新语义留给后续 Issue，不在本 ADR 假装已冻结实现。
+- Design Intent Alignment 的 Agent Annotation 与当前 attempt 及所属部分绑定并支持幂等重试。进入 answering 前，六部分必须各自先包含至少一张表达该部分已确认观察或合理假设的灰色 Agent Annotation，再包含该部分 2–5 张彩色 Question card；缺少任一类均不得 finalize。
+- Agent Annotation 不计入 Question coverage；Agent 不得把已有假设伪装成问题，也不得把真实疑问伪装成已确认判断。
 
-### 8. Question proposed / final answer 与阶段接受
+### 8. Question proposed / final answer 与逐卡确认
 
 - Question card 允许 Agent `proposed_answer`。
-- 阶段级「接受并继续」：未修改预填 → Agent 提议 / 设计师接受；编辑后 → designer edited；仍为空则阻止继续。
+- `proposed_answer` 只用于预填编辑器，不代表已回答，也不计入阶段 coverage。
+- 设计师必须逐卡点击发送：未修改预填 → Agent 提议 / 设计师接受；编辑后 → designer edited。
+- 只有非空 `final_answer` 计入 coverage；全局 `Complete` 不会自动接受或提升 proposed answer。
 - 禁止空问题与空 final answer；可填「同意/对」。
 
 ### 9. 成功研究导出

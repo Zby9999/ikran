@@ -18,6 +18,7 @@ import {
 import {
   ALIGNMENT_SECTIONS,
   completeDesignIntentAlignment,
+  createAgentAnnotation,
   createQuestionCard,
   getDesignIntentAlignment,
   recordDesignerAnswer,
@@ -57,15 +58,35 @@ function createAnsweringFixture(finalize = true): Fixture {
   if (!claimed.ok) throw new Error(claimed.reason);
 
   const questionIds: string[] = [];
+  const proposedAnswers: string[] = [];
   for (const section of ALIGNMENT_SECTIONS) {
+    const annotation = createAgentAnnotation(projectPath, {
+      alignmentAttemptId: prepared.attempt.id,
+      idempotencyKey: `completion-assumption-${section}`,
+      section,
+      inference: "reasonable",
+      title: "Completion Assumption",
+      body: `The current ${section} choices appear deliberate.`,
+      anchor: {
+        kind: "single",
+        target: {
+          kind: "surface",
+          seedReferenceId: seed.record.id,
+          evidenceSurfaceId: evidence.record.id,
+          evidenceVersionId: evidence.record.id
+        }
+      }
+    });
+    if (!annotation.ok) throw new Error(annotation.reason);
     for (let index = 1; index <= 2; index += 1) {
+      const proposedAnswer = `Proposal ${index} for ${section}`;
       const created = createQuestionCard(projectPath, {
         alignmentAttemptId: prepared.attempt.id,
         idempotencyKey: `${section}-${index}`,
         section,
         observation: `${section} ${index}`,
         question: `Question ${index} for ${section}?`,
-        proposedAnswer: `Proposal ${index} for ${section}`,
+        proposedAnswer,
         anchor: {
           kind: "single",
           target: {
@@ -78,6 +99,7 @@ function createAnsweringFixture(finalize = true): Fixture {
       });
       if (!created.ok) throw new Error(created.reason);
       questionIds.push(created.record.id);
+      proposedAnswers.push(proposedAnswer);
     }
   }
   if (finalize) {
@@ -86,6 +108,13 @@ function createAnsweringFixture(finalize = true): Fixture {
       prepared.attempt.id
     );
     if (!finalized.ok) throw new Error(finalized.reason);
+    questionIds.forEach((questionCardId, index) => {
+      const confirmed = recordDesignerAnswer(projectPath, {
+        questionCardId,
+        finalAnswer: proposedAnswers[index]
+      });
+      if (!confirmed.ok) throw new Error(confirmed.reason);
+    });
   }
   return {
     projectPath,
@@ -127,7 +156,9 @@ describe("Alignment completion handoff", () => {
       const db = openProjectDb(fixture.projectPath);
       try {
         db.prepare(
-          "UPDATE alignment_question_cards SET proposed_answer = NULL WHERE id = ?"
+          `UPDATE alignment_question_cards
+           SET final_answer = NULL, answer_source = NULL
+           WHERE id = ?`
         ).run(fixture.questionIds[0]);
       } finally {
         closeProjectDb(db);
@@ -228,7 +259,7 @@ END;
       expect(read.alignment.status).toBe("draft");
       expect(read.preparation.workflow.stage).toBe("alignment-answering");
       expect(read.preparation.current_attempt?.status).toBe("answering");
-      expect(read.question_cards.every((card) => card.final_answer === null))
+      expect(read.question_cards.every((card) => card.final_answer !== null))
         .toBe(true);
       expect(read.preparation.commands).toHaveLength(1);
       expect(listEvents(fixture.projectPath, "design_intent_alignment_completed"))

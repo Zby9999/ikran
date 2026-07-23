@@ -44,6 +44,7 @@ export type AlignmentQuestionCardRecord = {
 
 export type AlignmentAgentAnnotationRecord = {
   id: string;
+  section: AlignmentStageId | null;
   title: string;
   body: string;
   additional_information: string[];
@@ -96,6 +97,7 @@ export type AlignmentCardProjection = {
   props: {
     w: number;
     h: number;
+    placement: "left" | "right";
     cardKind: "question" | "agent-annotation";
     stage: AlignmentStageId;
     number: number;
@@ -272,8 +274,8 @@ export function buildAlignmentProjectionPlan(
   input: AlignmentProjectionInput
 ): AlignmentProjectionShape[] {
   const plan: AlignmentProjectionShape[] = [];
-  const nextYByFrame = new Map<string, number>();
-  const occupiedCardsByFrame = new Map<string, CardCollisionBox[]>();
+  const nextYByLane = new Map<string, number>();
+  const occupiedCardsByLane = new Map<string, CardCollisionBox[]>();
   const visibleCards: Array<
     | { kind: "question"; record: AlignmentQuestionCardRecord; number: number }
     | {
@@ -282,18 +284,20 @@ export function buildAlignmentProjectionPlan(
         number: number;
       }
   > = [
+    ...input.annotations
+      .filter((record) => record.section === input.currentStage)
+      .map((record) => ({
+        kind: "agent-annotation" as const,
+        record,
+        number: 0
+      })),
     ...input.questions
       .filter((record) => record.section === input.currentStage)
       .map((record) => ({
         kind: "question" as const,
         record,
         number: 0
-      })),
-    ...input.annotations.map((record) => ({
-      kind: "agent-annotation" as const,
-      record,
-      number: 0
-    }))
+      }))
   ].map((item, index) => ({ ...item, number: index + 1 }));
 
   for (const item of visibleCards) {
@@ -307,9 +311,10 @@ export function buildAlignmentProjectionPlan(
         : ALIGNMENT_ANNOTATION_CARD_H;
     const cardId = `alignment-card:${item.record.id}`;
     const stage =
-      item.kind === "question" ? item.record.section : input.currentStage;
+      item.kind === "question"
+        ? item.record.section
+        : item.record.section ?? input.currentStage;
     const rect =
-      item.kind === "question" &&
       item.record.anchor.kind === "single" &&
       target.kind !== "surface"
         ? rectForTarget(target)
@@ -326,22 +331,33 @@ export function buildAlignmentProjectionPlan(
           h: rect.h * mediaH
         }
       : null;
-    const fallbackY = nextYByFrame.get(frame.id) ?? frame.y;
+    const placement =
+      targetGeometry &&
+      targetGeometry.x + targetGeometry.w / 2 <
+        mediaX + mediaW / 2
+        ? "left"
+        : "right";
+    const laneId = `${frame.id}:${placement}`;
+    const fallbackY = nextYByLane.get(laneId) ?? frame.y;
     const desiredY = targetGeometry
       ? targetGeometry.y + targetGeometry.h / 2 - h / 2
       : fallbackY;
-    const occupied = occupiedCardsByFrame.get(frame.id) ?? [];
+    const occupied = occupiedCardsByLane.get(laneId) ?? [];
     const y = resolveCardCollisionY(desiredY, h, occupied);
     const card: AlignmentCardProjection = {
       type: "alignment-card",
       id: cardId,
-      x: frame.x + frame.w + ALIGNMENT_CARD_SEED_GAP,
+      x:
+        placement === "left"
+          ? frame.x - ALIGNMENT_CARD_SEED_GAP - ALIGNMENT_CARD_COLLAPSED_W
+          : frame.x + frame.w + ALIGNMENT_CARD_SEED_GAP,
       y,
       isLocked: true,
       meta: metaFor(item.record.id, cardId, target),
       props: {
         w: ALIGNMENT_CARD_COLLAPSED_W,
         h,
+        placement,
         cardKind: item.kind,
         stage,
         number: item.number,
@@ -368,19 +384,18 @@ export function buildAlignmentProjectionPlan(
     };
     plan.push(card);
     occupied.push({ y, h });
-    occupiedCardsByFrame.set(frame.id, occupied);
-    nextYByFrame.set(
-      frame.id,
+    occupiedCardsByLane.set(laneId, occupied);
+    nextYByLane.set(
+      laneId,
       Math.max(
-        nextYByFrame.get(frame.id) ?? frame.y,
+        nextYByLane.get(laneId) ?? frame.y,
         y + h + ALIGNMENT_CARD_STACK_GAP
       )
     );
 
-    // Multi-place focus sets are rendered by focus mode only. Neutral Agent
-    // annotations also do not add stage-colored target chrome.
+    // Multi-place focus sets are rendered by focus mode only. Whole-surface
+    // anchors are represented by the card without redundant target chrome.
     if (
-      item.kind !== "question" ||
       item.record.anchor.kind !== "single" ||
       target.kind === "surface" ||
       !targetGeometry
@@ -404,8 +419,17 @@ export function buildAlignmentProjectionPlan(
     plan.push(targetShape);
 
     const connectorY = card.y + card.props.h / 2;
-    const start = { x: targetX + targetW, y: connectorY };
-    const end = { x: card.x, y: connectorY };
+    const start = {
+      x: placement === "left" ? targetX : targetX + targetW,
+      y: connectorY
+    };
+    const end = {
+      x:
+        placement === "left"
+          ? card.x + card.props.w
+          : card.x,
+      y: connectorY
+    };
     const connectorId = `alignment-connector:${item.record.id}`;
     const connectorX = Math.min(start.x, end.x);
     const connectorShapeY = Math.min(start.y, end.y);

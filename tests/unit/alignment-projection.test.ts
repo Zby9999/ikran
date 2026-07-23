@@ -98,6 +98,7 @@ const input: AlignmentProjectionInput = {
   annotations: [
     {
       id: "annotation-1",
+      section: "layout",
       title: "Root layout",
       body: "The page uses a stable outer inset.",
       additional_information: [],
@@ -115,6 +116,93 @@ const input: AlignmentProjectionInput = {
 };
 
 describe("buildAlignmentProjectionPlan", () => {
+  test("shows current-section annotations before questions in all three anchor modes", () => {
+    const annotationInput: AlignmentProjectionInput = {
+      ...input,
+      questions: [input.questions[0]!],
+      annotations: [
+        {
+          ...input.annotations[0]!,
+          id: "annotation-node",
+          section: "layout",
+          anchor: {
+            kind: "single",
+            target: {
+              kind: "node",
+              seedReferenceId: "seed-1",
+              evidenceSurfaceId: "surface-1",
+              evidenceVersionId: "version-1",
+              nodeId: "44:120",
+              resolvedRect: { x: 0.1, y: 0.2, w: 0.3, h: 0.1 }
+            }
+          }
+        },
+        {
+          ...input.annotations[0]!,
+          id: "annotation-surface",
+          section: "layout",
+          anchor: {
+            kind: "single",
+            target: {
+              kind: "surface",
+              seedReferenceId: "seed-1",
+              evidenceSurfaceId: "surface-1",
+              evidenceVersionId: "version-1",
+              resolvedRect: { x: 0, y: 0, w: 1, h: 1 }
+            }
+          }
+        },
+        {
+          ...input.annotations[0]!,
+          id: "annotation-focus",
+          section: "layout",
+          anchor: input.questions[2]!.anchor
+        },
+        {
+          ...input.annotations[0]!,
+          id: "annotation-other-section",
+          section: "token"
+        }
+      ]
+    };
+
+    const plan = buildAlignmentProjectionPlan(annotationInput);
+    const cards = plan.filter((shape) => shape.type === "alignment-card");
+
+    expect(cards.map((card) => card.meta.runtimeRecordId)).toEqual([
+      "annotation-node",
+      "annotation-surface",
+      "annotation-focus",
+      "question-layout"
+    ]);
+    expect(
+      plan.filter(
+        (shape) =>
+          shape.type === "alignment-target" &&
+          shape.meta.runtimeRecordId === "annotation-node"
+      )
+    ).toHaveLength(1);
+    expect(
+      plan.filter(
+        (shape) =>
+          shape.type === "alignment-connector" &&
+          shape.meta.runtimeRecordId === "annotation-node"
+      )
+    ).toHaveLength(1);
+    expect(
+      plan.some(
+        (shape) =>
+          shape.type !== "alignment-card" &&
+          (shape.meta.runtimeRecordId === "annotation-surface" ||
+            shape.meta.runtimeRecordId === "annotation-focus")
+      )
+    ).toBe(false);
+    const focusCard = cards.find(
+      (card) => card.meta.runtimeRecordId === "annotation-focus"
+    );
+    expect(focusCard?.props.focusSelection?.targets).toHaveLength(2);
+  });
+
   test("projects current-stage cards beside their first target and preserves auditable linkage", () => {
     const plan = buildAlignmentProjectionPlan(input);
     const cards = plan.filter((shape) => shape.type === "alignment-card");
@@ -124,32 +212,40 @@ describe("buildAlignmentProjectionPlan", () => {
     );
 
     expect(cards.map((shape) => shape.meta.runtimeRecordId)).toEqual([
+      "annotation-1",
       "question-layout",
-      "question-focus",
-      "annotation-1"
+      "question-focus"
     ]);
     expect(cards.map((shape) => shape.props.number)).toEqual([1, 2, 3]);
-    expect(cards.map((shape) => shape.x)).toEqual([500, 500, 500]);
-    expect(cards[2]!.y).toBeGreaterThan(cards[1]!.y);
+    expect(cards.map((shape) => shape.x)).toEqual([-240, -240, 500]);
+    expect(cards.map((shape) => shape.props.placement)).toEqual([
+      "left",
+      "left",
+      "right"
+    ]);
+    expect(cards[1]!.y).toBeGreaterThan(cards[0]!.y);
     expect(cards.every((shape) => shape.isLocked)).toBe(true);
-    expect(cards[0]!.meta).toMatchObject({
+    expect(cards[1]!.meta).toMatchObject({
       runtimeRecordId: "question-layout",
       seedReferenceId: "seed-1",
       surfaceRecordId: "surface-1",
       evidenceVersionId: "version-1"
     });
 
-    expect(targets).toHaveLength(1);
-    expect(targets[0]).toMatchObject({
+    expect(targets).toHaveLength(2);
+    expect(targets[1]).toMatchObject({
       x: 146,
       y: 176,
       props: { w: 108, h: 48 }
     });
-    expect(connectors).toHaveLength(1);
-    expect(connectors[0]!.props.startY).toBe(connectors[0]!.props.endY);
-    expect(connectors[0]!.props.h).toBe(1);
-    expect(cards[0]!.y + cards[0]!.props.h / 2).toBe(
-      targets[0]!.y + targets[0]!.props.h / 2
+    expect(connectors).toHaveLength(2);
+    expect(connectors[1]!.props.startX).toBeGreaterThan(
+      connectors[1]!.props.endX
+    );
+    expect(connectors[1]!.props.startY).toBe(connectors[1]!.props.endY);
+    expect(connectors[1]!.props.h).toBe(1);
+    expect(cards[1]!.y + cards[1]!.props.h / 2).toBe(
+      connectors[1]!.y + connectors[1]!.props.endY
     );
     expect(
       targets.some((shape) =>
@@ -258,6 +354,49 @@ describe("buildAlignmentProjectionPlan", () => {
           connector.props.h === 1
       )
     ).toBe(true);
+  });
+
+  test("places cards on the annotation side and keeps left and right collision lanes independent", () => {
+    const sidedInput: AlignmentProjectionInput = {
+      ...input,
+      questions: [
+        input.questions[0]!,
+        {
+          ...input.questions[0]!,
+          id: "question-right",
+          anchor: {
+            kind: "single",
+            target: {
+              seedReferenceId: "seed-1",
+              evidenceSurfaceId: "surface-1",
+              evidenceVersionId: "version-1",
+              nodeId: "44:121",
+              resolvedRect: { x: 0.7, y: 0.2, w: 0.2, h: 0.1 }
+            }
+          }
+        }
+      ],
+      annotations: []
+    };
+    const plan = buildAlignmentProjectionPlan(sidedInput);
+    const cards = plan.filter((shape) => shape.type === "alignment-card");
+    const connectors = plan.filter(
+      (shape) => shape.type === "alignment-connector"
+    );
+
+    expect(cards.map((card) => card.props.placement)).toEqual([
+      "left",
+      "right"
+    ]);
+    expect(cards[0]!.x).toBe(-240);
+    expect(cards[1]!.x).toBe(500);
+    expect(cards[0]!.y).toBe(cards[1]!.y);
+    expect(connectors[0]!.props.startX).toBeGreaterThan(
+      connectors[0]!.props.endX
+    );
+    expect(connectors[1]!.props.startX).toBeLessThan(
+      connectors[1]!.props.endX
+    );
   });
 
   test("serializes focus selection without leaking projection-only props into tldraw", () => {

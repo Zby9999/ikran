@@ -82,6 +82,8 @@ export type AlignmentAnchor =
 
 export type AgentAnnotationRecord = {
   id: string;
+  alignment_attempt_id: string | null;
+  section: AlignmentSection | null;
   card_kind: "agent-annotation";
   inference: "confirmed" | "reasonable";
   title: string;
@@ -123,6 +125,8 @@ type FailureReason =
   | "invalid_anchor_target"
   | "invalid_focus_target_set"
   | "section_card_limit"
+  | "section_annotation_required"
+  | "section_questions_already_started"
   | "empty_final_answer"
   | "not_found"
   | "coverage_incomplete"
@@ -394,7 +398,7 @@ function coverageFor(cards: QuestionCardRecord[]) {
   const sections = ALIGNMENT_SECTIONS.map((section) => {
     const sectionCards = cards.filter((card) => card.section === section);
     const covered = sectionCards.filter(
-      (card) => text(card.final_answer) !== null || text(card.proposed_answer) !== null
+      (card) => text(card.final_answer) !== null
     ).length;
     return {
       section,
@@ -496,6 +500,19 @@ export function createQuestionCard(
       if (command?.status !== "claimed") {
         return { ok: false, reason: "alignment_command_not_claimed" } as Failure;
       }
+      const sectionAnnotation = db
+        .prepare(
+          `SELECT 1 FROM agent_alignment_annotations
+           WHERE alignment_attempt_id = ? AND section = ?
+           LIMIT 1`
+        )
+        .get(alignmentAttemptId, section);
+      if (!sectionAnnotation) {
+        return {
+          ok: false,
+          reason: "section_annotation_required"
+        } as Failure;
+      }
       const anchor = resolveAnchorOnDb(db, input.anchor, false);
       if (!anchor.ok) return anchor;
       const snapshotEvidence = new Set(
@@ -558,6 +575,11 @@ function mapAnnotation(db: DatabaseType, row: Record<string, unknown>): AgentAnn
   if (!resolved.ok) throw new Error(`invalid persisted alignment anchor: ${resolved.reason}`);
   return {
     id: String(row.id),
+    alignment_attempt_id:
+      typeof row.alignment_attempt_id === "string"
+        ? row.alignment_attempt_id
+        : null,
+    section: isSection(row.section) ? row.section : null,
     card_kind: "agent-annotation",
     inference: String(row.inference) as "confirmed" | "reasonable",
     title: String(row.title),
@@ -571,36 +593,159 @@ function mapAnnotation(db: DatabaseType, row: Record<string, unknown>): AgentAnn
 
 export function createAgentAnnotation(
   projectPath: string,
-  input: { inference?: unknown; title?: unknown; body?: unknown; anchor?: unknown }
-): { ok: true; record: AgentAnnotationRecord; event_id: string } | Failure {
+  input: {
+    alignmentAttemptId?: unknown;
+    idempotencyKey?: unknown;
+    section?: unknown;
+    inference?: unknown;
+    title?: unknown;
+    body?: unknown;
+    anchor?: unknown;
+  }
+):
+  | {
+      ok: true;
+      reused: boolean;
+      record: AgentAnnotationRecord;
+      event_id: string | null;
+    }
+  | Failure {
   if (input?.inference !== "confirmed" && input?.inference !== "reasonable") {
     return { ok: false, reason: "invalid_inference" };
   }
   const inference = input.inference;
+  if (!isSection(input.section)) {
+    return { ok: false, reason: "invalid_section" };
+  }
+  const section = input.section;
   const title = text(input.title);
   if (!title) return { ok: false, reason: "empty_title" };
   const body = text(input.body);
   if (!body) return { ok: false, reason: "empty_body" };
+  const alignmentAttemptId = text(input.alignmentAttemptId);
+  const idempotencyKey = text(input.idempotencyKey);
   const id = randomUUID();
   const now = new Date().toISOString();
   try {
     const result = withProjectTransaction(projectPath, (db) => {
-      const anchor = resolveAnchorOnDb(db, input.anchor, true);
+      if (!descriptionExists(db)) {
+        return { ok: false, reason: "design_language_description_required" } as Failure;
+      }
+      if (!alignmentAttemptId || !idempotencyKey) {
+        return { ok: false, reason: "alignment_attempt_required" } as Failure;
+      }
+      if (alignmentIsCompleted(db)) {
+        return { ok: false, reason: "alignment_completed" } as Failure;
+      }
+      const preparation = getAlignmentPreparationOnDb(db);
+      if (
+        preparation.current_attempt?.id !== alignmentAttemptId ||
+        !preparation.input_snapshot
+      ) {
+        return { ok: false, reason: "stale_alignment_attempt" } as Failure;
+      }
+      const duplicate = db.prepare(
+        `SELECT * FROM agent_alignment_annotations
+         WHERE alignment_attempt_id = ? AND agent_idempotency_key = ?`
+      ).get(alignmentAttemptId, idempotencyKey) as
+        | Record<string, unknown>
+        | undefined;
+      if (duplicate) {
+        return {
+          ok: true as const,
+          reused: true,
+          record: mapAnnotation(db, duplicate),
+          event_id: null
+        };
+      }
+      if (
+        preparation.current_attempt.status !== "preparing" ||
+        preparation.workflow.stage !== "alignment-preparing"
+      ) {
+        return { ok: false, reason: "stale_alignment_attempt" } as Failure;
+      }
+      const command = preparation.commands.find(
+        (candidate) =>
+          candidate.command_type === "prepare_design_intent_alignment"
+      );
+      if (command?.status !== "claimed") {
+        return { ok: false, reason: "alignment_command_not_claimed" } as Failure;
+      }
+      const sectionQuestion = db
+        .prepare(
+          `SELECT 1 FROM alignment_question_cards
+           WHERE alignment_attempt_id = ? AND section = ?
+           LIMIT 1`
+        )
+        .get(alignmentAttemptId, section);
+      if (sectionQuestion) {
+        return {
+          ok: false,
+          reason: "section_questions_already_started"
+        } as Failure;
+      }
+      const anchor = resolveAnchorOnDb(db, input.anchor, false);
       if (!anchor.ok) return anchor;
+      const snapshotEvidence = new Set(
+        preparation.input_snapshot.data.seed_references.map(
+          (seed) => `${seed.id}:${seed.evidence_version.id}`
+        )
+      );
+      const anchorTargets =
+        anchor.anchor.kind === "single"
+          ? [anchor.anchor.target]
+          : anchor.anchor.targets;
+      if (
+        anchorTargets.some(
+          (target) =>
+            !snapshotEvidence.has(
+              `${target.seedReferenceId}:${target.evidenceVersionId}`
+            )
+        )
+      ) {
+        return { ok: false, reason: "invalid_anchor_linkage" } as Failure;
+      }
       db.prepare(
         `INSERT INTO agent_alignment_annotations
-         (id, inference, title, body, additional_information_json, anchor_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, '[]', ?, ?, ?)`
-      ).run(id, inference, title, body, JSON.stringify(anchor.anchor), now, now);
+         (id, inference, title, body, additional_information_json, anchor_json,
+          created_at, updated_at, alignment_attempt_id, agent_idempotency_key,
+          section)
+         VALUES (?, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?)`
+      ).run(
+        id,
+        inference,
+        title,
+        body,
+        JSON.stringify(anchor.anchor),
+        now,
+        now,
+        alignmentAttemptId,
+        idempotencyKey,
+        section
+      );
       const event = logEventOnDb(db, "annotation_created", {
         annotation_id: id,
         annotation_kind: "agent-annotation",
-        inference
+        alignment_attempt_id: alignmentAttemptId,
+        inference,
+        section
       });
       const row = db.prepare("SELECT * FROM agent_alignment_annotations WHERE id = ?").get(id) as Record<string, unknown>;
-      return { ok: true as const, record: mapAnnotation(db, row), event_id: event.event_id };
+      return {
+        ok: true as const,
+        reused: false,
+        record: mapAnnotation(db, row),
+        event_id: event.event_id
+      };
     });
-    if (result.ok) emitRecordEvent({ kind: "alignment", action: "created", id, projectPath: path.resolve(projectPath) });
+    if (result.ok && !result.reused) {
+      emitRecordEvent({
+        kind: "alignment",
+        action: "created",
+        id,
+        projectPath: path.resolve(projectPath)
+      });
+    }
     return result;
   } catch {
     return { ok: false, reason: "db_error" };
@@ -654,22 +799,29 @@ export function recordDesignerAnswer(
         return { ok: false, reason: "alignment_not_answering" } as Failure;
       }
       const existing = db.prepare(
-        "SELECT alignment_attempt_id FROM alignment_question_cards WHERE id = ?"
-      ).get(questionCardId) as { alignment_attempt_id: string | null } | undefined;
+        "SELECT alignment_attempt_id, proposed_answer FROM alignment_question_cards WHERE id = ?"
+      ).get(questionCardId) as {
+        alignment_attempt_id: string | null;
+        proposed_answer: string | null;
+      } | undefined;
       if (!existing) return { ok: false, reason: "not_found" } as Failure;
       if (existing.alignment_attempt_id !== preparation.current_attempt.id) {
         return { ok: false, reason: "stale_alignment_attempt" } as Failure;
       }
+      const answerSource: AnswerSource =
+        text(existing.proposed_answer) === finalAnswer
+          ? "agent-proposed-designer-accepted"
+          : "designer-edited";
       const now = new Date().toISOString();
       db.prepare(
         `UPDATE alignment_question_cards
-         SET final_answer = ?, answer_source = 'designer-edited', updated_at = ?
+         SET final_answer = ?, answer_source = ?, updated_at = ?
          WHERE id = ?`
-      ).run(finalAnswer, now, questionCardId);
+      ).run(finalAnswer, answerSource, now, questionCardId);
       const event = logEventOnDb(db, "designer_answer_submitted", {
         question_card_id: questionCardId,
         alignment_attempt_id: preparation.current_attempt.id,
-        answer_source: "designer-edited"
+        answer_source: answerSource
       });
       const row = db.prepare("SELECT * FROM alignment_question_cards WHERE id = ?").get(questionCardId) as Record<string, unknown>;
       return { ok: true as const, record: mapQuestion(db, row), event_id: event.event_id };
@@ -848,9 +1000,24 @@ export function getDesignIntentAlignment(projectPath: string) {
       db,
       preparation.current_attempt?.id ?? null
     );
-    const annotations = (
-      db.prepare("SELECT * FROM agent_alignment_annotations ORDER BY created_at ASC, id ASC").all() as Record<string, unknown>[]
-    ).map((row) => mapAnnotation(db, row));
+    const annotationRows = preparation.current_attempt
+      ? db
+          .prepare(
+            `SELECT * FROM agent_alignment_annotations
+             WHERE alignment_attempt_id = ?
+             ORDER BY created_at ASC, id ASC`
+          )
+          .all(preparation.current_attempt.id)
+      : db
+          .prepare(
+            `SELECT * FROM agent_alignment_annotations
+             WHERE alignment_attempt_id IS NULL
+             ORDER BY created_at ASC, id ASC`
+          )
+          .all();
+    const annotations = (annotationRows as Record<string, unknown>[]).map(
+      (row) => mapAnnotation(db, row)
+    );
     const state = db.prepare("SELECT status, completed_at FROM design_intent_alignment WHERE singleton = 1").get() as { status: "draft" | "completed"; completed_at: string | null };
     const coverage = coverageFor(questionCards);
     return {
@@ -911,22 +1078,6 @@ export function completeDesignIntentAlignment(
       );
       if (!coverageFor(cards).can_complete) return { ok: false, reason: "coverage_incomplete" } as Failure;
       const now = new Date().toISOString();
-      const proposed = cards.filter((card) => card.final_answer === null && text(card.proposed_answer) !== null);
-      const update = db.prepare(
-        `UPDATE alignment_question_cards
-         SET final_answer = proposed_answer,
-             answer_source = 'agent-proposed-designer-accepted',
-             updated_at = ?
-         WHERE id = ?`
-      );
-      for (const card of proposed) {
-        update.run(now, card.id);
-        logEventOnDb(db, "designer_answer_submitted", {
-          question_card_id: card.id,
-          alignment_attempt_id: attempt.id,
-          answer_source: "agent-proposed-designer-accepted"
-        });
-      }
       db.prepare(
         "UPDATE design_intent_alignment SET status = 'completed', completed_at = ? WHERE singleton = 1"
       ).run(now);
@@ -968,7 +1119,10 @@ export function completeDesignIntentAlignment(
         alignment_attempt_id: attempt.id,
         input_snapshot_id: attempt.input_snapshot_id,
         agent_command_id: commandId,
-        accepted_proposal_count: proposed.length,
+        accepted_proposal_count: cards.filter(
+          (card) =>
+            card.answer_source === "agent-proposed-designer-accepted"
+        ).length,
         question_count: cards.length
       });
       const completed = getAlignmentPreparationOnDb(db);

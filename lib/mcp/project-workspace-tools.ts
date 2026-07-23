@@ -11,6 +11,30 @@ import {
 } from "../runtime/commands";
 import { type RegisterIkranToolsDeps } from "./shared";
 
+const WAIT_FOR_COMMAND_ACTION = {
+  tool: "wait_for_agent_command"
+} as const;
+
+const OPEN_PROJECT_THEN_WAIT_ACTION = {
+  tool: "create_or_open_project",
+  then: "wait_for_agent_command"
+} as const;
+
+const WAIT_FOR_COMMAND_DIRECTIVE =
+  "Required next Agent action: do not end the turn. Call `wait_for_agent_command` now and keep the current turn available while the designer works in the Workbench. Consume any returned command through its semantic claim tool.";
+
+function projectSuccessContent(text: string): Array<{
+  type: "text";
+  text: string;
+}> {
+  return [
+    {
+      type: "text",
+      text: `${text}\n\n${WAIT_FOR_COMMAND_DIRECTIVE}`
+    }
+  ];
+}
+
 export function registerProjectWorkspaceTools(
   mcp: McpServer,
   deps: RegisterIkranToolsDeps
@@ -22,16 +46,23 @@ export function registerProjectWorkspaceTools(
     "open_workbench",
     {
       description:
-        "Open the Ikran workbench. Starts or reuses the local Runtime HTTP surface on 127.0.0.1 (auto port) and returns a localhost Workbench URL containing a startup-level session token. Open it in any browser; ideal target is this Agent host's embedded browser. The URL is local-only and is not a public/remote link. Active seed capture is Runtime-owned (ADR 0003): ensure Figma Connection via the Workbench gate, then use add_seed_reference (same command as Workbench paste). Do not orchestrate host Figma screenshots for ingestion."
+        "Open the Ikran workbench. Starts or reuses the local Runtime HTTP surface on 127.0.0.1 (auto port) and returns a localhost Workbench URL containing a startup-level session token. Open it in any browser; ideal target is this Agent host's embedded browser. Opening Ikran is not a terminal action: after the project is successfully bound, MUST call wait_for_agent_command in this same turn so Workbench Next phase or Complete can return durable work without another user prompt. The URL is local-only and is not a public/remote link. Active seed capture is Runtime-owned (ADR 0003): ensure Figma Connection via the Workbench gate, then use add_seed_reference (same command as Workbench paste). Do not orchestrate host Figma screenshots for ingestion."
     },
     async () => {
       const rt = await ensureRuntime();
       const baseText = `Ikran Workbench URL:\n${rt.url}\n\nLocal-only. Open in any browser (ideal: this Agent host's embedded browser).`;
+      const activeProject = requireActiveProjectCommand();
+      const nextAction = activeProject.ok
+        ? WAIT_FOR_COMMAND_ACTION
+        : OPEN_PROJECT_THEN_WAIT_ACTION;
+      const nextDirective = activeProject.ok
+        ? WAIT_FOR_COMMAND_DIRECTIVE
+        : "Required next Agent actions: do not end the turn. Call `create_or_open_project` to bind the current workspace, then immediately call `wait_for_agent_command` and keep the current turn available while the designer works in the Workbench.";
       return {
         content: [
           {
             type: "text" as const,
-            text: baseText
+            text: `${baseText}\n\n${nextDirective}`
           }
         ],
         structuredContent: {
@@ -39,7 +70,8 @@ export function registerProjectWorkspaceTools(
           host: rt.host,
           port: rt.port,
           session: rt.token,
-          reused: !rt.spawned
+          reused: !rt.spawned,
+          next_action: nextAction
         }
       };
     }
@@ -49,7 +81,7 @@ export function registerProjectWorkspaceTools(
     "create_or_open_project",
     {
       description:
-        "Bind or open the Ikran project for a local folder and initialize its `.ikran/` state (SQLite, event log, config). With a `path`: CREATE the project there if no project is bound, OPEN it idempotently if that project is already bound, or FAIL CLOSED with `project_mismatch` if the Runtime is bound to a DIFFERENT project (single-project-single-flow — do not silently switch; to change projects, restart Ikran with the new folder as the working folder). With no `path`: if a project is already bound, return that active project + session + workbench_url (discovered cwd is NOT treated as a bind target); otherwise bind/open the working folder discovered from IKRAN_CWD env, then MCP Roots, then process.cwd(); if none is discoverable and no project is bound, returns `no_working_folder` (then pass { path } explicitly — your shell's `pwd` gives the workspace). Always returns the active project, the startup session token, and the Workbench URL so the caller can confirm it is operating on the same project/session as the Workbench HTTP API. All research source-of-truth changes go through Ikran tools.",
+        "Bind or open the Ikran project for a local folder and initialize its `.ikran/` state (SQLite, event log, config). With a `path`: CREATE the project there if no project is bound, OPEN it idempotently if that project is already bound, or FAIL CLOSED with `project_mismatch` if the Runtime is bound to a DIFFERENT project (single-project-single-flow — do not silently switch; to change projects, restart Ikran with the new folder as the working folder). With no `path`: if a project is already bound, return that active project + session + workbench_url (discovered cwd is NOT treated as a bind target); otherwise bind/open the working folder discovered from IKRAN_CWD env, then MCP Roots, then process.cwd(); if none is discoverable and no project is bound, returns `no_working_folder` (then pass { path } explicitly — your shell's `pwd` gives the workspace). A successful open/bind is not terminal: MUST call wait_for_agent_command next in the same turn. Always returns the active project, the startup session token, and the Workbench URL so the caller can confirm it is operating on the same project/session as the Workbench HTTP API. All research source-of-truth changes go through Ikran tools.",
       inputSchema: createOrOpenProjectInputShape
     },
     async (args) => {
@@ -69,19 +101,17 @@ export function registerProjectWorkspaceTools(
         // No-arg + active project: return current binding (do not mismatch on cwd).
         if (!explicitPath && activePath) {
           return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Ikran project: ${activePath}\nSession: ${rt.token}\nWorkbench URL: ${rt.url}`
-              }
-            ],
+            content: projectSuccessContent(
+              `Ikran project: ${activePath}\nSession: ${rt.token}\nWorkbench URL: ${rt.url}`
+            ),
             structuredContent: {
               ok: true,
               project: activeProject,
               active_project: activePath,
               cwd_candidate: state.cwd_candidate ?? null,
               session: rt.token,
-              workbench_url: rt.url
+              workbench_url: rt.url,
+              next_action: WAIT_FOR_COMMAND_ACTION
             }
           };
         }
@@ -131,18 +161,16 @@ export function registerProjectWorkspaceTools(
 
         if (activePath && projectPathsMatch(activePath, requestedPath)) {
           return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Ikran project already open: ${activePath}\nSession: ${rt.token}\nWorkbench URL: ${rt.url}`
-              }
-            ],
+            content: projectSuccessContent(
+              `Ikran project already open: ${activePath}\nSession: ${rt.token}\nWorkbench URL: ${rt.url}`
+            ),
             structuredContent: {
               ok: true,
               project: activeProject,
               active_project: activePath,
               session: rt.token,
-              workbench_url: rt.url
+              workbench_url: rt.url,
+              next_action: WAIT_FOR_COMMAND_ACTION
             }
           };
         }
@@ -215,19 +243,17 @@ export function registerProjectWorkspaceTools(
         }
 
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Ikran project bound: ${bind.config.path}\nEvents: ${bind.events.project_created}, ${bind.events.folder_selected}\nSession: ${rt.token}\nWorkbench URL: ${rt.url}`
-            }
-          ],
+          content: projectSuccessContent(
+            `Ikran project bound: ${bind.config.path}\nEvents: ${bind.events.project_created}, ${bind.events.folder_selected}\nSession: ${rt.token}\nWorkbench URL: ${rt.url}`
+          ),
           structuredContent: {
             ok: true,
             project: bind.config,
             events: bind.events,
             active_project: activeAfter,
             session: rt.token,
-            workbench_url: rt.url
+            workbench_url: rt.url,
+            next_action: WAIT_FOR_COMMAND_ACTION
           }
         };
       } catch (err) {

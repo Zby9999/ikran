@@ -77,7 +77,7 @@ Issue 01–05 与 Issue 06 的既有代码/历史材料已存在；阅读时先�
 
 Content style observations 不作为 Ikran MVP 的必答 Design Intent Alignment 阶段。Agent 可以在 evidence notes 中记录明显 content 事实，但不能因为 content 问答未完成阻塞 seed extraction。
 
-Question card 允许 Agent `proposed_answer`；阶段「接受并继续」记录 answer source（Agent 提议/设计师接受 vs designer edited）；禁止空问题与空 final answer。
+Alignment preparation 强制逐部分使用两类 attempt- and section-bound 卡片：六部分各自先生成至少一张表达该部分 Agent 已确认观察或合理假设的灰色 Agent Annotation，再生成该部分 2–5 张彩色 Question card；缺少任一类都不能进入 answering。Question card 允许 Agent `proposed_answer`，但它只预填编辑器且不计入 coverage；设计师必须逐卡点击发送，未修改预填记录为 Agent 提议/设计师接受，编辑后记录为 designer edited；只有非空 final answer 可使卡片和环节完成。
 
 ## UI / 设计原则
 

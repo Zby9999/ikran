@@ -10,6 +10,7 @@ import { closeProjectDb, initializeProjectDb, openProjectDb } from "../../lib/ru
 import {
   ALIGNMENT_SECTIONS,
   completeDesignIntentAlignment,
+  createAgentAnnotation,
   createQuestionCard,
   getDesignIntentAlignment,
   recordDesignerAnswer,
@@ -76,9 +77,28 @@ function cardInput(context: { attemptId: string; seedId: string; surfaceId: stri
   };
 }
 
+function createRequiredAnnotation(context: {
+  projectPath: string;
+  attemptId: string;
+  seedId: string;
+  surfaceId: string;
+}, section = "design-principle") {
+  return createAgentAnnotation(context.projectPath, {
+    alignmentAttemptId: context.attemptId,
+    idempotencyKey: `required-assumption-${section}`,
+    section,
+    inference: "reasonable",
+    title: "Existing hierarchy",
+    body: "The current hierarchy appears intentional.",
+    anchor: cardInput(context).anchor
+  });
+}
+
 describe("Alignment attempt abandonment", () => {
   test("preparing attempt is abandoned atomically and old writes are rejected", () => {
     withProject((context) => {
+      const oldAnnotation = createRequiredAnnotation(context);
+      expect(oldAnnotation.ok).toBe(true);
       const oldCard = createQuestionCard(context.projectPath, cardInput(context));
       expect(oldCard.ok).toBe(true);
       const abandoned = abandonCurrentAlignmentAttempt(context.projectPath);
@@ -90,6 +110,7 @@ describe("Alignment attempt abandonment", () => {
         cancelled_command_count: 1
       });
       expect(getDesignIntentAlignment(context.projectPath).question_cards).toEqual([]);
+      expect(getDesignIntentAlignment(context.projectPath).annotations).toEqual([]);
       expect(listEvents(context.projectPath, "question_card_created")).toHaveLength(1);
       expect(
         listResearchEligibleEvents(context.projectPath).some(
@@ -100,6 +121,15 @@ describe("Alignment attempt abandonment", () => {
       ).toBe(false);
       expect(createQuestionCard(context.projectPath, {
         ...cardInput(context, "design-principle", 2)
+      })).toEqual({ ok: false, reason: "stale_alignment_attempt" });
+      expect(createAgentAnnotation(context.projectPath, {
+        alignmentAttemptId: context.attemptId,
+        idempotencyKey: "stale-assumption",
+        section: "design-principle",
+        inference: "reasonable",
+        title: "Stale assumption",
+        body: "This must not attach to a later attempt.",
+        anchor: cardInput(context).anchor
       })).toEqual({ ok: false, reason: "stale_alignment_attempt" });
       expect(finalizeAlignmentPreparation(context.projectPath, context.attemptId))
         .toEqual({ ok: false, reason: "stale_alignment_attempt" });
@@ -133,6 +163,7 @@ describe("Alignment attempt abandonment", () => {
     withProject((context) => {
       let firstCardId = "";
       for (const section of ALIGNMENT_SECTIONS) {
+        expect(createRequiredAnnotation(context, section).ok).toBe(true);
         for (let index = 1; index <= 2; index += 1) {
           const created = createQuestionCard(context.projectPath, cardInput(context, section, index));
           expect(created.ok).toBe(true);
@@ -164,11 +195,19 @@ describe("Alignment attempt abandonment", () => {
   test("completed Alignment is irreversible", () => {
     withProject((context) => {
       for (const section of ALIGNMENT_SECTIONS) {
+        expect(createRequiredAnnotation(context, section).ok).toBe(true);
         for (let index = 1; index <= 2; index += 1) {
           expect(createQuestionCard(context.projectPath, cardInput(context, section, index)).ok).toBe(true);
         }
       }
       finalizeAlignmentPreparation(context.projectPath, context.attemptId);
+      const answering = getDesignIntentAlignment(context.projectPath);
+      for (const card of answering.question_cards) {
+        expect(recordDesignerAnswer(context.projectPath, {
+          questionCardId: card.id,
+          finalAnswer: card.proposed_answer
+        }).ok).toBe(true);
+      }
       expect(completeDesignIntentAlignment(context.projectPath).ok).toBe(true);
       expect(abandonCurrentAlignmentAttempt(context.projectPath)).toEqual({
         ok: false,

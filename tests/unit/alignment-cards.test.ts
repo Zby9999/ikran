@@ -9,7 +9,8 @@ import {
   AlignmentQuestionCard,
   activateAlignmentQuestionCard,
   previewAlignmentQuestionFocus,
-  stopAlignmentCardPointer
+  stopAlignmentCardPointer,
+  submitAlignmentQuestionAnswer
 } from "../../components/workbench/alignment-cards";
 
 const question = {
@@ -21,6 +22,40 @@ const question = {
 };
 
 describe("AlignmentQuestionCard", () => {
+  test("returns to the collapsed answered state after a successful submit", async () => {
+    const onSubmitAnswer = vi.fn().mockResolvedValue({ ok: true });
+    const onSubmitted = vi.fn();
+
+    await expect(
+      submitAlignmentQuestionAnswer(
+        "Use the editorial reference.",
+        onSubmitAnswer,
+        onSubmitted
+      )
+    ).resolves.toBe(true);
+
+    expect(onSubmitAnswer).toHaveBeenCalledWith(
+      "Use the editorial reference."
+    );
+    expect(onSubmitted).toHaveBeenCalledWith(
+      "Use the editorial reference."
+    );
+  });
+
+  test("keeps the editor open when answer persistence fails", async () => {
+    const onSubmitted = vi.fn();
+
+    await expect(
+      submitAlignmentQuestionAnswer(
+        "Keep editing.",
+        vi.fn().mockResolvedValue({ ok: false, error: "save_failed" }),
+        onSubmitted
+      )
+    ).resolves.toBe(false);
+
+    expect(onSubmitted).not.toHaveBeenCalled();
+  });
+
   test("isolates pointer gestures from the tldraw canvas", () => {
     const stopPropagation = vi.fn();
     const markHandled = vi.fn();
@@ -109,7 +144,11 @@ describe("AlignmentQuestionCard", () => {
     expect(html).toContain(question.question);
     expect(html).not.toContain("agent-proposed-designer-accepted");
     expect(html).not.toContain("Answer source");
-    expect(html).not.toContain("textarea");
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain('data-open="false"');
+    expect(html).toContain("inert");
+    expect(html).toContain('tabindex="-1"');
+    expect(html).toContain("textarea");
   });
 
   test("prefills the expanded editor from the proposed answer", () => {
@@ -124,6 +163,8 @@ describe("AlignmentQuestionCard", () => {
     );
 
     expect(html).toContain('data-expanded="true"');
+    expect(html).toContain('aria-hidden="false"');
+    expect(html).toContain('data-open="true"');
     expect(html).toContain('aria-label="Answer question 5"');
     expect(html).toContain(">Keep the inset on desktop.</textarea>");
     expect(html).toContain("<svg");
