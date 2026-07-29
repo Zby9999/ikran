@@ -132,7 +132,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("read_design_intent_alignment", {
-    description: "Read the latest Runtime-owned Agent Annotations, Question cards, final answers, answer sources, coverage, and Alignment status. No arguments."
+    description: "Read the latest Runtime-owned Agent Annotations, Question cards, final answers, answer sources, Designer Annotations (designer_annotations — the designer's own section-bound intent input, part of this Alignment; direction to respect, never Agent cards or coverage), coverage, and Alignment status. No arguments."
   }, async () => {
     const ctx = await active("read_design_intent_alignment");
     if (!ctx.ok) return ctx.result;

@@ -34,6 +34,7 @@
 
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import type { DatabaseSync as DatabaseType } from "node:sqlite";
 import { openProjectDb, closeProjectDb, withProjectTransaction } from "./db";
 import { emitRecordEvent } from "./record-bus";
 import { logEventOnDb } from "./events";
@@ -1059,30 +1060,50 @@ export function updateRegionAnnotationBody(
   }
 }
 
+export type RegionAnnotationListFilter = {
+  /** Restrict to one author — e.g. the Alignment snapshot reads only
+   *  `designer` rows (Issue 08A: Designer Annotations are part of Design
+   *  Intent Alignment). */
+  author?: RegionAnnotationAuthor;
+};
+
+/** On-Db variant for callers already holding an open project connection. */
+export function listRegionAnnotationsOnDb(
+  db: DatabaseType,
+  filter: RegionAnnotationListFilter = {}
+): RegionAnnotationRecord[] {
+  const rows = db
+    .prepare(
+      `SELECT ra.*,
+              current_surface.id AS current_evidence_version_id,
+              current_surface.frame_bounds_json AS current_frame_bounds_json,
+              current_surface.positional_nodes_json AS current_positional_nodes_json
+       FROM region_annotations ra
+       INNER JOIN figma_evidence_surfaces captured_surface
+         ON captured_surface.id = ra.target_evidence_version_id
+       INNER JOIN seed_references seed
+         ON seed.id = captured_surface.seed_reference_id
+       LEFT JOIN figma_evidence_surfaces current_surface
+         ON current_surface.id = seed.current_surface_id
+       ${filter.author ? "WHERE ra.author = ?" : ""}
+       ORDER BY ra.created_at ASC`
+    )
+    .all(...(filter.author ? [filter.author] : [])) as Array<
+    Record<string, unknown>
+  >;
+  return rows.map(mapAnnotationRow);
+}
+
 /** Oldest-first — matches listSeedReferences / listFigmaEvidenceSurfaces. */
 export function listRegionAnnotations(
-  projectPath: string
+  projectPath: string,
+  filter: RegionAnnotationListFilter = {}
 ): RegionAnnotationRecord[] {
   const db = openProjectDb(projectPath);
   try {
-    const rows = db
-      .prepare(
-        `SELECT ra.*,
-                current_surface.id AS current_evidence_version_id,
-                current_surface.frame_bounds_json AS current_frame_bounds_json,
-                current_surface.positional_nodes_json AS current_positional_nodes_json
-         FROM region_annotations ra
-         INNER JOIN figma_evidence_surfaces captured_surface
-           ON captured_surface.id = ra.target_evidence_version_id
-         INNER JOIN seed_references seed
-           ON seed.id = captured_surface.seed_reference_id
-         LEFT JOIN figma_evidence_surfaces current_surface
-           ON current_surface.id = seed.current_surface_id
-         ORDER BY ra.created_at ASC`
-      )
-      .all() as Array<Record<string, unknown>>;
-    return rows.map(mapAnnotationRow);
+    return listRegionAnnotationsOnDb(db, filter);
   } finally {
     closeProjectDb(db);
   }
 }
+

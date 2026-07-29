@@ -5,6 +5,7 @@ import { closeProjectDb, openProjectDb, withProjectTransaction } from "./db";
 import { logEventOnDb } from "./events";
 import { emitRecordEvent } from "./record-bus";
 import { getAlignmentPreparationOnDb } from "./alignment-preparation";
+import { listRegionAnnotationsOnDb } from "./region-annotation";
 import {
   asEvidenceBounds,
   parsePositionalNodes
@@ -1020,12 +1021,21 @@ export function getDesignIntentAlignment(projectPath: string) {
     );
     const state = db.prepare("SELECT status, completed_at FROM design_intent_alignment WHERE singleton = 1").get() as { status: "draft" | "completed"; completed_at: string | null };
     const coverage = coverageFor(questionCards);
+    // Issue 08A: Designer Annotations (author=designer, section-bound) are the
+    // designer's own intent input and part of the same Alignment — they ship
+    // in the snapshot alongside Agent cards so the semantic read surface
+    // (MCP read_design_intent_alignment) never needs a second channel. They
+    // are input, not a gate: coverage / can_complete never count them.
+    const designerAnnotations = listRegionAnnotationsOnDb(db, {
+      author: "designer"
+    });
     return {
       sections: ALIGNMENT_SECTIONS,
       alignment: state,
       preparation,
       annotations,
       question_cards: questionCards,
+      designer_annotations: designerAnnotations,
       coverage: {
         ...coverage,
         can_complete:

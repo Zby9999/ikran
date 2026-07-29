@@ -65,3 +65,10 @@ Figma reference: `recursive-design-agent` file,node `670:891`(**修订版，以�
 ## Blocked by
 
 - 06(已完成)。本 issue 排在 08 之前;与 08/09 的 extraction UI 协调点是 section 面板(本 issue 做创建时的阶段绑定、卡片显示与按阶段过滤;完整六部分抽取面板属于 08/09)。
+
+## Notes(2026-07-29,与设计师确认)
+
+- **Designer Annotation 是 Design Intent Alignment 的一部分**:它是设计师在各 section 的意图输入,不是游离的评论。`getDesignIntentAlignment` 快照已带 `designer_annotations` 字段(author=designer 的 region_annotations),MCP `read_design_intent_alignment` 与 MCP instructions 同步声明:Agent 在某 section 工作时必须先读这些标注并当作设计师方向尊重。
+- **它是输入,不是门槛**:Designer Annotation 不计入 coverage、不影响 finalize/can_complete,缺席永远不阻塞对齐完成。后续 agent 不要给它加"必须填写 N 条才能进入下一阶段"之类的 gate。
+- **不要做成第二通道**:设计师标注的语义读取一律走 alignment 快照的 `designer_annotations`,不要让 Agent 回退到 `list_region_annotations` 过滤或从 tldraw 状态猜测。
+- **08/09 的方向**:实现初始设计系统抽取时,应把 `designer_annotations` 一并打进抽取输入快照——标注是六步抽取环节的一部分,不是可选项。
