@@ -26,6 +26,7 @@ import {
   structuredContent
 } from "./helpers/mcp";
 import { stageAlignmentAnswering } from "./helpers/alignment";
+import { openIkranDb } from "./helpers/db";
 import { registerSeedReference } from "../lib/runtime/seed-reference";
 import { recordEvidencePackage } from "../lib/runtime/evidence-package";
 import { setDesignLanguageDescription } from "../lib/runtime/project-readiness";
@@ -35,9 +36,7 @@ import { getDesignSystemView } from "../lib/runtime/design-system-view";
 function readEventLines(
   dir: string
 ): Array<{ type: string; payload?: Record<string, unknown> }> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { DatabaseSync } = require("node:sqlite");
-  const db = new DatabaseSync(path.join(dir, ".ikran", "ikran.db"));
+  const db = openIkranDb(path.join(dir, ".ikran", "ikran.db"));
   try {
     return (
       db
@@ -417,9 +416,7 @@ test("invalid declarations return typed errors, log invalid_artifact and index n
 });
 
 function countDesignSystemEntries(dir: string): number {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { DatabaseSync } = require("node:sqlite");
-  const db = new DatabaseSync(path.join(dir, ".ikran", "ikran.db"));
+  const db = openIkranDb(path.join(dir, ".ikran", "ikran.db"));
   try {
     return (
       db.prepare("SELECT COUNT(*) AS count FROM design_system_entries").get() as {

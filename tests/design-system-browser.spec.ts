@@ -32,6 +32,7 @@ import {
   stageAlignmentAnswering
 } from "./helpers/alignment";
 import { enterCanvas } from "./helpers/workbench";
+import { openIkranDb } from "./helpers/db";
 
 async function patchAlignment(
   workbenchUrl: string,
@@ -53,9 +54,7 @@ function readDesignSystemEntryStatus(
   sourceArtifactPath: string,
   entryId: string
 ): string | null {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { DatabaseSync } = require("node:sqlite");
-  const db = new DatabaseSync(path.join(projectDir, ".ikran", "ikran.db"));
+  const db = openIkranDb(path.join(projectDir, ".ikran", "ikran.db"));
   try {
     const row = db
       .prepare(
@@ -70,9 +69,7 @@ function readDesignSystemEntryStatus(
 }
 
 function readEventTypes(projectDir: string): string[] {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { DatabaseSync } = require("node:sqlite");
-  const db = new DatabaseSync(path.join(projectDir, ".ikran", "ikran.db"));
+  const db = openIkranDb(path.join(projectDir, ".ikran", "ikran.db"));
   try {
     return (
       db.prepare("SELECT type FROM events ORDER BY id ASC").all() as Array<{
