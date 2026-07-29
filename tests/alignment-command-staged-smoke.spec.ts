@@ -8,6 +8,7 @@ import { recordEvidencePackage } from "../lib/runtime/evidence-package";
 import { setDesignLanguageDescription } from "../lib/runtime/project-readiness";
 import { registerSeedReference } from "../lib/runtime/seed-reference";
 import { killRecordedRuntime, sc, spawnMcpClient } from "./helpers/mcp";
+import { enterCanvas } from "./helpers/workbench";
 
 const SECTIONS = [
   "design-principle",
@@ -17,23 +18,6 @@ const SECTIONS = [
   "component",
   "interaction"
 ] as const;
-
-async function enterCanvas(page: import("@playwright/test").Page): Promise<void> {
-  const tokenInput = page.getByRole("textbox", {
-    name: "Figma Personal Access Token"
-  });
-  const selectTool = page.getByRole("button", { name: "Select (V)" });
-  await expect.poll(async () =>
-    (await tokenInput.isVisible()) || (await selectTool.isVisible())
-  ).toBe(true);
-  if (await tokenInput.isVisible()) {
-    await tokenInput.fill("figd_ok_e2e");
-    await page.getByRole("button", { name: "Check Figma token" }).click();
-    await page.getByRole("button", { name: "Enter Canvas" }).click();
-    await expect(page.getByTestId("figma-verification-panel")).toHaveCount(0);
-    await expect(selectTool).toBeVisible();
-  }
-}
 
 test("07G staged one-process Agent command handoff survives abandon and restart", async ({
   page

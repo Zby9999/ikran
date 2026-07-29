@@ -467,6 +467,22 @@ export function shouldIsolateKeydown(
   return sheetOpen && targetInsideSheet;
 }
 
+export type SheetEscapeAction = "close-info" | "close-sheet" | "swallow";
+
+/**
+ * Layered Esc dismissal inside the sheet: an open ⓘ popover closes first,
+ * the sheet second. During the exit window (still mounted, no longer shown)
+ * Esc never closes the sheet again — but it can still close an open ⓘ
+ * layer, which can't outlive the sheet anyway.
+ */
+export function sheetEscapeAction(
+  infoOpen: boolean,
+  sheetShown: boolean
+): SheetEscapeAction {
+  if (infoOpen) return "close-info";
+  return sheetShown ? "close-sheet" : "swallow";
+}
+
 /* ---------------------------- approval machine ---------------------------- */
 
 export type ApprovalState =

@@ -44,6 +44,7 @@ import {
   buildDesignSystemBrowserModel,
   componentLeafId,
   sheetReducer,
+  sheetEscapeAction,
   shouldIsolateKeydown,
   toRow,
   withEntryStatus,
@@ -294,6 +295,11 @@ export function InfoPopover({
         onMouseEnter={onInfoHoverOpen}
         onMouseLeave={onInfoHoverClose}
         onOpenAutoFocus={(event) => event.preventDefault()}
+        // This popover is hover-driven and reopens on trigger focus
+        // (onFocus={onInfoHoverOpen}), so Radix's default focus-restore on
+        // close would ignite a close→focus→reopen loop. Scoped to this usage
+        // site — the shared primitive keeps the default a11y behavior.
+        onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <EvidenceInfoContent
           entry={entry}
@@ -897,11 +903,23 @@ export function DesignSystemBrowser({
     [openInfo]
   );
 
-  // Focus trap + canvas keyboard isolation (capture phase). While the sheet
+  // Canvas keyboard isolation + focus trap (capture phase). The listener
+  // registers ONCE per mount and reads `infoKey`/`shown` through refs, so it
+  // never closes over stale state — re-registering on infoKey changes used
+  // to steal focus and leave Esc handled by stale closures. While the sheet
   // is MOUNTED — including the exit window after `shown` flips false, until
   // DESIGN_SYSTEM_SHEET_EXIT_MS elapses — keydown originating inside the
-  // sheet never reaches tldraw. Esc closes the ⓘ layer first, then the
-  // sheet; during the exit window it is simply swallowed.
+  // sheet never reaches tldraw. Esc is layered (see sheetEscapeAction): ⓘ
+  // layer first, then the sheet; swallowed during the exit window.
+  const infoKeyRef = useRef<string | null>(null);
+  const shownRef = useRef(false);
+  useEffect(() => {
+    infoKeyRef.current = infoKey;
+  }, [infoKey]);
+  useEffect(() => {
+    shownRef.current = shown;
+  }, [shown]);
+
   useEffect(() => {
     if (!mounted) return;
     const root = rootRef.current;
@@ -910,7 +928,6 @@ export function DesignSystemBrowser({
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    if (shown) root.focus();
 
     const onKeyDown = (event: KeyboardEvent) => {
       const inside = root.contains(event.target as Node);
@@ -918,14 +935,15 @@ export function DesignSystemBrowser({
       event.stopPropagation();
       if (event.key === "Escape") {
         event.preventDefault();
-        if (infoKey !== null) {
-          setInfoKey(null);
-        } else if (shown) {
-          onClose("escape");
-        }
+        const action = sheetEscapeAction(
+          infoKeyRef.current !== null,
+          shownRef.current
+        );
+        if (action === "close-info") setInfoKey(null);
+        else if (action === "close-sheet") onClose("escape");
         return;
       }
-      if (event.key === "Tab" && shown) {
+      if (event.key === "Tab" && shownRef.current) {
         const focusables = Array.from(
           root.querySelectorAll<HTMLElement>(
             'button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
@@ -949,11 +967,26 @@ export function DesignSystemBrowser({
     window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
-      // Restore focus only when the sheet fully unmounts (not on route infoKey
-      // changes), so focus stays inside during the exit window.
+      // Restore focus only when the sheet fully unmounts, so focus stays
+      // inside during the exit window.
       if (!rootRef.current) previouslyFocused?.focus();
     };
-  }, [mounted, shown, infoKey, onClose]);
+  }, [mounted, onClose]);
+
+  // Focus the sheet root exactly once per mount, on the first `shown`
+  // transition. Re-focusing on every ⓘ change used to snatch focus back from
+  // ⓘ triggers — making them keyboard-unreachable and, combined with Radix
+  // close-focus-restore, igniting a close→focus→reopen loop.
+  const didInitialFocusRef = useRef(false);
+  useEffect(() => {
+    if (!mounted) {
+      didInitialFocusRef.current = false;
+      return;
+    }
+    if (!shown || didInitialFocusRef.current) return;
+    didInitialFocusRef.current = true;
+    rootRef.current?.focus();
+  }, [mounted, shown]);
 
   const switchTab = useCallback((id: DsSectionId) => {
     setSection(id);

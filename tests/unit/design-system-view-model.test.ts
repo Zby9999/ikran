@@ -10,6 +10,7 @@ import {
   detectSwatch,
   formatEntryValue,
   sheetReducer,
+  sheetEscapeAction,
   shouldIsolateKeydown,
   statusChips,
   withEntryStatus,
@@ -341,6 +342,17 @@ describe("sheet state machine", () => {
     expect(shouldIsolateKeydown(true, true)).toBe(true);
     expect(shouldIsolateKeydown(true, false)).toBe(false);
     expect(shouldIsolateKeydown(false, true)).toBe(false);
+  });
+
+  test("Esc layering: ⓘ popover first, then sheet, swallowed in exit window", () => {
+    // An open ⓘ popover consumes Esc before the sheet ever sees it.
+    expect(sheetEscapeAction(true, true)).toBe("close-info");
+    // No popover: Esc closes the sheet itself.
+    expect(sheetEscapeAction(false, true)).toBe("close-sheet");
+    // Exit window (mounted, no longer shown): Esc never closes the sheet
+    // again, but it can still close an open ⓘ layer.
+    expect(sheetEscapeAction(false, false)).toBe("swallow");
+    expect(sheetEscapeAction(true, false)).toBe("close-info");
   });
 });
 
