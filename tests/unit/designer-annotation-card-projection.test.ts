@@ -291,7 +291,7 @@ describe("buildDesignerAnnotationCardPlan", () => {
     );
   });
 
-  test("stacked-off cards get an elbow connector into the marker's horizontal edge (Figma 674-906)", () => {
+  test("card center inside the marker's span folds twice into the nearest vertical edge midpoint", () => {
     const first = annotation({ id: "ann-1", rect_x: 0.05, rect_y: 0.2 });
     const second = annotation({ id: "ann-2", rect_x: 0.06, rect_y: 0.21 });
     const plan = planFor([first, second]);
@@ -299,19 +299,52 @@ describe("buildDesignerAnnotationCardPlan", () => {
     const connector = connectorOf(plan, "ann-2");
     const marker = markerCenter(second);
 
-    // Card 2 was pushed below the marker row: the connector leaves the card
-    // at its vertical center, elbows at the marker's center X, then drops
-    // into the marker's nearest horizontal edge (bottom, card below).
-    expect(card2.y + card2.h / 2).not.toBe(marker.y);
-    expect(connector.points).toHaveLength(3);
-    const [p0, p1, p2] = pagePointsOf(connector);
-    expect(p0).toEqual({ x: card2.x + card2.w, y: card2.y + card2.h / 2 });
-    expect(p1).toEqual({ x: marker.x, y: card2.y + card2.h / 2 });
-    expect(p2).toEqual({ x: marker.x, y: marker.rect.y + marker.rect.h });
+    // Card 2 was pushed down, but its center still overlaps the marker's
+    // vertical span — a stub into the top/bottom edge would read as a kink.
+    const cardCenterY = card2.y + card2.h / 2;
+    expect(cardCenterY).toBeGreaterThan(marker.rect.y);
+    expect(cardCenterY).toBeLessThan(marker.rect.y + marker.rect.h);
+    expect(cardCenterY).not.toBe(marker.y);
+
+    // Two folds: out at the card's center height, across the gap midpoint,
+    // then into the marker's nearest vertical edge midpoint.
+    expect(connector.points).toHaveLength(4);
+    const cardEdgeX = card2.x + card2.w;
+    const markerEdgeX = marker.rect.x;
+    const midX = cardEdgeX + (markerEdgeX - cardEdgeX) / 2;
+    const [p0, p1, p2, p3] = pagePointsOf(connector);
+    expect(p0).toEqual({ x: cardEdgeX, y: cardCenterY });
+    expect(p1).toEqual({ x: midX, y: cardCenterY });
+    expect(p2).toEqual({ x: midX, y: marker.y });
+    expect(p3).toEqual({ x: markerEdgeX, y: marker.y });
 
     // Bounding box covers the whole polyline.
-    expect(connector.x).toBe(Math.min(p0.x, p1.x, p2.x));
-    expect(connector.y).toBe(Math.min(p0.y, p1.y, p2.y));
+    expect(connector.x).toBe(Math.min(p0.x, p1.x, p2.x, p3.x));
+    expect(connector.y).toBe(Math.min(p0.y, p1.y, p2.y, p3.y));
+  });
+
+  test("card stacked fully off the marker's span elbows into its horizontal edge (Figma 674-906)", () => {
+    const record = annotation({ id: "ann-low", rect_x: 0.05, rect_h: 0.05 });
+    const marker = markerCenter(record);
+    const plan = buildDesignerAnnotationCardPlan({
+      annotations: [record],
+      resolveSurface: () => surface(),
+      occupiedByLane: new Map([
+        ["shape:surface-1:left", [{ y: marker.rect.y - 20, h: 100 }]]
+      ])
+    });
+    const card = cardOf(plan, "ann-low");
+    const connector = connectorOf(plan, "ann-low");
+
+    // Card center is below the marker's whole span → single elbow down into
+    // the marker's bottom edge at its center X.
+    const cardCenterY = card.y + card.h / 2;
+    expect(cardCenterY).toBeGreaterThan(marker.rect.y + marker.rect.h);
+    expect(connector.points).toHaveLength(3);
+    const [p0, p1, p2] = pagePointsOf(connector);
+    expect(p0).toEqual({ x: card.x + card.w, y: cardCenterY });
+    expect(p1).toEqual({ x: marker.x, y: cardCenterY });
+    expect(p2).toEqual({ x: marker.x, y: marker.rect.y + marker.rect.h });
   });
 
   test("stacks below lane boxes occupied by other card families (07 agent question cards)", () => {

@@ -43,6 +43,18 @@ describe("buildConnectorPath", () => {
     expect(d).toBe("M 10 0 L 5 0 Q 0 0 0 5 L 0 10");
   });
 
+  test("two-fold polyline rounds both interior corners", () => {
+    const d = buildConnectorPath([
+      { x: 100, y: 0 },
+      { x: 50, y: 0 },
+      { x: 50, y: 50 },
+      { x: 0, y: 50 }
+    ]);
+    expect(d).toBe(
+      "M 100 0 L 58 0 Q 50 0 50 8 L 50 42 Q 50 50 42 50 L 0 50"
+    );
+  });
+
   test("consecutive duplicate points are dropped", () => {
     expect(
       buildConnectorPath([

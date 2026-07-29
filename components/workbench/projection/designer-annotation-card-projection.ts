@@ -54,10 +54,12 @@ export type DesignerAnnotationConnectorPlan = {
   h: number;
   /**
    * Polyline in connector-local coords, card end first, marker end last.
-   * 2 points when the card center aligns with the marker (straight
-   * horizontal); 3 points when the card was stacked off the marker row —
-   * horizontal at the card's center to the marker's center X, then vertical
-   * into the marker's nearest horizontal edge (Figma 674-906).
+   * 2 points when the card center sits on the marker row (straight
+   * horizontal); 4 points when the card center is still inside the marker's
+   * vertical span (two folds into the nearest vertical edge midpoint);
+   * 3 points when stacked fully off the span — horizontal at the card's
+   * center to the marker's center X, then vertical into the marker's
+   * nearest horizontal edge (Figma 674-906).
    */
   points: Array<{ x: number; y: number }>;
 };
@@ -174,32 +176,49 @@ export function buildDesignerAnnotationCardPlan(input: {
       surfaceShapeId: surface.surfaceShapeId
     });
 
-    // Dashed connector (Figma 674-906): leaves the card's inner edge at the
-    // card's VERTICAL CENTER. When stacking pushed the card off the marker's
-    // row it elbows — horizontal to the marker's center X, then vertical
-    // into the marker's nearest horizontal edge (top when the card sits
-    // above, bottom when below); otherwise a straight horizontal into the
-    // marker's nearest vertical edge. The path never enters the marker box:
-    // the connector shape's real box plus tldraw's hit margin would
-    // otherwise steal clicks meant for the marker (the shape additionally
-    // reports a zero-area hit geometry at the card end).
+    // Dashed connector (Figma 674-906 + designer refinement): leaves the
+    // card's inner edge at the card's VERTICAL CENTER, then three cases —
+    //  1. card center on the marker's row: straight horizontal into the
+    //     marker's nearest vertical edge midpoint;
+    //  2. card center still inside the marker's vertical span: a stub into
+    //     the top/bottom edge would read as a kink, so fold TWICE — out at
+    //     the card's center height, across the gap midpoint, then into the
+    //     marker's nearest vertical edge midpoint;
+    //  3. card fully off the marker's span: single elbow — horizontal to the
+    //     marker's center X, then vertical into the nearest horizontal edge.
+    // The path never enters the marker box: the connector shape's real box
+    // plus tldraw's hit margin would otherwise steal clicks meant for the
+    // marker (the shape additionally reports a zero-area hit geometry at the
+    // card end).
     const cardCenterY = y + h / 2;
     const cardEdgeX = side === "left" ? x + w : x;
     const markerEdgeX = side === "left" ? marker.x : marker.x + marker.w;
+    const markerTop = marker.y;
+    const markerBottom = marker.y + marker.h;
     const pagePoints =
       Math.abs(cardCenterY - markerCenterY) < 1
         ? [
             { x: cardEdgeX, y: markerCenterY },
             { x: markerEdgeX, y: markerCenterY }
           ]
-        : [
-            { x: cardEdgeX, y: cardCenterY },
-            { x: markerCenterX, y: cardCenterY },
-            {
-              x: markerCenterX,
-              y: cardCenterY < markerCenterY ? marker.y : marker.y + marker.h
-            }
-          ];
+        : cardCenterY > markerTop && cardCenterY < markerBottom
+          ? (() => {
+              const midX = cardEdgeX + (markerEdgeX - cardEdgeX) / 2;
+              return [
+                { x: cardEdgeX, y: cardCenterY },
+                { x: midX, y: cardCenterY },
+                { x: midX, y: markerCenterY },
+                { x: markerEdgeX, y: markerCenterY }
+              ];
+            })()
+          : [
+              { x: cardEdgeX, y: cardCenterY },
+              { x: markerCenterX, y: cardCenterY },
+              {
+                x: markerCenterX,
+                y: cardCenterY < markerCenterY ? markerTop : markerBottom
+              }
+            ];
     const connX = Math.min(...pagePoints.map((p) => p.x));
     const connY = Math.min(...pagePoints.map((p) => p.y));
     const connMaxX = Math.max(...pagePoints.map((p) => p.x));

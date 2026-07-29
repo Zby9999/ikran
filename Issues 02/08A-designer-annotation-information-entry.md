@@ -19,7 +19,7 @@ Figma reference: `recursive-design-agent` file,node `670:891`(**修订版，以�
 3. **绿色是 User Annotation 专属色**:卡片与 connector 固定使用设计师绿(tint `#e9ffea` / border `#19d122`，与画布 marker 同色),**不按 section 着色**、无 anchor 徽章。
 4. **新类型**:新增 annotation 类型 `designer_annotation`,作为设计师自由标注的类型(不复用 question / assumption / observed fact / generalization risk);设计师创建默认使用该类型，旧 `explanatory` 记录保持可读。
 5. **可编辑**:点击已填卡片，出现与录入框相同样式的输入框(预填当前文字),设计师直接编辑;保存更新 body 并记录语义事件。
-6. **堆叠与折线 connector(Figma 674-906)**:同车道卡片以 12px 间距堆叠;卡片被挤离 marker 所在行时，connector 走折线——从卡片垂直中心水平到 marker 中心 X，再垂直进入 marker 最近的水平边(卡片在上方接顶边、下方接底边)，拐角 8px 圆角;未被挤压时保持水平直线直连 marker 最近垂直边。无论直线折线，connector 都不进入 marker 盒。
+6. **堆叠与折线 connector(Figma 674-906 + 设计师补充)**:同车道卡片以 12px 间距堆叠;connector 从卡片垂直中心出发，分三种形态——①卡片中线与 marker 中线同行:水平直线直连 marker 最近垂直边中点;②卡片中线仍落在 marker 纵跨内(堆叠偏差小):双折线——先水平到车道空隙中点，再折到 marker 中线高度，最后水平进入 marker 最近垂直边中点(避免在上下边中点画出短促突兀的折角);③卡片完全离开 marker 纵跨:单折线——水平到 marker 中心 X，再垂直进入最近水平边(上/下)。拐角 8px 圆角;无论哪种形态，connector 都不进入 marker 盒。
 7. **与 Agent question card 的碰撞体积**:设计师卡片与本 section 的 07 Agent question card 共享侧栏车道——question card 占位优先，设计师卡片以其为已占盒继续堆叠(12px 间距),两者永不重叠;question card 出现/移动/删除时设计师卡片即时重排。
 8. **录入框定位**:录入框生成在 marker 靠近的边框一侧、**frame 外**，与 annotation marker 水平方向对齐;不遮挡画布内容。
 
