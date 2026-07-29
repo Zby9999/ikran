@@ -374,6 +374,19 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
       box.y + box.height * 0.45
     );
 
+    // While the entry waits, a dashed connector bridges the marker and the
+    // out-of-frame entry box so the form can be found from far away (08A).
+    const entryConnector = page.getByTestId(
+      "designer-annotation-entry-connector"
+    );
+    await expect(entryConnector).toBeVisible();
+    const entryLine = entryConnector.locator("line");
+    const [x1, x2] = [
+      Number(await entryLine.getAttribute("x1")),
+      Number(await entryLine.getAttribute("x2"))
+    ];
+    expect(Math.abs(x2 - x1)).toBeGreaterThan(0);
+
     const createRequest = page.waitForRequest(
       (request) =>
         request.method() === "POST" &&

@@ -77,6 +77,13 @@ export const REGION_ANNOTATION_TYPE = "region-annotation" as const;
 export const REGION_ANNOTATION_DEFAULT_W = 40;
 export const REGION_ANNOTATION_DEFAULT_H = 40;
 
+/** Entry form geometry (page px) shared by the dock anchor and its connector. */
+export const DESIGNER_ANNOTATION_ENTRY_W = 360;
+export const DESIGNER_ANNOTATION_ENTRY_H = 56;
+export const DESIGNER_ANNOTATION_ENTRY_GAP = 20;
+/** User Annotation green (Figma 670:891) — entry connector matches cards. */
+const DESIGNER_ANNOTATION_GREEN = "#19d122";
+
 /**
  * Stroke / radius at the Figma annotation reference media width.
  * Stroke stays at the Figma reference weight; radius is intentionally reduced
@@ -140,14 +147,14 @@ function RegionAnnotationMarker({ shape }: { shape: RegionAnnotationShape }) {
         if (!seedReferenceMetaMatchesSurfaceId(meta, surfaceRecordId)) continue;
         const bounds = editor.getShapePageBounds(parent);
         if (!bounds) return null;
-        const FORM_W = 360;
-        const FORM_H = 56;
-        const GAP = 20;
         const right = shape.x + w / 2 >= bounds.x + bounds.w / 2;
         const anchorX = right
-          ? bounds.x + bounds.w + GAP
-          : bounds.x - GAP - FORM_W;
-        return { left: anchorX - shape.x, top: h / 2 - FORM_H / 2 };
+          ? bounds.x + bounds.w + DESIGNER_ANNOTATION_ENTRY_GAP
+          : bounds.x - DESIGNER_ANNOTATION_ENTRY_GAP - DESIGNER_ANNOTATION_ENTRY_W;
+        return {
+          left: anchorX - shape.x,
+          top: h / 2 - DESIGNER_ANNOTATION_ENTRY_H / 2
+        };
       }
       return null;
     },
@@ -186,35 +193,71 @@ function RegionAnnotationMarker({ shape }: { shape: RegionAnnotationShape }) {
         }}
       />
       {isPendingDraft && entry ? (
-        <div
-          className="designer-annotation-entry-anchor"
-          data-testid="designer-annotation-entry-anchor"
-          style={
-            entryPlacement
-              ? { left: entryPlacement.left, top: entryPlacement.top }
-              : undefined
-          }
-        >
-          <DesignerAnnotationEntryForm
-            submitting={entry.submitting}
-            onSubmit={async (body) => {
-              const result = await entry.submit(body);
-              // Failure keeps the form open with the typed body intact — the
-              // designer retries or explicitly cancels (Esc). Only cancel
-              // destroys a draft (PRD 50); a transient create error must not.
-              if (!result.ok) {
-                console.error(
-                  "[designer-annotation] create failed:",
-                  result.error
-                );
-              }
-            }}
-            onCancel={() => {
-              entry.cancel();
-              editor.deleteShape(shape.id);
-            }}
-          />
-        </div>
+        <>
+          {entryPlacement ? (
+            // The entry box docks outside the frame — when the marker sits
+            // far from that edge the form is easy to lose, so draw the same
+            // dashed green connector the committed card will use. The box is
+            // vertically centered on the marker, so this is always a
+            // straight horizontal from the marker's near edge to the box.
+            <svg
+              aria-hidden="true"
+              data-testid="designer-annotation-entry-connector"
+              width={w}
+              height={h}
+              overflow="visible"
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                pointerEvents: "none"
+              }}
+            >
+              <line
+                x1={entryPlacement.left > 0 ? w : 0}
+                y1={h / 2}
+                x2={
+                  entryPlacement.left > 0
+                    ? entryPlacement.left
+                    : entryPlacement.left + DESIGNER_ANNOTATION_ENTRY_W
+                }
+                y2={h / 2}
+                stroke={DESIGNER_ANNOTATION_GREEN}
+                strokeWidth="1"
+                strokeDasharray="6 5"
+              />
+            </svg>
+          ) : null}
+          <div
+            className="designer-annotation-entry-anchor"
+            data-testid="designer-annotation-entry-anchor"
+            style={
+              entryPlacement
+                ? { left: entryPlacement.left, top: entryPlacement.top }
+                : undefined
+            }
+          >
+            <DesignerAnnotationEntryForm
+              submitting={entry.submitting}
+              onSubmit={async (body) => {
+                const result = await entry.submit(body);
+                // Failure keeps the form open with the typed body intact — the
+                // designer retries or explicitly cancels (Esc). Only cancel
+                // destroys a draft (PRD 50); a transient create error must not.
+                if (!result.ok) {
+                  console.error(
+                    "[designer-annotation] create failed:",
+                    result.error
+                  );
+                }
+              }}
+              onCancel={() => {
+                entry.cancel();
+                editor.deleteShape(shape.id);
+              }}
+            />
+          </div>
+        </>
       ) : null}
     </HTMLContainer>
   );
