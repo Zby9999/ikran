@@ -217,9 +217,12 @@ function checkEntryArray(
 // rejected with the offending path in details.
 // ---------------------------------------------------------------------------
 
-const TOKEN_LAYERS = ["primitive", "semantic", "component"] as const;
+// Single owner of the token layer vocabulary: ./design-system-ingest
+// (flatten) and ./design-system-approval (write-back location) import these
+// instead of re-declaring them.
+export const TOKEN_LAYERS = ["primitive", "semantic", "component"] as const;
 
-type TokenLayer = (typeof TOKEN_LAYERS)[number];
+export type TokenLayer = (typeof TOKEN_LAYERS)[number];
 
 const ALLOWED_ALIAS_TARGET_LAYERS: Record<TokenLayer, readonly TokenLayer[]> =
   {
@@ -227,6 +230,23 @@ const ALLOWED_ALIAS_TARGET_LAYERS: Record<TokenLayer, readonly TokenLayer[]> =
     semantic: ["primitive", "semantic"],
     component: ["primitive", "semantic", "component"]
   };
+
+/**
+ * Parse a layer-qualified token reference ("<layer>.<name>"; the name may
+ * itself contain dots). Used for alias targets here, and by Task D's
+ * write-back to split a token entry id into its nested file location.
+ * Null when the shape or layer is invalid.
+ */
+export function parseTokenEntryRef(
+  ref: string
+): { layer: TokenLayer; name: string } | null {
+  const dot = ref.indexOf(".");
+  if (dot <= 0 || dot === ref.length - 1) return null;
+  const layer = ref.slice(0, dot);
+  const name = ref.slice(dot + 1);
+  if (!(TOKEN_LAYERS as readonly string[]).includes(layer)) return null;
+  return { layer: layer as TokenLayer, name };
+}
 
 /**
  * Extract an alias reference from a token value, using the module's uniform
@@ -260,12 +280,7 @@ function aliasTargetOf(
 function parseAliasRef(
   ref: string
 ): { layer: TokenLayer; name: string } | null {
-  const dot = ref.indexOf(".");
-  if (dot <= 0 || dot === ref.length - 1) return null;
-  const layer = ref.slice(0, dot);
-  const name = ref.slice(dot + 1);
-  if (!(TOKEN_LAYERS as readonly string[]).includes(layer)) return null;
-  return { layer: layer as TokenLayer, name };
+  return parseTokenEntryRef(ref);
 }
 
 function validateTokenJson(json: Record<string, unknown>): DesignSystemSchemaResult {

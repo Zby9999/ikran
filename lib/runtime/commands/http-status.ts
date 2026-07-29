@@ -14,7 +14,11 @@ const CONFLICT_REASONS = new Set([
   "alignment_command_not_claimed",
   "stale_alignment_attempt",
   "no_pending_alignment_command",
-  "no_active_alignment_attempt"
+  "no_active_alignment_attempt",
+  // Task D approval write-back: state conflicts (entry already formalized,
+  // or DB row and source file have drifted apart).
+  "already_formalized",
+  "entry_not_in_source_file"
 ]);
 const NOT_FOUND_REASONS = new Set(["not_found"]);
 const GONE_REASONS = new Set(["endpoint_retired"]);

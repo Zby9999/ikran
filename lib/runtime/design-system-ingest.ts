@@ -22,6 +22,7 @@ import type { DatabaseSync as DatabaseType } from "node:sqlite";
 import { logEventOnDb } from "./events";
 import {
   collectStatusEntries,
+  TOKEN_LAYERS,
   type DesignSystemFileKind,
   type DesignSystemSchemaReason,
   type DesignSystemStatus
@@ -151,8 +152,6 @@ type RawEntry = {
   status: DesignSystemStatus;
   links: string[];
 };
-
-const TOKEN_LAYERS = ["primitive", "semantic", "component"] as const;
 
 /**
  * Flatten a schema-validated file into ingest rows. Mirrors the shapes owned

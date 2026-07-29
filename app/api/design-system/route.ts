@@ -2,6 +2,8 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { authorize } from "../../../lib/runtime/session";
 import {
+  approveDesignSystemEntryCommand,
+  approveDesignSystemEntryInputSchema,
   commandErrorHttpStatus,
   getDesignSystemComponentCommand,
   getDesignSystemComponentInputSchema,
@@ -31,7 +33,8 @@ function context(request: NextRequest) {
 // Browser design-system read surface (Issue 09 / 09A decision 2): the view
 // model comes from the DB with the evidence chain joined in real time — the
 // Browser never reads design-system source files or the derived view.json
-// export. Read-only in v1; Task D adds the approval write action.
+// export. POST also carries the v1 write action (09A decision 5, Task D):
+// "approve-entry" — the only Browser write, candidate → formalized.
 export async function GET(request: NextRequest) {
   const ctx = context(request);
   if ("response" in ctx) return ctx.response;
@@ -62,6 +65,21 @@ export async function POST(request: NextRequest) {
       ? NextResponse.json(result)
       : NextResponse.json(
           { ok: false, error: result.reason },
+          { status: commandErrorHttpStatus(result.reason) }
+        );
+  }
+  // v1's only write (09A decision 5): candidate → formalized approval.
+  // Writes the DB row AND the JSON source file (canonical serialization),
+  // logs design_system_entry_approved, emits the design-system record-bus
+  // invalidation and regenerates the derived export — all in the command.
+  if (raw.action === "approve-entry") {
+    const parsed = parseCommandInput(approveDesignSystemEntryInputSchema, raw.input);
+    if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.reason }, { status: 400 });
+    const result = approveDesignSystemEntryCommand(ctx.projectPath, parsed.data);
+    return result.ok
+      ? NextResponse.json(result)
+      : NextResponse.json(
+          { ok: false, error: result.reason, details: result.details },
           { status: commandErrorHttpStatus(result.reason) }
         );
   }

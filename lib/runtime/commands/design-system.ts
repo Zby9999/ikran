@@ -9,6 +9,24 @@ import {
   type DesignSystemEntryView,
   type DesignSystemViewResult
 } from "../design-system-view";
+import {
+  approveDesignSystemEntry,
+  type ApproveDesignSystemEntryInput,
+  type DesignSystemApprovalResult
+} from "../design-system-approval";
+
+/**
+ * The Browser's only write operation in v1 (09A decision 5): candidate →
+ * formalized approval — flips the DB row and writes the JSON source file
+ * back canonically, logs design_system_entry_approved, then invalidates the
+ * Browser and regenerates the derived export.
+ */
+export function approveDesignSystemEntryCommand(
+  projectPath: string,
+  input: ApproveDesignSystemEntryInput
+): DesignSystemApprovalResult {
+  return approveDesignSystemEntry(projectPath, input);
+}
 
 export function getDesignSystemViewCommand(
   projectPath: string

@@ -312,7 +312,11 @@ _Avoid_: treating JSONL as the live canonical store
 The agent calling an Ikran tool after writing a source artifact, so Runtime
 records the semantic event, validates the output (one-pass repair per Issue 13),
 and generates derived artifacts. File writes happen via the Agent host; Runtime
-learns of them by declaration, not by mediating the write.
+learns of them by declaration, not by mediating the write. One sanctioned
+exception: the 09A candidate → formalized approval write-back (decision 5),
+where Runtime writes the design-system source JSON itself — the only way to
+keep the DB row and the source file in lockstep for the Browser's single write
+operation.
 _Avoid_: log, register, commit
 
 ## Source-of-truth split

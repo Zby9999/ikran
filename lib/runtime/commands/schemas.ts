@@ -214,6 +214,17 @@ export const getDesignSystemComponentInputSchema = z.object(
   getDesignSystemComponentInputShape
 );
 
+export const approveDesignSystemEntryInputShape = {
+  /** Project-relative source artifact path holding the entry. */
+  sourceArtifactPath: z.string(),
+  /** Entry identity inside the file (layer-qualified for tokens). */
+  entryId: z.string()
+} as const;
+
+export const approveDesignSystemEntryInputSchema = z.object(
+  approveDesignSystemEntryInputShape
+);
+
 const alignmentEvidenceLinkShape = {
   seedReferenceId: z.string(),
   evidenceSurfaceId: z.string(),
