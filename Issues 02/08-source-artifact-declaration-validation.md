@@ -12,19 +12,25 @@
 
 ## Acceptance criteria
 
-- [ ] `record_artifact_written` 接收 path、artifact type、semantic purpose、关联 record ids。
-- [ ] Runtime 验证 path 在当前项目范围内。
-- [ ] 已声明且校验通过的 artifact 进入 event log 和 artifact index。
-- [ ] 未声明文件变化不进入 research export。
-- [ ] 声明失败记录 invalid-artifact 或 invalid-output 事件。
-- [ ] Runtime 最多请求一次修复，不补造语义。
-- [ ] 测试覆盖有效声明、越界路径、未知 artifact type、校验失败、未声明文件 guard。
+- [x] `record_artifact_written` 接收 path、artifact type、semantic purpose、关联 record ids。
+- [x] Runtime 验证 path 在当前项目范围内。
+- [x] 已声明且校验通过的 artifact 进入 event log 和 artifact index。
+- [x] 未声明文件变化不进入 research export。
+- [x] 声明失败记录 invalid-artifact 或 invalid-output 事件。
+- [x] Runtime 最多请求一次修复，不补造语义。
+- [x] 测试覆盖有效声明、越界路径、未知 artifact type、校验失败、未声明文件 guard。
 
 ## Real Agent validation
 
-- [ ] 真实 Agent 写一个最小 `token.json` 或 design-system candidate source artifact。
-- [ ] Agent 调用 `record_artifact_written` 声明该 artifact。
-- [ ] Runtime 记录事件并在 artifact index 中出现该 artifact。
+- [x] 真实 Agent 写一个最小 `token.json` 或 design-system candidate source artifact。
+- [x] Agent 调用 `record_artifact_written` 声明该 artifact。
+- [x] Runtime 记录事件并在 artifact index 中出现该 artifact。
+
+### 验证记录（2026-07-29，真实项目 `~/Desktop/ikran test 7`，schema v16）
+
+- 主 Agent 经 WebBridge + 真实 MCP stdio(`bin/ikran-mcp.mjs`，非 mock client）驱动全链路：Agent 写入 6 个 design-system 源文件（design-system.json / token.json / component-list.json / components/button.json / layout-rules.json / interaction-rules.json)，逐文件 `record_artifact_written` 声明，全部 `ok:true` 并落 `source_artifacts` 表（6 行）。
+- 事件链核对：`source_artifact_declared` ×7(6 次声明 + 1 次 LWW 重新声明 token.json，同一 artifact record id 更新）。
+- 负例：声明一个 formalized 但 links 仅指向 `agent-proposed-designer-accepted` 卡的 component-spec,Runtime 硬挡返回 `formalized_requires_designer_edited_link`，事件 `invalid_artifact` ×1，该 artifact 不入 index（负例文件已清理）。
 
 ## Likely difficulties for Agent
 

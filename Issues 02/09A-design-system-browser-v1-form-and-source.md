@@ -40,23 +40,30 @@
 
 ## Acceptance criteria
 
-- [ ] design-system source 全部为 JSON;无 Markdown 源文件、`design-reference-list.md` 不存在。
-- [ ] 源文件布局为 `design-system/` 下 `design-system.json`、`token.json`、`component-list.json`、`components/<name>.json`、`layout-rules.json`、`interaction-rules.json`。
-- [ ] Runtime 校验并 ingest 入 DB;Browser 数据经 API 从 DB 实时 join(含证据链),渲染不依赖 `design-system-view.json`。
-- [ ] `design-system-view.json` 作为 derived export 写入 `.ikran/artifacts/`。
-- [ ] 状态三档由 Runtime 交叉校验计算:无 designer-edited link 的 formalized 声明被拒绝/降级;gap 只能显式声明。
-- [ ] 行内只显示值/含义/状态 chip;ⓘ hover 浮层展示完整证据与溯源链(含 designer annotations)。
-- [ ] candidate → formalized 审批同时写 DB 与回写 JSON 源文件,并记录语义事件。
-- [ ] 写回冲突按 LWW 处理并留 event log。
-- [ ] 六步完成后左侧面板底部出现 "Draft Design System" 按钮;Browser 以底部 sheet 升起,scrim/Esc/关闭钮可关闭。
-- [ ] 六部分映射全部落地:principles 在 Foundations Home,组件详情含 Boundaries,无独立 Rules 页面。
-- [ ] 测试覆盖:JSON schema 校验、状态交叉校验、审批写回(DB + 文件一致)、导出物生成、sheet 入口出现时机。
+- [x] design-system source 全部为 JSON;无 Markdown 源文件、`design-reference-list.md` 不存在。
+- [x] 源文件布局为 `design-system/` 下 `design-system.json`、`token.json`、`component-list.json`、`components/<name>.json`、`layout-rules.json`、`interaction-rules.json`。
+- [x] Runtime 校验并 ingest 入 DB;Browser 数据经 API 从 DB 实时 join(含证据链),渲染不依赖 `design-system-view.json`。
+- [x] `design-system-view.json` 作为 derived export 写入 `.ikran/artifacts/`。
+- [x] 状态三档由 Runtime 交叉校验计算:无 designer-edited link 的 formalized 声明被拒绝/降级;gap 只能显式声明。
+- [x] 行内只显示值/含义/状态 chip;ⓘ hover 浮层展示完整证据与溯源链(含 designer annotations)。
+- [x] candidate → formalized 审批同时写 DB 与回写 JSON 源文件,并记录语义事件。
+- [x] 写回冲突按 LWW 处理并留 event log。
+- [x] 六步完成后左侧面板底部出现 "Draft Design System" 按钮;Browser 以底部 sheet 升起,scrim/Esc/关闭钮可关闭。
+- [x] 六部分映射全部落地:principles 在 Foundations Home,组件详情含 Boundaries,无独立 Rules 页面。
+- [x] 测试覆盖:JSON schema 校验、状态交叉校验、审批写回(DB + 文件一致)、导出物生成、sheet 入口出现时机。
 
 ## Real Agent validation
 
-- [ ] 真实 Agent 完成六步 alignment 后,左侧面板出现 "Draft Design System" 按钮;打开 sheet 渲染至少一个 foundation 叶子和一个 component 详情。
-- [ ] 设计师在 Browser 内审批一条 candidate → formalized;SQLite 与对应 JSON 源文件同步更新,语义事件可查。
-- [ ] Agent 声明一个无 designer-edited link 的 formalized 规则,被 Runtime 交叉校验拒绝或降级为 candidate。
+- [x] 真实 Agent 完成六步 alignment 后,左侧面板出现 "Draft Design System" 按钮;打开 sheet 渲染至少一个 foundation 叶子和一个 component 详情。
+- [x] 设计师在 Browser 内审批一条 candidate → formalized;SQLite 与对应 JSON 源文件同步更新,语义事件可查。
+- [x] Agent 声明一个无 designer-edited link 的 formalized 规则,被 Runtime 交叉校验拒绝或降级为 candidate。
+
+### 验证记录(2026-07-29,真实项目 `~/Desktop/ikran test 7`,schema v16)
+
+- 六步 alignment 完成(18/18 卡全部作答,含 2 张 designer-edited)后,顶部 Extraction 面板出现 "Draft Design System" 按钮(注:实际入口在 extraction 面板底部,非本文件所述"左侧面板");点击后 88vh 底部 sheet 升起,Section Tabs(Foundations/Components)+ ⓘ 证据浮层(QUESTION CARDS / EVIDENCE VERSIONS / DESIGNER ANNOTATIONS)渲染正确,Esc 可关闭。
+- 审批正例:token `primitive.space.unit`(candidate,links 含 designer-edited 卡 96fb147d)在 sheet 内点 "Approve → formalized" → UI chip 即时翻转;`design-system/token.json` 写回 `"status": "formalized"`(canonical 序列化),SQLite `design_system_entries` 同步,事件 `design_system_entry_approved` ×1(payload: from candidate → to formalized)。
+- 审批负例(UI):Project Card(candidate,仅 accepted 卡支撑)审批被拒,inline 显示 "Approval failed: Needs a designer-edited answered card before it can be formalized.",chip 保持 candidate。
+- 声明负例(MCP):formalized 但无 designer-edited link 的 component-spec 在声明事务内被硬挡(`formalized_requires_designer_edited_link`),记 `invalid_artifact` 事件,不入 artifact index。
 
 ## Likely difficulties for Agent
 
