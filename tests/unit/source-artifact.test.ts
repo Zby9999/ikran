@@ -1,0 +1,446 @@
+// Unit tests for source artifact declaration + artifact index (Issue 08).
+// Pure Node — no MCP/Next. Runtime never fabricates semantics.
+
+import {
+  mkdtempSync,
+  rmSync,
+  mkdirSync,
+  writeFileSync,
+  symlinkSync
+} from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { afterEach, test, expect } from "vitest";
+import {
+  validateSourceArtifactDeclaration,
+  recordSourceArtifact,
+  listDeclaredArtifacts,
+  isDeclaredArtifact
+} from "../../lib/runtime/source-artifact";
+import { listEvents } from "../../lib/runtime/events";
+import { initializeProjectDb } from "../../lib/runtime/db";
+import { getProjectDbPath } from "../../lib/runtime/paths";
+import {
+  subscribeRecordEvents,
+  resetRecordBusForTests,
+  type RecordBusEvent
+} from "../../lib/runtime/record-bus";
+
+function minimalDeclaration(overrides: Record<string, unknown> = {}) {
+  return {
+    path: "design-system/token.json",
+    artifactType: "token.json",
+    semanticPurpose: "primitive → semantic → component token layers",
+    ...overrides
+  };
+}
+
+function withTempProject(fn: (dir: string) => void) {
+  const dir = mkdtempSync(path.join(tmpdir(), "ikran-source-artifact-"));
+  try {
+    initializeProjectDb(dir);
+    fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function writeProjectFile(dir: string, rel: string, content: string) {
+  const abs = path.join(dir, rel);
+  mkdirSync(path.dirname(abs), { recursive: true });
+  writeFileSync(abs, content);
+}
+
+function countArtifacts(dir: string): number {
+  const db = new DatabaseSync(getProjectDbPath(dir));
+  try {
+    const row = db
+      .prepare("SELECT COUNT(*) AS n FROM source_artifacts")
+      .get() as { n: number };
+    return row.n;
+  } finally {
+    db.close();
+  }
+}
+
+afterEach(() => {
+  resetRecordBusForTests();
+});
+
+test.describe("validateSourceArtifactDeclaration (unit)", () => {
+  test("valid minimal declaration", () => {
+    const res = validateSourceArtifactDeclaration(minimalDeclaration());
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.declaration.path).toBe("design-system/token.json");
+    expect(res.declaration.artifactType).toBe("token.json");
+    expect(res.declaration.relatedRecordIds).toEqual([]);
+    expect(res.declaration.readiness).toBeUndefined();
+  });
+
+  test("valid with related record ids and readiness", () => {
+    const res = validateSourceArtifactDeclaration(
+      minimalDeclaration({
+        path: "prototype/app.tsx",
+        artifactType: "prototype",
+        relatedRecordIds: ["card-1", "annotation-2"],
+        readiness: "dev server boots on :5173"
+      })
+    );
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.declaration.relatedRecordIds).toEqual([
+      "card-1",
+      "annotation-2"
+    ]);
+    expect(res.declaration.readiness).toBe("dev server boots on :5173");
+  });
+
+  test("all 09A design-system file types plus prototype/code are known", () => {
+    for (const artifactType of [
+      "design-system.json",
+      "token.json",
+      "component-list.json",
+      "component-spec",
+      "layout-rules.json",
+      "interaction-rules.json",
+      "prototype",
+      "code"
+    ]) {
+      const res = validateSourceArtifactDeclaration(
+        minimalDeclaration({ artifactType })
+      );
+      expect(res.ok, artifactType).toBe(true);
+    }
+  });
+
+  test("invalid: missing / empty path", () => {
+    for (const input of [
+      { ...minimalDeclaration(), path: undefined },
+      { ...minimalDeclaration(), path: "   " }
+    ]) {
+      const res = validateSourceArtifactDeclaration(input);
+      expect(res.ok).toBe(false);
+      if (res.ok) continue;
+      expect(res.reason).toBe("missing_path");
+    }
+  });
+
+  test("invalid: missing artifact type", () => {
+    const res = validateSourceArtifactDeclaration(
+      minimalDeclaration({ artifactType: undefined })
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toBe("missing_artifact_type");
+  });
+
+  test("invalid: unknown artifact type", () => {
+    const res = validateSourceArtifactDeclaration(
+      minimalDeclaration({ artifactType: "secret-sauce.yaml" })
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toBe("unknown_artifact_type");
+  });
+
+  test("invalid: missing semantic purpose", () => {
+    const res = validateSourceArtifactDeclaration(
+      minimalDeclaration({ semanticPurpose: "  " })
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toBe("missing_semantic_purpose");
+  });
+
+  test("invalid: related record ids must be non-empty strings", () => {
+    for (const relatedRecordIds of [["card-1", ""], [42], "card-1"]) {
+      const res = validateSourceArtifactDeclaration(
+        minimalDeclaration({ relatedRecordIds })
+      );
+      expect(res.ok).toBe(false);
+      if (res.ok) continue;
+      expect(res.reason).toBe("invalid_related_record_ids");
+    }
+  });
+});
+
+test.describe("recordSourceArtifact (record path)", () => {
+  test("valid declaration → index row + source_artifact_declared event + bus", () => {
+    withTempProject((dir) => {
+      writeProjectFile(dir, "design-system/token.json", '{"primitive":{}}');
+      const invalidations: RecordBusEvent[] = [];
+      const unsubscribe = subscribeRecordEvents((event) =>
+        invalidations.push(event)
+      );
+      try {
+        const res = recordSourceArtifact(dir, minimalDeclaration());
+        expect(res.ok).toBe(true);
+        if (!res.ok) return;
+        expect(res.record.path).toBe("design-system/token.json");
+        expect(res.record.artifact_type).toBe("token.json");
+        expect(res.record.declaration_version).toBe(1);
+        expect(res.record.status).toBe("declared");
+        expect(JSON.parse(res.record.related_record_ids_json)).toEqual([]);
+
+        const events = listEvents(dir, "source_artifact_declared");
+        expect(events.length).toBe(1);
+        expect(events[0].payload).toMatchObject({
+          artifact_id: res.record.id,
+          path: "design-system/token.json",
+          artifact_type: "token.json",
+          declaration_version: 1
+        });
+        expect(res.event_id).toBe(events[0].event_id);
+
+        expect(invalidations).toEqual([
+          expect.objectContaining({
+            kind: "artifact",
+            action: "created",
+            id: res.record.id,
+            projectPath: path.resolve(dir)
+          })
+        ]);
+
+        expect(countArtifacts(dir)).toBe(1);
+        expect(listDeclaredArtifacts(dir).length).toBe(1);
+      } finally {
+        unsubscribe();
+      }
+    });
+  });
+
+  test("absolute path is canonicalized to the same project-relative index path", () => {
+    withTempProject((dir) => {
+      writeProjectFile(dir, "design-system/token.json", "{}");
+      const res = recordSourceArtifact(
+        dir,
+        minimalDeclaration({ path: path.join(dir, "design-system/token.json") })
+      );
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.record.path).toBe("design-system/token.json");
+      expect(
+        isDeclaredArtifact(dir, path.join(dir, "design-system/token.json"))
+      ).toBe(true);
+    });
+  });
+
+  test("out-of-scope path (traversal) → artifact_path_escape + invalid_artifact, no row", () => {
+    withTempProject((dir) => {
+      const res = recordSourceArtifact(
+        dir,
+        minimalDeclaration({ path: "../outside/token.json" })
+      );
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("artifact_path_escape");
+      expect(countArtifacts(dir)).toBe(0);
+
+      const invalid = listEvents(dir, "invalid_artifact");
+      expect(invalid.length).toBe(1);
+      expect(invalid[0].payload).toMatchObject({
+        tool: "record_artifact_written",
+        reason: "artifact_path_escape",
+        details: { path: "../outside/token.json" }
+      });
+      expect(listEvents(dir, "source_artifact_declared").length).toBe(0);
+    });
+  });
+
+  test("out-of-scope path (symlink escape) → artifact_path_escape", () => {
+    withTempProject((dir) => {
+      const outside = mkdtempSync(
+        path.join(tmpdir(), "ikran-artifact-outside-")
+      );
+      try {
+        writeFileSync(path.join(outside, "secret.json"), "{}");
+        mkdirSync(path.join(dir, "design-system"), { recursive: true });
+        symlinkSync(
+          path.join(outside, "secret.json"),
+          path.join(dir, "design-system", "token.json")
+        );
+
+        const res = recordSourceArtifact(dir, minimalDeclaration());
+        expect(res.ok).toBe(false);
+        if (res.ok) return;
+        expect(res.reason).toBe("artifact_path_escape");
+        expect(countArtifacts(dir)).toBe(0);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test("unknown artifact type → invalid_artifact event, no row", () => {
+    withTempProject((dir) => {
+      writeProjectFile(dir, "design-system/token.json", "{}");
+      const res = recordSourceArtifact(
+        dir,
+        minimalDeclaration({ artifactType: "mystery.json" })
+      );
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("unknown_artifact_type");
+      expect(countArtifacts(dir)).toBe(0);
+
+      const invalid = listEvents(dir, "invalid_artifact");
+      expect(invalid.length).toBe(1);
+      expect(invalid[0].payload).toMatchObject({
+        tool: "record_artifact_written",
+        reason: "unknown_artifact_type"
+      });
+    });
+  });
+
+  test("design-system artifact: missing file → artifact_file_missing", () => {
+    withTempProject((dir) => {
+      const res = recordSourceArtifact(dir, minimalDeclaration());
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("artifact_file_missing");
+      expect(countArtifacts(dir)).toBe(0);
+    });
+  });
+
+  test("design-system artifact: invalid JSON / non-object top level → invalid_design_system_json", () => {
+    withTempProject((dir) => {
+      writeProjectFile(dir, "design-system/token.json", "not json{");
+      const badSyntax = recordSourceArtifact(dir, minimalDeclaration());
+      expect(badSyntax.ok).toBe(false);
+      if (badSyntax.ok) return;
+      expect(badSyntax.reason).toBe("invalid_design_system_json");
+
+      writeProjectFile(dir, "design-system/token.json", "[1,2,3]");
+      const arrayTop = recordSourceArtifact(dir, minimalDeclaration());
+      expect(arrayTop.ok).toBe(false);
+      if (arrayTop.ok) return;
+      expect(arrayTop.reason).toBe("invalid_design_system_json");
+
+      expect(countArtifacts(dir)).toBe(0);
+      const invalid = listEvents(dir, "invalid_artifact");
+      expect(invalid.length).toBe(2);
+      expect(invalid[0].payload).toMatchObject({
+        tool: "record_artifact_written",
+        reason: "invalid_design_system_json"
+      });
+    });
+  });
+
+  test("code artifact: missing file → artifact_file_missing; never judged on quality", () => {
+    withTempProject((dir) => {
+      const missing = recordSourceArtifact(
+        dir,
+        minimalDeclaration({
+          path: "prototype/app.tsx",
+          artifactType: "prototype"
+        })
+      );
+      expect(missing.ok).toBe(false);
+      if (missing.ok) return;
+      expect(missing.reason).toBe("artifact_file_missing");
+
+      // Any file content passes: Runtime checks existence/scope only.
+      writeProjectFile(dir, "prototype/app.tsx", "this is not even valid ts");
+      const res = recordSourceArtifact(
+        dir,
+        minimalDeclaration({
+          path: "prototype/app.tsx",
+          artifactType: "prototype",
+          readiness: "not started"
+        })
+      );
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.record.readiness).toBe("not started");
+    });
+  });
+
+  test("re-declaration of the same path updates the index row (new declaration version)", () => {
+    withTempProject((dir) => {
+      writeProjectFile(dir, "prototype/app.tsx", "v1");
+      const first = recordSourceArtifact(
+        dir,
+        minimalDeclaration({
+          path: "prototype/app.tsx",
+          artifactType: "prototype",
+          semanticPurpose: "first reconstruction draft"
+        })
+      );
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+
+      writeProjectFile(dir, "prototype/app.tsx", "v2");
+      const invalidations: RecordBusEvent[] = [];
+      const unsubscribe = subscribeRecordEvents((event) =>
+        invalidations.push(event)
+      );
+      try {
+        const second = recordSourceArtifact(
+          dir,
+          minimalDeclaration({
+            path: path.join(dir, "prototype", "app.tsx"),
+            artifactType: "code",
+            semanticPurpose: "revised reconstruction draft",
+            relatedRecordIds: ["card-9"]
+          })
+        );
+        expect(second.ok).toBe(true);
+        if (!second.ok) return;
+
+        // Same index row, bumped declaration version, latest semantics win.
+        expect(second.record.id).toBe(first.record.id);
+        expect(second.record.declaration_version).toBe(2);
+        expect(second.record.artifact_type).toBe("code");
+        expect(second.record.semantic_purpose).toBe(
+          "revised reconstruction draft"
+        );
+        expect(JSON.parse(second.record.related_record_ids_json)).toEqual([
+          "card-9"
+        ]);
+        expect(second.record.created_at).toBe(first.record.created_at);
+        expect(countArtifacts(dir)).toBe(1);
+
+        const events = listEvents(dir, "source_artifact_declared");
+        expect(events.length).toBe(2);
+        expect(events[1].payload).toMatchObject({
+          artifact_id: first.record.id,
+          declaration_version: 2
+        });
+
+        expect(invalidations).toEqual([
+          expect.objectContaining({
+            kind: "artifact",
+            action: "updated",
+            id: first.record.id
+          })
+        ]);
+      } finally {
+        unsubscribe();
+      }
+    });
+  });
+
+  test("undeclared-file guard: only declared index paths count", () => {
+    withTempProject((dir) => {
+      writeProjectFile(dir, "design-system/token.json", "{}");
+      writeProjectFile(dir, "design-system/stray.json", "{}");
+
+      expect(isDeclaredArtifact(dir, "design-system/token.json")).toBe(false);
+      expect(listDeclaredArtifacts(dir)).toEqual([]);
+
+      const res = recordSourceArtifact(dir, minimalDeclaration());
+      expect(res.ok).toBe(true);
+
+      expect(isDeclaredArtifact(dir, "design-system/token.json")).toBe(true);
+      expect(isDeclaredArtifact(dir, "design-system/stray.json")).toBe(false);
+      // Escapes fail closed as undeclared.
+      expect(isDeclaredArtifact(dir, "../outside.json")).toBe(false);
+
+      const listed = listDeclaredArtifacts(dir);
+      expect(listed.length).toBe(1);
+      expect(listed[0].path).toBe("design-system/token.json");
+    });
+  });
+});

@@ -36,6 +36,7 @@ export type EventType =
   | "seed_extraction_stage_completed"
   | "draft_design_system_generated"
   | "design_system_view_generated"
+  | "source_artifact_declared"
   | "seed_reconstruction_started"
   | "preview_started"
   | "new_prototype_run_created"
@@ -44,6 +45,7 @@ export type EventType =
   | "rule_update_canceled"
   | "export_generated"
   | "invalid_output"
+  | "invalid_artifact"
   | "repaired_output";
 
 export interface EventPayload {
@@ -121,6 +123,30 @@ export function logEvent(
     closeProjectDb(db);
   }
   return event;
+}
+
+/**
+ * Best-effort audit event for a failed tool call (invalid_output /
+ * invalid_artifact). Never masks the structured validation error when audit
+ * logging itself fails.
+ */
+export function logInvalidToolEvent(
+  projectPath: string,
+  type: EventType,
+  tool: string,
+  reason: string,
+  details?: unknown
+): void {
+  try {
+    const payload: Record<string, unknown> = {
+      tool,
+      reason
+    };
+    if (details !== undefined) payload.details = details;
+    logEvent(projectPath, type, payload);
+  } catch {
+    // Best-effort: do not mask the structured validation error if audit fails.
+  }
 }
 
 /**

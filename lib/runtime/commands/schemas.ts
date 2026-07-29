@@ -191,6 +191,20 @@ export const connectFigmaInputShape = {
 
 export const connectFigmaInputSchema = z.object(connectFigmaInputShape);
 
+export const recordArtifactWrittenInputShape = {
+  path: z.string(),
+  // String (not enum) so unknown_artifact_type reaches domain.
+  artifactType: z.string(),
+  semanticPurpose: z.string(),
+  relatedRecordIds: z.array(z.string()).optional(),
+  // Agent-declared build/preview readiness note; Runtime never verifies it.
+  readiness: z.string().optional()
+} as const;
+
+export const recordArtifactWrittenInputSchema = z.object(
+  recordArtifactWrittenInputShape
+);
+
 const alignmentEvidenceLinkShape = {
   seedReferenceId: z.string(),
   evidenceSurfaceId: z.string(),

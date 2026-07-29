@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 14;
+export const CURRENT_SCHEMA_VERSION = 15;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -898,6 +898,34 @@ CREATE INDEX idx_agent_annotation_attempt_section
       db.exec(`
 ALTER TABLE region_annotations
   ADD COLUMN section TEXT;
+      `);
+    }
+  },
+  {
+    version: 15,
+    up(db) {
+      // Issue 08: artifact index for declared + validated source artifacts.
+      // `path` is the canonical project-relative path (index identity);
+      // re-declaration updates the row and bumps declaration_version.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS source_artifacts (
+  id TEXT PRIMARY KEY,
+  path TEXT NOT NULL,
+  artifact_type TEXT NOT NULL,
+  semantic_purpose TEXT NOT NULL,
+  related_record_ids_json TEXT NOT NULL DEFAULT '[]',
+  readiness TEXT,
+  declaration_version INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'declared',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_source_artifacts_path
+  ON source_artifacts(path);
+CREATE INDEX IF NOT EXISTS idx_source_artifacts_artifact_type
+  ON source_artifacts(artifact_type);
+CREATE INDEX IF NOT EXISTS idx_source_artifacts_created_at
+  ON source_artifacts(created_at);
       `);
     }
   }

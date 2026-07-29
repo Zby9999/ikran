@@ -640,7 +640,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       const migrated = openProjectDb(dir);
       try {
-        expect(userVersion(migrated)).toBe(14);
+        expect(userVersion(migrated)).toBe(CURRENT_SCHEMA_VERSION);
         // Legacy row stays readable; the dropped-then-readded column is null.
         expect(
           migrated
@@ -685,12 +685,61 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
+  test("v14→v15 creates the source_artifacts artifact index", () => {
+    withTempProject((dir) => {
+      const initialized = openProjectDb(dir);
+      closeProjectDb(initialized);
+      const dbPath = getProjectDbPath(dir);
+      const v14 = new DatabaseSync(dbPath);
+      try {
+        v14.exec(`
+          DROP TABLE source_artifacts;
+          PRAGMA user_version = 14;
+        `);
+      } finally {
+        v14.close();
+      }
+
+      const migrated = openProjectDb(dir);
+      try {
+        expect(userVersion(migrated)).toBe(CURRENT_SCHEMA_VERSION);
+        expect(tableNames(migrated)).toContain("source_artifacts");
+        const cols = migrated
+          .prepare("PRAGMA table_info(source_artifacts)")
+          .all() as Array<{ name: string }>;
+        expect(cols.map((c) => c.name)).toEqual(
+          expect.arrayContaining([
+            "id",
+            "path",
+            "artifact_type",
+            "semantic_purpose",
+            "related_record_ids_json",
+            "readiness",
+            "declaration_version",
+            "status",
+            "created_at",
+            "updated_at"
+          ])
+        );
+        const indexes = migrated
+          .prepare("PRAGMA index_list(source_artifacts)")
+          .all() as Array<{ name: string; unique: number }>;
+        const byName = new Map(indexes.map((i) => [i.name, i]));
+        expect(byName.get("idx_source_artifacts_path")?.unique).toBe(1);
+        expect(byName.has("idx_source_artifacts_artifact_type")).toBe(true);
+        expect(byName.has("idx_source_artifacts_created_at")).toBe(true);
+      } finally {
+        closeProjectDb(migrated);
+      }
+    });
+  });
+
   test("fresh DB opens at CURRENT_SCHEMA_VERSION without backup", () => {
     withTempProject((dir) => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(14);
+        expect(CURRENT_SCHEMA_VERSION).toBe(15);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
@@ -707,7 +756,8 @@ test.describe("PRAGMA user_version migration runner", () => {
             "alignment_input_snapshots",
             "alignment_attempts",
             "agent_commands",
-            "project_workflow"
+            "project_workflow",
+            "source_artifacts"
           ])
         );
         const meta = db

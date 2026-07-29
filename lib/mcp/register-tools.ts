@@ -6,6 +6,7 @@ import { registerProjectWorkspaceTools } from "./project-workspace-tools";
 import { registerRegionTools } from "./region-tools";
 import { registerSeedEvidenceTools } from "./seed-evidence-tools";
 import { registerDesignIntentAlignmentTools } from "./design-intent-alignment-tools";
+import { registerArtifactTools } from "./artifact-tools";
 import {
   IKRAN_MCP_INSTRUCTIONS,
   type RegisterIkranToolsDeps
@@ -26,4 +27,5 @@ export function registerIkranTools(
   registerSeedEvidenceTools(mcp, deps);
   registerRegionTools(mcp, deps);
   registerDesignIntentAlignmentTools(mcp, deps);
+  registerArtifactTools(mcp, deps);
 }

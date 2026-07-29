@@ -18,15 +18,8 @@ import {
   updateAlignmentQuestionTitleInputSchema,
   requireActiveProjectCommand
 } from "../runtime/commands";
-import { failureResult, type RegisterIkranToolsDeps } from "./shared";
+import { failureResult, successResult, type RegisterIkranToolsDeps } from "./shared";
 import { waitForAgentCommand } from "../runtime/adaptive-agent-wait";
-
-function success(rt: Awaited<ReturnType<RegisterIkranToolsDeps["ensureRuntime"]>>, value: Record<string, unknown>) {
-  return {
-    content: [{ type: "text" as const, text: JSON.stringify(value) }],
-    structuredContent: { ...value, session: rt.token, workbench_url: rt.url }
-  };
-}
 
 export function registerDesignIntentAlignmentTools(
   mcp: McpServer,
@@ -46,7 +39,7 @@ export function registerDesignIntentAlignmentTools(
     const result = await waitForAgentCommand(ctx.projectPath, {
       signal: extra.signal
     });
-    return success(ctx.rt, result);
+    return successResult(ctx.rt, result);
   });
 
   mcp.registerTool("claim_alignment_preparation", {
@@ -55,7 +48,7 @@ export function registerDesignIntentAlignmentTools(
     const ctx = await active("claim_alignment_preparation");
     if (!ctx.ok) return ctx.result;
     const result = claimAlignmentPreparationCommand(ctx.projectPath);
-    return result.ok ? success(ctx.rt, result) : failureResult("claim_alignment_preparation", result.reason, ctx.rt);
+    return result.ok ? successResult(ctx.rt, result) : failureResult("claim_alignment_preparation", result.reason, ctx.rt);
   });
 
   mcp.registerTool("create_alignment_question_card", {
@@ -65,7 +58,7 @@ export function registerDesignIntentAlignmentTools(
     const ctx = await active("create_alignment_question_card");
     if (!ctx.ok) return ctx.result;
     const result = createAlignmentQuestionCardCommand(ctx.projectPath, args);
-    return result.ok ? success(ctx.rt, result) : failureResult("create_alignment_question_card", result.reason, ctx.rt);
+    return result.ok ? successResult(ctx.rt, result) : failureResult("create_alignment_question_card", result.reason, ctx.rt);
   });
 
   mcp.registerTool("finalize_alignment_preparation", {
@@ -78,7 +71,7 @@ export function registerDesignIntentAlignmentTools(
       ctx.projectPath,
       args.alignmentAttemptId
     );
-    return result.ok ? success(ctx.rt, result) : failureResult("finalize_alignment_preparation", result.reason, ctx.rt);
+    return result.ok ? successResult(ctx.rt, result) : failureResult("finalize_alignment_preparation", result.reason, ctx.rt);
   });
 
   mcp.registerTool("create_agent_annotation", {
@@ -88,7 +81,7 @@ export function registerDesignIntentAlignmentTools(
     const ctx = await active("create_agent_annotation");
     if (!ctx.ok) return ctx.result;
     const result = createAgentAnnotationCommand(ctx.projectPath, args);
-    return result.ok ? success(ctx.rt, result) : failureResult("create_agent_annotation", result.reason, ctx.rt);
+    return result.ok ? successResult(ctx.rt, result) : failureResult("create_agent_annotation", result.reason, ctx.rt);
   });
 
   mcp.registerTool("append_agent_annotation_information", {
@@ -98,7 +91,7 @@ export function registerDesignIntentAlignmentTools(
     const ctx = await active("append_agent_annotation_information");
     if (!ctx.ok) return ctx.result;
     const result = appendAgentAnnotationInformationCommand(ctx.projectPath, args.annotationId, args.information);
-    return result.ok ? success(ctx.rt, result) : failureResult("append_agent_annotation_information", result.reason, ctx.rt);
+    return result.ok ? successResult(ctx.rt, result) : failureResult("append_agent_annotation_information", result.reason, ctx.rt);
   });
 
   mcp.registerTool("record_designer_answer", {
@@ -108,7 +101,7 @@ export function registerDesignIntentAlignmentTools(
     const ctx = await active("record_designer_answer");
     if (!ctx.ok) return ctx.result;
     const result = recordDesignerAnswerCommand(ctx.projectPath, args);
-    return result.ok ? success(ctx.rt, result) : failureResult("record_designer_answer", result.reason, ctx.rt);
+    return result.ok ? successResult(ctx.rt, result) : failureResult("record_designer_answer", result.reason, ctx.rt);
   });
 
   mcp.registerTool("update_alignment_question_title", {
@@ -118,7 +111,7 @@ export function registerDesignIntentAlignmentTools(
     const ctx = await active("update_alignment_question_title");
     if (!ctx.ok) return ctx.result;
     const result = updateAlignmentQuestionTitleCommand(ctx.projectPath, args);
-    return result.ok ? success(ctx.rt, result) : failureResult("update_alignment_question_title", result.reason, ctx.rt);
+    return result.ok ? successResult(ctx.rt, result) : failureResult("update_alignment_question_title", result.reason, ctx.rt);
   });
 
   mcp.registerTool("update_alignment_question_anchor", {
@@ -128,7 +121,7 @@ export function registerDesignIntentAlignmentTools(
     const ctx = await active("update_alignment_question_anchor");
     if (!ctx.ok) return ctx.result;
     const result = updateAlignmentQuestionAnchorCommand(ctx.projectPath, args);
-    return result.ok ? success(ctx.rt, result) : failureResult("update_alignment_question_anchor", result.reason, ctx.rt);
+    return result.ok ? successResult(ctx.rt, result) : failureResult("update_alignment_question_anchor", result.reason, ctx.rt);
   });
 
   mcp.registerTool("read_design_intent_alignment", {
@@ -136,6 +129,6 @@ export function registerDesignIntentAlignmentTools(
   }, async () => {
     const ctx = await active("read_design_intent_alignment");
     if (!ctx.ok) return ctx.result;
-    return success(ctx.rt, { ok: true, ...readDesignIntentAlignmentCommand(ctx.projectPath) });
+    return successResult(ctx.rt, { ok: true, ...readDesignIntentAlignmentCommand(ctx.projectPath) });
   });
 }

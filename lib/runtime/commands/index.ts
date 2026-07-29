@@ -39,6 +39,8 @@ export {
 
 export { listEvidenceSurfacesCommand } from "./evidence-package";
 
+export { recordArtifactWrittenCommand } from "./artifact";
+
 export {
   createRegionAnnotationCommand,
   confirmAnnotationPrimaryNodeCommand,
@@ -94,6 +96,8 @@ export {
   setDesignLanguageDescriptionInputShape,
   connectFigmaInputSchema,
   connectFigmaInputShape,
+  recordArtifactWrittenInputSchema,
+  recordArtifactWrittenInputShape,
   createOrOpenProjectInputShape,
   setupWorkspaceInputShape
 } from "./schemas";

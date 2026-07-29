@@ -18,7 +18,7 @@ import path from "node:path";
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
 import { openProjectDb, closeProjectDb, withProjectTransaction } from "./db";
 import { emitRecordEvent } from "./record-bus";
-import { logEvent, logEventOnDb } from "./events";
+import { logEventOnDb, logInvalidToolEvent } from "./events";
 import {
   parseFigmaSeedIdentity,
   figmaSeedIdentitiesEqual,
@@ -458,16 +458,13 @@ function logInvalidOutput(
   reason: string,
   details?: unknown
 ): void {
-  try {
-    const payload: Record<string, unknown> = {
-      tool: "record_evidence_package",
-      reason
-    };
-    if (details !== undefined) payload.details = details;
-    logEvent(projectPath, "invalid_output", payload);
-  } catch {
-    // Best-effort: do not mask the structured validation error if audit fails.
-  }
+  logInvalidToolEvent(
+    projectPath,
+    "invalid_output",
+    "record_evidence_package",
+    reason,
+    details
+  );
 }
 
 /** True when `candidate` is strictly inside `root` (not equal, not outside). */
