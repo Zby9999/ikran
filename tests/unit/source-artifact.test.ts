@@ -46,6 +46,29 @@ function withTempProject(fn: (dir: string) => void) {
   }
 }
 
+// Task B: design-system declarations require deep-schema-valid files and at
+// least one answered question card link.
+const VALID_TOKEN_JSON = JSON.stringify({
+  primitive: {},
+  semantic: {},
+  component: {}
+});
+
+function insertAnsweredCard(dir: string, id: string) {
+  const db = new DatabaseSync(getProjectDbPath(dir));
+  try {
+    db.prepare(
+      `INSERT INTO alignment_question_cards
+       (id, section, observation, question, final_answer, answer_source,
+        anchor_json, created_at, updated_at)
+       VALUES (?, 'token', 'obs', 'ques', 'answer', 'designer-edited',
+               '{}', '2026-07-29T00:00:00.000Z', '2026-07-29T00:00:00.000Z')`
+    ).run(id);
+  } finally {
+    db.close();
+  }
+}
+
 function writeProjectFile(dir: string, rel: string, content: string) {
   const abs = path.join(dir, rel);
   mkdirSync(path.dirname(abs), { recursive: true });
@@ -169,20 +192,26 @@ test.describe("validateSourceArtifactDeclaration (unit)", () => {
 test.describe("recordSourceArtifact (record path)", () => {
   test("valid declaration → index row + source_artifact_declared event + bus", () => {
     withTempProject((dir) => {
-      writeProjectFile(dir, "design-system/token.json", '{"primitive":{}}');
+      insertAnsweredCard(dir, "card-1");
+      writeProjectFile(dir, "design-system/token.json", VALID_TOKEN_JSON);
       const invalidations: RecordBusEvent[] = [];
       const unsubscribe = subscribeRecordEvents((event) =>
         invalidations.push(event)
       );
       try {
-        const res = recordSourceArtifact(dir, minimalDeclaration());
+        const res = recordSourceArtifact(
+          dir,
+          minimalDeclaration({ relatedRecordIds: ["card-1"] })
+        );
         expect(res.ok).toBe(true);
         if (!res.ok) return;
         expect(res.record.path).toBe("design-system/token.json");
         expect(res.record.artifact_type).toBe("token.json");
         expect(res.record.declaration_version).toBe(1);
         expect(res.record.status).toBe("declared");
-        expect(JSON.parse(res.record.related_record_ids_json)).toEqual([]);
+        expect(JSON.parse(res.record.related_record_ids_json)).toEqual([
+          "card-1"
+        ]);
 
         const events = listEvents(dir, "source_artifact_declared");
         expect(events.length).toBe(1);
@@ -213,10 +242,14 @@ test.describe("recordSourceArtifact (record path)", () => {
 
   test("absolute path is canonicalized to the same project-relative index path", () => {
     withTempProject((dir) => {
-      writeProjectFile(dir, "design-system/token.json", "{}");
+      insertAnsweredCard(dir, "card-1");
+      writeProjectFile(dir, "design-system/token.json", VALID_TOKEN_JSON);
       const res = recordSourceArtifact(
         dir,
-        minimalDeclaration({ path: path.join(dir, "design-system/token.json") })
+        minimalDeclaration({
+          path: path.join(dir, "design-system/token.json"),
+          relatedRecordIds: ["card-1"]
+        })
       );
       expect(res.ok).toBe(true);
       if (!res.ok) return;
@@ -424,13 +457,17 @@ test.describe("recordSourceArtifact (record path)", () => {
 
   test("undeclared-file guard: only declared index paths count", () => {
     withTempProject((dir) => {
-      writeProjectFile(dir, "design-system/token.json", "{}");
+      insertAnsweredCard(dir, "card-1");
+      writeProjectFile(dir, "design-system/token.json", VALID_TOKEN_JSON);
       writeProjectFile(dir, "design-system/stray.json", "{}");
 
       expect(isDeclaredArtifact(dir, "design-system/token.json")).toBe(false);
       expect(listDeclaredArtifacts(dir)).toEqual([]);
 
-      const res = recordSourceArtifact(dir, minimalDeclaration());
+      const res = recordSourceArtifact(
+        dir,
+        minimalDeclaration({ relatedRecordIds: ["card-1"] })
+      );
       expect(res.ok).toBe(true);
 
       expect(isDeclaredArtifact(dir, "design-system/token.json")).toBe(true);

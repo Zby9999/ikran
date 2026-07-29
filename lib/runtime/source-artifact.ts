@@ -8,9 +8,10 @@
 //
 // Three validation classes, all deterministic:
 //   1. semantic record schema — structural check on the declaration itself.
-//   2. design-system artifact — file exists, parses as JSON, top-level object.
-//      Shallow by design; deep per-file schemas are Issue 09 (Task B) and plug
-//      into the per-type `checkFile` seam below.
+//   2. design-system artifact — deep per-file JSON schemas (Issue 09 /
+//      09A, Task B) plugged into the per-type `checkFile` seam below, plus a
+//      declaration-time link requirement: related_record_ids must reference
+//      answered alignment question cards (design-system-status.ts).
 //   3. prototype/code artifact — file exists, in project scope, optional
 //      Agent-declared readiness. Runtime never judges code quality and never
 //      fabricates semantics.
@@ -19,7 +20,7 @@
 // mirroring the invalid-output convention in evidence-package.ts.
 
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { openProjectDb, closeProjectDb, withProjectTransaction } from "./db";
 import { emitRecordEvent } from "./record-bus";
@@ -28,16 +29,27 @@ import {
   assertArtifactPathInProject,
   resolveProjectArtifactPath
 } from "./evidence-package";
+import {
+  designSystemFileCheck,
+  readJsonFileObject,
+  type DesignSystemSchemaReason
+} from "./design-system-schema";
+import {
+  checkDesignSystemDeclarationLinksOnDb,
+  type DesignSystemDeclarationLinkReason
+} from "./design-system-status";
 
 // ---------------------------------------------------------------------------
-// Artifact type registry (data-driven; Task B extends it)
+// Artifact type registry (data-driven; add new types as entries below)
 // ---------------------------------------------------------------------------
 
 export type SourceArtifactClass = "design-system" | "code";
 
 export type SourceArtifactFileCheckReason =
   | "artifact_file_missing"
-  | "invalid_design_system_json";
+  | "invalid_design_system_json"
+  | DesignSystemSchemaReason
+  | string;
 
 /**
  * Deterministic structural file check. Returns a reason on failure, null when
@@ -62,29 +74,42 @@ export interface SourceArtifactTypeSpec {
 export const SOURCE_ARTIFACT_TYPE_REGISTRY: Readonly<
   Record<string, SourceArtifactTypeSpec>
 > = {
-  "design-system.json": { validationClass: "design-system" },
-  "token.json": { validationClass: "design-system" },
-  "component-list.json": { validationClass: "design-system" },
-  "component-spec": { validationClass: "design-system" },
-  "layout-rules.json": { validationClass: "design-system" },
-  "interaction-rules.json": { validationClass: "design-system" },
+  "design-system.json": {
+    validationClass: "design-system",
+    checkFile: designSystemFileCheck("design-system.json")
+  },
+  "token.json": {
+    validationClass: "design-system",
+    checkFile: designSystemFileCheck("token.json")
+  },
+  "component-list.json": {
+    validationClass: "design-system",
+    checkFile: designSystemFileCheck("component-list.json")
+  },
+  "component-spec": {
+    validationClass: "design-system",
+    checkFile: designSystemFileCheck("component-spec")
+  },
+  "layout-rules.json": {
+    validationClass: "design-system",
+    checkFile: designSystemFileCheck("layout-rules.json")
+  },
+  "interaction-rules.json": {
+    validationClass: "design-system",
+    checkFile: designSystemFileCheck("interaction-rules.json")
+  },
   prototype: { validationClass: "code" },
   code: { validationClass: "code" }
 };
 
-/** Class 2 default: exists, parses as JSON, top-level object (shallow). */
+/**
+ * Class 2 fallback: file shell only (exists, parses, top-level object). All
+ * registered design-system types override this via `checkFile` (Task B deep
+ * schemas); the fallback only covers future types added without one.
+ */
 const designSystemJsonFileCheck: SourceArtifactFileCheck = (absolutePath) => {
-  if (!existsSync(absolutePath)) return "artifact_file_missing";
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(absolutePath, "utf-8"));
-  } catch {
-    return "invalid_design_system_json";
-  }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return "invalid_design_system_json";
-  }
-  return null;
+  const file = readJsonFileObject(absolutePath);
+  return file.ok ? null : file.reason;
 };
 
 /** Class 3 default: existence only — never a quality judgment. */
@@ -218,6 +243,7 @@ export interface SourceArtifactRecord {
 export type SourceArtifactRecordReason =
   | SourceArtifactDeclarationReason
   | SourceArtifactFileCheckReason
+  | DesignSystemDeclarationLinkReason
   | "artifact_path_escape"
   | "db_error"
   | string;
@@ -334,6 +360,17 @@ export function recordSourceArtifact(
 
   try {
     const result = withProjectTransaction(projectPath, (db) => {
+      // Design-system declarations must link answered question cards or
+      // Agent annotations (09A decision 4); the DB-dependent check runs
+      // inside the transaction so it shares a snapshot with the write.
+      if (spec.validationClass === "design-system") {
+        const linkCheck = checkDesignSystemDeclarationLinksOnDb(
+          db,
+          declaration.relatedRecordIds
+        );
+        if (!linkCheck.ok) return linkCheck;
+      }
+
       const existing = db
         .prepare(
           `SELECT id, declaration_version, created_at
@@ -412,6 +449,11 @@ export function recordSourceArtifact(
         action: existing ? ("updated" as const) : ("created" as const)
       };
     });
+
+    if (!result.ok) {
+      logInvalidArtifact(projectPath, result.reason, relativePath, result.details);
+      return { ok: false, reason: result.reason };
+    }
 
     emitRecordEvent({
       kind: "artifact",
