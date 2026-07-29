@@ -168,6 +168,7 @@ describe("domain writes emit only after successful commit", () => {
           rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.25 }
         },
         author: "designer",
+        section: "layout",
         body: "Placeholder annotation"
       });
       expect(ann.ok).toBe(true);

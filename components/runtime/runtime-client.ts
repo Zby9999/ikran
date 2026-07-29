@@ -402,6 +402,8 @@ export function createWorkbenchDataClient(
     surfaceArtifactId: string;
     rect: NormalizedRect;
     targetNodeId?: string;
+    body: string;
+    section: string;
   }): Promise<RuntimeMutationResult> => {
     const request = {
       method: "POST",
@@ -419,7 +421,8 @@ export function createWorkbenchDataClient(
               rect: payload.rect
             },
         author: "designer",
-        body: "Placeholder annotation"
+        body: payload.body,
+        section: payload.section
       })
     } satisfies RequestInit;
     let result = await fetchJson(
@@ -449,6 +452,39 @@ export function createWorkbenchDataClient(
     if (!reloaded.ok) {
       return reportMutationError(
         `create_succeeded_reload_failed:${reloaded.error}`
+      );
+    }
+    return { ok: true };
+  };
+
+  const updateAnnotationBody = async (payload: {
+    annotationId: string;
+    body: string;
+  }): Promise<RuntimeMutationResult> => {
+    const result = await fetchJson(
+      fetcher,
+      "/api/region-annotation",
+      session,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          annotationId: payload.annotationId,
+          body: payload.body
+        })
+      }
+    );
+    if (!result.ok) {
+      return reportMutationError(
+        (typeof result.data.error === "string" && result.data.error) ||
+          "update_annotation_body_failed"
+      );
+    }
+
+    const reloaded = await loadAll();
+    if (!reloaded.ok) {
+      return reportMutationError(
+        `update_body_succeeded_reload_failed:${reloaded.error}`
       );
     }
     return { ok: true };
@@ -688,6 +724,7 @@ export function createWorkbenchDataClient(
   return {
     loadAll,
     createAnnotation,
+    updateAnnotationBody,
     deleteAnnotation,
     deleteSeedReference,
     refreshSeedReference,

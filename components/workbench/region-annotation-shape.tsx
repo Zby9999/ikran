@@ -30,6 +30,8 @@ import {
   useValue
 } from "tldraw";
 import { mediaBoxInPage } from "./region-annotation-geometry";
+import { DesignerAnnotationEntryForm } from "./designer-annotation-entry-form";
+import { useDesignerAnnotationEntry } from "./designer-annotation-entry-context";
 import {
   annotationChromeForMediaWidth,
   REGION_ANNOTATION_REF_MEDIA_W
@@ -91,11 +93,18 @@ function RegionAnnotationMarker({ shape }: { shape: RegionAnnotationShape }) {
   const { w, h, author, surfaceMediaW } = shape.props;
   const { canvasRecordId, runtimeRecordId, surfaceRecordId } = shape.meta;
   const editor = useEditor();
+  const entry = useDesignerAnnotationEntry();
   const isSelected = useValue(
     "region-annotation-selected",
     () => editor.getSelectedShapeIds().includes(shape.id),
     [editor, shape.id]
   );
+  // Issue 08A: a freshly placed marker (draft:committing) renders the text
+  // entry form while it is the pending entry. Submit creates the Runtime
+  // record; Esc/cancel deletes this draft without persisting anything.
+  const isPendingDraft =
+    runtimeRecordId === "draft:committing" &&
+    entry?.pending?.payload.draftShapeId === String(shape.id);
   // Read parent Seed Reference bounds live so chrome tracks resize even before
   // projection sync rewrites `surfaceMediaW` on the marker props.
   const mediaW = useValue(
@@ -117,6 +126,32 @@ function RegionAnnotationMarker({ shape }: { shape: RegionAnnotationShape }) {
       return fallback;
     },
     [editor, surfaceRecordId, surfaceMediaW]
+  );
+  // Issue 08A: the entry form docks OUTSIDE the parent frame, on the side
+  // nearer to the marker, vertically centered on the marker (Figma 670:891 —
+  // entry box sits beside the frame edge, level with the annotation).
+  const entryPlacement = useValue(
+    "region-annotation-entry-placement",
+    () => {
+      if (!surfaceRecordId) return null;
+      for (const parent of editor.getCurrentPageShapes()) {
+        if (!isSeedReferenceProjectionShape(parent)) continue;
+        const meta = parent.meta;
+        if (!seedReferenceMetaMatchesSurfaceId(meta, surfaceRecordId)) continue;
+        const bounds = editor.getShapePageBounds(parent);
+        if (!bounds) return null;
+        const FORM_W = 360;
+        const FORM_H = 56;
+        const GAP = 20;
+        const right = shape.x + w / 2 >= bounds.x + bounds.w / 2;
+        const anchorX = right
+          ? bounds.x + bounds.w + GAP
+          : bounds.x - GAP - FORM_W;
+        return { left: anchorX - shape.x, top: h / 2 - FORM_H / 2 };
+      }
+      return null;
+    },
+    [editor, surfaceRecordId, shape.x, w, h]
   );
   const authorClass =
     author === "agent"
@@ -150,6 +185,37 @@ function RegionAnnotationMarker({ shape }: { shape: RegionAnnotationShape }) {
           borderRadius: radius
         }}
       />
+      {isPendingDraft && entry ? (
+        <div
+          className="designer-annotation-entry-anchor"
+          data-testid="designer-annotation-entry-anchor"
+          style={
+            entryPlacement
+              ? { left: entryPlacement.left, top: entryPlacement.top }
+              : undefined
+          }
+        >
+          <DesignerAnnotationEntryForm
+            submitting={entry.submitting}
+            onSubmit={async (body) => {
+              const result = await entry.submit(body);
+              // Failure keeps the form open with the typed body intact — the
+              // designer retries or explicitly cancels (Esc). Only cancel
+              // destroys a draft (PRD 50); a transient create error must not.
+              if (!result.ok) {
+                console.error(
+                  "[designer-annotation] create failed:",
+                  result.error
+                );
+              }
+            }}
+            onCancel={() => {
+              entry.cancel();
+              editor.deleteShape(shape.id);
+            }}
+          />
+        </div>
+      ) : null}
     </HTMLContainer>
   );
 }

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  AGENT_REGION_MARGIN
+} from "../../lib/runtime/region-annotation-display";
+import {
   ALIGNMENT_CARD_STACK_GAP,
   buildAlignmentProjectionPlan,
   type AlignmentProjectionInput
@@ -233,11 +236,25 @@ describe("buildAlignmentProjectionPlan", () => {
     });
 
     expect(targets).toHaveLength(2);
-    expect(targets[1]).toMatchObject({
-      x: 146,
-      y: 176,
-      props: { w: 108, h: 48 }
-    });
+    const verticalMargin =
+      (AGENT_REGION_MARGIN * input.seedFrames[0]!.mediaW!) /
+      input.seedFrames[0]!.mediaH!;
+    expect(targets[1]!.x).toBeCloseTo(
+      110 + (0.1 - AGENT_REGION_MARGIN) * 360,
+      6
+    );
+    expect(targets[1]!.y).toBeCloseTo(
+      80 + (0.2 - verticalMargin) * 480,
+      6
+    );
+    expect(targets[1]!.props.w).toBeCloseTo(
+      (0.3 + AGENT_REGION_MARGIN * 2) * 360,
+      6
+    );
+    expect(targets[1]!.props.h).toBeCloseTo(
+      (0.1 + verticalMargin * 2) * 480,
+      6
+    );
     expect(connectors).toHaveLength(2);
     expect(connectors[1]!.props.startX).toBeGreaterThan(
       connectors[1]!.props.endX

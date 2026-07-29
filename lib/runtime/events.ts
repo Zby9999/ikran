@@ -22,6 +22,7 @@ export type EventType =
   | "figma_evidence_refreshed"
   | "annotation_created"
   | "annotation_primary_confirmed"
+  | "annotation_body_updated"
   | "question_card_created"
   | "question_card_title_updated"
   | "question_card_anchor_updated"

@@ -8,17 +8,22 @@
 // Pointer contract (media box only — coordinate space A):
 //   - click → tiny page-square marker (normalized w=POINT_SIDE; h from media aspect)
 //   - press-drag → rectangle clamped to the Evidence Surface media area
-// On pointer up: keep a local draft marker (marked draft:committing) through
-// the injected Runtime mutation; projection sync deletes it in the same batch
-// as the authoritative create so the canvas never flashes empty.
-// The tool never invents Runtime records — it only commits via the injected
-// Runtime mutation; projection sync rebuilds shapes from authoritative GET.
+// On pointer up (Issue 08A): keep the local draft marker (marked
+// draft:committing) and hand the payload to the injected handler, which opens
+// the text entry (DesignerAnnotationEntryContext). The Runtime record is
+// created only when the designer submits the entry form; Esc/cancel deletes
+// the draft without persisting anything (PRD 50: drafts are not research
+// facts). On successful create, projection sync deletes the draft in the same
+// batch as the authoritative marker so the canvas never flashes empty.
+// The tool never invents Runtime records — projection sync rebuilds shapes
+// from authoritative GET.
 
 import { useEffect, useRef, type MutableRefObject } from "react";
 import {
   StateNode,
   createShapeId,
   useEditor,
+  useValue,
   type Editor,
   type TLPointerEventInfo,
   type TLShape,
@@ -34,8 +39,10 @@ import {
 } from "./seed-reference-projection-shape";
 import {
   REGION_ANNOTATION_TYPE,
+  type RegionAnnotationMeta,
   type RegionAnnotationShape
 } from "./region-annotation-shape";
+import { useDesignerAnnotationEntry } from "./designer-annotation-entry-context";
 import {
   clampPageRectToMediaBox,
   expandNormalizedPointToRect,
@@ -68,6 +75,8 @@ export type RegionAnnotationCreatePayload = {
 };
 
 type CreateHandler = (payload: RegionAnnotationCreatePayload) => void;
+/** Clears the pending text entry when a draft dies outside the form. */
+type CancelEntryHandler = () => void;
 
 type DraftSession = {
   surfaceShapeId: string;
@@ -178,6 +187,7 @@ function structuralRectAtPoint(
 
 type RegionAnnotationToolParent = StateNode & {
   commitCreate: (payload: RegionAnnotationCreatePayload) => void;
+  cancelPendingEntry: () => void;
 };
 
 /**
@@ -185,7 +195,8 @@ type RegionAnnotationToolParent = StateNode & {
  * instances never share a module-global handler registry.
  */
 export function createRegionAnnotationToolClass(
-  getCreateHandler: () => CreateHandler | null
+  getCreateHandler: () => CreateHandler | null,
+  getCancelEntryHandler: () => CancelEntryHandler | null
 ): TLStateNodeConstructor {
   class RegionAnnotationIdle extends StateNode {
     static override id = "idle";
@@ -196,6 +207,24 @@ export function createRegionAnnotationToolClass(
 
     override onPointerDown(info: TLPointerEventInfo) {
       if (info.button !== 0) return;
+      // Issue 08A: a fresh marker still waiting for its text entry
+      // (draft:committing) owns the next gesture — this press cancels that
+      // entry (draft deleted, no record) instead of stacking a second draft.
+      const pendingDraft = this.editor
+        .getCurrentPageShapes()
+        .find(
+          (shape) =>
+            shape.type === REGION_ANNOTATION_TYPE &&
+            (shape.meta as RegionAnnotationMeta).runtimeRecordId ===
+              "draft:committing"
+        );
+      if (pendingDraft) {
+        this.editor.deleteShape(pendingDraft.id);
+        // The draft died outside its form — clear the entry context too, or
+        // the stale pending survives until the next `begin` overwrites it.
+        (this.parent as RegionAnnotationToolParent).cancelPendingEntry();
+        return;
+      }
       this.parent.transition("pointing", info);
     }
 
@@ -404,6 +433,11 @@ export function createRegionAnnotationToolClass(
     commitCreate(payload: RegionAnnotationCreatePayload): void {
       getCreateHandler()?.(payload);
     }
+
+    /** Draft deleted outside its form — clear the shared entry state. */
+    cancelPendingEntry(): void {
+      getCancelEntryHandler()?.();
+    }
   }
 
   return RegionAnnotationTool;
@@ -411,51 +445,47 @@ export function createRegionAnnotationToolClass(
 
 /**
  * Keeps the editor on the annotate tool while `annotateMode` is true, and
- * wires the create handler ref for pointer-up commits (Runtime client mutation).
+ * wires the create handler ref: pointer-up payloads open the text entry via
+ * DesignerAnnotationEntryContext (Issue 08A) — the Runtime create fires only
+ * when the entry form submits (injected at the canvas provider level).
+ * Leaving the tool (Esc / annotate off / V shortcut) sweeps any entry drafts
+ * so no half-finished annotation lingers without a record.
  */
 export function RegionAnnotationToolController({
   annotateMode,
-  onCreate,
-  createHandlerRef
+  createHandlerRef,
+  cancelEntryHandlerRef
 }: {
   annotateMode: boolean;
-  /** Injected Runtime mutation — must not fetch directly here. */
-  onCreate?: (payload: RegionAnnotationCreatePayload) => Promise<
-    { ok: true } | { ok: false; error: string }
-  >;
   /** Per-Canvas ref closed over by the tool class factory. */
   createHandlerRef: MutableRefObject<CreateHandler | null>;
+  /** Per-Canvas ref for clearing the entry when a draft dies outside the form. */
+  cancelEntryHandlerRef: MutableRefObject<CancelEntryHandler | null>;
 }) {
   const editor = useEditor();
-  const onCreateRef = useRef(onCreate);
-  onCreateRef.current = onCreate;
+  const entry = useDesignerAnnotationEntry();
+  const entryRef = useRef(entry);
+  entryRef.current = entry;
+  const currentToolId = useValue(
+    "region-annotation-current-tool",
+    () => editor.getCurrentToolId(),
+    [editor]
+  );
 
   useEffect(() => {
     if (!annotateMode) {
       createHandlerRef.current = null;
+      cancelEntryHandlerRef.current = null;
       if (editor.getCurrentToolId() === REGION_ANNOTATION_TOOL_ID) {
         editor.setCurrentTool("select");
       }
       return;
     }
-
     createHandlerRef.current = (payload) => {
-      void (async () => {
-        const mutate = onCreateRef.current;
-        const draftId = payload.draftShapeId as
-          | RegionAnnotationShape["id"]
-          | undefined;
-        if (!mutate) {
-          if (draftId) editor.deleteShape(draftId);
-          return;
-        }
-        const result = await mutate(payload);
-        // Success: projection sync removes draft:committing with the create.
-        // Failure: drop the local stand-in so it does not linger.
-        if (!result.ok && draftId) {
-          editor.deleteShape(draftId);
-        }
-      })();
+      entryRef.current?.begin(payload);
+    };
+    cancelEntryHandlerRef.current = () => {
+      entryRef.current?.cancel();
     };
 
     if (editor.getCurrentToolId() !== REGION_ANNOTATION_TOOL_ID) {
@@ -464,8 +494,28 @@ export function RegionAnnotationToolController({
 
     return () => {
       createHandlerRef.current = null;
+      cancelEntryHandlerRef.current = null;
     };
-  }, [annotateMode, editor, createHandlerRef]);
+  }, [annotateMode, editor, createHandlerRef, cancelEntryHandlerRef]);
+
+  // Sweep entry drafts (pointer-session drafts and committing stand-ins) when
+  // the tool is left; persisted markers have Runtime UUIDs, never "draft*".
+  useEffect(() => {
+    if (currentToolId === REGION_ANNOTATION_TOOL_ID) return;
+    const drafts = editor
+      .getCurrentPageShapes()
+      .filter(
+        (shape) =>
+          shape.type === REGION_ANNOTATION_TYPE &&
+          String(
+            (shape.meta as RegionAnnotationMeta).runtimeRecordId
+          ).startsWith("draft")
+      );
+    if (drafts.length > 0) {
+      editor.deleteShapes(drafts.map((draft) => draft.id));
+    }
+    entryRef.current?.cancel();
+  }, [currentToolId, editor]);
 
   return null;
 }

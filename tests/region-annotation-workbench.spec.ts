@@ -31,11 +31,27 @@ type AnnotationRecord = {
   id: string;
   surface_id: string;
   author: "designer" | "agent";
+  type?: string;
+  body?: string;
+  section?: string | null;
   rect_x: number;
   rect_y: number;
   rect_w: number;
   rect_h: number;
 };
+
+// Issue 08A — pointer-up opens the entry form; the POST fires only after the
+// designer submits the body. Section is implicit: the stage currently in view
+// (default design-principle), never chosen in the form (Figma 670:891).
+async function submitAnnotationEntry(
+  page: import("@playwright/test").Page,
+  body: string
+) {
+  const input = page.getByTestId("designer-annotation-entry-input");
+  await expect(input).toBeVisible();
+  await input.fill(body);
+  await page.getByTestId("designer-annotation-entry-submit").click();
+}
 
 function rawPost(
   route: string,
@@ -353,21 +369,28 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     await annotate.click();
     await expect(annotate).toHaveAttribute("aria-pressed", "true");
 
+    await page.mouse.click(
+      box.x + box.width * 0.4,
+      box.y + box.height * 0.45
+    );
+
     const createRequest = page.waitForRequest(
       (request) =>
         request.method() === "POST" &&
         new URL(request.url()).pathname === "/api/region-annotation"
     );
-    await page.mouse.click(
-      box.x + box.width * 0.4,
-      box.y + box.height * 0.45
-    );
+    await submitAnnotationEntry(page, "Move this toolbar 8px up");
     const request = await createRequest;
     const requestBody = request.postDataJSON() as {
       author: string;
+      body: string;
+      section: string;
       target: { kind: string; surfaceArtifactId: string };
     };
     expect(requestBody.author).toBe("designer");
+    expect(requestBody.body).toBe("Move this toolbar 8px up");
+    // Section = the stage currently in view (default), never form-chosen.
+    expect(requestBody.section).toBe("design-principle");
     expect(requestBody.target.kind).toBe("figma-region");
     expect(requestBody.target.surfaceArtifactId).toBe(surfaceId);
 
@@ -381,6 +404,9 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
 
     expect(record!.surface_id).toBe(surfaceId);
     expect(record!.author).toBe("designer");
+    expect(record!.type).toBe("designer_annotation");
+    expect(record!.body).toBe("Move this toolbar 8px up");
+    expect(record!.section).toBe("design-principle");
     expect(record!.rect_x).toBeGreaterThanOrEqual(0);
     expect(record!.rect_y).toBeGreaterThanOrEqual(0);
     expect(record!.rect_w).toBeGreaterThan(0);
@@ -392,6 +418,12 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     await expect(marker).toHaveAttribute("data-runtime-record-id", record!.id);
     await expect(marker).toHaveAttribute("data-author", "designer");
 
+    // Filled designer annotations project a green side card (08A).
+    const card = page.getByTestId("designer-annotation-card");
+    await expect(card).toHaveAttribute("data-runtime-record-id", record!.id);
+    await expect(card).toHaveAttribute("data-section", "design-principle");
+    await expect(card).toContainText("Move this toolbar 8px up");
+
     // Direct DB proof complements the API assertion above.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { DatabaseSync } = require("node:sqlite");
@@ -399,15 +431,23 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     try {
       const stored = db
         .prepare(
-          "SELECT id, author, surface_id FROM region_annotations WHERE id = ?"
+          "SELECT id, author, surface_id, type, section FROM region_annotations WHERE id = ?"
         )
         .get(record!.id) as
-        | { id: string; author: string; surface_id: string }
+        | {
+            id: string;
+            author: string;
+            surface_id: string;
+            type: string;
+            section: string;
+          }
         | undefined;
       expect(stored).toEqual({
         id: record!.id,
         author: "designer",
-        surface_id: surfaceId
+        surface_id: surfaceId,
+        type: "designer_annotation",
+        section: "design-principle"
       });
     } finally {
       db.close();
@@ -436,15 +476,17 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
       y: box.y + box.height * 0.7
     };
 
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(end.x, end.y, { steps: 8 });
+    await page.mouse.up();
+
     const createRequest = page.waitForRequest(
       (request) =>
         request.method() === "POST" &&
         new URL(request.url()).pathname === "/api/region-annotation"
     );
-    await page.mouse.move(start.x, start.y);
-    await page.mouse.down();
-    await page.mouse.move(end.x, end.y, { steps: 8 });
-    await page.mouse.up();
+    await submitAnnotationEntry(page, "Tighten this region's spacing");
     await createRequest;
 
     let record: AnnotationRecord | undefined;
@@ -477,15 +519,16 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     const annotate = page.getByTestId("annotate-button");
     await annotate.click();
 
+    await page.mouse.click(
+      box.x + box.width * 0.5,
+      box.y + box.height * 0.5
+    );
     const createRequest = page.waitForRequest(
       (request) =>
         request.method() === "POST" &&
         new URL(request.url()).pathname === "/api/region-annotation"
     );
-    await page.mouse.click(
-      box.x + box.width * 0.5,
-      box.y + box.height * 0.5
-    );
+    await submitAnnotationEntry(page, "Delete me");
     await createRequest;
 
     let annotationId = "";
@@ -519,5 +562,87 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
       .poll(async () => (await listAnnotations(token, runtime.port)).length)
       .toBe(0);
     await expect(marker).toHaveCount(0);
+    await expect(page.getByTestId("designer-annotation-card")).toHaveCount(0);
+  });
+
+  test("clicking a filled card edits its body through Runtime PATCH", async ({
+    page,
+    runtime,
+    folder
+  }) => {
+    const { token } = await openSeededWorkbench({ page, runtime, folder });
+    const box = await mediaBox(page);
+    await page.getByTestId("annotate-button").click();
+
+    await page.mouse.click(
+      box.x + box.width * 0.5,
+      box.y + box.height * 0.5
+    );
+    const createRequest = page.waitForRequest(
+      (request) =>
+        request.method() === "POST" &&
+        new URL(request.url()).pathname === "/api/region-annotation"
+    );
+    await submitAnnotationEntry(page, "First pass");
+    await createRequest;
+
+    let annotationId = "";
+    await expect
+      .poll(async () => {
+        annotationId = (await listAnnotations(token, runtime.port))[0]?.id ?? "";
+        return annotationId;
+      })
+      .not.toBe("");
+
+    // Click the filled card → pre-filled edit form (Figma 646:1320 lower card).
+    const card = page.getByTestId("designer-annotation-card");
+    await expect(card).toHaveAttribute("data-runtime-record-id", annotationId);
+    await card.click();
+    await expect(card).toHaveAttribute("data-editing", "true");
+
+    const editInput = page.getByTestId("designer-annotation-card-edit-input");
+    await expect(editInput).toBeVisible();
+    await expect(editInput).toHaveValue("First pass");
+    await editInput.fill("Second pass — tightened spacing");
+
+    const patchRequest = page.waitForRequest(
+      (request) =>
+        request.method() === "PATCH" &&
+        new URL(request.url()).pathname === "/api/region-annotation"
+    );
+    await page.getByTestId("designer-annotation-card-edit-submit").click();
+    const request = await patchRequest;
+    const requestBody = request.postDataJSON() as {
+      annotationId: string;
+      body: string;
+    };
+    expect(requestBody.annotationId).toBe(annotationId);
+    expect(requestBody.body).toBe("Second pass — tightened spacing");
+
+    await expect
+      .poll(
+        async () => (await listAnnotations(token, runtime.port))[0]?.body ?? ""
+      )
+      .toBe("Second pass — tightened spacing");
+    await expect(card).toHaveAttribute("data-editing", "false");
+    await expect(card).toContainText("Second pass — tightened spacing");
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { DatabaseSync } = require("node:sqlite");
+    const db = new DatabaseSync(path.join(folder, ".ikran", "ikran.db"));
+    try {
+      const stored = db
+        .prepare("SELECT body FROM region_annotations WHERE id = ?")
+        .get(annotationId) as { body: string } | undefined;
+      expect(stored?.body).toBe("Second pass — tightened spacing");
+      const types = (
+        db.prepare("SELECT type FROM events ORDER BY id ASC").all() as Array<{
+          type: string;
+        }>
+      ).map((r) => r.type);
+      expect(types).toContain("annotation_body_updated");
+    } finally {
+      db.close();
+    }
   });
 });

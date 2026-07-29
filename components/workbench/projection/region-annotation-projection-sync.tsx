@@ -24,6 +24,7 @@ import { fitStructuralImageBox } from "../structural-overlay";
 import {
   computeAnnotationPagePlacement,
   findSurfaceShapeForAnnotation,
+  isAnnotationVisibleInStage,
   mediaBoxInPage,
   planAnnotationProjectionOps,
   shouldResyncAnnotationsForStoreChanges,
@@ -33,18 +34,25 @@ import type { RegionAnnotationRecord } from "@/lib/runtime/region-annotation";
 
 function syncRegionAnnotationShapes(
   editor: ReturnType<typeof useEditor>,
-  annotations: RegionAnnotationRecord[]
+  annotations: RegionAnnotationRecord[],
+  currentStage: string
 ): void {
   const seedShapes = editor
     .getCurrentPageShapes()
     .filter((s) => s.type === SEED_REFERENCE_PROJECTION_TYPE);
+
+  // Section scoping (08A): a designer annotation only appears in the section
+  // it was written in; agent + legacy section-less records always show.
+  const visible = annotations.filter((record) =>
+    isAnnotationVisibleInStage(record, currentStage)
+  );
 
   const placed: Array<{
     record: RegionAnnotationRecord;
     placement: ReturnType<typeof computeAnnotationPagePlacement>;
   }> = [];
 
-  for (const record of annotations) {
+  for (const record of visible) {
     const parent = findSurfaceShapeForAnnotation(seedShapes, record);
     if (!parent) continue;
 
@@ -130,25 +138,34 @@ function syncRegionAnnotationShapes(
 }
 
 export function RegionAnnotationProjectionSync({
-  annotations
+  annotations,
+  currentStage
 }: {
   annotations: RegionAnnotationRecord[];
+  /** Six-part stage currently in view — designer annotations are scoped to it. */
+  currentStage: string;
 }) {
   const editor = useEditor();
   const annotationsRef = useRef(annotations);
   annotationsRef.current = annotations;
+  const stageRef = useRef(currentStage);
+  stageRef.current = currentStage;
 
   useEffect(() => {
     if (!editor) return;
-    syncRegionAnnotationShapes(editor, annotations);
-  }, [editor, annotations]);
+    syncRegionAnnotationShapes(editor, annotations, currentStage);
+  }, [editor, annotations, currentStage]);
 
   useEffect(() => {
     if (!editor) return;
     const unsub = editor.store.listen(
       (entry) => {
         if (!shouldResyncAnnotationsForStoreChanges(entry.changes)) return;
-        syncRegionAnnotationShapes(editor, annotationsRef.current);
+        syncRegionAnnotationShapes(
+          editor,
+          annotationsRef.current,
+          stageRef.current
+        );
       },
       { source: "user", scope: "document" }
     );

@@ -40,6 +40,13 @@ export function previewAlignmentQuestionFocus(onFocusPreview?: () => void) {
   onFocusPreview?.();
 }
 
+export function endAlignmentCardFocusPreview(
+  persistent: boolean,
+  onFocusPreviewEnd?: () => void
+) {
+  if (!persistent) onFocusPreviewEnd?.();
+}
+
 export type AlignmentAnswerSource =
   | "designer-edited"
   | "agent-proposed-designer-accepted";
@@ -75,6 +82,7 @@ export type AlignmentQuestionCardProps = {
   onExpandedChange: (expanded: boolean) => void;
   onActivate?: () => void;
   onFocusPreview?: () => void;
+  onFocusPreviewEnd?: () => void;
   onPointerInteraction?: (event: SyntheticEvent) => void;
   onSubmitAnswer: (
     answer: string
@@ -114,6 +122,7 @@ export function AlignmentQuestionCard({
   onExpandedChange,
   onActivate,
   onFocusPreview,
+  onFocusPreviewEnd,
   onPointerInteraction,
   onSubmitAnswer,
   readOnly = false,
@@ -168,6 +177,9 @@ export function AlignmentQuestionCard({
         stopAlignmentCardPointer(event, onPointerInteraction)
       }
       onMouseEnter={() => previewAlignmentQuestionFocus(onFocusPreview)}
+      onMouseLeave={() =>
+        endAlignmentCardFocusPreview(expanded, onFocusPreviewEnd)
+      }
       onPointerDown={(event) =>
         stopAlignmentCardPointer(event, onPointerInteraction)
       }
@@ -246,6 +258,7 @@ export type AgentAnnotationCardProps = {
   onAppendInformation: (information: string) => void;
   onActivate?: () => void;
   onFocusPreview?: () => void;
+  onFocusPreviewEnd?: () => void;
   onPointerInteraction?: (event: SyntheticEvent) => void;
   evidenceAnchor?: string;
   className?: string;
@@ -261,6 +274,7 @@ export function AgentAnnotationCard({
   onAppendInformation,
   onActivate,
   onFocusPreview,
+  onFocusPreviewEnd,
   onPointerInteraction,
   evidenceAnchor: _evidenceAnchor,
   className
@@ -285,6 +299,9 @@ export function AgentAnnotationCard({
         stopAlignmentCardPointer(event, onPointerInteraction)
       }
       onMouseEnter={() => previewAlignmentQuestionFocus(onFocusPreview)}
+      onMouseLeave={() =>
+        endAlignmentCardFocusPreview(editing, onFocusPreviewEnd)
+      }
       onPointerDown={(event) =>
         stopAlignmentCardPointer(event, onPointerInteraction)
       }

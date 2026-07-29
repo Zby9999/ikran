@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 13;
+export const CURRENT_SCHEMA_VERSION = 14;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -886,6 +886,18 @@ ALTER TABLE agent_alignment_annotations
   ADD COLUMN section TEXT;
 CREATE INDEX idx_agent_annotation_attempt_section
   ON agent_alignment_annotations(alignment_attempt_id, section);
+      `);
+    }
+  },
+  {
+    version: 14,
+    up(db) {
+      // Designer Annotations belong to one six-part section. The nullable
+      // column keeps historical annotations readable without pretending that
+      // a legacy annotation belongs to a section it never declared.
+      db.exec(`
+ALTER TABLE region_annotations
+  ADD COLUMN section TEXT;
       `);
     }
   }

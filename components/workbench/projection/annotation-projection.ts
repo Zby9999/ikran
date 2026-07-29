@@ -203,6 +203,19 @@ export function computeAnnotationPagePlacement(
 /** Media box helper re-export for sync controllers (same chrome insets). */
 export { mediaBoxInPage };
 
+/**
+ * Issue 08A — section scoping: a designer annotation belongs to the section
+ * (six-part stage) it was written in and only appears there. Agent
+ * annotations and legacy section-less records are always visible.
+ */
+export function isAnnotationVisibleInStage(
+  record: Pick<RegionAnnotationRecord, "author" | "section">,
+  stage: string
+): boolean {
+  if (record.author !== "designer") return true;
+  return record.section == null || record.section === stage;
+}
+
 export function planAnnotationProjectionOps(
   placed: Array<{
     record: RegionAnnotationRecord;

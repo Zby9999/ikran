@@ -24,7 +24,10 @@
 //   rows are ignored. 0 tips → surface_not_found; >1 tips → surface_ambiguous
 //   (fail closed)
 //
-// Author defaults for type: designer → explanatory; agent → assumption.
+// Author defaults for type: designer → designer_annotation; agent → assumption.
+// Designer annotations are bound to one six-part Alignment section; agent
+// annotations may carry one. Legacy rows keep `section: null` and legacy
+// `explanatory` rows stay readable.
 //
 // Record + `annotation_created` are written atomically. Event write failure
 // rolls back the annotation row and returns `ok: false` / `db_error`.
@@ -34,6 +37,10 @@ import path from "node:path";
 import { openProjectDb, closeProjectDb, withProjectTransaction } from "./db";
 import { emitRecordEvent } from "./record-bus";
 import { logEventOnDb } from "./events";
+import {
+  ALIGNMENT_SECTIONS,
+  type AlignmentSection
+} from "./design-intent-alignment";
 import {
   asEvidenceBounds,
   getAnnotationNodeCandidates,
@@ -54,6 +61,7 @@ export type RegionAnnotationType =
   | "assumption"
   | "observed_fact"
   | "generalization_risk"
+  | "designer_annotation"
   | "explanatory";
 
 /** Normalized rect in coordinate space A (screenshot media box, 0–1). */
@@ -97,10 +105,15 @@ export type AnnotationTarget =
 export interface RegionAnnotationInput {
   target: AnnotationTarget;
   author: RegionAnnotationAuthor;
-  /** Defaults: designer → explanatory; agent → assumption. */
+  /** Defaults: designer → designer_annotation; agent → assumption. */
   type?: RegionAnnotationType;
   /** Free text; placeholder strings allowed (e.g. "Placeholder annotation"). */
   body: string;
+  /**
+   * One of the six Alignment sections. Required when author is "designer";
+   * optional for agent annotations.
+   */
+  section?: string;
   /**
    * Explicit normalized rect. Rejected if any component is outside [0,1],
    * non-finite, or (after validation) has zero area — unless both w and h are
@@ -128,6 +141,7 @@ export interface RegionAnnotationRecord {
   author: RegionAnnotationAuthor;
   type: RegionAnnotationType;
   body: string;
+  section: AlignmentSection | null;
   rect_x: number;
   rect_y: number;
   rect_w: number;
@@ -149,7 +163,9 @@ export type RegionAnnotationValidationReason =
   | "missing_body"
   | "missing_rect"
   | "invalid_rect"
-  | "invalid_point";
+  | "invalid_point"
+  | "missing_section"
+  | "invalid_section";
 
 export type RegionAnnotationErrorReason =
   | RegionAnnotationValidationReason
@@ -206,6 +222,7 @@ const TYPES = new Set<RegionAnnotationType>([
   "assumption",
   "observed_fact",
   "generalization_risk",
+  "designer_annotation",
   "explanatory"
 ]);
 
@@ -241,7 +258,7 @@ export function expandPointToRect(
 function defaultTypeForAuthor(
   author: RegionAnnotationAuthor
 ): RegionAnnotationType {
-  return author === "designer" ? "explanatory" : "assumption";
+  return author === "designer" ? "designer_annotation" : "assumption";
 }
 
 export interface NormalizedRegionAnnotationInput {
@@ -254,6 +271,7 @@ export interface NormalizedRegionAnnotationInput {
   author: RegionAnnotationAuthor;
   type: RegionAnnotationType;
   body: string;
+  section: AlignmentSection | null;
   rect?: RegionAnnotationRect;
   /**
    * True when geometry came from a point-click (or zero-area rect). Agent
@@ -394,6 +412,21 @@ export function validateRegionAnnotationInput(
     }
   }
 
+  // --- section: six-part Alignment binding (designer-required) ---
+  let section: AlignmentSection | null = null;
+  if (raw.section !== undefined && raw.section !== null) {
+    if (
+      typeof raw.section !== "string" ||
+      !(ALIGNMENT_SECTIONS as readonly string[]).includes(raw.section)
+    ) {
+      return { ok: false, reason: "invalid_section" };
+    }
+    section = raw.section as AlignmentSection;
+  }
+  if (author === "designer" && section === null) {
+    return { ok: false, reason: "missing_section" };
+  }
+
   const normalized: NormalizedRegionAnnotationInput = {
     target: isSurfaceTarget
       ? {
@@ -417,6 +450,7 @@ export function validateRegionAnnotationInput(
     author,
     type,
     body,
+    section,
     ...(rect ? { rect } : {}),
     fromPoint
   };
@@ -592,6 +626,11 @@ function mapAnnotationRow(row: Record<string, unknown>): RegionAnnotationRecord 
     author: row.author === "designer" ? "designer" : "agent",
     type: String(row.type) as RegionAnnotationType,
     body: String(row.body),
+    section:
+      typeof row.section === "string" &&
+      (ALIGNMENT_SECTIONS as readonly string[]).includes(row.section)
+        ? (row.section as AlignmentSection)
+        : null,
     rect_x: Number(row.rect_x),
     rect_y: Number(row.rect_y),
     rect_w: Number(row.rect_w),
@@ -704,6 +743,7 @@ export function createRegionAnnotation(
     author: normalized.author,
     type: normalized.type,
     body: normalized.body,
+    section: normalized.section,
     rect_x: rect.x,
     rect_y: rect.y,
     rect_w: rect.w,
@@ -721,11 +761,11 @@ export function createRegionAnnotation(
         `INSERT INTO region_annotations (
           id, surface_id, surface_artifact_id, surface_node_id,
           target_kind, target_evidence_version_id, target_node_id,
-          author, type, body,
+          author, type, body, section,
           rect_x, rect_y, rect_w, rect_h,
           primary_node_id, candidates_json, created_at,
           geometry_version, from_point
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         record.id,
         record.surface_id,
@@ -737,6 +777,7 @@ export function createRegionAnnotation(
         record.author,
         record.type,
         record.body,
+        record.section,
         record.rect_x,
         record.rect_y,
         record.rect_w,
@@ -756,7 +797,8 @@ export function createRegionAnnotation(
         target_evidence_version_id: record.target_evidence_version_id,
         target_node_id: record.target_node_id,
         author: record.author,
-        type: record.type
+        type: record.type,
+        section: record.section
       });
     });
     emitRecordEvent({
@@ -946,6 +988,74 @@ export function deleteRegionAnnotation(
     return { ok: false, reason: "db_error" };
   } finally {
     closeProjectDb(db);
+  }
+}
+
+export type RegionAnnotationBodyUpdateReason =
+  | "missing_body"
+  | "not_found"
+  | "not_editable"
+  | "db_error";
+
+export type RegionAnnotationBodyUpdateResponse =
+  | { ok: true; id: string }
+  | { ok: false; reason: RegionAnnotationBodyUpdateReason };
+
+/**
+ * Update the body text of a Region Annotation by id.
+ * Product rule: only `author === "designer"` rows may be edited.
+ * Body shape is validated before any DB lookup so a blank body always
+ * reports `missing_body`. Row update + `annotation_body_updated` event are
+ * written atomically.
+ */
+export function updateRegionAnnotationBody(
+  projectPath: string,
+  input: unknown
+): RegionAnnotationBodyUpdateResponse {
+  if (!input || typeof input !== "object") {
+    return { ok: false, reason: "not_found" };
+  }
+  const raw = input as Record<string, unknown>;
+  if (!isNonEmptyString(raw.annotationId)) {
+    return { ok: false, reason: "not_found" };
+  }
+  if (!isNonEmptyString(raw.body)) {
+    return { ok: false, reason: "missing_body" };
+  }
+  const id = raw.annotationId.trim();
+  const body = raw.body.trim();
+
+  try {
+    const result = withProjectTransaction(projectPath, (db) => {
+      const row = db
+        .prepare("SELECT id, author FROM region_annotations WHERE id = ?")
+        .get(id) as { id: string; author: string } | undefined;
+      if (!row) {
+        return { ok: false as const, reason: "not_found" as const };
+      }
+      if (row.author !== "designer") {
+        return { ok: false as const, reason: "not_editable" as const };
+      }
+      db.prepare("UPDATE region_annotations SET body = ? WHERE id = ?").run(
+        body,
+        id
+      );
+      logEventOnDb(db, "annotation_body_updated", {
+        annotation_id: id,
+        body
+      });
+      return { ok: true as const, id };
+    });
+    if (!result.ok) return result;
+    emitRecordEvent({
+      kind: "annotation",
+      action: "updated",
+      id,
+      projectPath: path.resolve(projectPath)
+    });
+    return { ok: true, id };
+  } catch {
+    return { ok: false, reason: "db_error" };
   }
 }
 

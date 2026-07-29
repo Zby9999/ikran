@@ -24,6 +24,7 @@ function annotation(
     author: "designer",
     type: "explanatory",
     body: "Marker",
+    section: null,
     rect_x: 0.1,
     rect_y: 0.2,
     rect_w: 0.3,

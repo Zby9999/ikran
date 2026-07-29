@@ -43,7 +43,8 @@ export {
   createRegionAnnotationCommand,
   confirmAnnotationPrimaryNodeCommand,
   listRegionAnnotationsCommand,
-  deleteRegionAnnotationCommand
+  deleteRegionAnnotationCommand,
+  updateRegionAnnotationBodyCommand
 } from "./region-annotation";
 
 export {
@@ -79,6 +80,7 @@ export {
   createRegionAnnotationInputSchema,
   createRegionAnnotationInputShape,
   confirmAnnotationPrimaryInputSchema,
+  updateRegionAnnotationBodyInputSchema,
   addSeedReferenceInputSchema,
   addSeedReferenceInputShape,
   refreshSeedReferenceInputSchema,

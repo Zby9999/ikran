@@ -187,6 +187,7 @@ export type AlignmentCardProjectionActions = {
     information: string
   ) => void;
   onFocusCardSelection: (selection: FocusCardSelection) => void;
+  onFocusCardPreviewEnd: () => void;
 };
 
 const AlignmentCardProjectionContext =
@@ -313,6 +314,9 @@ export function AlignmentCardShapeView({
           expanded={props.expanded}
           onActivate={selectFocusCard}
           onFocusPreview={focusSelection ? selectFocusCard : undefined}
+          onFocusPreviewEnd={
+            focusSelection ? actions?.onFocusCardPreviewEnd : undefined
+          }
           onExpandedChange={onExpandedChange}
           onPointerInteraction={onPointerInteraction}
           onSubmitAnswer={(answer) =>
@@ -335,6 +339,9 @@ export function AlignmentCardShapeView({
           onEditingChange={onEditingChange}
           onActivate={selectFocusCard}
           onFocusPreview={focusSelection ? selectFocusCard : undefined}
+          onFocusPreviewEnd={
+            focusSelection ? actions?.onFocusCardPreviewEnd : undefined
+          }
           onPointerInteraction={onPointerInteraction}
           onAppendInformation={(information) =>
             actions?.onAppendAnnotationInformation(meta.runtimeRecordId, information)

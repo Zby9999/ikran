@@ -20,12 +20,22 @@ import {
   RegionAnnotationToolController,
   type RegionAnnotationCreatePayload
 } from "./region-annotation-tool";
+import {
+  DesignerAnnotationEntryProvider,
+  type DesignerAnnotationCreateRequest
+} from "./designer-annotation-entry-context";
+import {
+  DesignerAnnotationCardActionsProvider,
+  DesignerAnnotationCardShapeUtil
+} from "./designer-annotation-card-shape";
+import { DesignerAnnotationConnectorShapeUtil } from "./designer-annotation-connector-shape";
 import { RegionAnnotationDeleteController } from "./region-annotation-delete";
 import { SeedReferenceDeleteController } from "./seed-reference-delete";
 import { SeedSelectionForegroundOverlayUtil } from "./seed-selection-foreground-overlay";
 import { WORKBENCH_CANVAS_COMPONENTS } from "./workbench-canvas-grid";
 import { SeedProjectionSync } from "./projection/seed-projection-sync";
 import { RegionAnnotationProjectionSync } from "./projection/region-annotation-projection-sync";
+import { DesignerAnnotationCardSync } from "./projection/designer-annotation-card-sync";
 import { WorkbenchLayoutPersistence } from "./projection/workbench-layout-persistence";
 import { WorkbenchSeedActionsProvider } from "./workbench-seed-actions";
 import {
@@ -43,7 +53,6 @@ import type {
   WorkbenchCameraLayout,
   WorkbenchLayoutDocument
 } from "@/lib/runtime/workbench-layout-shared";
-import type { NormalizedRect } from "./region-annotation-geometry";
 import type { DesignIntentAlignmentSnapshot } from "@/lib/runtime/design-intent-alignment";
 import {
   AlignmentCardInteractionController,
@@ -71,7 +80,9 @@ const SHAPE_UTILS = [
   RegionAnnotationShapeUtil,
   AlignmentCardShapeUtil,
   AlignmentTargetShapeUtil,
-  AlignmentConnectorShapeUtil
+  AlignmentConnectorShapeUtil,
+  DesignerAnnotationCardShapeUtil,
+  DesignerAnnotationConnectorShapeUtil
 ];
 
 const OVERLAY_UTILS = [SeedSelectionForegroundOverlayUtil];
@@ -106,6 +117,7 @@ export function WorkbenchCanvas({
   onFocusSeedApplied,
   annotateMode = false,
   onCreateAnnotation,
+  onUpdateAnnotationBody,
   onDeleteAnnotation,
   onDeleteSeedReference,
   onRecordDesignerAnswer,
@@ -148,12 +160,15 @@ export function WorkbenchCanvas({
   onFocusSeedApplied?: () => void;
   /** FolderChrome Annotate toggle — switches the custom region-annotation tool. */
   annotateMode?: boolean;
-  /** Designer POST create via Runtime client (no direct fetch in the tool). */
-  onCreateAnnotation?: (payload: {
-    surfaceArtifactId: string;
-    rect: NormalizedRect;
-    targetNodeId?: string;
-  }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Designer POST create via Runtime client — entry form submits body+section (08A). */
+  onCreateAnnotation?: (
+    payload: DesignerAnnotationCreateRequest
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Designer PATCH body edit via Runtime client — card click-to-edit (08A). */
+  onUpdateAnnotationBody?: (
+    annotationId: string,
+    body: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Designer DELETE via Runtime client — only remove after HTTP success. */
   onDeleteAnnotation?: (
     annotationId: string
@@ -174,11 +189,13 @@ export function WorkbenchCanvas({
   const createHandlerRef = useRef<
     ((payload: RegionAnnotationCreatePayload) => void) | null
   >(null);
+  const cancelEntryHandlerRef = useRef<(() => void) | null>(null);
 
   const RegionAnnotationTool = useMemo(
     () =>
       createRegionAnnotationToolClass(
-        () => createHandlerRef.current
+        () => createHandlerRef.current,
+        () => cancelEntryHandlerRef.current
       ) as TLStateNodeConstructor,
     []
   );
@@ -221,6 +238,11 @@ export function WorkbenchCanvas({
 
   return (
     <WorkbenchFocusModeProvider>
+    <DesignerAnnotationEntryProvider
+      currentSection={alignmentStage}
+      onCreate={onCreateAnnotation}
+    >
+    <DesignerAnnotationCardActionsProvider onUpdateBody={onUpdateAnnotationBody}>
     <AlignmentActionsBridge
       onRecordDesignerAnswer={onRecordDesignerAnswer}
       onAppendAgentAnnotationInformation={onAppendAgentAnnotationInformation}
@@ -260,7 +282,14 @@ export function WorkbenchCanvas({
         projectionEpoch={records.length + surfaces.length}
         onFocused={onFocusSeedApplied}
       />
-      <RegionAnnotationProjectionSync annotations={annotations} />
+      <RegionAnnotationProjectionSync
+        annotations={annotations}
+        currentStage={alignmentStage}
+      />
+      <DesignerAnnotationCardSync
+        annotations={annotations}
+        currentStage={alignmentStage}
+      />
       {alignment ? (
         <AlignmentProjectionSync
           currentStage={alignmentStage}
@@ -274,8 +303,8 @@ export function WorkbenchCanvas({
       <AlignmentCardInteractionController />
       <RegionAnnotationToolController
         annotateMode={annotateMode}
-        onCreate={onCreateAnnotation}
         createHandlerRef={createHandlerRef}
+        cancelEntryHandlerRef={cancelEntryHandlerRef}
       />
       <RegionAnnotationDeleteController
         annotateMode={annotateMode}
@@ -285,6 +314,8 @@ export function WorkbenchCanvas({
     </Tldraw>
     </WorkbenchSeedActionsProvider>
     </AlignmentActionsBridge>
+    </DesignerAnnotationCardActionsProvider>
+    </DesignerAnnotationEntryProvider>
     </WorkbenchFocusModeProvider>
   );
 }
@@ -317,6 +348,7 @@ function AlignmentActionsBridge({
         void onAppendAgentAnnotationInformation?.(id, information);
       }}
       onFocusCardSelection={focusMode.selectFocusCard}
+      onFocusCardPreviewEnd={focusMode.requestExit}
     >
       {children}
     </AlignmentCardProjectionProvider>

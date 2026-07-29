@@ -158,6 +158,7 @@ test("deleteSeedReference cascades designer annotations on the seed's surfaces",
       rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
     },
     author: "designer",
+    section: "layout",
     body: "note"
   });
   expect(created.ok).toBe(true);

@@ -84,6 +84,7 @@ export function annotationSignature(records: RegionAnnotationRecord[]): string {
       r.author,
       r.type,
       r.body,
+      r.section,
       r.rect_x,
       r.rect_y,
       r.rect_w,
@@ -295,12 +296,28 @@ export function useWorkbenchRuntime(session: string) {
       surfaceArtifactId: string;
       rect: NormalizedRect;
       targetNodeId?: string;
+      body: string;
+      section: string;
     }): Promise<MutationResult> => {
       const client = clientRef.current;
       if (!client) {
         return { ok: false, error: "runtime_client_unavailable" };
       }
       return client.createAnnotation(payload);
+    },
+    []
+  );
+
+  const updateAnnotationBody = useCallback(
+    async (payload: {
+      annotationId: string;
+      body: string;
+    }): Promise<MutationResult> => {
+      const client = clientRef.current;
+      if (!client) {
+        return { ok: false, error: "runtime_client_unavailable" };
+      }
+      return client.updateAnnotationBody(payload);
     },
     []
   );
@@ -459,6 +476,7 @@ export function useWorkbenchRuntime(session: string) {
     error,
     reload,
     createAnnotation,
+    updateAnnotationBody,
     deleteAnnotation,
     deleteSeedReference,
     refreshSeedReference,

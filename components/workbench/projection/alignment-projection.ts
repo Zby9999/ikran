@@ -4,6 +4,7 @@
 
 import type { AlignmentStageId } from "../alignment-stage-panel";
 import type { FocusCardSelection } from "../focus-mode";
+import { expandAgentRegionRect } from "@/lib/runtime/region-annotation-display";
 
 export type AlignmentTargetRect = {
   x: number;
@@ -323,12 +324,18 @@ export function buildAlignmentProjectionPlan(
     const mediaY = frame.mediaY ?? frame.y;
     const mediaW = frame.mediaW ?? frame.w;
     const mediaH = frame.mediaH ?? frame.h;
-    const targetGeometry = rect
+    // Alignment targets are Agent-authored evidence callouts. Keep the
+    // Runtime anchor rect raw for auditability, but add the same page-isotropic
+    // comfort margin used by Agent Region Annotations at projection time.
+    const displayRect = rect
+      ? expandAgentRegionRect(rect, { w: mediaW, h: mediaH })
+      : null;
+    const targetGeometry = displayRect
       ? {
-          x: mediaX + rect.x * mediaW,
-          y: mediaY + rect.y * mediaH,
-          w: rect.w * mediaW,
-          h: rect.h * mediaH
+          x: mediaX + displayRect.x * mediaW,
+          y: mediaY + displayRect.y * mediaH,
+          w: displayRect.w * mediaW,
+          h: displayRect.h * mediaH
         }
       : null;
     const placement =

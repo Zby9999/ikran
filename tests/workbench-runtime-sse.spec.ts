@@ -11,7 +11,12 @@ const test = base.extend<{ folder: string }>({
   folder: async ({}, use) => {
     const folder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-record-sse-"));
     await use(folder);
-    rmSync(folder, { recursive: true, force: true });
+    rmSync(folder, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 50
+    });
   }
 });
 
@@ -138,7 +143,8 @@ test.describe("Task 11 — SSE record invalidation", () => {
           rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.25 }
         },
         author: "designer",
-        body: "Placeholder annotation"
+        body: "Placeholder annotation",
+        section: "design-principle"
       },
       { "x-ikran-session": token },
       runtime.port

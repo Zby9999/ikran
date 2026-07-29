@@ -194,7 +194,9 @@ describe("Workbench Runtime consistency", () => {
     expect(
       await client.createAnnotation({
         surfaceArtifactId: "surface-1",
-        rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+        rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+        body: "Add your design intent",
+        section: "layout"
       })
     ).toEqual({ ok: true });
     expect(posts).toBe(2);
@@ -277,7 +279,9 @@ describe("Workbench Runtime consistency", () => {
     const result = await client.createAnnotation({
       surfaceArtifactId: "surface-v1",
       rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.2 },
-      targetNodeId: "12:34"
+      targetNodeId: "12:34",
+      body: "CTA should read as primary action",
+      section: "component"
     });
 
     expect(result).toEqual({ ok: true });
@@ -288,7 +292,47 @@ describe("Workbench Runtime consistency", () => {
         nodeId: "12:34"
       },
       author: "designer",
-      body: "Placeholder annotation"
+      body: "CTA should read as primary action",
+      section: "component"
+    });
+    client.dispose();
+  });
+
+  test("updateAnnotationBody PATCHes the annotation id and body, then reloads", async () => {
+    let patched: unknown = null;
+    let patchUrl: string | null = null;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "PATCH" && url.includes("region-annotation")) {
+        patchUrl = url;
+        patched = JSON.parse(String(init.body));
+        return new Response(JSON.stringify({ ok: true, id: "annotation-1" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return batchResponse(url, []);
+    });
+    const { createWorkbenchDataClient } = await import(
+      "../../components/runtime/use-workbench-runtime"
+    );
+    const client = createWorkbenchDataClient("session", {
+      fetcher,
+      sleep: async () => {},
+      onSnapshot: () => {},
+      onError: () => {}
+    });
+
+    const result = await client.updateAnnotationBody({
+      annotationId: "annotation-1",
+      body: "refined intent"
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(patchUrl).toBe("/api/region-annotation");
+    expect(patched).toEqual({
+      annotationId: "annotation-1",
+      body: "refined intent"
     });
     client.dispose();
   });
@@ -449,7 +493,9 @@ describe("Workbench Runtime consistency", () => {
 
     const result = await client.createAnnotation({
       surfaceArtifactId: "surface-1",
-      rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }
+      rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      body: "Add your design intent",
+      section: "layout"
     });
 
     expect(result).toEqual({

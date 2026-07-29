@@ -60,6 +60,7 @@ export function SeedEvidenceWorkbench({
     status: runtimeStatus,
     error,
     createAnnotation,
+    updateAnnotationBody,
     deleteAnnotation,
     deleteSeedReference,
     refreshSeedReference,
@@ -369,6 +370,9 @@ export function SeedEvidenceWorkbench({
             onFocusSeedApplied={clearFocusSeedId}
             annotateMode={annotateMode && !canvasLocked}
             onCreateAnnotation={createAnnotation}
+            onUpdateAnnotationBody={(annotationId, body) =>
+              updateAnnotationBody({ annotationId, body })
+            }
             onDeleteAnnotation={deleteAnnotation}
             onDeleteSeedReference={deleteSeedReference}
             onRecordDesignerAnswer={recordDesignerAnswer}

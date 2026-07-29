@@ -560,6 +560,7 @@ test.describe("PRAGMA user_version migration runner", () => {
              'attempt-v12', 'annotation-v12-key', 'layout');
           DROP INDEX idx_agent_annotation_attempt_section;
           ALTER TABLE agent_alignment_annotations DROP COLUMN section;
+          ALTER TABLE region_annotations DROP COLUMN section;
           PRAGMA user_version = 12;
         `);
       } finally {
@@ -568,7 +569,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       const migrated = openProjectDb(dir);
       try {
-        expect(userVersion(migrated)).toBe(13);
+        expect(userVersion(migrated)).toBe(CURRENT_SCHEMA_VERSION);
         expect(
           migrated
             .prepare(
@@ -600,12 +601,96 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
+  test("v13→v14 preserves populated Region Annotations with a null legacy section", () => {
+    withTempProject((dir) => {
+      const initialized = openProjectDb(dir);
+      closeProjectDb(initialized);
+      const dbPath = getProjectDbPath(dir);
+      const v13 = new DatabaseSync(dbPath);
+      try {
+        v13.exec(`
+          INSERT INTO seed_references
+            (id, figma_seed_reference, original_design_intent, created_at,
+             registered_via, file_key, node_id)
+          VALUES
+            ('seed-v13', '${VALID}', 'legacy', '2026-07-20T00:00:00.000Z',
+             'designer', 'AbCdEf', '1:2');
+          INSERT INTO figma_evidence_surfaces
+            (id, seed_reference_id, figma_seed_reference, frame_node_id,
+             frame_name, evidence_views_json, created_at)
+          VALUES
+            ('surf-v13', 'seed-v13', '${VALID}', '1:2', 'Checkout', '{}',
+             '2026-07-20T00:00:00.000Z');
+          INSERT INTO region_annotations
+            (id, surface_id, surface_artifact_id, author, type, body,
+             rect_x, rect_y, rect_w, rect_h, created_at,
+             geometry_version, from_point, target_kind,
+             target_evidence_version_id, section)
+          VALUES
+            ('ann-legacy-v13', 'surf-v13', 'surf-v13', 'designer',
+             'explanatory', 'Legacy designer note.',
+             0.1, 0.2, 0.3, 0.25, '2026-07-20T00:00:00.000Z',
+             'v2_raw', 0, 'figma-region', 'surf-v13', 'layout');
+          ALTER TABLE region_annotations DROP COLUMN section;
+          PRAGMA user_version = 13;
+        `);
+      } finally {
+        v13.close();
+      }
+
+      const migrated = openProjectDb(dir);
+      try {
+        expect(userVersion(migrated)).toBe(14);
+        // Legacy row stays readable; the dropped-then-readded column is null.
+        expect(
+          migrated
+            .prepare(
+              `SELECT id, author, type, body, section
+               FROM region_annotations WHERE id = 'ann-legacy-v13'`
+            )
+            .get()
+        ).toEqual({
+          id: "ann-legacy-v13",
+          author: "designer",
+          type: "explanatory",
+          body: "Legacy designer note.",
+          section: null
+        });
+        // New inserts may persist a six-part section value.
+        migrated
+          .prepare(
+            `INSERT INTO region_annotations
+              (id, surface_id, surface_artifact_id, author, type, body,
+               rect_x, rect_y, rect_w, rect_h, created_at,
+               geometry_version, from_point, target_kind,
+               target_evidence_version_id, section)
+             VALUES
+              ('ann-new-v14', 'surf-v13', 'surf-v13', 'designer',
+               'designer_annotation', 'Section-bound note.',
+               0.2, 0.2, 0.2, 0.2, '2026-07-29T00:00:00.000Z',
+               'v2_raw', 0, 'figma-region', 'surf-v13', 'token')`
+          )
+          .run();
+        expect(
+          migrated
+            .prepare(
+              `SELECT id, section FROM region_annotations
+               WHERE id = 'ann-new-v14'`
+            )
+            .get()
+        ).toEqual({ id: "ann-new-v14", section: "token" });
+      } finally {
+        closeProjectDb(migrated);
+      }
+    });
+  });
+
   test("fresh DB opens at CURRENT_SCHEMA_VERSION without backup", () => {
     withTempProject((dir) => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(13);
+        expect(CURRENT_SCHEMA_VERSION).toBe(14);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
@@ -656,7 +741,8 @@ test.describe("PRAGMA user_version migration runner", () => {
           expect.arrayContaining([
             "geometry_version",
             "from_point",
-            "surface_id"
+            "surface_id",
+            "section"
           ])
         );
         expect(annCols.find((c) => c.name === "surface_id")?.notnull).toBe(1);

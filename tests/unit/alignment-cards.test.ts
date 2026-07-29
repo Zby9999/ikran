@@ -8,6 +8,7 @@ import {
   ALIGNMENT_CARD_SEED_GAP_PX,
   AlignmentQuestionCard,
   activateAlignmentQuestionCard,
+  endAlignmentCardFocusPreview,
   previewAlignmentQuestionFocus,
   stopAlignmentCardPointer,
   submitAlignmentQuestionAnswer
@@ -84,6 +85,16 @@ describe("AlignmentQuestionCard", () => {
 
     expect(onFocusPreview).toHaveBeenCalledOnce();
     expect(onExpandedChange).not.toHaveBeenCalled();
+  });
+
+  test("mouse leave exits hover focus but preserves activated focus", () => {
+    const onFocusPreviewEnd = vi.fn();
+
+    endAlignmentCardFocusPreview(false, onFocusPreviewEnd);
+    expect(onFocusPreviewEnd).toHaveBeenCalledOnce();
+
+    endAlignmentCardFocusPreview(true, onFocusPreviewEnd);
+    expect(onFocusPreviewEnd).toHaveBeenCalledOnce();
   });
 
   test("publishes the Figma card-to-seed spacing for canvas wiring", () => {

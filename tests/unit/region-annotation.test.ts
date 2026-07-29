@@ -11,6 +11,7 @@ import {
   confirmAnnotationPrimaryNode,
   deleteRegionAnnotation,
   listRegionAnnotations,
+  updateRegionAnnotationBody,
   expandPointToRect,
   POINT_SIDE
 } from "../../lib/runtime/region-annotation";
@@ -104,6 +105,7 @@ test.describe("validateRegionAnnotationInput (unit)", () => {
         rect: validRect()
       },
       author: "designer",
+      section: "layout",
       body: "Explicit target"
     });
     expect(explicit.ok).toBe(true);
@@ -150,6 +152,7 @@ test.describe("validateRegionAnnotationInput (unit)", () => {
         nodeId: "12:34"
       },
       author: "designer",
+      section: "layout",
       body: "Explicit source node"
     });
     expect(valid.ok).toBe(true);
@@ -249,6 +252,7 @@ test.describe("validateRegionAnnotationInput (unit)", () => {
         rect: { x: 0.5, y: 0.5, w: 0, h: 0 }
       },
       author: "designer",
+      section: "layout",
       body: "Placeholder annotation"
     });
     expect(res.ok).toBe(true);
@@ -273,7 +277,7 @@ test.describe("validateRegionAnnotationInput (unit)", () => {
     expect(res.input.rect).toEqual({ x: 0, y: 0, w: POINT_SIDE, h: POINT_SIDE });
   });
 
-  test("designer default type is explanatory", () => {
+  test("designer default type is designer_annotation", () => {
     const res = validateRegionAnnotationInput({
       target: {
         kind: "figma-region",
@@ -281,11 +285,12 @@ test.describe("validateRegionAnnotationInput (unit)", () => {
         rect: validRect()
       },
       author: "designer",
+      section: "layout",
       body: "Placeholder annotation"
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(res.input.type).toBe("explanatory");
+    expect(res.input.type).toBe("designer_annotation");
   });
 
   test("agent default type is assumption", () => {
@@ -301,6 +306,60 @@ test.describe("validateRegionAnnotationInput (unit)", () => {
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.input.type).toBe("assumption");
+  });
+
+  test("designer annotation requires a section", () => {
+    const res = validateRegionAnnotationInput({
+      target: {
+        kind: "figma-region",
+        surfaceArtifactId: "surf-1",
+        rect: validRect()
+      },
+      author: "designer",
+      body: "note"
+    });
+    expect(res).toEqual({ ok: false, reason: "missing_section" });
+  });
+
+  test("section must be one of the six alignment sections", () => {
+    const res = validateRegionAnnotationInput({
+      target: {
+        kind: "figma-region",
+        surfaceArtifactId: "surf-1",
+        rect: validRect()
+      },
+      author: "designer",
+      section: "navbar",
+      body: "note"
+    });
+    expect(res).toEqual({ ok: false, reason: "invalid_section" });
+  });
+
+  test("agent annotation may omit section; a valid section is kept", () => {
+    const withoutSection = validateRegionAnnotationInput({
+      target: {
+        kind: "figma-region",
+        surfaceArtifactId: "surf-1",
+        rect: validRect()
+      },
+      author: "agent",
+      body: "note"
+    });
+    expect(withoutSection.ok).toBe(true);
+    if (withoutSection.ok) expect(withoutSection.input.section).toBeNull();
+
+    const withSection = validateRegionAnnotationInput({
+      target: {
+        kind: "figma-region",
+        surfaceArtifactId: "surf-1",
+        rect: validRect()
+      },
+      author: "agent",
+      section: "token",
+      body: "note"
+    });
+    expect(withSection.ok).toBe(true);
+    if (withSection.ok) expect(withSection.input.section).toBe("token");
   });
 });
 
@@ -448,6 +507,7 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
           nodeId: "12:34"
         },
         author: "designer",
+        section: "layout",
         body: "Captured CTA"
       });
 
@@ -478,6 +538,7 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
           nodeId: "missing:1"
         },
         author: "designer",
+        section: "layout",
         body: "Missing"
       });
 
@@ -522,6 +583,7 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
           nodeId: "12:34"
         },
         author: "designer",
+        section: "layout",
         body: "Historical CTA"
       });
       expect(created.ok).toBe(true);
@@ -605,6 +667,7 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
           rect: validRect()
         },
         author: "designer",
+        section: "layout",
         body: "x"
       });
       expect(res.ok).toBe(false);
@@ -723,13 +786,15 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
           rect: validRect()
         },
         author: "designer",
+        section: "layout",
         body: "Placeholder annotation"
       });
       expect(res.ok).toBe(true);
       if (!res.ok) return;
       expect(typeof res.event_id).toBe("string");
       expect(res.record.author).toBe("designer");
-      expect(res.record.type).toBe("explanatory");
+      expect(res.record.type).toBe("designer_annotation");
+      expect(res.record.section).toBe("layout");
       expect(res.record.body).toBe("Placeholder annotation");
       expect(res.record.surface_id).toBe(surfaceId);
       expect(res.record.surface_artifact_id).toBe(surfaceId);
@@ -739,6 +804,7 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
 
       const events = listEvents(dir, "annotation_created");
       expect(events.length).toBe(1);
+      expect(events[0].payload).toMatchObject({ section: "layout" });
     });
   });
 
@@ -832,6 +898,7 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
           rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.15 }
         },
         author: "designer",
+        section: "layout",
         body: "exact"
       });
       expect(designer.ok).toBe(true);
@@ -882,6 +949,7 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
           rect: validRect()
         },
         author: "designer",
+        section: "layout",
         body: "first"
       });
       const second = createRegionAnnotation(dir, {
@@ -912,6 +980,7 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
           rect: validRect()
         },
         author: "designer",
+        section: "layout",
         body: "to delete"
       });
       const agent = createRegionAnnotation(dir, {
@@ -940,6 +1009,80 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
       expect(listRegionAnnotations(dir).map((r) => r.id)).toEqual([
         agent.record.id
       ]);
+    });
+  });
+});
+
+
+test.describe("updateRegionAnnotationBody (unit)", () => {
+  test("designer annotation body updates and logs annotation_body_updated", () => {
+    withTempProject((dir) => {
+      const surfaceId = seedSurface(dir);
+      const created = createRegionAnnotation(dir, {
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          rect: validRect()
+        },
+        author: "designer",
+        section: "layout",
+        body: "first draft"
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+
+      const updated = updateRegionAnnotationBody(dir, {
+        annotationId: created.record.id,
+        body: "refined intent"
+      });
+      expect(updated).toEqual({ ok: true, id: created.record.id });
+      expect(listRegionAnnotations(dir)[0].body).toBe("refined intent");
+
+      const events = listEvents(dir, "annotation_body_updated");
+      expect(events.length).toBe(1);
+      expect(events[0].payload).toMatchObject({
+        annotation_id: created.record.id,
+        body: "refined intent"
+      });
+    });
+  });
+
+  test("agent annotation body is not_editable", () => {
+    withTempProject((dir) => {
+      const surfaceId = seedSurface(dir);
+      const created = createRegionAnnotation(dir, {
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          rect: validRect()
+        },
+        author: "agent",
+        body: "agent note"
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+      expect(
+        updateRegionAnnotationBody(dir, {
+          annotationId: created.record.id,
+          body: "hijack"
+        })
+      ).toEqual({ ok: false, reason: "not_editable" });
+      expect(listRegionAnnotations(dir)[0].body).toBe("agent note");
+    });
+  });
+
+  test("missing annotation → not_found; blank body → missing_body", () => {
+    withTempProject((dir) => {
+      seedSurface(dir);
+      expect(
+        updateRegionAnnotationBody(dir, {
+          annotationId: "no-such-id",
+          body: "x"
+        })
+      ).toEqual({ ok: false, reason: "not_found" });
+      expect(
+        updateRegionAnnotationBody(dir, { annotationId: "no-such-id", body: "  " })
+      ).toEqual({ ok: false, reason: "missing_body" });
     });
   });
 });

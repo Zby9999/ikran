@@ -179,6 +179,7 @@ describe("AlignmentCardShapeUtil", () => {
           onSubmitAnswer: vi.fn(),
           onAppendAnnotationInformation: vi.fn(),
           onFocusCardSelection: vi.fn(),
+          onFocusCardPreviewEnd: vi.fn(),
           children: createElement(AlignmentCardShapeView, {
             shape: questionShape(),
             onExpandedChange: vi.fn(),

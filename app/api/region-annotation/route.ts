@@ -14,7 +14,9 @@ import {
   deleteRegionAnnotationCommand,
   listRegionAnnotationsCommand,
   parseCommandInput,
-  requireActiveProjectCommand
+  requireActiveProjectCommand,
+  updateRegionAnnotationBodyCommand,
+  updateRegionAnnotationBodyInputSchema
 } from "../../../lib/runtime/commands";
 
 export const runtime = "nodejs";
@@ -112,6 +114,41 @@ export async function PATCH(request: NextRequest) {
       { status: commandErrorHttpStatus("invalid_json") }
     );
   }
+
+  // Designer body edit dispatches on the presence of a string `body` field;
+  // the confirm-primary payload carries no `body`.
+  if (
+    body !== null &&
+    typeof body === "object" &&
+    typeof (body as Record<string, unknown>).body === "string"
+  ) {
+    const parsed = parseCommandInput(updateRegionAnnotationBodyInputSchema, body);
+    if (!parsed.ok) {
+      return NextResponse.json(
+        { ok: false, error: parsed.reason },
+        { status: commandErrorHttpStatus(parsed.reason) }
+      );
+    }
+    const state = requireActiveProjectCommand();
+    if (!state.ok) {
+      return NextResponse.json(
+        { ok: false, error: state.reason },
+        { status: commandErrorHttpStatus(state.reason) }
+      );
+    }
+    const result = updateRegionAnnotationBodyCommand(
+      state.project.path,
+      parsed.data
+    );
+    if (!result.ok) {
+      return NextResponse.json(
+        { ok: false, error: result.reason },
+        { status: commandErrorHttpStatus(result.reason) }
+      );
+    }
+    return NextResponse.json({ ok: true, id: result.id });
+  }
+
   const parsed = parseCommandInput(confirmAnnotationPrimaryInputSchema, body);
   if (!parsed.ok) {
     return NextResponse.json(

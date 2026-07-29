@@ -350,6 +350,13 @@ test("05C: Tab drills structural hover to its parent and commits that node", asy
   await expect(hovered).toHaveAttribute("data-node-id", /child-frame$/);
 
   await page.mouse.click(point.x, point.y);
+
+  // 08A — pointer-up opens the entry form; the create POST fires on submit.
+  const entryInput = page.getByTestId("designer-annotation-entry-input");
+  await expect(entryInput).toBeVisible();
+  await entryInput.fill("Child frame intent");
+  await page.getByTestId("designer-annotation-entry-submit").click();
+
   let committedAnnotation: ReturnType<typeof listRegionAnnotations>[number] | undefined;
   await expect
     .poll(() => {
@@ -364,7 +371,10 @@ test("05C: Tab drills structural hover to its parent and commits that node", asy
     .toBe(annotationsBeforeHover.length + 1);
   expect(committedAnnotation).toMatchObject({
     target_kind: "figma-node",
-    target_node_id: "7:9:child-frame"
+    target_node_id: "7:9:child-frame",
+    type: "designer_annotation",
+    body: "Child frame intent",
+    section: "design-principle"
   });
 });
 

@@ -19,6 +19,7 @@ import {
 type FocusModeContextValue = {
   state: FocusModeState;
   selectFocusCard: (selection: FocusCardSelection) => void;
+  requestExit: () => void;
   finishExit: () => void;
 };
 
@@ -52,12 +53,15 @@ export function WorkbenchFocusModeProvider({ children }: PropsWithChildren) {
   const selectFocusCard = useCallback((selection: FocusCardSelection) => {
     dispatch({ type: "focus-card-selected", selection });
   }, []);
+  const requestExit = useCallback(() => {
+    dispatch({ type: "exit-requested" });
+  }, []);
   const finishExit = useCallback(() => {
     dispatch({ type: "exit-transition-completed" });
   }, []);
   const value = useMemo(
-    () => ({ state, selectFocusCard, finishExit }),
-    [finishExit, selectFocusCard, state]
+    () => ({ state, selectFocusCard, requestExit, finishExit }),
+    [finishExit, requestExit, selectFocusCard, state]
   );
   return (
     <FocusModeContext.Provider value={value}>
@@ -71,6 +75,7 @@ export function useWorkbenchFocusMode(): FocusModeContextValue {
     useContext(FocusModeContext) ?? {
       state: FOCUS_MODE_IDLE,
       selectFocusCard: () => {},
+      requestExit: () => {},
       finishExit: () => {}
     }
   );

@@ -34,8 +34,8 @@ test.describe("region annotation tool handler isolation", () => {
       callsB.push(p);
     };
 
-    const ToolA = createRegionAnnotationToolClass(() => handlerA);
-    const ToolB = createRegionAnnotationToolClass(() => handlerB);
+    const ToolA = createRegionAnnotationToolClass(() => handlerA, () => null);
+    const ToolB = createRegionAnnotationToolClass(() => handlerB, () => null);
 
     expect(ToolA).not.toBe(ToolB);
 

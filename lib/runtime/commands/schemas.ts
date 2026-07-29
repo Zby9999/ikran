@@ -112,6 +112,8 @@ export const createRegionAnnotationInputShape = {
   author: z.string().optional(),
   type: z.string().optional(),
   body: z.string().optional(),
+  // Optional string (not enum) so missing_section / invalid_section reach domain.
+  section: z.string().optional(),
   // Candidate ranking and primary confirmation are Runtime-owned follow-ups,
   // not competing fields on the create contract.
 } as const;
@@ -124,6 +126,11 @@ export const confirmAnnotationPrimaryInputSchema = z.object({
   annotationId: z.string(),
   evidenceVersionId: z.string(),
   sourceNodeId: z.string()
+});
+
+export const updateRegionAnnotationBodyInputSchema = z.object({
+  annotationId: z.string(),
+  body: z.string()
 });
 
 export const addSeedReferenceInputShape = {
