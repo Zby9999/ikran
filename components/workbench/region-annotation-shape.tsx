@@ -29,9 +29,11 @@ import {
   useEditor,
   useValue
 } from "tldraw";
+import { useEffect } from "react";
 import { mediaBoxInPage } from "./region-annotation-geometry";
 import { DesignerAnnotationEntryForm } from "./designer-annotation-entry-form";
 import { useDesignerAnnotationEntry } from "./designer-annotation-entry-context";
+import { useExclusiveDialog } from "./exclusive-dialog-context";
 import {
   annotationChromeForMediaWidth,
   REGION_ANNOTATION_REF_MEDIA_W
@@ -101,6 +103,7 @@ function RegionAnnotationMarker({ shape }: { shape: RegionAnnotationShape }) {
   const { canvasRecordId, runtimeRecordId, surfaceRecordId } = shape.meta;
   const editor = useEditor();
   const entry = useDesignerAnnotationEntry();
+  const exclusive = useExclusiveDialog();
   const isSelected = useValue(
     "region-annotation-selected",
     () => editor.getSelectedShapeIds().includes(shape.id),
@@ -112,6 +115,16 @@ function RegionAnnotationMarker({ shape }: { shape: RegionAnnotationShape }) {
   const isPendingDraft =
     runtimeRecordId === "draft:committing" &&
     entry?.pending?.payload.draftShapeId === String(shape.id);
+  // Single-active-dialog: the pending entry form becoming active closes any
+  // open card dialog (alignment answers, annotation edits).
+  useEffect(() => {
+    if (isPendingDraft) {
+      exclusive?.openDialog({
+        family: "designer-annotation-entry",
+        id: String(shape.id)
+      });
+    }
+  }, [isPendingDraft, exclusive, shape.id]);
   // Read parent Seed Reference bounds live so chrome tracks resize even before
   // projection sync rewrites `surfaceMediaW` on the marker props.
   const mediaW = useValue(

@@ -31,13 +31,16 @@ export function DesignerAnnotationEntryForm({
   submitting = false,
   onSubmit,
   onCancel,
-  testId = "designer-annotation-entry"
+  testId = "designer-annotation-entry",
+  className
 }: {
   initialBody?: string;
   submitting?: boolean;
   onSubmit: (body: string) => void | Promise<void>;
   onCancel: () => void;
   testId?: string;
+  /** Extra form class — e.g. the in-card variant that fills the card's box. */
+  className?: string;
 }) {
   const [draft, setDraft] = useState(initialBody);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -71,7 +74,9 @@ export function DesignerAnnotationEntryForm({
 
   return (
     <form
-      className="designer-annotation-entry"
+      className={["designer-annotation-entry", className]
+        .filter(Boolean)
+        .join(" ")}
       data-testid={testId}
       onSubmit={submit}
       onMouseDown={stopPointer}

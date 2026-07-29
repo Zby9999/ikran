@@ -1028,6 +1028,14 @@
   opacity: 0.4;
 }
 
+/* In-card edit variant: the entry form fills the docked card's fixed box
+   exactly, so toggling between filled and editing never changes the card's
+   height (the dashed connector stays anchored to the same center point). */
+.designer-annotation-entry--card {
+  height: 100%;
+  min-height: 0;
+}
+
 /* Designer Annotation side card (Issue 08A, Figma 670:895) — filled
    annotation docked next to the Evidence Surface. Green is the User
    Annotation color; section only scopes visibility, never tint. */

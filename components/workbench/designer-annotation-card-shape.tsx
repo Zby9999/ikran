@@ -24,9 +24,12 @@ import {
   HTMLContainer,
   T,
   useEditor,
-  type TLShape
+  type Editor,
+  type TLShape,
+  type TLShapeId
 } from "tldraw";
 import { DesignerAnnotationEntryForm } from "./designer-annotation-entry-form";
+import { useExclusiveDialog } from "./exclusive-dialog-context";
 import type { DesignerAnnotationMutationResult } from "./designer-annotation-entry-context";
 import type { DesignerAnnotationAnchorKind } from "./projection/designer-annotation-card-projection";
 
@@ -98,6 +101,51 @@ function stopPointer(event: SyntheticEvent) {
   event.stopPropagation();
 }
 
+/** Pure: which designer-annotation cards need their `editing` prop flipped
+ *  so at most `activeId` stays open. Mirrors `alignmentCardEditorUpdates`. */
+export function designerAnnotationCardEditorUpdates(
+  cards: readonly { id: string; editing: boolean }[],
+  activeId: string | null
+) {
+  return cards.flatMap((card) => {
+    const editing = card.id === activeId;
+    return card.editing === editing ? [] : [{ id: card.id, editing }];
+  });
+}
+
+/** Close every designer-annotation card edit form except `activeId`. */
+export function setOnlyOpenDesignerAnnotationCard(
+  editor: Editor,
+  activeId: string | null
+) {
+  const shapes = editor
+    .getCurrentPageShapes()
+    .filter(
+      (shape): shape is DesignerAnnotationCardShape =>
+        shape.type === DESIGNER_ANNOTATION_CARD_TYPE
+    );
+  const updates = designerAnnotationCardEditorUpdates(
+    shapes.map((shape) => ({
+      id: String(shape.id),
+      editing: shape.props.editing
+    })),
+    activeId
+  );
+  if (updates.length === 0) return;
+  editor.run(
+    () => {
+      for (const update of updates) {
+        editor.updateShape<DesignerAnnotationCardShape>({
+          id: update.id as TLShapeId,
+          type: DESIGNER_ANNOTATION_CARD_TYPE,
+          props: { editing: update.editing }
+        });
+      }
+    },
+    { ignoreShapeLock: true }
+  );
+}
+
 export function DesignerAnnotationCardShapeView({
   shape
 }: {
@@ -105,9 +153,24 @@ export function DesignerAnnotationCardShapeView({
 }) {
   const editor = useEditor();
   const actions = useContext(DesignerAnnotationCardActionsContext);
+  const exclusive = useExclusiveDialog();
   const { w, h, body, section, anchorKind, editing } = shape.props;
 
   function setEditing(next: boolean) {
+    // Single-active-dialog: route through the canvas-wide coordinator when
+    // available so opening this edit form closes every other input dialog
+    // (alignment cards, other annotation cards, the pending entry draft).
+    if (exclusive) {
+      if (next) {
+        exclusive.openDialog({
+          family: "designer-annotation",
+          id: String(shape.id)
+        });
+      } else {
+        exclusive.closeDialogs();
+      }
+      return;
+    }
     editor.run(
       () =>
         editor.updateShape<DesignerAnnotationCardShape>({
@@ -132,6 +195,7 @@ export function DesignerAnnotationCardShapeView({
       {editing ? (
         <DesignerAnnotationEntryForm
           testId="designer-annotation-card-edit"
+          className="designer-annotation-entry--card"
           initialBody={body}
           onSubmit={async (nextBody) => {
             const result = await actions?.updateBody(

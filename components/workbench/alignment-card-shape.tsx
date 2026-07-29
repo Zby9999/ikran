@@ -23,6 +23,7 @@ import {
   type AlignmentAnswerMutationResult
 } from "./alignment-cards";
 import type { AlignmentStageId } from "./alignment-stage-panel";
+import { useExclusiveDialog } from "./exclusive-dialog-context";
 import type { FocusCardSelection } from "./focus-mode";
 import type { AlignmentProjectionMeta } from "./projection/alignment-projection";
 
@@ -156,19 +157,26 @@ export function isAlignmentCanvasPointerDown(
 
 export function AlignmentCardInteractionController() {
   const editor = useEditor();
+  const exclusive = useExclusiveDialog();
 
   useEffect(() => {
-    setOnlyOpenAlignmentCard(editor, null);
+    // Canvas pointer-down closes every input dialog (all card families when
+    // the exclusive coordinator is mounted, alignment cards only otherwise).
+    const closeAll = () =>
+      exclusive
+        ? exclusive.closeDialogs()
+        : setOnlyOpenAlignmentCard(editor, null);
+    closeAll();
     const onEditorEvent = (event: AlignmentCanvasEvent) => {
       if (isAlignmentCanvasPointerDown(event)) {
-        setOnlyOpenAlignmentCard(editor, null);
+        closeAll();
       }
     };
     editor.on("event", onEditorEvent);
     return () => {
       editor.off("event", onEditorEvent);
     };
-  }, [editor]);
+  }, [editor, exclusive]);
 
   return null;
 }
@@ -354,21 +362,25 @@ export function AlignmentCardShapeView({
 
 function AlignmentCardShapeComponent({ shape }: { shape: AlignmentCardShape }) {
   const editor = useEditor();
+  const exclusive = useExclusiveDialog();
+  // Single-active-dialog: opening this card closes every other input dialog
+  // (designer-annotation cards and the pending entry draft included).
+  const handleActiveChange = (active: boolean) => {
+    if (exclusive) {
+      if (active) {
+        exclusive.openDialog({ family: "alignment", id: String(shape.id) });
+      } else {
+        exclusive.closeDialogs();
+      }
+      return;
+    }
+    setOnlyOpenAlignmentCard(editor, active ? String(shape.id) : null);
+  };
   return (
     <AlignmentCardShapeView
       shape={shape}
-      onExpandedChange={(expanded) =>
-        setOnlyOpenAlignmentCard(
-          editor,
-          expanded ? String(shape.id) : null
-        )
-      }
-      onEditingChange={(editing) =>
-        setOnlyOpenAlignmentCard(
-          editor,
-          editing ? String(shape.id) : null
-        )
-      }
+      onExpandedChange={handleActiveChange}
+      onEditingChange={handleActiveChange}
       onPointerInteraction={editor.markEventAsHandled}
     />
   );

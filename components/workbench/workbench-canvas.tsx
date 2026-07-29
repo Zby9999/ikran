@@ -59,6 +59,8 @@ import {
   AlignmentCardProjectionProvider,
   AlignmentCardShapeUtil
 } from "./alignment-card-shape";
+import { ExclusiveDialogProvider } from "./exclusive-dialog-context";
+import { ExclusiveDialogController } from "./exclusive-dialog-controller";
 import type { AlignmentAnswerMutationResult } from "./alignment-cards";
 import { AlignmentTargetShapeUtil } from "./alignment-target-shape";
 import { AlignmentConnectorShapeUtil } from "./alignment-connector-shape";
@@ -243,6 +245,7 @@ export function WorkbenchCanvas({
       onCreate={onCreateAnnotation}
     >
     <DesignerAnnotationCardActionsProvider onUpdateBody={onUpdateAnnotationBody}>
+    <ExclusiveDialogProvider>
     <AlignmentActionsBridge
       onRecordDesignerAnswer={onRecordDesignerAnswer}
       onAppendAgentAnnotationInformation={onAppendAgentAnnotationInformation}
@@ -301,6 +304,7 @@ export function WorkbenchCanvas({
         />
       ) : null}
       <AlignmentCardInteractionController />
+      <ExclusiveDialogController />
       <RegionAnnotationToolController
         annotateMode={annotateMode}
         createHandlerRef={createHandlerRef}
@@ -314,6 +318,7 @@ export function WorkbenchCanvas({
     </Tldraw>
     </WorkbenchSeedActionsProvider>
     </AlignmentActionsBridge>
+    </ExclusiveDialogProvider>
     </DesignerAnnotationCardActionsProvider>
     </DesignerAnnotationEntryProvider>
     </WorkbenchFocusModeProvider>
