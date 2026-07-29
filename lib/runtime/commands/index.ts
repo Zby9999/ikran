@@ -42,6 +42,11 @@ export { listEvidenceSurfacesCommand } from "./evidence-package";
 export { recordArtifactWrittenCommand } from "./artifact";
 
 export {
+  getDesignSystemViewCommand,
+  getDesignSystemComponentCommand
+} from "./design-system";
+
+export {
   createRegionAnnotationCommand,
   confirmAnnotationPrimaryNodeCommand,
   listRegionAnnotationsCommand,
@@ -98,6 +103,8 @@ export {
   connectFigmaInputShape,
   recordArtifactWrittenInputSchema,
   recordArtifactWrittenInputShape,
+  getDesignSystemComponentInputSchema,
+  getDesignSystemComponentInputShape,
   createOrOpenProjectInputShape,
   setupWorkspaceInputShape
 } from "./schemas";

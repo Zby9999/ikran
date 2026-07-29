@@ -734,12 +734,70 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
+  test("v15→v16 creates the design-system ingest tables", () => {
+    withTempProject((dir) => {
+      const initialized = openProjectDb(dir);
+      closeProjectDb(initialized);
+      const dbPath = getProjectDbPath(dir);
+      const v15 = new DatabaseSync(dbPath);
+      try {
+        v15.exec(`
+          DROP TABLE design_system_entries;
+          DROP TABLE design_system_meta;
+          PRAGMA user_version = 15;
+        `);
+      } finally {
+        v15.close();
+      }
+
+      const migrated = openProjectDb(dir);
+      try {
+        expect(userVersion(migrated)).toBe(CURRENT_SCHEMA_VERSION);
+        expect(tableNames(migrated)).toEqual(
+          expect.arrayContaining(["design_system_entries", "design_system_meta"])
+        );
+        const cols = migrated
+          .prepare("PRAGMA table_info(design_system_entries)")
+          .all() as Array<{ name: string }>;
+        expect(cols.map((c) => c.name)).toEqual(
+          expect.arrayContaining([
+            "id",
+            "file_kind",
+            "section",
+            "entry_id",
+            "name",
+            "value_json",
+            "meaning",
+            "status",
+            "links_json",
+            "source_artifact_path",
+            "position",
+            "created_at",
+            "updated_at"
+          ])
+        );
+        const indexes = migrated
+          .prepare("PRAGMA index_list(design_system_entries)")
+          .all() as Array<{ name: string; unique: number }>;
+        const byName = new Map(indexes.map((i) => [i.name, i]));
+        expect(byName.get("idx_design_system_entries_source_entry")?.unique).toBe(1);
+        expect(byName.has("idx_design_system_entries_section")).toBe(true);
+        const meta = migrated
+          .prepare("SELECT name FROM design_system_meta WHERE singleton = 1")
+          .get() as { name: string } | undefined;
+        expect(meta?.name).toBe("");
+      } finally {
+        closeProjectDb(migrated);
+      }
+    });
+  });
+
   test("fresh DB opens at CURRENT_SCHEMA_VERSION without backup", () => {
     withTempProject((dir) => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(15);
+        expect(CURRENT_SCHEMA_VERSION).toBe(16);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
@@ -757,7 +815,9 @@ test.describe("PRAGMA user_version migration runner", () => {
             "alignment_attempts",
             "agent_commands",
             "project_workflow",
-            "source_artifacts"
+            "source_artifacts",
+            "design_system_entries",
+            "design_system_meta"
           ])
         );
         const meta = db

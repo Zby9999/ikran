@@ -48,6 +48,7 @@ export type DesignSystemSchemaReason =
   | "token_primitive_alias"
   | "token_alias_unresolvable"
   | "token_alias_invalid_layer"
+  | "token_alias_reserved_key"
   | "token_alias_cycle";
 
 export type DesignSystemSchemaOk = { ok: true };
@@ -200,12 +201,14 @@ function checkEntryArray(
 //
 // Shape: { primitive: {name: TokenEntry}, semantic: {...}, component: {...} }.
 // The map key is the token identity (no `id` field). A TokenEntry value is
-// either a concrete payload (any non-null JSON value) or an alias object
+// either a concrete payload (any non-null JSON value) or a PURE alias object
 // `{ alias: "<layer>.<tokenName>" }` — the `alias` key is RESERVED for alias
-// references: a concrete value object MUST NOT contain an `alias` key, and
-// Task C (ingest) / Task D (write-back) must respect that encoding. Alias
-// targets are layer-qualified so references are unambiguous inside the
-// single file (09A: the cross-domain alias web stays in one file).
+// references: a concrete value object MUST NOT contain an `alias` key, and a
+// mixed object combining `alias` with content keys is rejected with
+// `token_alias_reserved_key`. Task C (ingest) / Task D (write-back) respect
+// that encoding. Alias targets are layer-qualified so references are
+// unambiguous inside the single file (09A: the cross-domain alias web stays
+// in one file).
 //
 // Layer rules: primitive entries must be concrete (no alias). semantic may
 // alias primitive or semantic; component may alias component, semantic or
@@ -229,13 +232,21 @@ const ALLOWED_ALIAS_TARGET_LAYERS: Record<TokenLayer, readonly TokenLayer[]> =
  * Extract an alias reference from a token value, using the module's uniform
  * result idiom: ok with `alias: null` for a concrete payload, ok with the
  * target string for an alias object, or a failure when the reserved `alias`
- * key carries a non-string value.
+ * key is misused — a non-string target, or a MIXED object that combines
+ * `alias` with content keys (the reserved key belongs to pure alias objects
+ * only; concrete values must not carry it).
  */
 function aliasTargetOf(
   value: unknown
 ): { ok: true; alias: string | null } | DesignSystemSchemaError {
   if (!isPlainObject(value) || !("alias" in value)) {
     return { ok: true, alias: null };
+  }
+  if (Object.keys(value).length > 1) {
+    return fail("token_alias_reserved_key", {
+      field: "value",
+      keys: Object.keys(value).sort()
+    });
   }
   if (!isNonEmptyString(value.alias)) {
     return fail("invalid_field_type", {

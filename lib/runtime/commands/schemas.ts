@@ -205,6 +205,15 @@ export const recordArtifactWrittenInputSchema = z.object(
   recordArtifactWrittenInputShape
 );
 
+export const getDesignSystemComponentInputShape = {
+  /** Inventory entry id or spec entry id of the component. */
+  componentId: z.string()
+} as const;
+
+export const getDesignSystemComponentInputSchema = z.object(
+  getDesignSystemComponentInputShape
+);
+
 const alignmentEvidenceLinkShape = {
   seedReferenceId: z.string(),
   evidenceSurfaceId: z.string(),

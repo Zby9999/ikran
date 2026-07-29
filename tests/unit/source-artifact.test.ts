@@ -208,7 +208,9 @@ test.describe("recordSourceArtifact (record path)", () => {
         expect(res.record.path).toBe("design-system/token.json");
         expect(res.record.artifact_type).toBe("token.json");
         expect(res.record.declaration_version).toBe(1);
-        expect(res.record.status).toBe("declared");
+        // Task C: design-system declarations pass the ingest gate and land
+        // in the DB, so the index row is marked "ingested".
+        expect(res.record.status).toBe("ingested");
         expect(JSON.parse(res.record.related_record_ids_json)).toEqual([
           "card-1"
         ]);
@@ -228,6 +230,12 @@ test.describe("recordSourceArtifact (record path)", () => {
             kind: "artifact",
             action: "created",
             id: res.record.id,
+            projectPath: path.resolve(dir)
+          }),
+          expect.objectContaining({
+            kind: "design-system",
+            action: "created",
+            id: "design-system/token.json",
             projectPath: path.resolve(dir)
           })
         ]);

@@ -344,6 +344,29 @@ test.describe("token.json", () => {
     expect(res.reason).toBe("token_primitive_alias");
   });
 
+  test("mixed object combining alias with content keys → token_alias_reserved_key", () => {
+    const json = validTokenJson();
+    json.semantic["color.primary"].value = {
+      alias: "primitive.color.blue.500",
+      fallback: "#3b82f6"
+    };
+    const res = validateDesignSystemJson("token.json", json);
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toBe("token_alias_reserved_key");
+    expect(res.details).toMatchObject({
+      keys: ["alias", "fallback"]
+    });
+
+    // A pure alias object with a non-string target stays invalid_field_type.
+    const bad = validTokenJson();
+    bad.semantic["color.primary"].value = { alias: 42 };
+    const badRes = validateDesignSystemJson("token.json", bad);
+    expect(badRes.ok).toBe(false);
+    if (badRes.ok) return;
+    expect(badRes.reason).toBe("invalid_field_type");
+  });
+
   test("self-cycle → token_alias_cycle with offending path", () => {
     const json = validTokenJson();
     json.semantic["color.primary"].value = { alias: "semantic.color.primary" };

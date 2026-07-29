@@ -32,12 +32,20 @@ import {
 import {
   designSystemFileCheck,
   readJsonFileObject,
+  validateDesignSystemJson,
+  type DesignSystemFileKind,
   type DesignSystemSchemaReason
 } from "./design-system-schema";
 import {
   checkDesignSystemDeclarationLinksOnDb,
   type DesignSystemDeclarationLinkReason
 } from "./design-system-status";
+import {
+  applyDesignSystemIngestOnDb,
+  prepareDesignSystemIngestOnDb,
+  type DesignSystemIngestPlan
+} from "./design-system-ingest";
+import { writeDesignSystemViewExport } from "./design-system-view";
 
 // ---------------------------------------------------------------------------
 // Artifact type registry (data-driven; add new types as entries below)
@@ -360,6 +368,8 @@ export function recordSourceArtifact(
 
   try {
     const result = withProjectTransaction(projectPath, (db) => {
+      let ingestPlan: DesignSystemIngestPlan | null = null;
+
       // Design-system declarations must link answered question cards or
       // Agent annotations (09A decision 4); the DB-dependent check runs
       // inside the transaction so it shares a snapshot with the write.
@@ -369,6 +379,25 @@ export function recordSourceArtifact(
           declaration.relatedRecordIds
         );
         if (!linkCheck.ok) return linkCheck;
+
+        // Task C ingest (09A decisions 2 + 4): re-validate the file for
+        // failure details (the checkFile seam only surfaces the reason),
+        // then cross-validate every entry status and stage the ingest.
+        // All of this happens BEFORE any write, so a rejected ingest
+        // persists no index row, no entries and no events.
+        const fileKind = declaration.artifactType as DesignSystemFileKind;
+        const file = readJsonFileObject(absolutePath);
+        if (!file.ok) return { ok: false as const, reason: file.reason };
+        const schemaResult = validateDesignSystemJson(fileKind, file.json);
+        if (!schemaResult.ok) return schemaResult;
+        const prepared = prepareDesignSystemIngestOnDb(db, {
+          fileKind,
+          json: file.json,
+          sourcePath: relativePath,
+          now
+        });
+        if (!prepared.ok) return prepared;
+        ingestPlan = prepared.plan;
       }
 
       const existing = db
@@ -381,7 +410,9 @@ export function recordSourceArtifact(
         | undefined;
 
       // Re-declaring the same path updates the index row with a new
-      // declaration version instead of duplicating it.
+      // declaration version instead of duplicating it. A design-system file
+      // that passed the ingest gate is marked "ingested" (Task A reserved
+      // the status column for exactly this transition).
       const record: SourceArtifactRecord = {
         id: existing?.id ?? randomUUID(),
         path: relativePath,
@@ -390,7 +421,7 @@ export function recordSourceArtifact(
         related_record_ids_json: JSON.stringify(declaration.relatedRecordIds),
         readiness: declaration.readiness ?? null,
         declaration_version: (existing?.declaration_version ?? 0) + 1,
-        status: "declared",
+        status: ingestPlan ? "ingested" : "declared",
         created_at: existing?.created_at ?? now,
         updated_at: now
       };
@@ -442,11 +473,18 @@ export function recordSourceArtifact(
         declaration_version: record.declaration_version
       });
 
+      // Ingest writes land after the declaration event so a crash never
+      // leaves entries without their declaration.
+      if (ingestPlan) {
+        applyDesignSystemIngestOnDb(db, ingestPlan);
+      }
+
       return {
         ok: true as const,
         record,
         event_id: event.event_id,
-        action: existing ? ("updated" as const) : ("created" as const)
+        action: existing ? ("updated" as const) : ("created" as const),
+        ingested: ingestPlan !== null
       };
     });
 
@@ -461,6 +499,32 @@ export function recordSourceArtifact(
       id: result.record.id,
       projectPath: path.resolve(projectPath)
     });
+
+    if (result.ingested) {
+      // Browser invalidation for the DB-backed design-system view. Identity
+      // is the source artifact's canonical project-relative path (NOT the
+      // index row uuid — a foreign id space for this kind); "created" marks
+      // the first ingest of that path, "updated" a re-ingest.
+      emitRecordEvent({
+        kind: "design-system",
+        action: result.action,
+        id: result.record.path,
+        projectPath: path.resolve(projectPath)
+      });
+
+      // Derived export (research / external consumption only — the Browser
+      // reads the DB, never this file). The ingest is already committed, so
+      // an export failure is audited, never masked into the declaration.
+      const exportResult = writeDesignSystemViewExport(projectPath);
+      if (!exportResult.ok) {
+        logInvalidToolEvent(
+          projectPath,
+          "invalid_output",
+          "design_system_view_export",
+          exportResult.reason
+        );
+      }
+    }
 
     return {
       ok: true,

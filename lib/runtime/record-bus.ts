@@ -11,7 +11,8 @@ export type RecordBusKind =
   | "evidence"
   | "annotation"
   | "alignment"
-  | "artifact";
+  | "artifact"
+  | "design-system";
 export type RecordBusAction = "created" | "updated" | "deleted";
 
 export type RecordBusEvent = {

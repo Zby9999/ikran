@@ -165,7 +165,7 @@ function descriptionExists(db: DatabaseType): boolean {
   return typeof row?.value === "string" && row.value.trim().length > 0;
 }
 
-function targetsFromAnchor(anchor: unknown):
+export function targetsFromAnchor(anchor: unknown):
   | { ok: true; kind: AlignmentAnchor["kind"]; targets: Array<Record<string, unknown>> }
   | Failure {
   if (!anchor || typeof anchor !== "object" || Array.isArray(anchor)) {

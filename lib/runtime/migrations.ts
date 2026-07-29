@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 15;
+export const CURRENT_SCHEMA_VERSION = 16;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -926,6 +926,53 @@ CREATE INDEX IF NOT EXISTS idx_source_artifacts_artifact_type
   ON source_artifacts(artifact_type);
 CREATE INDEX IF NOT EXISTS idx_source_artifacts_created_at
   ON source_artifacts(created_at);
+      `);
+    }
+  },
+  {
+    version: 16,
+    up(db) {
+      // Issue 09 / 09A (Task C): ingested design-system content is the
+      // Runtime truth the Browser reads (09A decision 2 — the Browser never
+      // reads the source files or the derived view.json export). Entries are
+      // keyed by (source file, entry id); re-ingest of a file replaces its
+      // rows wholesale in one transaction, never hand-merged. Structured
+      // payloads (token values incl. the reserved `alias` key, component
+      // props / boundaries / stateMatrix, rule objects) stay in value_json;
+      // `position` preserves source-file order inside each section.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS design_system_entries (
+  id TEXT PRIMARY KEY,
+  file_kind TEXT NOT NULL,
+  section TEXT NOT NULL,
+  entry_id TEXT NOT NULL,
+  name TEXT,
+  value_json TEXT NOT NULL,
+  meaning TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('formalized', 'candidate', 'gap')),
+  links_json TEXT NOT NULL DEFAULT '[]',
+  source_artifact_path TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_design_system_entries_source_entry
+  ON design_system_entries(source_artifact_path, entry_id);
+CREATE INDEX IF NOT EXISTS idx_design_system_entries_section
+  ON design_system_entries(section);
+CREATE INDEX IF NOT EXISTS idx_design_system_entries_file_kind
+  ON design_system_entries(file_kind);
+CREATE INDEX IF NOT EXISTS idx_design_system_entries_status
+  ON design_system_entries(status);
+
+-- File-level meta from design-system.json (the system name is not an entry).
+CREATE TABLE IF NOT EXISTS design_system_meta (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  name TEXT NOT NULL DEFAULT '',
+  updated_at TEXT
+);
+INSERT OR IGNORE INTO design_system_meta (singleton, name, updated_at)
+VALUES (1, '', NULL);
       `);
     }
   }
