@@ -192,8 +192,8 @@ Ikran 的核心不变量：
 27. 作为设计师，我想查看 component inventory 和 component detail，以便提取出的组件可审查。
 28. 作为设计师，我想让 foundation 页面包含语义角色、视觉样例和简短用法说明，以便系统容易阅读。
 29. 作为设计师，我想让 component detail 展示目的、变体、状态、token 链接和示例，以便判断组件是否可复用。
-30. 作为设计师，我想让设计系统 source artifact 保持为 Markdown 和 JSON，以便人和 Agent 都能阅读。
-31. 作为设计师，我想让 Workbench 读取 derived `design-system-view.json`，以便 UI 渲染稳定而不解析 Markdown 表格。
+30. 作为设计师，我想让设计系统 source artifact 全部保持为 JSON（长文叙述作为 JSON 字符串字段），以便人和 Agent 都能阅读且 schema 可校验。
+31. 作为设计师，我想让 Workbench 经 API 从 Runtime DB 实时读取设计系统视图（含证据链），以便渲染稳定且溯源最新；`design-system-view.json` 作为 derived export 供外部消费。
 32. 作为设计师，我想让 `token.json` 成为设计 token 事实源，以便 Tailwind 只是实现映射。
 33. 作为设计师，我想让 Agent 将 seed page 重建为真实 prototype，以便验证设计系统、代码和视觉输出是否一致。
 34. 作为设计师，我想在 Prototype Evidence Surface 中看到 live iframe preview，以便我审查真实交互而不是截图。
@@ -346,7 +346,7 @@ Ikran 的核心不变量：
 - 设计师提供一个本地项目文件夹。
 - 项目文件夹成为完整研究案例：`.ikran/`、workflow 文件、source artifact、derived artifact、prototype code 和 export 共存。
 - `.ikran/` 存放 Runtime 元数据、SQLite、derived event export、config、artifact index 和 research export。
-- Source artifact 是 Agent 通过 Agent host 原生文件编辑写入的事实源项目文件，例如 design-system markdown、`token.json`、component specs 和 prototype code。
+- Source artifact 是 Agent 通过 Agent host 原生文件编辑写入的事实源项目文件，例如 `design-system/` 目录下的 design-system JSON、`token.json`、component specs 和 prototype code。
 - Derived artifact 是 Runtime 从 source artifact 生成的文件，例如 `design-system-view.json` 和 research export。
 - Runtime 不代理 source artifact 写入。
 - Agent 写 source artifact 后必须调用 `record_artifact_written`。
@@ -373,7 +373,7 @@ Ikran 的核心不变量：
 
 - 默认 prototype stack 是 Next.js、TypeScript、Tailwind CSS 和 npm。
 - Tailwind 是实现语法，不是设计源。
-- `workflow/design-system/token.json` 是 design token source of truth。
+- `design-system/token.json` 是 design token source of truth。
 - Tailwind config 是由 Agent 维护或生成的派生实现映射。
 - MVP 不要求确定性 token-to-Tailwind 生成脚本。
 - Runtime 启动或检测本地 dev server，并暴露稳定 preview URL。
@@ -395,8 +395,8 @@ Ikran 的核心不变量：
 - 每个阶段二到五张 Question card。
 - 所有 Question card 都必须有非空 final answer 后才能继续。
 - 卡片状态只需要 unanswered 和 answered。
-- 初始 design-system source artifact 包括 design-system candidate/source、`token.json`、component list/specs、layout/interaction rules 和 evidence registry。
-- `design-system-view.json` 是 Runtime 或 Agent 声明后生成的 derived artifact，用于 Workbench 稳定渲染。
+- 初始 design-system source artifact 为项目根 `design-system/` 下的 JSON 文件集：`design-system.json`、`token.json`、`component-list.json`、`components/<name>.json`、`layout-rules.json`、`interaction-rules.json`，外加 evidence registry。
+- `design-system-view.json` 是 Runtime 生成的 derived export，写入 `.ikran/artifacts/` 供研究导出与外部消费；Workbench 渲染读取 Runtime DB，不读此文件。
 - 设计系统浏览器以阅读为先，不提供复杂手动编辑器。
 
 ### New Prototype 与 Rule Recursion

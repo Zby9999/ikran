@@ -17,11 +17,13 @@ import type { PageRect } from "../region-annotation-geometry";
 export const DESIGNER_ANNOTATION_CARD_W = 319;
 export const DESIGNER_ANNOTATION_CARD_GAP = 20;
 export const DESIGNER_ANNOTATION_CARD_STACK_GAP = 12;
-const CARD_MIN_H = 50;
-const CARD_MAX_H = 240;
+export const DESIGNER_ANNOTATION_CARD_MIN_H = 50;
+export const DESIGNER_ANNOTATION_CARD_MAX_H = 240;
 const CARD_PADDING_Y = 32;
 const CARD_LINE_H = 18;
-const CARD_CHARS_PER_LINE = 44;
+// Line budget in half-width units: card content is 319-32=287px at 13px,
+// ≈44 latin chars. CJK / full-width glyphs are ~13px each — two units.
+const CARD_UNITS_PER_LINE = 44;
 
 export type DesignerAnnotationAnchorKind = RegionAnnotationRecord["target_kind"];
 
@@ -79,17 +81,31 @@ export type DesignerAnnotationSurfaceContext = {
   imageBox: PageRect;
 };
 
-/** Estimate card height from body length (padding + wrapped lines). */
+/** Half-width-unit length of one source line: CJK / full-width glyphs count double. */
+function lineUnits(line: string): number {
+  let units = 0;
+  for (const ch of line) units += (ch.codePointAt(0) ?? 0) > 0x2e7f ? 2 : 1;
+  return units;
+}
+
+/**
+ * Estimate card height from body length (padding + wrapped lines). The
+ * browser sync prefers the exact DOM probe (`measureCardHeight`); this stays
+ * the pure fallback for tests and non-DOM callers.
+ */
 export function designerAnnotationCardHeight(body: string): number {
   const lines = body
     .split("\n")
     .reduce(
       (count, line) =>
-        count + Math.max(1, Math.ceil(line.length / CARD_CHARS_PER_LINE)),
+        count + Math.max(1, Math.ceil(lineUnits(line) / CARD_UNITS_PER_LINE)),
       0
     );
   const h = CARD_PADDING_Y + lines * CARD_LINE_H;
-  return Math.min(CARD_MAX_H, Math.max(CARD_MIN_H, h));
+  return Math.min(
+    DESIGNER_ANNOTATION_CARD_MAX_H,
+    Math.max(DESIGNER_ANNOTATION_CARD_MIN_H, h)
+  );
 }
 
 export type OccupiedBox = { y: number; h: number };
@@ -123,6 +139,11 @@ export function buildDesignerAnnotationCardPlan(input: {
     record: RegionAnnotationRecord
   ) => DesignerAnnotationSurfaceContext | null;
   occupiedByLane?: ReadonlyMap<string, readonly OccupiedBox[]>;
+  /**
+   * Exact rendered-height measurement (browser DOM probe). When absent the
+   * unit-count estimate is used (pure tests, non-DOM callers).
+   */
+  measureCardHeight?: (body: string) => number;
 }): DesignerAnnotationProjectionPlan[] {
   const plan: DesignerAnnotationProjectionPlan[] = [];
   const occupiedByLane = new Map<string, OccupiedBox[]>();
@@ -145,7 +166,9 @@ export function buildDesignerAnnotationCardPlan(input: {
         ? "right"
         : "left";
 
-    const h = designerAnnotationCardHeight(record.body);
+    const h =
+      input.measureCardHeight?.(record.body) ??
+      designerAnnotationCardHeight(record.body);
     const w = DESIGNER_ANNOTATION_CARD_W;
     const x =
       side === "left"

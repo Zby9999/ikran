@@ -1007,7 +1007,10 @@
   letter-spacing: -0.39px;
   color: #3d3d3d;
   background: transparent;
-  overflow: hidden;
+  /* Auto-grows with content (JS sets height from scrollHeight); past the cap
+     the field scrolls instead of clipping. */
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 .designer-annotation-entry__textarea::placeholder {
@@ -1036,6 +1039,12 @@
   min-height: 0;
 }
 
+/* Inside the fixed card box the textarea still auto-grows, but is capped by
+   the box itself (form content height) and scrolls beyond it. */
+.designer-annotation-entry--card .designer-annotation-entry__textarea {
+  max-height: 100%;
+}
+
 /* Designer Annotation side card (Issue 08A, Figma 670:895) — filled
    annotation docked next to the Evidence Surface. Green is the User
    Annotation color; section only scopes visibility, never tint. */
@@ -1048,7 +1057,9 @@
   border: 1px solid #19d122;
   border-radius: 8px;
   cursor: pointer;
-  overflow: hidden;
+  /* Card height is DOM-measured to fit the body exactly; only bodies past
+     the 240px plan cap scroll instead of clipping. */
+  overflow-y: auto;
   font-size: 13px;
   line-height: normal;
   letter-spacing: -0.39px;

@@ -30,6 +30,7 @@ import {
   type DesignerAnnotationSurfaceContext,
   type OccupiedBox
 } from "./designer-annotation-card-projection";
+import { measureDesignerAnnotationCardHeight } from "./designer-annotation-card-measure";
 import {
   DESIGNER_ANNOTATION_CARD_TYPE,
   type DesignerAnnotationCardMeta,
@@ -183,7 +184,11 @@ function syncDesignerAnnotationCardShapes(
   const plan = buildDesignerAnnotationCardPlan({
     annotations: visible,
     resolveSurface,
-    occupiedByLane: collectAlignmentLaneOccupied(editor, seedShapes)
+    occupiedByLane: collectAlignmentLaneOccupied(editor, seedShapes),
+    // Exact rendered heights (DOM probe inside the tldraw container), so
+    // multiline / CJK bodies never clip inside the committed card.
+    measureCardHeight: (body) =>
+      measureDesignerAnnotationCardHeight(editor.getContainer(), body)
   });
   const recordById = new Map(visible.map((r) => [r.id, r]));
 

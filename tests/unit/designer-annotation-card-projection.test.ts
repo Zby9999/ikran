@@ -130,6 +130,13 @@ describe("designerAnnotationCardHeight", () => {
   test("clamps very long bodies to the maximum", () => {
     expect(designerAnnotationCardHeight("x".repeat(5000))).toBe(240);
   });
+
+  test("CJK glyphs count double — 44 CJK chars estimate two lines, not one", () => {
+    const cjk = designerAnnotationCardHeight("字".repeat(44));
+    const latinOneLine = designerAnnotationCardHeight("x".repeat(44));
+    expect(cjk).toBeGreaterThan(latinOneLine);
+    expect(cjk).toBe(designerAnnotationCardHeight("x".repeat(88)));
+  });
 });
 
 describe("isAnnotationVisibleInStage", () => {
@@ -377,6 +384,24 @@ describe("buildDesignerAnnotationCardPlan", () => {
     });
     const card = cardOf(plan, "ann-1");
     expect(card.y).toBe(marker.y - card.h / 2);
+  });
+
+  test("uses the injected measureCardHeight for card and stacking geometry", () => {
+    const first = annotation({ id: "ann-1", rect_x: 0.05, rect_y: 0.2 });
+    const second = annotation({ id: "ann-2", rect_x: 0.06, rect_y: 0.21 });
+    const plan = buildDesignerAnnotationCardPlan({
+      annotations: [first, second],
+      resolveSurface: () => surface(),
+      measureCardHeight: () => 123
+    });
+    const card1 = cardOf(plan, "ann-1");
+    const card2 = cardOf(plan, "ann-2");
+    expect(card1.h).toBe(123);
+    expect(card2.h).toBe(123);
+    // Stacking uses the measured height, not the unit-count estimate.
+    expect(card2.y).toBeGreaterThanOrEqual(
+      card1.y + 123 + DESIGNER_ANNOTATION_CARD_STACK_GAP
+    );
   });
 
   test("legacy records without a section plan with section null", () => {

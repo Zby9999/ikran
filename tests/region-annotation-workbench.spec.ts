@@ -467,6 +467,66 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     }
   });
 
+  test("designer pending entry box auto-grows with multiline input and stays centered on the connector", async ({
+    page,
+    runtime,
+    folder
+  }) => {
+    await openSeededWorkbench({ page, runtime, folder });
+    const box = await mediaBox(page);
+    await page.getByTestId("annotate-button").click();
+    await page.mouse.click(box.x + box.width * 0.4, box.y + box.height * 0.45);
+    const entry = page.getByTestId("designer-annotation-entry");
+    await expect(entry).toBeVisible();
+    const heightOf = () =>
+      entry.evaluate((el) => (el as HTMLElement).offsetHeight);
+    const initialHeight = await heightOf();
+    expect(initialHeight).toBeGreaterThanOrEqual(56);
+    await page
+      .getByTestId("designer-annotation-entry-input")
+      .fill("Line one\nLine two\nLine three\nLine four");
+    await expect.poll(heightOf).toBeGreaterThan(initialHeight + 30);
+    // The anchor is centered on the marker midline, so growth stays symmetric around the dashed connector.
+    await expect(page.getByTestId("designer-annotation-entry-anchor")).toHaveCSS(
+      "transform",
+      /matrix/
+    );
+  });
+
+  test("submitted designer card fits a multiline CJK body without clipping", async ({
+    page,
+    runtime,
+    folder
+  }) => {
+    await openSeededWorkbench({ page, runtime, folder });
+    const box = await mediaBox(page);
+    await page.getByTestId("annotate-button").click();
+    await page.mouse.click(box.x + box.width * 0.4, box.y + box.height * 0.45);
+    const entry = page.getByTestId("designer-annotation-entry");
+    await expect(entry).toBeVisible();
+    const text =
+      "左上角的黑白插图需要跟底部左边的插图一一对应，这里继续增加更多文字让内容换到第二行第三行。";
+    await page.getByTestId("designer-annotation-entry-input").fill(text);
+    await page.getByTestId("designer-annotation-entry-submit").click();
+
+    const card = page.getByTestId("designer-annotation-card").first();
+    await expect(card).toBeVisible();
+    await expect(card.locator(".designer-annotation-card__body")).toHaveText(
+      text
+    );
+    // Regression guard: the char-count estimate sized this body for ~2 lines;
+    // the DOM-measured height must fit the real wrapped render (3+ lines).
+    await expect
+      .poll(() => card.evaluate((el) => (el as HTMLElement).offsetHeight))
+      .toBeGreaterThan(68);
+    const clipped = await card.evaluate((el) => {
+      const article = el.querySelector(".designer-annotation-card");
+      if (!article) return null;
+      return article.scrollHeight > article.clientHeight + 1;
+    });
+    expect(clipped).toBe(false);
+  });
+
   test("designer media drag persists the raw gesture rect and projects its marker", async ({
     page,
     runtime,

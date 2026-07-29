@@ -81,7 +81,6 @@ export const REGION_ANNOTATION_DEFAULT_H = 40;
 
 /** Entry form geometry (page px) shared by the dock anchor and its connector. */
 export const DESIGNER_ANNOTATION_ENTRY_W = 360;
-export const DESIGNER_ANNOTATION_ENTRY_H = 56;
 export const DESIGNER_ANNOTATION_ENTRY_GAP = 20;
 /** User Annotation green (Figma 670:891) — entry connector matches cards. */
 const DESIGNER_ANNOTATION_GREEN = "#19d122";
@@ -166,7 +165,10 @@ function RegionAnnotationMarker({ shape }: { shape: RegionAnnotationShape }) {
           : bounds.x - DESIGNER_ANNOTATION_ENTRY_GAP - DESIGNER_ANNOTATION_ENTRY_W;
         return {
           left: anchorX - shape.x,
-          top: h / 2 - DESIGNER_ANNOTATION_ENTRY_H / 2
+          // The anchor element translates itself up by half its own height
+          // (translateY(-50%)), so the entry box stays vertically centered on
+          // the marker — and on the dashed connector — as it auto-grows.
+          top: h / 2
         };
       }
       return null;
@@ -246,7 +248,11 @@ function RegionAnnotationMarker({ shape }: { shape: RegionAnnotationShape }) {
             data-testid="designer-annotation-entry-anchor"
             style={
               entryPlacement
-                ? { left: entryPlacement.left, top: entryPlacement.top }
+                ? {
+                    left: entryPlacement.left,
+                    top: entryPlacement.top,
+                    transform: "translateY(-50%)"
+                  }
                 : undefined
             }
           >

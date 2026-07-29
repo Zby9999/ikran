@@ -53,6 +53,16 @@ export function DesignerAnnotationEntryForm({
     textarea.setSelectionRange(end, end);
   }, []);
 
+  // Auto-grow: the box tracks the typed content line by line (capped by CSS
+  // max-height, then scrolls). Runs on mount too so a pre-filled edit box
+  // opens at its true height.
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [draft]);
+
   function submit(event?: FormEvent) {
     event?.preventDefault();
     const body = draft.trim();

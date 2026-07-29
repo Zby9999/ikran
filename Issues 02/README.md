@@ -29,6 +29,7 @@
 7G. `07G-alignment-command-real-agent-smoke.md` - Alignment Command Staged Real-Agent Smoke
 8. `08-source-artifact-declaration-validation.md` - Source Artifact Declaration 与三类校验
 9. `09-draft-design-system-derived-view.md` - Draft Design System 与 Derived View JSON
+9A. `09A-design-system-browser-v1-form-and-source.md` - Design System Browser v1 形态与全 JSON 源
 10. `10-seed-prototype-preview-record-preview.md` - Seed Prototype Preview 与 `record_preview`
 11. `11-prototype-region-context-dom-inspection.md` - Prototype Region Context 与 DOM Inspection
 12. `12-rule-update-proposal-confirm-cancel.md` - Rule Update Proposal Confirm/Cancel
