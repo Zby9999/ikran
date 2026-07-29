@@ -1,0 +1,822 @@
+/* Design System Browser (Issue 09A, Task E) — bottom sheet + Section Tabs.
+   Tokens ported from the designer-confirmed prototype v3 (ds-section-nav)
+   into the workbench's plain-CSS convention, scoped under .dsb.
+   Motion follows the emil-design-eng rules: transform/opacity only, CSS
+   transitions (interruptible) for the sheet, ease-out everywhere, no
+   `transition: all`, no ease-in on UI, no scale(0) entries. */
+
+.dsb {
+  --dsc-canvas: #dcdcdc;
+  --dsc-surface: #f1f1f1;
+  --dsc-card: #ffffff;
+  --dsc-ink: #3d3d3d;
+  --dsc-ink-2: #636363;
+  --dsc-ink-3: #949494;
+  --dsc-accent: #3a93ff;
+  --dsc-nav-hover: rgb(0 0 0 / 4.5%);
+  --dsc-nav-active: #e3e3e3;
+  --dsc-green: #11c514;
+  --dsc-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --dsc-drawer-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  color: var(--dsc-ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.dsb button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ---------------------------------- scrim ---------------------------------- */
+
+.dsb-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  border: 0;
+  padding: 0;
+  background: rgb(0 0 0 / 32%);
+  opacity: 1;
+  transition: opacity 200ms ease-out;
+}
+
+.dsb-scrim[data-open="false"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---------------------------------- sheet ---------------------------------- */
+
+.dsb-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  height: 88vh;
+  border-radius: 14px 14px 0 0;
+  background: var(--dsc-card);
+  box-shadow:
+    0 -24px 64px rgb(0 0 0 / 18%),
+    0 -2px 8px rgb(0 0 0 / 8%),
+    0 0 0 1px rgb(0 0 0 / 10%);
+  outline: none;
+  overflow: hidden;
+  transform: translateY(0);
+  transition:
+    transform 350ms var(--dsc-drawer-ease),
+    visibility 0s;
+}
+
+.dsb-sheet[data-open="false"] {
+  transform: translateY(102%);
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    transform 350ms var(--dsc-drawer-ease),
+    visibility 0s 350ms;
+}
+
+/* ---------------------------------- header ---------------------------------- */
+
+.dsb-header {
+  display: flex;
+  height: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid rgb(0 0 0 / 6%);
+  padding: 0 12px;
+}
+
+.dsb-icon-button {
+  display: flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsc-ink-2);
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    transform 160ms ease-out;
+}
+
+.dsb-icon-button:active {
+  transform: scale(0.97);
+}
+
+.dsb-icon-button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.dsb-header-close {
+  margin-left: auto;
+}
+
+.dsb-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dsb-header-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: rgb(0 0 0 / 10%);
+}
+
+.dsb-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--dsc-ink-3);
+}
+
+.dsb-breadcrumb-current {
+  color: var(--dsc-ink);
+}
+
+/* ---------------------------------- layout ---------------------------------- */
+
+.dsb-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+.dsb-sidebar {
+  width: 224px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-right: 1px solid rgb(0 0 0 / 6%);
+  background: var(--dsc-surface);
+  padding: 8px;
+}
+
+.dsb-main {
+  min-width: 0;
+  flex: 1;
+  overflow-y: auto;
+  background: #fafafa;
+}
+
+.dsb-page {
+  padding: 24px 32px;
+}
+
+/* ------------------------------ section tabs ------------------------------ */
+
+.dsb-tabs {
+  position: relative;
+  display: flex;
+  height: 26px;
+  margin: 4px 4px 8px;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 5%);
+  padding: 2px;
+}
+
+.dsb-tab-indicator {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 10%);
+  transition: transform 200ms var(--dsc-ease);
+}
+
+.dsb-tab-indicator[data-second] {
+  transform: translateX(100%);
+}
+
+.dsb-tab {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsc-ink-3);
+  font-size: 12.5px;
+  font-weight: 500;
+  transition:
+    color 150ms ease-out,
+    transform 160ms ease-out;
+}
+
+.dsb-tab[aria-selected="true"] {
+  color: var(--dsc-ink);
+}
+
+.dsb-tab:active {
+  transform: scale(0.97);
+}
+
+/* ------------------------------- nav rows -------------------------------- */
+
+.dsb-navrow {
+  display: flex;
+  width: 100%;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0 8px;
+  color: var(--dsc-ink-2);
+  font-size: 13px;
+  text-align: left;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    transform 160ms ease-out;
+}
+
+.dsb-navrow[data-active] {
+  background: var(--dsc-nav-active);
+  color: var(--dsc-ink);
+  font-weight: 500;
+}
+
+.dsb-navrow:active {
+  transform: scale(0.97);
+}
+
+.dsb-navrow-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.dsb-navrow-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --------------------------------- content --------------------------------- */
+
+.dsb-h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.dsb-meta {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--dsc-ink-3);
+}
+
+.dsb-statdots {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--dsc-ink-3);
+}
+
+.dsb-statdot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dsb-statdot-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.dsb-group-label {
+  margin: 28px 0 8px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dsc-ink-3);
+}
+
+.dsb-group-label:first-child {
+  margin-top: 0;
+}
+
+/* Cards (leaf cards, principle rule cards, narrative block). */
+.dsb-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.dsb-card {
+  position: relative;
+  border: 0;
+  border-radius: 10px;
+  background: #fff;
+  padding: 16px;
+  text-align: left;
+  color: var(--dsc-ink);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
+  transition:
+    box-shadow 150ms ease-out,
+    transform 150ms ease-out;
+}
+
+.dsb-card-title {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.dsb-card-desc {
+  display: -webkit-box;
+  margin-top: 4px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--dsc-ink-2);
+  white-space: pre-wrap;
+}
+
+.dsb-card-chevron {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  color: var(--dsc-ink-3);
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+
+/* Principle rule cards (09A: principles 规则卡 on Foundations Home). */
+.dsb-principles {
+  margin-top: 0;
+}
+
+.dsb-principle {
+  cursor: default;
+}
+
+.dsb-principle-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Note paragraph below a page's main content (replaces ad-hoc spacing). */
+.dsb-page-note {
+  margin-top: 24px;
+}
+
+.dsb-narrative {
+  margin-top: 24px;
+  border-radius: 10px;
+  background: #fff;
+  padding: 16px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
+}
+
+.dsb-narrative-text {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--dsc-ink-2);
+  white-space: pre-wrap;
+}
+
+/* Spec rows — d.6: name / value / meaning / status chip (+ ⓘ) only. */
+.dsb-rows {
+  margin-top: 8px;
+  border-top: 1px solid rgb(0 0 0 / 6%);
+  border-bottom: 1px solid rgb(0 0 0 / 6%);
+}
+
+.dsb-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid rgb(0 0 0 / 5%);
+  padding: 9px 0;
+}
+
+.dsb-row:last-child {
+  border-bottom: 0;
+}
+
+.dsb-row[data-approve-error] {
+  flex-wrap: wrap;
+}
+
+.dsb-row-swatch {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 10%);
+}
+
+.dsb-row-name {
+  width: 150px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.dsb-row-value {
+  width: 140px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsc-ink-3);
+  white-space: nowrap;
+}
+
+.dsb-row-meaning {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  color: var(--dsc-ink-2);
+  white-space: nowrap;
+}
+
+.dsb-row-error {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #b42318;
+}
+
+.dsb-info-trigger {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsc-ink-3);
+  opacity: 0.55;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    opacity 150ms ease-out,
+    transform 160ms ease-out;
+}
+
+.dsb-info-trigger[data-state="open"] {
+  opacity: 1;
+}
+
+.dsb-info-trigger:active {
+  transform: scale(0.97);
+}
+
+/* StatusChip — formalized green / candidate blue / gap neutral "open gap". */
+.dsb-chip {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 10%);
+  background: rgb(0 0 0 / 3%);
+  color: var(--dsc-ink-3);
+}
+
+.dsb-chip[data-status="formalized"] {
+  background: rgb(17 197 20 / 8%);
+  box-shadow: 0 0 0 1px rgb(17 197 20 / 30%);
+  color: #0f8f11;
+}
+
+.dsb-chip[data-status="candidate"] {
+  background: rgb(58 147 255 / 8%);
+  box-shadow: 0 0 0 1px rgb(58 147 255 / 30%);
+  color: #2473cc;
+}
+
+/* ------------------------------ ⓘ popover ------------------------------- */
+
+.dsb-popover {
+  width: 340px;
+  max-height: 320px;
+  overflow-y: auto;
+  border-radius: 10px;
+  background: #fff;
+  padding: 12px 14px;
+  box-shadow:
+    0 12px 32px rgb(0 0 0 / 14%),
+    0 0 0 1px rgb(0 0 0 / 8%);
+  outline: none;
+  transform-origin: var(--radix-popover-content-transform-origin);
+}
+
+.dsb-popover[data-state="open"]:not([data-instant]) {
+  animation: dsb-pop-in 150ms ease-out;
+}
+
+@keyframes dsb-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.dsb-popover-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dsb-evidence-section + .dsb-evidence-section {
+  margin-top: 10px;
+}
+
+.dsb-evidence-label {
+  margin: 0 0 4px;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dsc-ink-3);
+}
+
+.dsb-evidence-item {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dsc-ink-2);
+}
+
+.dsb-evidence-item:last-child {
+  margin-bottom: 0;
+}
+
+.dsb-evidence-question {
+  color: var(--dsc-ink);
+  font-weight: 500;
+}
+
+.dsb-evidence-meta {
+  color: var(--dsc-ink-3);
+  font-size: 11px;
+}
+
+.dsb-evidence-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsc-ink-3);
+}
+
+.dsb-approve-tray {
+  margin-top: 12px;
+  border-top: 1px solid rgb(0 0 0 / 6%);
+  padding-top: 10px;
+}
+
+.dsb-approve-button {
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--dsc-ink);
+  padding: 0 12px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  transition:
+    opacity 150ms ease-out,
+    transform 160ms ease-out;
+}
+
+.dsb-approve-button:active {
+  transform: scale(0.97);
+}
+
+.dsb-approve-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.dsb-approve-error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #b42318;
+}
+
+/* ------------------------------ detail tables ------------------------------ */
+
+.dsb-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.dsb-table th {
+  padding: 6px 12px 6px 0;
+  color: var(--dsc-ink-3);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.dsb-table td {
+  border-top: 1px solid rgb(0 0 0 / 5%);
+  padding: 8px 12px 8px 0;
+  color: var(--dsc-ink-2);
+  vertical-align: top;
+}
+
+.dsb-table td:first-child {
+  color: var(--dsc-ink);
+  font-weight: 500;
+}
+
+.dsb-boundaries {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dsc-ink-2);
+}
+
+/* ------------------------------- empty state ------------------------------- */
+
+.dsb-empty {
+  display: flex;
+  min-height: 240px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px;
+  text-align: center;
+}
+
+.dsb-empty-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dsb-empty-body {
+  margin: 0;
+  max-width: 420px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--dsc-ink-3);
+}
+
+.dsb-load-error {
+  color: #b42318;
+}
+
+/* --------------------------- content swap motion --------------------------- */
+
+.dsb-enter {
+  animation: dsb-enter 250ms ease-out both;
+}
+
+@keyframes dsb-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dsb-enter-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dsb-pop-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ------------------------- precise-pointer hovers ------------------------- */
+
+@media (hover: hover) and (pointer: fine) {
+  .dsb-icon-button:hover:not(:disabled) {
+    background: var(--dsc-nav-hover);
+    color: var(--dsc-ink);
+  }
+
+  .dsb-navrow:hover {
+    background: var(--dsc-nav-hover);
+  }
+
+  /* Only clickable cards (buttons) lift on hover; principle rule cards are
+     static content. */
+  button.dsb-card:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      0 8px 20px rgb(0 0 0 / 6%),
+      0 0 0 1px rgb(0 0 0 / 14%);
+  }
+
+  button.dsb-card:hover .dsb-card-chevron {
+    opacity: 1;
+  }
+
+  .dsb-row:hover .dsb-info-trigger {
+    opacity: 1;
+  }
+
+  .dsb-info-trigger:hover {
+    background: var(--dsc-nav-hover);
+    color: var(--dsc-ink);
+    opacity: 1;
+  }
+
+  .dsb-approve-button:hover:not(:disabled) {
+    opacity: 0.85;
+  }
+}
+
+/* --------------------------- reduced motion --------------------------- */
+/* Keep opacity fades, drop transform motion (sheet hides instantly but still
+   uses its hidden transform state — the motion goes, not the geometry). */
+
+@media (prefers-reduced-motion: reduce) {
+  .dsb-sheet,
+  .dsb-sheet[data-open="false"] {
+    transition-duration: 1ms;
+    transition-delay: 0s;
+  }
+
+  .dsb-scrim {
+    transition-duration: 150ms;
+  }
+
+  .dsb-tab-indicator {
+    transition-duration: 1ms;
+  }
+
+  .dsb-enter {
+    animation: dsb-enter-fade 150ms ease-out both;
+  }
+
+  .dsb-popover[data-state="open"]:not([data-instant]) {
+    animation: dsb-pop-fade 125ms ease-out;
+  }
+
+  .dsb button,
+  .dsb-card,
+  .dsb-card-chevron,
+  .dsb-info-trigger {
+    transition-duration: 1ms;
+  }
+
+  .dsb button:active,
+  button.dsb-card:hover {
+    transform: none;
+  }
+}

@@ -26,6 +26,12 @@ import {
   type AlignmentCoverage,
   type AlignmentStageId
 } from "./alignment-stage-panel";
+import {
+  DESIGN_SYSTEM_SHEET_EXIT_MS,
+  DesignSystemBrowser,
+  DesignSystemEntryButton
+} from "./design-system-browser";
+import { canOpenDesignSystemBrowser } from "./design-system-view-model";
 
 // tldraw touches the DOM during render, so the canvas shell is loaded with
 // `next/dynamic({ ssr: false })` to keep Next.js SSR happy.
@@ -131,6 +137,39 @@ export function SeedEvidenceWorkbench({
     )?.status ?? "none";
   const [alignmentStage, setAlignmentStage] =
     useState<AlignmentStageId>(DEFAULT_ALIGNMENT_STAGE);
+  // Issue 09A — Design System Browser bottom sheet. The entry button and the
+  // sheet exist only after the six-part alignment completes (09A d.9).
+  const [designSystemBrowserOpen, setDesignSystemBrowserOpen] =
+    useState(false);
+  // The sheet stays mounted for its exit transition after close; the canvas
+  // keyboard stays owned for the same window (Esc must not leak to tldraw).
+  const [designSystemSheetClosing, setDesignSystemSheetClosing] =
+    useState(false);
+  const designSystemExitTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const designSystemEntryVisible = canOpenDesignSystemBrowser(alignment);
+  const designSystemKeyboardOwned =
+    designSystemBrowserOpen || designSystemSheetClosing;
+  const closeDesignSystemBrowser = useCallback(() => {
+    setDesignSystemBrowserOpen(false);
+    setDesignSystemSheetClosing(true);
+    if (designSystemExitTimerRef.current) {
+      clearTimeout(designSystemExitTimerRef.current);
+    }
+    designSystemExitTimerRef.current = setTimeout(() => {
+      designSystemExitTimerRef.current = null;
+      setDesignSystemSheetClosing(false);
+    }, DESIGN_SYSTEM_SHEET_EXIT_MS);
+  }, []);
+  useEffect(
+    () => () => {
+      if (designSystemExitTimerRef.current) {
+        clearTimeout(designSystemExitTimerRef.current);
+      }
+    },
+    []
+  );
 
   const alignmentCoverage = useMemo(() => {
     const byStage = new Map(
@@ -167,9 +206,11 @@ export function SeedEvidenceWorkbench({
     }
   }, [clearPhaseErrorTimers, designLanguageDescription]);
 
-  // F → Annotate, V → select (Design-tool conventions). Skip while gated or typing.
+  // F → Annotate, V → select (Design-tool conventions). Skip while gated,
+  // typing, or while the Design System Browser sheet owns the keyboard
+  // (including its exit window — the sheet is still mounted then).
   useEffect(() => {
-    if (canvasLocked) return;
+    if (canvasLocked || designSystemKeyboardOwned) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -206,7 +247,7 @@ export function SeedEvidenceWorkbench({
 
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [canvasLocked]);
+  }, [canvasLocked, designSystemKeyboardOwned]);
 
   const { pasteError, inFlightCaptures, focusSeedId, clearFocusSeedId } =
     useFigmaPasteCapture({
@@ -337,7 +378,20 @@ export function SeedEvidenceWorkbench({
             }}
             onStageChange={setAlignmentStage}
           />
+          {designSystemEntryVisible ? (
+            <DesignSystemEntryButton
+              onOpen={() => setDesignSystemBrowserOpen(true)}
+            />
+          ) : null}
         </div>
+      ) : null}
+
+      {designSystemEntryVisible ? (
+        <DesignSystemBrowser
+          session={session}
+          open={designSystemBrowserOpen}
+          onClose={closeDesignSystemBrowser}
+        />
       ) : null}
 
       <div
