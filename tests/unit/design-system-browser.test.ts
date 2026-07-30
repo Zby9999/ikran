@@ -504,6 +504,8 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
     );
     expect(html).not.toContain(">By scale</button>");
     expect(html).not.toContain(">By role</button>");
+    expect(html).not.toContain("Scale token");
+    expect(html).not.toContain("Text style");
     expect(
       html.indexOf('data-testid="ds-atlas-primitive.font-size-700"')
     ).toBeLessThan(

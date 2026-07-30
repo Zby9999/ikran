@@ -955,9 +955,6 @@ function TypographyAtlasCard({
       <header className="dsb-atlas-card-head">
         <div className="dsb-atlas-card-title">
           <span className="dsb-atlas-role">{item.label}</span>
-          <span className="dsb-atlas-kind">
-            {item.kind === "style" ? "Text style" : "Scale token"}
-          </span>
         </div>
         <AtlasStatus status={item.status} />
       </header>
