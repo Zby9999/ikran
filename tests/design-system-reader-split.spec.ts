@@ -270,6 +270,20 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await entryButton.click();
     const sheet = page.getByTestId("ds-sheet");
     await expect(sheet).toHaveAttribute("data-open", "true");
+    await expect
+      .poll(() =>
+        sheet.locator(".dsb-sidebar").evaluate(
+          (element) => getComputedStyle(element).overscrollBehaviorY
+        )
+      )
+      .toBe("none");
+    await expect
+      .poll(() =>
+        sheet.locator(".dsb-main").evaluate(
+          (element) => getComputedStyle(element).overscrollBehaviorY
+        )
+      )
+      .toBe("none");
     const richPrinciple = page.getByTestId("ds-principle-principle-intent");
     await expect(richPrinciple).toBeVisible();
     await expect(richPrinciple).toContainText("Design with intent.");

@@ -159,6 +159,7 @@
   width: 224px;
   flex-shrink: 0;
   overflow-y: auto;
+  overscroll-behavior-y: none;
   border-right: 1px solid rgb(0 0 0 / 6%);
   background: var(--dsc-surface);
   padding: 8px;
@@ -168,6 +169,7 @@
   min-width: 0;
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior-y: none;
   background: #fafafa;
 }
 
