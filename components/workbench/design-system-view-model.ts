@@ -475,13 +475,6 @@ export function sheetReducer(state: SheetState, action: SheetAction): SheetState
  * the tldraw canvas: capture-phase listener stops propagation for events
  * whose target is inside the sheet root. Closed sheet captures nothing.
  */
-export function shouldIsolateKeydown(
-  sheetOpen: boolean,
-  targetInsideSheet: boolean
-): boolean {
-  return sheetOpen && targetInsideSheet;
-}
-
 export type SheetEscapeAction = "close-info" | "close-sheet" | "swallow";
 
 /**

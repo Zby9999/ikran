@@ -11,7 +11,6 @@ import {
   formatEntryValue,
   sheetReducer,
   sheetEscapeAction,
-  shouldIsolateKeydown,
   statusChips,
   withEntryStatus,
   type DesignSystemEntryView,
@@ -360,12 +359,6 @@ describe("sheet state machine", () => {
     expect(sheetReducer(closed, { type: "close", source: "escape" })).toEqual(
       closed
     );
-  });
-
-  test("Esc isolation: only inside an open sheet", () => {
-    expect(shouldIsolateKeydown(true, true)).toBe(true);
-    expect(shouldIsolateKeydown(true, false)).toBe(false);
-    expect(shouldIsolateKeydown(false, true)).toBe(false);
   });
 
   test("Esc layering: ⓘ popover first, then sheet, swallowed in exit window", () => {

@@ -16,8 +16,8 @@
   --dsc-nav-hover: rgb(0 0 0 / 4.5%);
   --dsc-nav-active: #e3e3e3;
   --dsc-green: #11c514;
-  --dsc-ease: cubic-bezier(0.23, 1, 0.32, 1);
-  --dsc-drawer-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --dsc-ease: var(--motion-ease-out);
+  --dsc-drawer-ease: var(--motion-ease-drawer);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
   color: var(--dsc-ink);
@@ -38,7 +38,7 @@
   z-index: 60;
   border: 0;
   padding: 0;
-  background: rgb(0 0 0 / 32%);
+  background: rgb(0 0 0 / 16%);
   opacity: 1;
   transition: opacity 200ms ease-out;
 }
@@ -52,13 +52,13 @@
 
 .dsb-sheet {
   position: fixed;
-  left: 0;
-  right: 0;
+  left: 24px;
+  right: 24px;
   bottom: 0;
   z-index: 61;
   display: flex;
   flex-direction: column;
-  height: 88vh;
+  height: 94vh;
   border-radius: 14px 14px 0 0;
   background: var(--dsc-card);
   box-shadow:
@@ -91,7 +91,7 @@
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid rgb(0 0 0 / 6%);
-  padding: 0 12px;
+  padding: 0 12px 0 20px;
 }
 
 .dsb-icon-button {
@@ -171,8 +171,53 @@
   background: #fafafa;
 }
 
+/* Narrow sheets: the sidebar becomes a horizontal bar above the content —
+   every section tab and leaf stays reachable via horizontal scroll, and the
+   main column keeps the full sheet width for rules and samples. */
+@media (max-width: 760px) {
+  .dsb-body {
+    flex-direction: column;
+  }
+
+  .dsb-sidebar {
+    display: flex;
+    width: auto;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid rgb(0 0 0 / 6%);
+    padding: 6px 8px;
+  }
+
+  .dsb-sidebar > .dsb-enter {
+    display: flex;
+    gap: 2px;
+  }
+
+  /* Keep the segmented control at a usable width — as a shrinking flex item
+     its two tabs compress until the labels collide; the bar scrolls
+     horizontally instead. */
+  .dsb-tabs {
+    width: 190px;
+    flex-shrink: 0;
+    margin: 0;
+  }
+
+  .dsb-navrow {
+    width: auto;
+    flex-shrink: 0;
+    padding: 0 10px;
+  }
+}
+
 .dsb-page {
-  padding: 24px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 28px 32px;
 }
 
 /* ------------------------------ section tabs ------------------------------ */
@@ -272,15 +317,27 @@
 
 .dsb-h1 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 16px;
+  color: #000;
+}
+
+.dsb-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: fit-content;
 }
 
 .dsb-meta {
-  margin: 4px 0 0;
-  font-size: 12.5px;
-  color: var(--dsc-ink-3);
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 16px;
+  color: var(--dsc-ink-2);
 }
 
 .dsb-statdots {
@@ -288,7 +345,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 14px;
-  margin-top: 10px;
   font-size: 12px;
   color: var(--dsc-ink-3);
 }
@@ -300,22 +356,26 @@
 }
 
 .dsb-statdot-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+
+/* Page-level sections stack via .dsb-page gap (32px). Label→content uses 8px. */
+.dsb-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .dsb-group-label {
-  margin: 28px 0 8px;
-  font-size: 11px;
+  margin: 0;
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--dsc-ink-3);
-}
-
-.dsb-group-label:first-child {
-  margin-top: 0;
+  letter-spacing: -0.02em;
+  line-height: 16px;
+  color: var(--dsc-ink-2);
 }
 
 /* Cards (leaf cards, principle rule cards, narrative block). */
@@ -323,7 +383,6 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  margin-top: 24px;
 }
 
 .dsb-card {
@@ -385,11 +444,10 @@
 
 /* Note paragraph below a page's main content (replaces ad-hoc spacing). */
 .dsb-page-note {
-  margin-top: 24px;
+  margin: 0;
 }
 
 .dsb-narrative {
-  margin-top: 24px;
   border-radius: 10px;
   background: #fff;
   padding: 16px;
@@ -397,7 +455,7 @@
 }
 
 .dsb-narrative-text {
-  margin: 8px 0 0;
+  margin: 0;
   font-size: 13px;
   line-height: 1.55;
   color: var(--dsc-ink-2);
@@ -406,15 +464,17 @@
 
 /* Spec rows — d.6: name / value / meaning / status chip (+ ⓘ) only. */
 .dsb-rows {
-  margin-top: 8px;
+  margin-top: 0;
   border-top: 1px solid rgb(0 0 0 / 6%);
   border-bottom: 1px solid rgb(0 0 0 / 6%);
 }
 
 .dsb-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  row-gap: 2px;
+  column-gap: 16px;
   border-bottom: 1px solid rgb(0 0 0 / 5%);
   padding: 9px 0;
 }
@@ -640,7 +700,7 @@
 
 .dsb-table {
   width: 100%;
-  margin-top: 8px;
+  margin-top: 0;
   border-collapse: collapse;
   font-size: 12.5px;
 }
@@ -668,7 +728,7 @@
 }
 
 .dsb-boundaries {
-  margin: 8px 0 0;
+  margin: 0;
   padding-left: 18px;
   font-size: 12.5px;
   line-height: 1.6;
@@ -819,4 +879,522 @@
   button.dsb-card:hover {
     transform: none;
   }
+
+  .dsb-split-divider-line,
+  .dsb-split-divider::after {
+    transition-duration: 1ms;
+  }
+}
+
+/* ============================ 09C-A: leaf split ============================ */
+/* Universal leaf chrome: left = title / status / rules / Technical details /
+   Evidence entry; right = Visual Samples + their own annotations only.
+   The grid template itself is set inline from the persisted ratio; the
+   stacked fallback is single-sourced in JS (`data-stacked`) so an inline
+   style can never defeat it. */
+
+.dsb-leaf {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.dsb-split {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+}
+
+.dsb-split[data-stacked] {
+  display: flex;
+  height: auto;
+  /* flex: 1 from the base rule would pin the split to the 100%-height leaf
+     (flex-basis beats height on the column main axis), truncating the
+     stacked column to the viewport and pulling the samples pane up over the
+     rules pane's overflow. Stacked mode sizes to content; .dsb-main
+     scrolls. */
+  flex: none;
+  flex-direction: column;
+  gap: 40px;
+  padding: 28px 32px;
+}
+
+.dsb-split[data-dragging] {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* Dragged ratio changes must not animate — the pane tracks the pointer. */
+.dsb-split[data-dragging] * {
+  transition-duration: 0s !important;
+}
+
+.dsb-split-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 24px 28px 32px;
+}
+
+.dsb-split-right {
+  padding: 28px 32px 28px 24px;
+}
+
+.dsb-split[data-stacked] .dsb-split-pane {
+  overflow: visible;
+  padding: 0;
+}
+
+.dsb-split-pane > * + * {
+  margin-top: 32px;
+}
+
+.dsb-split[data-stacked] .dsb-split-pane > * + * {
+  margin-top: 32px;
+}
+
+/* Divider: 20px hit area, 1px visible line, center grab pill. */
+.dsb-split-divider {
+  position: relative;
+  cursor: col-resize;
+  outline: none;
+  touch-action: none;
+}
+
+.dsb-split-divider-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: rgb(0 0 0 / 8%);
+  transition:
+    background-color 150ms ease-out,
+    width 150ms ease-out;
+}
+
+.dsb-split-divider::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 24px;
+  border-radius: 2px;
+  background: rgb(0 0 0 / 12%);
+  content: "";
+  transform: translate(-50%, -50%);
+  transition: background-color 150ms ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .dsb-split-divider:hover .dsb-split-divider-line {
+    width: 2px;
+    background: rgb(0 0 0 / 20%);
+  }
+
+  .dsb-split-divider:hover::after {
+    background: rgb(0 0 0 / 28%);
+  }
+}
+
+.dsb-split-divider:focus-visible {
+  outline: 2px solid var(--dsc-accent);
+  outline-offset: -2px;
+  border-radius: 3px;
+}
+
+.dsb-split-divider:focus-visible .dsb-split-divider-line {
+  width: 2px;
+  background: var(--dsc-accent);
+}
+
+.dsb-split[data-dragging] .dsb-split-divider-line {
+  width: 2px;
+  background: var(--dsc-accent);
+}
+
+.dsb-split[data-dragging] .dsb-split-divider::after {
+  background: var(--dsc-accent);
+}
+
+/* ------------------------- 09C-A: visual samples -------------------------- */
+
+.dsb-samples {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  container-type: inline-size;
+}
+
+.dsb-samples > * + * {
+  margin-top: 0;
+}
+
+.dsb-samples-empty {
+  border: 1px dashed rgb(0 0 0 / 14%);
+  border-radius: 10px;
+  background: rgb(0 0 0 / 2%);
+  padding: 24px;
+}
+
+.dsb-samples-empty-title {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--dsc-ink-2);
+}
+
+/* One specimen card per text style: the sample line is rendered verbatim in
+   the token's own family / size / weight / line-height / tracking /
+   transform (inline styles from the source entry); the annotation row below
+   is the only place values are restated — visual annotation, not prose. */
+.dsb-specimen {
+  border-radius: 10px;
+  background: #fff;
+  padding: 20px 20px 12px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
+}
+
+.dsb-specimen-sample {
+  color: var(--dsc-ink);
+  overflow-wrap: break-word;
+}
+
+.dsb-specimen-annotation {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  border-top: 1px solid rgb(0 0 0 / 5%);
+  padding-top: 10px;
+  color: var(--dsc-ink-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+.dsb-annotation-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 3px;
+}
+
+/* Base type scale strip: each step rendered at its actual px size. */
+.dsb-scale {
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 20px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
+}
+
+.dsb-scale-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  border-bottom: 1px solid rgb(0 0 0 / 5%);
+  padding: 8px 0;
+}
+
+.dsb-scale-row:last-child {
+  border-bottom: 0;
+}
+
+.dsb-scale-size {
+  width: 52px;
+  flex-shrink: 0;
+  color: var(--dsc-ink-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dsb-scale-sample {
+  min-width: 0;
+  color: var(--dsc-ink);
+  line-height: 1.25;
+  overflow-wrap: break-word;
+}
+
+/* ------------------------ 09C-A: typography left -------------------------- */
+
+/* Font family group — a normal left-column group (not a bottom bar). Wraps:
+   below ~220px of meta room the stack lines drop under the specimen instead
+   of truncating to "Instrum…" in narrow panes. */
+.dsb-family-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  border-radius: 10px;
+  background: #fff;
+  padding: 16px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
+}
+
+.dsb-family-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsb-family-meta {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dsb-family-stack {
+  overflow: hidden;
+  color: var(--dsc-ink-2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsb-family-sub {
+  color: var(--dsc-ink-3);
+  font-size: 11.5px;
+}
+
+/* Semantic roles table: role / small specimen / value summary / meaning /
+   status / ⓘ — rows in the existing .dsb-row visual language. */
+.dsb-role-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 4px;
+  column-gap: 12px;
+  border-bottom: 1px solid rgb(0 0 0 / 5%);
+  padding: 10px 0;
+}
+
+.dsb-role-row:last-child {
+  border-bottom: 0;
+}
+
+.dsb-role-name {
+  width: 96px;
+  flex-shrink: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsb-role-aa {
+  display: flex;
+  width: 40px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 3%);
+  color: var(--dsc-ink);
+  overflow: hidden;
+}
+
+.dsb-role-value {
+  /* Grow past 120px so the summary (incl. tracking / transform segments)
+     isn't truncated; the row's flex-wrap drops it to its own line when the
+     pane is too narrow for name + family + value side by side. */
+  min-width: 120px;
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--dsc-ink-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The role's family field — a literal family or the "→ layer.name" alias
+   link; token relationships stay visible in the left reading column.
+   Shrinkable so narrow stacked panes wrap instead of overflowing. */
+.dsb-role-family {
+  flex: 0 1 150px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsc-ink-3);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsb-role-meaning {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsc-ink-2);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Object field lines — structured values rendered as labeled lines instead
+   of serialized JSON (Reader Projection generic fallback). */
+.dsb-row--object {
+  align-items: flex-start;
+}
+
+.dsb-fields {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 0;
+}
+
+.dsb-field {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dsb-field-label {
+  width: 110px;
+  flex-shrink: 0;
+  overflow: hidden;
+  color: var(--dsc-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsb-field-text {
+  min-width: 0;
+  color: var(--dsc-ink-2);
+  overflow-wrap: break-word;
+}
+
+/* Technical details — internal ids, alias graph and raw fields live here,
+   never in the main reading layer. */
+.dsb-tech {
+  border-top: 1px solid rgb(0 0 0 / 6%);
+  padding-top: 10px;
+}
+
+.dsb-tech-summary {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 2px 4px;
+  color: var(--dsc-ink-2);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  list-style: none;
+}
+
+.dsb-tech-summary::-webkit-details-marker {
+  display: none;
+}
+
+.dsb-tech-chevron {
+  transition: transform 150ms ease-out;
+}
+
+.dsb-tech[open] .dsb-tech-chevron {
+  transform: rotate(90deg);
+}
+
+.dsb-tech-items {
+  margin-top: 8px;
+}
+
+.dsb-tech-item {
+  border-top: 1px solid rgb(0 0 0 / 5%);
+  padding: 10px 0;
+}
+
+.dsb-tech-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--dsc-ink-3);
+  font-size: 11.5px;
+}
+
+.dsb-tech-id {
+  color: var(--dsc-ink-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.dsb-tech-raw {
+  margin: 8px 0 0;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 3%);
+  padding: 10px 12px;
+  color: var(--dsc-ink-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+/* Rich principle fields (statement card gets rationale / scope / use /
+   avoid / exceptions when the source value carries them). */
+.dsb-principle-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.dsb-principle-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dsb-principle-field-label {
+  color: var(--dsc-ink-3);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dsb-principle-field-text {
+  margin: 0;
+  color: var(--dsc-ink-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.dsb-principle-list {
+  margin: 0;
+  padding: 0;
+  color: var(--dsc-ink-2);
+  font-size: 12.5px;
+  line-height: 1.55;
+  list-style: none;
+}
+
+.dsb-principle-list li {
+  display: flex;
+  gap: 8px;
+}
+
+.dsb-principle-list li::before {
+  flex-shrink: 0;
+  color: var(--dsc-ink-3);
+  content: "—";
 }

@@ -402,11 +402,14 @@ test("09A design system browser: declare → render → approve write-back", asy
     expect(readEventTypes(projectDir)).toContain("design_system_entry_approved");
 
     // ---- Approval failure: candidate without a designer-edited linked card. ----
-    // Close the ink popover with a pointer-down OUTSIDE it (clicking the leaf
-    // heading). The approve commit re-rendered the sheet under a stationary
-    // mouse, so hover bookkeeping (which node "owns" mouseenter/mouseleave)
-    // is unreliable here; a pointerdown dismisses the popover regardless.
-    await page.getByRole("heading", { name: "Color", exact: true }).click();
+    // Close the ink popover with a pointer-down OUTSIDE it. The approve
+    // commit re-rendered the sheet under a stationary mouse, so hover
+    // bookkeeping (which node "owns" mouseenter/mouseleave) is unreliable
+    // here; a pointerdown dismisses the popover regardless. Click EMPTY
+    // left-pane space by coordinates: the hover popover opens side="top"
+    // over the upper pane (covering even the block-level heading's hit
+    // points), while the lower pane is always clear of it.
+    await page.mouse.click(300, 640);
     await expect(
       page.getByTestId("ds-evidence-primitive.color.ink")
     ).toHaveCount(0);

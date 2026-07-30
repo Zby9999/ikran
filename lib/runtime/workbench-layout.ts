@@ -6,16 +6,8 @@
 // Types + pure parse live in `workbench-layout-shared.ts` (client-safe).
 // This module is Node-only (fs + seed list for reconcile).
 
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync
-} from "node:fs";
-import { randomBytes } from "node:crypto";
-import path from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { atomicWriteJson } from "./atomic-write-json";
 import {
   getIkranDir,
   getWorkbenchLayoutPath
@@ -43,27 +35,6 @@ export {
 
 function seedFrameKeepIds(projectPath: string): Set<string> {
   return new Set(listSeedReferences(projectPath).map((s) => s.id));
-}
-
-function atomicWriteJson(filePath: string, value: unknown): void {
-  mkdirSync(path.dirname(filePath), { recursive: true });
-  const tmp = path.join(
-    path.dirname(filePath),
-    `.workbench-layout.${process.pid}.${randomBytes(8).toString("hex")}.tmp`
-  );
-  try {
-    writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, {
-      mode: 0o600
-    });
-    renameSync(tmp, filePath);
-  } catch (err) {
-    try {
-      unlinkSync(tmp);
-    } catch {
-      // best-effort cleanup
-    }
-    throw err;
-  }
 }
 
 export type WorkbenchLayoutReadResult =

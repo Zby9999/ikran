@@ -62,6 +62,11 @@ export {
 } from "./workbench-layout";
 
 export {
+  getDesignSystemBrowserPreferencesCommand,
+  putDesignSystemBrowserPreferencesCommand
+} from "./design-system-browser-preferences";
+
+export {
   appendAgentAnnotationInformationCommand,
   completeDesignIntentAlignmentCommand,
   createAgentAnnotationCommand,

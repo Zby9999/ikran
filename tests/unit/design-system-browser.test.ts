@@ -4,12 +4,16 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
   ComponentDetail,
+  DESIGN_SYSTEM_SHEET_EXIT_MS,
+  DESIGN_SYSTEM_SHEET_REDUCED_MOTION_EXIT_MS,
   DesignSystemEntryButton,
   EvidenceInfoContent,
   FoundationsHomePage,
   SpecRowView,
   StatusChip,
   TokenLeafPage,
+  TypographyLeafPage,
+  designSystemSheetExitMs,
   type RowSharedProps
 } from "../../components/workbench/design-system-browser";
 import {
@@ -75,6 +79,17 @@ function entry(
     ...partial
   };
 }
+
+describe("Design System sheet motion timing", () => {
+  test("keeps JS presence timing aligned with the user's motion preference", () => {
+    expect(designSystemSheetExitMs(false)).toBe(DESIGN_SYSTEM_SHEET_EXIT_MS);
+    expect(designSystemSheetExitMs(true)).toBe(
+      DESIGN_SYSTEM_SHEET_REDUCED_MOTION_EXIT_MS
+    );
+    expect(DESIGN_SYSTEM_SHEET_EXIT_MS).toBe(400);
+    expect(DESIGN_SYSTEM_SHEET_REDUCED_MOTION_EXIT_MS).toBe(150);
+  });
+});
 
 function row(partial: Partial<DsRow> = {}): DsRow {
   const e = entry({});
@@ -398,5 +413,264 @@ describe("ComponentDetail", () => {
     expect(html).toContain("Darken fill");
     expect(html).toContain("disabled");
     expect(html).toContain("Ink 30%");
+  });
+});
+
+/* --------------------------- 09C-A: Reader Projection ---------------------- */
+
+const SPLIT_PROPS = {
+  ratio: 0.42,
+  onRatioChange: () => {},
+  onRatioCommit: () => {}
+};
+
+function typographyLayers() {
+  return [
+    {
+      layer: "primitive" as const,
+      entries: [
+        entry({
+          entry_id: "primitive.font-family-sans",
+          section: "token.primitive",
+          name: "font.family.sans",
+          value: "Instrument Sans, system-ui, sans-serif",
+          status: "formalized"
+        }),
+        entry({
+          entry_id: "primitive.font-size-400",
+          section: "token.primitive",
+          name: "font.size.400",
+          value: "16px",
+          status: "formalized"
+        }),
+        entry({
+          entry_id: "primitive.font-weight-bold",
+          section: "token.primitive",
+          name: "font.weight.bold",
+          value: "700",
+          status: "gap"
+        })
+      ]
+    },
+    {
+      layer: "semantic" as const,
+      entries: [
+        entry({
+          entry_id: "semantic.display-large",
+          name: "display.large",
+          value: {
+            fontFamily: { alias: "primitive.font-family-sans" },
+            fontSize: "64px",
+            fontWeight: "700",
+            lineHeight: "1.05"
+          },
+          status: "formalized"
+        }),
+        entry({
+          entry_id: "semantic.body",
+          name: "body",
+          value: { family: "Inter", size: "16px", weight: "400", tracking: "0.01em" },
+          status: "candidate"
+        })
+      ]
+    },
+    { layer: "component" as const, entries: [] }
+  ];
+}
+
+describe("TypographyLeafPage (09C-A tracer bullet)", () => {
+  test("left pane reads as family / roles / metric groups + technical details", () => {
+    const html = renderToStaticMarkup(
+      createElement(TypographyLeafPage, {
+        layers: typographyLayers(),
+        rows: rowSharedProps(),
+        split: SPLIT_PROPS
+      })
+    );
+    // Split chrome: left rules pane, right samples pane (SSR renders stacked,
+    // the divider only appears once the container measures wide enough).
+    expect(html).toContain('data-testid="ds-leaf-split"');
+    expect(html).toContain('data-testid="ds-split-left"');
+    expect(html).toContain('data-testid="ds-split-right"');
+
+    // Font family card: real stack, rendered in its own declared face.
+    expect(html).toContain('data-testid="ds-typography-families"');
+    expect(html).toContain("Instrument Sans");
+    expect(html).toContain("font-family:");
+    expect(html).toContain("Weights in use 400 · 700");
+
+    // Semantic roles: alias shown as arrow, compact summary, never raw JSON.
+    expect(html).toContain('data-testid="ds-typography-roles"');
+    expect(html).toContain('data-testid="ds-role-semantic.display-large"');
+    expect(html).toContain("→ primitive.font-family-sans");
+    expect(html).toContain("64 / 1.05 · 700");
+    expect(html).not.toContain("{&quot;fontFamily&quot;");
+    expect(html).not.toContain('{"fontFamily"');
+
+    // Atomic metrics stay token rows, grouped by layer.
+    expect(html).toContain("Tokens · Primitive");
+    expect(html).toContain('data-testid="ds-row-primitive.font-size-400"');
+
+    // Internal ids and raw envelopes live only behind Technical details.
+    expect(html).toContain('data-testid="ds-technical-details"');
+    expect(html).toContain("semantic.display-large");
+  });
+
+  test("right pane renders source-backed specimens and the type scale", () => {
+    const html = renderToStaticMarkup(
+      createElement(TypographyLeafPage, {
+        layers: typographyLayers(),
+        rows: rowSharedProps(),
+        split: SPLIT_PROPS
+      })
+    );
+    expect(html).toContain('data-testid="ds-typography-samples"');
+    expect(html).toContain('data-testid="ds-specimen-semantic.display-large"');
+    // Display-sized roles get the display sample copy.
+    expect(html).toContain("Design with intent.");
+    // The specimen style resolves the family alias to the declared stack.
+    expect(html).toContain(
+      "font-family:&quot;Instrument Sans&quot;, system-ui, sans-serif"
+    );
+    // Annotation restates role · family · summary · tracking.
+    expect(html).toContain("tracking 0.01em");
+    // Type scale merges style sizes and px size tokens (weight excluded).
+    expect(html).toContain('data-testid="ds-type-scale"');
+    expect(html).toContain(">16px<");
+    expect(html).toContain(">64px<");
+    expect(html).not.toContain(">700px<");
+  });
+
+  test("empty typography stays honest on both panes", () => {
+    const html = renderToStaticMarkup(
+      createElement(TypographyLeafPage, {
+        layers: [
+          { layer: "primitive" as const, entries: [] },
+          { layer: "semantic" as const, entries: [] },
+          { layer: "component" as const, entries: [] }
+        ],
+        rows: rowSharedProps(),
+        split: SPLIT_PROPS
+      })
+    );
+    expect(html).toContain("No typography tokens classified here yet.");
+    expect(html).toContain('data-testid="ds-samples-empty"');
+    expect(html).toContain("No visual samples yet");
+  });
+});
+
+describe("SpecRowView object values (09C-A: no raw JSON in the reading layer)", () => {
+  test("multi-key objects render as labeled field lines", () => {
+    const objectRow = row({
+      name: "grid.page",
+      value: '{"columns":"12","gutter":{"alias":"spacing.200"}}',
+      entry: entry({
+        entry_id: "layout.grid.page",
+        file_kind: "design-system.json",
+        section: "layout",
+        name: "grid.page",
+        value: { columns: "12", gutter: { alias: "spacing.200" } }
+      })
+    });
+    const html = renderToStaticMarkup(
+      createElement(SpecRowView, {
+        row: objectRow,
+        approval: { kind: "idle" },
+        infoOpen: false,
+        popoverInstant: false,
+        portalContainer: null,
+        onInfoOpenChange: vi.fn(),
+        onInfoHoverOpen: vi.fn(),
+        onInfoHoverClose: vi.fn(),
+        onApprove: vi.fn()
+      })
+    );
+    expect(html).toContain("dsb-fields");
+    expect(html).toContain("columns");
+    expect(html).toContain(">12<");
+    expect(html).toContain("→ spacing.200");
+    expect(html).not.toContain("{&quot;columns&quot;");
+  });
+
+  test("single-key narrative objects keep their flat text display", () => {
+    const flatRow = row({
+      name: "rule.summary",
+      value: "Keep it simple.",
+      entry: entry({
+        entry_id: "layout.rule.summary",
+        file_kind: "design-system.json",
+        section: "layout",
+        name: "rule.summary",
+        value: { description: "Keep it simple." }
+      })
+    });
+    const html = renderToStaticMarkup(
+      createElement(SpecRowView, {
+        row: flatRow,
+        approval: { kind: "idle" },
+        infoOpen: false,
+        popoverInstant: false,
+        portalContainer: null,
+        onInfoOpenChange: vi.fn(),
+        onInfoHoverOpen: vi.fn(),
+        onInfoHoverClose: vi.fn(),
+        onApprove: vi.fn()
+      })
+    );
+    expect(html).toContain("Keep it simple.");
+    expect(html).not.toContain("dsb-fields");
+  });
+});
+
+describe("FoundationsHomePage rich principles (09B shapes, 09C-A reading)", () => {
+  test("rich statement objects project into labeled fields; legacy stays flat", () => {
+    const view = fixtureView();
+    view.foundations.principles = [
+      entry({
+        entry_id: "p-rich",
+        file_kind: "design-system.json",
+        section: "foundations.principles",
+        name: null,
+        value: {
+          statement: "Design with intent.",
+          rationale: "Every choice needs a reason.",
+          scope: "All product surfaces",
+          use: ["State the reason"],
+          avoid: ["Decoration without job"],
+          exceptions: ["Marketing one-offs"]
+        },
+        meaning: "Intent over decoration",
+        status: "candidate"
+      }),
+      entry({
+        entry_id: "p-legacy",
+        file_kind: "design-system.json",
+        section: "foundations.principles",
+        name: null,
+        value: { statement: "Evidence before inference" },
+        meaning: "Rules must trace to seed evidence",
+        status: "formalized"
+      })
+    ];
+    const model = buildDesignSystemBrowserModel(view);
+    const html = renderToStaticMarkup(
+      createElement(FoundationsHomePage, {
+        model,
+        rows: rowSharedProps()
+      })
+    );
+    // Rich card: statement + labeled rationale/scope/use/avoid/exceptions.
+    expect(html).toContain('data-testid="ds-principle-p-rich"');
+    expect(html).toContain("Design with intent.");
+    expect(html).toContain("Rationale");
+    expect(html).toContain("Every choice needs a reason.");
+    expect(html).toContain("Scope");
+    expect(html).toContain("All product surfaces");
+    expect(html).toContain("State the reason");
+    expect(html).toContain("Decoration without job");
+    expect(html).toContain("Marketing one-offs");
+    // Legacy card: flat statement, no rich field labels bleeding out.
+    expect(html).toContain('data-testid="ds-principle-p-legacy"');
+    expect(html).toContain("Evidence before inference");
   });
 });

@@ -14,28 +14,49 @@
 // The sheet hand-rolls its scrim/focus-trap/keyboard boundary instead of
 // using components/ui/dialog: radix modal Dialog cannot drive the required
 // interruptible CSS close transition (forceMount keeps its focus/scroll
-// locks active), and the Esc-from-canvas isolation needs a capture-phase
-// boundary the component fully owns. The ⓘ hover layer DOES use radix
-// Popover (components/ui/popover), portaled into the sheet root so its
-// keydown events stay inside the isolation boundary.
+// locks active), and the Esc-from-canvas isolation needs a boundary the
+// component fully owns (bubble-phase on the sheet root, so the sheet's own
+// controls receive keydown before propagation stops). The ⓘ hover layer
+// DOES use radix Popover (components/ui/popover), portaled into the sheet
+// root so its keydown events stay inside the isolation boundary.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ChevronLeft,
-  ChevronRight,
-  House,
-  Info,
-  Layers,
-  LayoutGrid,
-  MousePointerClick,
-  Palette,
-  Square,
-  Type,
-  X
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+  ArrowRight01Icon,
+  ColorsIcon,
+  ComponentIcon,
+  Cursor02Icon,
+  GridViewIcon,
+  Home01Icon,
+  InformationCircleIcon,
+  Layers01Icon,
+  MultiplicationSignIcon,
+  TextFontIcon
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import type { IconSvgElement } from "@hugeicons/react";
 import { subscribeRuntimeEvents } from "@/components/runtime/runtime-client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
+import { LeafSplit } from "./ds-split-pane";
+import { DEFAULT_DS_SPLIT_RATIO } from "./ds-split-pane-model";
+import {
+  DESIGN_SYSTEM_BROWSER_PREFERENCES_VERSION,
+  parseDesignSystemBrowserPreferences
+} from "@/lib/runtime/design-system-browser-preferences-shared";
+import {
+  cssFontStack,
+  projectObjectFields,
+  projectPrinciple,
+  projectTypographyLeaf,
+  typeScaleSteps,
+  typographyLayersFromView,
+  type PrincipleProjection,
+  type TechnicalDetail,
+  type TokenLayerKey,
+  type TypographyProjection,
+  type TypographyStyleProjection
+} from "./design-system-reader-projection";
 import {
   DS_SECTION_NAMES,
   TOKEN_LAYER_LABELS,
@@ -43,9 +64,9 @@ import {
   breadcrumbFor,
   buildDesignSystemBrowserModel,
   componentLeafId,
+  formatEntryValue,
   sheetReducer,
   sheetEscapeAction,
-  shouldIsolateKeydown,
   toRow,
   withEntryStatus,
   type ApprovalState,
@@ -70,6 +91,13 @@ import "./design-system-browser.css";
  * design-system-browser.css — keep the two in sync.
  */
 export const DESIGN_SYSTEM_SHEET_EXIT_MS = 400;
+export const DESIGN_SYSTEM_SHEET_REDUCED_MOTION_EXIT_MS = 150;
+
+export function designSystemSheetExitMs(prefersReducedMotion: boolean): number {
+  return prefersReducedMotion
+    ? DESIGN_SYSTEM_SHEET_REDUCED_MOTION_EXIT_MS
+    : DESIGN_SYSTEM_SHEET_EXIT_MS;
+}
 
 /**
  * Delay before the ⓘ layer closes on pointer leave, so moving from trigger
@@ -88,10 +116,21 @@ export function StatusChip({ status }: { status: DsStatus }) {
   );
 }
 
-function dotColor(label: string): string {
-  if (label.includes("formalized")) return "var(--dsc-green)";
-  if (label.includes("candidate")) return "var(--dsc-accent)";
+/** The one status → dot color mapping (chips, stat dots, specimen
+ * annotations all read the same three tokens). */
+function statusDotColor(status: DsStatus): string {
+  if (status === "formalized") return "var(--dsc-green)";
+  if (status === "candidate") return "var(--dsc-accent)";
   return "var(--dsc-ink-3)";
+}
+
+function dotColor(label: string): string {
+  const status: DsStatus = label.includes("formalized")
+    ? "formalized"
+    : label.includes("candidate")
+      ? "candidate"
+      : "gap";
+  return statusDotColor(status);
 }
 
 export function StatDots({ items }: { items: string[] }) {
@@ -285,7 +324,12 @@ export function InfoPopover({
           onFocus={onInfoHoverOpen}
           onBlur={onInfoHoverClose}
         >
-          <Info size={12} />
+          <HugeiconsIcon
+            icon={InformationCircleIcon}
+            size={12}
+            color="currentColor"
+            strokeWidth={2}
+          />
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -300,6 +344,14 @@ export function InfoPopover({
         // close would ignite a close→focus→reopen loop. Scoped to this usage
         // site — the shared primitive keeps the default a11y behavior.
         onCloseAutoFocus={(event) => event.preventDefault()}
+        // Radix's dismissable layer listens for Escape on document CAPTURE,
+        // which fires before the sheet root's bubble-phase keydown handler —
+        // and its dismissal preventDefaults + closes the popover out from
+        // under sheetEscapeAction (the ref it reads may or may not have
+        // flushed yet, so one Esc could close popover AND sheet together).
+        // Keep Radix inert here; the sheet's handler owns layered Esc (ⓘ
+        // first, sheet second) deterministically.
+        onEscapeKeyDown={(event) => event.preventDefault()}
       >
         <EvidenceInfoContent
           entry={entry}
@@ -332,9 +384,28 @@ export function SpecRowView({
   onInfoHoverClose: () => void;
   onApprove: () => void;
 }) {
+  // Reader Projection (09C-A): structured object values render as labeled
+  // field lines in the main reading layer — never serialized JSON. Alias
+  // entries and single-key narrative objects keep their flat display. Rows
+  // whose display value was overridden by the caller (e.g. ComponentDetail's
+  // status rows show the source path, not the spec envelope) keep that
+  // override — the projection only owns the DEFAULT display.
+  const value = row.entry.value;
+  const fields =
+    row.value === formatEntryValue(row.entry) &&
+    row.entry.alias === null &&
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    !(
+      Object.keys(value).length === 1 &&
+      typeof Object.values(value)[0] === "string"
+    )
+      ? projectObjectFields(value)
+      : null;
   return (
     <div
-      className="dsb-row"
+      className={fields ? "dsb-row dsb-row--object" : "dsb-row"}
       data-testid={`ds-row-${row.entryId}`}
       data-approve-error={approval.kind === "error" || undefined}
     >
@@ -348,9 +419,20 @@ export function SpecRowView({
       <span className="dsb-row-name" title={row.name}>
         {row.name}
       </span>
-      <span className="dsb-row-value" title={row.value}>
-        {row.value}
-      </span>
+      {fields ? (
+        <span className="dsb-fields">
+          {fields.map((field) => (
+            <span key={field.label} className="dsb-field">
+              <span className="dsb-field-label">{field.label}</span>
+              <span className="dsb-field-text">{field.text}</span>
+            </span>
+          ))}
+        </span>
+      ) : (
+        <span className="dsb-row-value" title={row.value}>
+          {row.value}
+        </span>
+      )}
       <span className="dsb-row-meaning" title={row.meaning}>
         {row.meaning}
       </span>
@@ -426,8 +508,10 @@ function PageHeading({
   return (
     <>
       <h1 className="dsb-h1">{title}</h1>
-      <p className="dsb-meta">{meta}</p>
-      <StatDots items={chips} />
+      <div className="dsb-intro">
+        <p className="dsb-meta">{meta}</p>
+        <StatDots items={chips} />
+      </div>
     </>
   );
 }
@@ -435,20 +519,21 @@ function PageHeading({
 const FOUNDATIONS_LEAVES: {
   id: DsLeafId;
   name: string;
-  icon: LucideIcon;
+  icon: IconSvgElement;
 }[] = [
-  { id: "color", name: "Color", icon: Palette },
-  { id: "typography", name: "Typography", icon: Type },
-  { id: "materials", name: "Materials", icon: Layers },
-  { id: "layout", name: "Layout", icon: LayoutGrid },
-  { id: "interaction", name: "Interaction", icon: MousePointerClick }
+  { id: "color", name: "Color", icon: ColorsIcon },
+  { id: "typography", name: "Typography", icon: TextFontIcon },
+  { id: "materials", name: "Materials", icon: Layers01Icon },
+  { id: "layout", name: "Layout", icon: GridViewIcon },
+  { id: "interaction", name: "Interaction", icon: Cursor02Icon }
 ];
 
 /* ------------------------------- home pages ------------------------------- */
 
 /** Principle rule card (09A: principles 规则卡 on Foundations Home — cards in
- * the prototype's LeafCard visual language, not spec rows). Statement is the
- * card title, meaning the body; chip + ⓘ evidence affordance in the footer. */
+ * the prototype's LeafCard visual language, not spec rows). Rich values
+ * (09B: statement / rationale / scope / use / avoid / exceptions) project
+ * into readable fields (09C-A); chip + ⓘ evidence affordance in the footer. */
 function PrincipleCard({
   row,
   approval,
@@ -458,15 +543,72 @@ function PrincipleCard({
   approval: ApprovalState;
   rows: RowSharedProps;
 }) {
+  const principle: PrincipleProjection = projectPrinciple(row.entry);
   return (
     <div
       className="dsb-card dsb-principle"
       data-testid={`ds-principle-${row.entryId}`}
       data-approve-error={approval.kind === "error" || undefined}
     >
-      <span className="dsb-card-title">{row.value}</span>
+      <span className="dsb-card-title">{principle.statement}</span>
       {row.meaning ? (
         <span className="dsb-card-desc">{row.meaning}</span>
+      ) : null}
+      {principle.isRich ? (
+        <div className="dsb-principle-fields">
+          {principle.rationale ? (
+            <span className="dsb-principle-field">
+              <span className="dsb-principle-field-label">Rationale</span>
+              <p className="dsb-principle-field-text">{principle.rationale}</p>
+            </span>
+          ) : null}
+          {principle.scope ? (
+            <span className="dsb-principle-field">
+              <span className="dsb-principle-field-label">Scope</span>
+              <p className="dsb-principle-field-text">{principle.scope}</p>
+            </span>
+          ) : null}
+          {principle.use.length > 0 ? (
+            <span className="dsb-principle-field">
+              <span className="dsb-principle-field-label">Use</span>
+              <ul className="dsb-principle-list">
+                {principle.use.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </span>
+          ) : null}
+          {principle.avoid.length > 0 ? (
+            <span className="dsb-principle-field">
+              <span className="dsb-principle-field-label">Avoid</span>
+              <ul className="dsb-principle-list">
+                {principle.avoid.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </span>
+          ) : null}
+          {principle.exceptions.length > 0 ? (
+            <span className="dsb-principle-field">
+              <span className="dsb-principle-field-label">Exceptions</span>
+              <ul className="dsb-principle-list">
+                {principle.exceptions.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </span>
+          ) : null}
+          {principle.extraFields
+            ? principle.extraFields.map((field) => (
+                <span key={field.label} className="dsb-principle-field">
+                  <span className="dsb-principle-field-label">
+                    {field.label}
+                  </span>
+                  <p className="dsb-principle-field-text">{field.text}</p>
+                </span>
+              ))
+            : null}
+        </div>
       ) : null}
       <div className="dsb-principle-footer">
         <StatusChip status={row.status} />
@@ -512,7 +654,7 @@ export function FoundationsHomePage({
         chips={model.foundations.chips}
       />
       {visualLanguage ? (
-        <section className="dsb-narrative">
+        <section className="dsb-section dsb-narrative">
           <GroupLabel>Visual language</GroupLabel>
           <p className="dsb-narrative-text">
             {visualLanguage.description || visualLanguage.row.value}
@@ -521,7 +663,7 @@ export function FoundationsHomePage({
         </section>
       ) : null}
       {principles.length > 0 ? (
-        <>
+        <section className="dsb-section">
           <GroupLabel>Principles</GroupLabel>
           <div className="dsb-cards dsb-principles">
             {principles.map((row) => (
@@ -533,7 +675,7 @@ export function FoundationsHomePage({
               />
             ))}
           </div>
-        </>
+        </section>
       ) : null}
       {!visualLanguage && principles.length === 0 ? (
         <p className="dsb-empty-body dsb-page-note">
@@ -571,7 +713,13 @@ export function ComponentsHomePage({
               data-testid={`ds-component-card-${component.entryId}`}
               onClick={() => onOpenLeaf(component.leafId)}
             >
-              <ChevronRight size={14} className="dsb-card-chevron" />
+              <HugeiconsIcon
+                icon={ArrowRight01Icon}
+                size={14}
+                className="dsb-card-chevron"
+                color="currentColor"
+                strokeWidth={2}
+              />
               <span className="dsb-card-title">{component.name}</span>
               <span className="dsb-card-desc">
                 {component.detail?.description ||
@@ -642,7 +790,11 @@ export function TokenLeafPage({
       />
       {leaf.groups.length > 0 ? (
         leaf.groups.map((group) => (
-          <section key={group.layer} data-testid={`ds-token-layer-${group.layer}`}>
+          <section
+            key={group.layer}
+            className="dsb-section"
+            data-testid={`ds-token-layer-${group.layer}`}
+          >
             <GroupLabel>{TOKEN_LAYER_LABELS[group.layer]}</GroupLabel>
             <RowList rows={group.rows} {...rows} />
           </section>
@@ -653,6 +805,372 @@ export function TokenLeafPage({
         </p>
       )}
     </>
+  );
+}
+
+/* ------------------------- 09C-A: leaf split pages ------------------------- */
+
+/** Ratio state threaded from the browser-level preference hook. */
+interface LeafSplitRatioProps {
+  ratio: number;
+  onRatioChange: (ratio: number) => void;
+  onRatioCommit: (ratio: number) => void;
+}
+
+/** Honest right-pane state for leaves whose visual grammar lands in 09C-B/C:
+ * an explicit "no visual samples yet", never a fake sample. Locked decision:
+ * no standalone explanatory paragraph in the right pane — the marker alone
+ * carries the state. */
+function VisualSamplesEmpty() {
+  return (
+    <div className="dsb-samples" data-testid="ds-samples-empty">
+      <GroupLabel>Visual samples</GroupLabel>
+      <div className="dsb-samples-empty">
+        <p className="dsb-samples-empty-title">No visual samples yet</p>
+      </div>
+    </div>
+  );
+}
+
+/** Internal ids, alias graph and raw fields — the only place raw JSON shows. */
+function TechnicalDetails({ items }: { items: TechnicalDetail[] }) {
+  if (items.length === 0) return null;
+  return (
+    <details className="dsb-tech" data-testid="ds-technical-details">
+      <summary className="dsb-tech-summary">
+        <HugeiconsIcon
+          icon={ArrowRight01Icon}
+          size={12}
+          className="dsb-tech-chevron"
+          color="currentColor"
+          strokeWidth={2}
+        />
+        Technical details
+      </summary>
+      <div className="dsb-tech-items">
+        {items.map((item) => (
+          <div key={item.key} className="dsb-tech-item">
+            <p className="dsb-tech-head">
+              <span className="dsb-tech-id">{item.entryId}</span>
+              <span>{item.sourcePath}</span>
+              <StatusChip status={item.status} />
+            </p>
+            <pre className="dsb-tech-raw">{item.rawJson}</pre>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+/** Fixed sample copy per role kind — presentation literals, never
+ * model-written and never treated as design-system facts. */
+function specimenText(style: TypographyStyleProjection): string {
+  const role = style.role.toLowerCase();
+  if (
+    (style.fontSizePx !== null && style.fontSizePx >= 32) ||
+    /display|heading|title|hero/.test(role)
+  ) {
+    return "Design with intent.";
+  }
+  if (
+    (style.fontSizePx !== null && style.fontSizePx <= 14) ||
+    /label|caption|meta|button|overline/.test(role)
+  ) {
+    return "Navigation label";
+  }
+  return "A quiet system where content carries the expression, and the interface stays out of the way. Paragraphs use the body role everywhere.";
+}
+
+function numericWeight(text: string | undefined): number | undefined {
+  if (!text) return undefined;
+  const parsed = Number.parseInt(text, 10);
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 1000
+    ? parsed
+    : undefined;
+}
+
+const CSS_LENGTH_PATTERN = /^-?\d+(?:\.\d+)?(px|em|rem|%)$/;
+
+function cssLength(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  const trimmed = text.trim();
+  return CSS_LENGTH_PATTERN.test(trimmed) ? trimmed : undefined;
+}
+
+function cssLineHeight(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  const trimmed = text.trim();
+  if (CSS_LENGTH_PATTERN.test(trimmed)) return trimmed;
+  return /^\d+(?:\.\d+)?$/.test(trimmed) ? trimmed : undefined;
+}
+
+const CSS_TEXT_TRANSFORMS = new Set([
+  "none",
+  "uppercase",
+  "lowercase",
+  "capitalize"
+]);
+
+/** The specimen's own style, verbatim from the token fields the source
+ * declares. Fields that don't parse as CSS are skipped (the annotation row
+ * still shows the source text — honest, never substituted). Large display
+ * sizes cap in container units so a narrow right pane reflows instead of
+ * clipping; the annotation always states the true token value. */
+function specimenCss(style: TypographyStyleProjection): React.CSSProperties {
+  const css: React.CSSProperties = {};
+  if (style.specimenFamily) css.fontFamily = style.specimenFamily;
+  if (style.fontSizePx !== null) {
+    css.fontSize =
+      style.fontSizePx >= 40
+        ? `min(${style.fontSizePx}px, 9cqi)`
+        : `${style.fontSizePx}px`;
+  }
+  const weight = numericWeight(style.fontWeight?.text);
+  if (weight !== undefined) css.fontWeight = weight;
+  const lineHeight = cssLineHeight(style.lineHeight?.text);
+  if (lineHeight !== undefined) css.lineHeight = lineHeight;
+  const tracking = cssLength(style.letterSpacing?.text);
+  if (tracking !== undefined) css.letterSpacing = tracking;
+  const transform = style.textTransform?.text.trim().toLowerCase();
+  if (transform && CSS_TEXT_TRANSFORMS.has(transform)) {
+    css.textTransform = transform as React.CSSProperties["textTransform"];
+  }
+  return css;
+}
+
+/** Annotation row under a specimen: role · family · summary (which already
+ * carries tracking / transform), plus the entry's status dot — values
+ * restated as visual annotation only. */
+function specimenAnnotation(style: TypographyStyleProjection): string {
+  const parts = [style.role];
+  const family = style.fontFamily?.text ?? style.specimenFamily ?? null;
+  if (family) parts.push(family);
+  if (style.summary) parts.push(style.summary);
+  return parts.join(" · ");
+}
+
+function TypographySamples({
+  projection
+}: {
+  projection: TypographyProjection;
+}) {
+  const scale = typeScaleSteps(projection);
+  if (projection.styles.length === 0 && scale.length === 0) {
+    return <VisualSamplesEmpty />;
+  }
+  const scaleFamily =
+    projection.families.length === 1
+      ? cssFontStack(projection.families[0]!.stack)
+      : undefined;
+  return (
+    <div className="dsb-samples" data-testid="ds-typography-samples">
+      <GroupLabel>Visual samples</GroupLabel>
+      {projection.styles.map((style) => (
+        <div
+          key={style.key}
+          className="dsb-specimen"
+          data-testid={`ds-specimen-${style.row.entryId}`}
+        >
+          <p className="dsb-specimen-sample" style={specimenCss(style)}>
+            {specimenText(style)}
+          </p>
+          <p className="dsb-specimen-annotation">
+            <span
+              aria-hidden
+              className="dsb-annotation-dot"
+              style={{ background: statusDotColor(style.row.status) }}
+            />
+            {specimenAnnotation(style)}
+          </p>
+        </div>
+      ))}
+      {scale.length > 0 ? (
+        <div className="dsb-scale" data-testid="ds-type-scale">
+          {scale.map((step) => (
+            <div key={step.px} className="dsb-scale-row">
+              <span className="dsb-scale-size">{step.px}px</span>
+              <span
+                className="dsb-scale-sample"
+                style={{
+                  fontSize: `${step.px}px`,
+                  fontFamily: scaleFamily
+                }}
+              >
+                Ag
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Typography leaf (09C-A tracer bullet): the Reader Projection turns
+ * family / semantic roles / scale / metrics into readable left-column
+ * groups; the right column renders source-backed specimens and the base
+ * type scale — same source facts, two presentations. */
+export function TypographyLeafPage({
+  layers,
+  rows,
+  split
+}: {
+  layers: {
+    layer: TokenLayerKey;
+    entries: DesignSystemEntryView[];
+  }[];
+  rows: RowSharedProps;
+  split: LeafSplitRatioProps;
+}) {
+  const projection = useMemo(() => projectTypographyLeaf(layers), [layers]);
+  const tokenCount =
+    projection.families.length +
+    projection.styles.length +
+    projection.metricGroups.reduce((total, group) => total + group.rows.length, 0);
+  const weightsInUse = [
+    ...new Set(
+      projection.styles
+        .map((style) => numericWeight(style.fontWeight?.text))
+        .filter((weight): weight is number => weight !== undefined)
+    )
+  ].sort((a, b) => a - b);
+
+  return (
+    <LeafSplit
+      ratio={split.ratio}
+      onRatioChange={split.onRatioChange}
+      onRatioCommit={split.onRatioCommit}
+      left={
+        <>
+          <PageHeading
+            title="Typography"
+            meta={`${tokenCount} tokens`}
+            chips={projection.chips}
+          />
+          {projection.families.length > 0 ? (
+            <section className="dsb-section" data-testid="ds-typography-families">
+              <GroupLabel>Font family</GroupLabel>
+              {projection.families.map((family) => (
+                <div key={family.key} className="dsb-family-card">
+                  <span
+                    className="dsb-family-name"
+                    style={{ fontFamily: cssFontStack(family.stack) }}
+                  >
+                    {family.primary}
+                  </span>
+                  <span className="dsb-family-meta">
+                    <span className="dsb-family-stack" title={family.stack.join(", ")}>
+                      {family.stack.join(", ")}
+                    </span>
+                    <span className="dsb-family-sub">
+                      {family.name}
+                      {weightsInUse.length > 0
+                        ? ` · Weights in use ${weightsInUse.join(" · ")}`
+                        : ""}
+                    </span>
+                  </span>
+                  <StatusChip status={family.row.status} />
+                  <InfoPopover
+                    entry={family.row.entry}
+                    approval={rows.approvals[family.row.key] ?? { kind: "idle" }}
+                    infoOpen={rows.infoKey === family.row.key}
+                    popoverInstant={rows.popoverInstant(family.row.key)}
+                    portalContainer={rows.portalContainer}
+                    ariaLabel={`Evidence for ${family.name}`}
+                    onInfoOpenChange={(open) =>
+                      rows.onInfoKey(open ? family.row.key : null)
+                    }
+                    onInfoHoverOpen={() => rows.onInfoHoverOpen(family.row.key)}
+                    onInfoHoverClose={rows.onInfoHoverClose}
+                    onApprove={() => rows.onApprove(family.row)}
+                  />
+                </div>
+              ))}
+            </section>
+          ) : null}
+          {projection.styles.length > 0 ? (
+            <section className="dsb-section" data-testid="ds-typography-roles">
+              <GroupLabel>Semantic roles</GroupLabel>
+              <div className="dsb-rows">
+                {projection.styles.map((style) => (
+                  <div
+                    key={style.key}
+                    className="dsb-role-row"
+                    data-testid={`ds-role-${style.row.entryId}`}
+                  >
+                    <span className="dsb-role-name" title={style.role}>
+                      {style.role}
+                    </span>
+                    <span
+                      aria-hidden
+                      className="dsb-role-aa"
+                      style={{
+                        fontFamily: style.specimenFamily ?? undefined,
+                        fontSize:
+                          style.fontSizePx !== null
+                            ? `${Math.min(style.fontSizePx, 18)}px`
+                            : undefined
+                      }}
+                    >
+                      Aa
+                    </span>
+                    <span className="dsb-role-value" title={style.summary}>
+                      {style.summary || "—"}
+                    </span>
+                    {style.fontFamily ? (
+                      <span
+                        className="dsb-role-family"
+                        title={style.fontFamily.text}
+                      >
+                        {style.fontFamily.text}
+                      </span>
+                    ) : null}
+                    <span className="dsb-role-meaning" title={style.meaning}>
+                      {style.meaning}
+                    </span>
+                    <StatusChip status={style.row.status} />
+                    <InfoPopover
+                      entry={style.row.entry}
+                      approval={rows.approvals[style.row.key] ?? { kind: "idle" }}
+                      infoOpen={rows.infoKey === style.row.key}
+                      popoverInstant={rows.popoverInstant(style.row.key)}
+                      portalContainer={rows.portalContainer}
+                      ariaLabel={`Evidence for ${style.role}`}
+                      onInfoOpenChange={(open) =>
+                        rows.onInfoKey(open ? style.row.key : null)
+                      }
+                      onInfoHoverOpen={() => rows.onInfoHoverOpen(style.row.key)}
+                      onInfoHoverClose={rows.onInfoHoverClose}
+                      onApprove={() => rows.onApprove(style.row)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          {projection.metricGroups.map((group) => (
+            <section
+              key={group.layer}
+              className="dsb-section"
+              data-testid={`ds-token-layer-${group.layer}`}
+            >
+              <GroupLabel>Tokens · {TOKEN_LAYER_LABELS[group.layer]}</GroupLabel>
+              <RowList rows={group.rows} {...rows} />
+            </section>
+          ))}
+          {projection.families.length === 0 &&
+          projection.styles.length === 0 &&
+          projection.metricGroups.length === 0 ? (
+            <p className="dsb-empty-body dsb-page-note">
+              No typography tokens classified here yet.
+            </p>
+          ) : null}
+          <TechnicalDetails items={projection.technicalDetails} />
+        </>
+      }
+      right={<TypographySamples projection={projection} />}
+    />
   );
 }
 
@@ -704,7 +1222,10 @@ function useDesignSystemView(session: string, open: boolean) {
 }
 
 /** Mount/unmount timing so the close transition can run before unmount. */
-function useSheetPresence(open: boolean): { mounted: boolean; shown: boolean } {
+function useSheetPresence(
+  open: boolean,
+  exitMs: number
+): { mounted: boolean; shown: boolean } {
   const [mounted, setMounted] = useState(open);
   const [shown, setShown] = useState(false);
   useEffect(() => {
@@ -721,10 +1242,84 @@ function useSheetPresence(open: boolean): { mounted: boolean; shown: boolean } {
       };
     }
     setShown(false);
-    const timer = setTimeout(() => setMounted(false), DESIGN_SYSTEM_SHEET_EXIT_MS);
+    const timer = setTimeout(() => setMounted(false), exitMs);
     return () => clearTimeout(timer);
-  }, [open]);
+  }, [exitMs, open]);
   return { mounted, shown };
+}
+
+/**
+ * Browser-level split ratio preference (09C-A): loaded once per browser
+ * mount from the project-local server route, kept locally during gestures,
+ * and committed (debounced) on gesture end. Best-effort UX state — a failed
+ * load/save leaves the default or local ratio in place, never an error UI.
+ * Lives at the browser container so switching leaves never resets it.
+ */
+function useDesignSystemSplitRatio(session: string, open: boolean) {
+  const [ratio, setRatio] = useState(DEFAULT_DS_SPLIT_RATIO);
+  const loadedRef = useRef(false);
+  const putTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!open || loadedRef.current) return;
+    loadedRef.current = true;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/design-system-browser-preferences", {
+          cache: "no-store",
+          headers: { "x-ikran-session": session }
+        });
+        const data = (await response.json().catch(() => ({}))) as {
+          ok?: boolean;
+          preferences?: unknown;
+        };
+        if (!cancelled && response.ok && data.ok === true) {
+          const parsed = parseDesignSystemBrowserPreferences(data.preferences);
+          if (parsed) setRatio(parsed.splitRatio);
+        }
+      } catch {
+        // Best-effort preference — the default ratio still works.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, session]);
+
+  const commitRatio = useCallback(
+    (next: number) => {
+      if (putTimerRef.current) clearTimeout(putTimerRef.current);
+      putTimerRef.current = setTimeout(() => {
+        putTimerRef.current = null;
+        void fetch("/api/design-system-browser-preferences", {
+          method: "PUT",
+          headers: {
+            "x-ikran-session": session,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            preferences: {
+              version: DESIGN_SYSTEM_BROWSER_PREFERENCES_VERSION,
+              splitRatio: next
+            }
+          })
+        }).catch(() => {
+          // Best-effort UX preference, not research data.
+        });
+      }, 300);
+    },
+    [session]
+  );
+
+  useEffect(
+    () => () => {
+      if (putTimerRef.current) clearTimeout(putTimerRef.current);
+    },
+    []
+  );
+
+  return { ratio, setRatio, commitRatio };
 }
 
 /* --------------------------------- browser --------------------------------- */
@@ -752,7 +1347,12 @@ export function DesignSystemBrowser({
   onClose: (source: SheetCloseSource) => void;
 }) {
   const { view, setView, error, reload } = useDesignSystemView(session, open);
-  const { mounted, shown } = useSheetPresence(open);
+  const splitRatio = useDesignSystemSplitRatio(session, open);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const { mounted, shown } = useSheetPresence(
+    open,
+    designSystemSheetExitMs(prefersReducedMotion)
+  );
   const [section, setSection] = useState<DsSectionId>("foundations");
   const [route, setRoute] = useState<DsRoute>({
     kind: "section",
@@ -903,14 +1503,13 @@ export function DesignSystemBrowser({
     [openInfo]
   );
 
-  // Canvas keyboard isolation + focus trap (capture phase). The listener
-  // registers ONCE per mount and reads `infoKey`/`shown` through refs, so it
-  // never closes over stale state — re-registering on infoKey changes used
-  // to steal focus and leave Esc handled by stale closures. While the sheet
-  // is MOUNTED — including the exit window after `shown` flips false, until
-  // DESIGN_SYSTEM_SHEET_EXIT_MS elapses — keydown originating inside the
-  // sheet never reaches tldraw. Esc is layered (see sheetEscapeAction): ⓘ
-  // layer first, then the sheet; swallowed during the exit window.
+  // Canvas keyboard isolation + focus trap. Attached as a BUBBLE-phase React
+  // handler on the sheet root (see onSheetKeyDown): keydown first serves the
+  // sheet's own interactive elements (divider keyboard resize, ⓘ buttons,
+  // future inputs), then stops at the root so it never reaches tldraw's
+  // body-level bindings. A capture-phase window listener used to swallow
+  // events BEFORE the sheet's own controls could receive them — that made
+  // every keyboard interaction inside the sheet inert.
   const infoKeyRef = useRef<string | null>(null);
   const shownRef = useRef(false);
   useEffect(() => {
@@ -920,58 +1519,56 @@ export function DesignSystemBrowser({
     shownRef.current = shown;
   }, [shown]);
 
+  // Restore focus to the pre-sheet element only once the sheet has fully
+  // unmounted (the exit window keeps focus inside).
   useEffect(() => {
     if (!mounted) return;
-    const root = rootRef.current;
-    if (!root) return;
     const previouslyFocused =
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      const inside = root.contains(event.target as Node);
-      if (!shouldIsolateKeydown(true, inside)) return;
-      event.stopPropagation();
-      if (event.key === "Escape") {
-        event.preventDefault();
-        const action = sheetEscapeAction(
-          infoKeyRef.current !== null,
-          shownRef.current
-        );
-        if (action === "close-info") setInfoKey(null);
-        else if (action === "close-sheet") onClose("escape");
-        return;
-      }
-      if (event.key === "Tab" && shownRef.current) {
-        const focusables = Array.from(
-          root.querySelectorAll<HTMLElement>(
-            'button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
-          )
-        ).filter((el) => el.getClientRects().length > 0);
-        if (focusables.length === 0) {
-          event.preventDefault();
-          return;
-        }
-        const active = document.activeElement;
-        const index = focusables.findIndex((el) => el === active);
-        if (event.shiftKey && (index <= 0 || active === root)) {
-          event.preventDefault();
-          focusables[focusables.length - 1]!.focus();
-        } else if (!event.shiftKey && (index === focusables.length - 1 || active === root)) {
-          event.preventDefault();
-          focusables[0]!.focus();
-        }
-      }
-    };
-    window.addEventListener("keydown", onKeyDown, true);
     return () => {
-      window.removeEventListener("keydown", onKeyDown, true);
-      // Restore focus only when the sheet fully unmounts, so focus stays
-      // inside during the exit window.
       if (!rootRef.current) previouslyFocused?.focus();
     };
-  }, [mounted, onClose]);
+  }, [mounted]);
+
+  /** Bubble-phase boundary on the sheet root: stop outbound propagation
+   * (tldraw binds F → Frame on body), then layer Esc (ⓘ first, sheet second,
+   * swallowed during the exit window) and trap Tab inside the sheet. */
+  const onSheetKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      const action = sheetEscapeAction(
+        infoKeyRef.current !== null,
+        shownRef.current
+      );
+      if (action === "close-info") setInfoKey(null);
+      else if (action === "close-sheet") onClose("escape");
+      return;
+    }
+    if (event.key === "Tab" && shownRef.current) {
+      const root = event.currentTarget;
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => el.getClientRects().length > 0);
+      if (focusables.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const active = document.activeElement;
+      const index = focusables.findIndex((el) => el === active);
+      if (event.shiftKey && (index <= 0 || active === root)) {
+        event.preventDefault();
+        focusables[focusables.length - 1]!.focus();
+      } else if (!event.shiftKey && (index === focusables.length - 1 || active === root)) {
+        event.preventDefault();
+        focusables[0]!.focus();
+      }
+    }
+  };
 
   // Focus the sheet root exactly once per mount, on the first `shown`
   // transition. Re-focusing on every ⓘ change used to snatch focus back from
@@ -1010,35 +1607,44 @@ export function DesignSystemBrowser({
     onApprove: (row) => void approve(row)
   };
 
-  const renderMain = () => {
+  const renderMain = (): { node: React.ReactNode; layout: "page" | "leaf" } => {
     if (error && !model) {
-      return (
-        <div className="dsb-empty">
-          <p className="dsb-empty-title dsb-load-error">
-            Could not load the design system
-          </p>
-          <p className="dsb-empty-body">{error}</p>
-        </div>
-      );
+      return {
+        layout: "page",
+        node: (
+          <div className="dsb-empty">
+            <p className="dsb-empty-title dsb-load-error">
+              Could not load the design system
+            </p>
+            <p className="dsb-empty-body">{error}</p>
+          </div>
+        )
+      };
     }
     if (!model) {
-      return (
-        <div className="dsb-empty">
-          <p className="dsb-empty-body">Loading…</p>
-        </div>
-      );
+      return {
+        layout: "page",
+        node: (
+          <div className="dsb-empty">
+            <p className="dsb-empty-body">Loading…</p>
+          </div>
+        )
+      };
     }
     if (model.empty) {
-      return (
-        <div className="dsb-empty" data-testid="ds-empty-state">
-          <p className="dsb-empty-title">No design system entries yet</p>
-          <p className="dsb-empty-body">
-            Alignment is complete, but the agent has not declared any
-            design-system artifacts yet. Once design-system JSON sources are
-            declared and ingested, they appear here.
-          </p>
-        </div>
-      );
+      return {
+        layout: "page",
+        node: (
+          <div className="dsb-empty" data-testid="ds-empty-state">
+            <p className="dsb-empty-title">No design system entries yet</p>
+            <p className="dsb-empty-body">
+              Alignment is complete, but the agent has not declared any
+              design-system artifacts yet. Once design-system JSON sources are
+              declared and ingested, they appear here.
+            </p>
+          </div>
+        )
+      };
     }
 
     const sectionHome =
@@ -1051,44 +1657,95 @@ export function DesignSystemBrowser({
         />
       );
 
-    if (route.kind === "section") return sectionHome;
+    if (route.kind === "section") return { layout: "page", node: sectionHome };
+
+    const splitProps: LeafSplitRatioProps = {
+      ratio: splitRatio.ratio,
+      onRatioChange: splitRatio.setRatio,
+      onRatioCommit: splitRatio.commitRatio
+    };
 
     if (route.section === "foundations") {
       if (route.leaf === "layout" || route.leaf === "interaction") {
-        return (
-          <RulesLeafPage
-            kind={route.leaf}
-            leaf={model.foundations[route.leaf]}
-            rows={rowListProps}
-          />
-        );
+        return {
+          layout: "leaf",
+          node: (
+            <LeafSplit
+              {...splitProps}
+              left={
+                <RulesLeafPage
+                  kind={route.leaf}
+                  leaf={model.foundations[route.leaf]}
+                  rows={rowListProps}
+                />
+              }
+              right={<VisualSamplesEmpty />}
+            />
+          )
+        };
       }
       const tokenLeaf =
         model.foundations.tokenLeaves.find((leaf) => leaf.id === route.leaf) ??
         null;
-      if (tokenLeaf) return <TokenLeafPage leaf={tokenLeaf} rows={rowListProps} />;
+      if (tokenLeaf) {
+        // Typography is the 09C-A tracer bullet: Reader Projection + real
+        // specimens. Color / Materials keep their token rows until 09C-C.
+        if (tokenLeaf.id === "typography" && view) {
+          return {
+            layout: "leaf",
+            node: (
+              <TypographyLeafPage
+                layers={typographyLayersFromView(view)}
+                rows={rowListProps}
+                split={splitProps}
+              />
+            )
+          };
+        }
+        return {
+          layout: "leaf",
+          node: (
+            <LeafSplit
+              {...splitProps}
+              left={<TokenLeafPage leaf={tokenLeaf} rows={rowListProps} />}
+              right={<VisualSamplesEmpty />}
+            />
+          )
+        };
+      }
     } else {
       const entryId = componentLeafId(route.leaf);
       const component =
         model.components.list.find((c) => c.entryId === entryId) ?? null;
       if (component) {
-        return <ComponentDetail component={component} rows={rowListProps} />;
+        return {
+          layout: "leaf",
+          node: (
+            <LeafSplit
+              {...splitProps}
+              left={<ComponentDetail component={component} rows={rowListProps} />}
+              right={<VisualSamplesEmpty />}
+            />
+          )
+        };
       }
     }
 
     // Stale route after a refetch (leaf/component vanished): render the
     // section home rather than a blank main.
-    return sectionHome;
+    return { layout: "page", node: sectionHome };
   };
 
-  const sidebarLeaves: { id: DsLeafId; name: string; icon: LucideIcon }[] =
+  const sidebarLeaves: { id: DsLeafId; name: string; icon: IconSvgElement }[] =
     section === "foundations"
       ? FOUNDATIONS_LEAVES
       : (model?.components.list.map((component) => ({
           id: component.leafId,
           name: component.name,
-          icon: Square
+          icon: ComponentIcon
         })) ?? []);
+
+  const mainContent = renderMain();
 
   return (
     <div className="dsb" data-testid="design-system-browser">
@@ -1108,17 +1765,9 @@ export function DesignSystemBrowser({
         data-testid="ds-sheet"
         ref={rootRef}
         tabIndex={-1}
+        onKeyDown={onSheetKeyDown}
       >
         <header className="dsb-header">
-          <button
-            type="button"
-            aria-label={`Back to ${DS_SECTION_NAMES[section]} home`}
-            className="dsb-icon-button"
-            disabled={route.kind === "section"}
-            onClick={() => setRoute({ kind: "section", section })}
-          >
-            <ChevronLeft size={15} />
-          </button>
           <span className="dsb-title">Design System</span>
           <span aria-hidden className="dsb-header-divider" />
           <nav aria-label="Breadcrumb" className="dsb-breadcrumb">
@@ -1146,7 +1795,12 @@ export function DesignSystemBrowser({
             data-testid="ds-close"
             onClick={() => onClose("button")}
           >
-            <X size={14} />
+            <HugeiconsIcon
+              icon={MultiplicationSignIcon}
+              size={14}
+              color="currentColor"
+              strokeWidth={2}
+            />
           </button>
         </header>
         <div className="dsb-body">
@@ -1178,7 +1832,13 @@ export function DesignSystemBrowser({
                 data-active={route.kind === "section" || undefined}
                 onClick={() => setRoute({ kind: "section", section })}
               >
-                <House size={14} className="dsb-navrow-icon" />
+                <HugeiconsIcon
+                  icon={Home01Icon}
+                  size={14}
+                  className="dsb-navrow-icon"
+                  color="currentColor"
+                  strokeWidth={2}
+                />
                 <span className="dsb-navrow-label">Home</span>
               </button>
               {sidebarLeaves.map((leaf) => (
@@ -1192,7 +1852,13 @@ export function DesignSystemBrowser({
                   }
                   onClick={() => openLeaf(section, leaf.id)}
                 >
-                  <leaf.icon size={14} className="dsb-navrow-icon" />
+                  <HugeiconsIcon
+                    icon={leaf.icon}
+                    size={14}
+                    className="dsb-navrow-icon"
+                    color="currentColor"
+                    strokeWidth={2}
+                  />
                   <span className="dsb-navrow-label">{leaf.name}</span>
                 </button>
               ))}
@@ -1201,9 +1867,13 @@ export function DesignSystemBrowser({
           <main className="dsb-main">
             <div
               key={`${route.kind}-${route.kind === "leaf" ? route.leaf : route.section}`}
-              className="dsb-enter dsb-page"
+              className={
+                mainContent.layout === "leaf"
+                  ? "dsb-enter dsb-leaf"
+                  : "dsb-enter dsb-page"
+              }
             >
-              {renderMain()}
+              {mainContent.node}
             </div>
           </main>
         </div>
@@ -1265,71 +1935,77 @@ export function ComponentDetail({
         chips={component.chips}
       />
       {statusRows.length > 0 ? (
-        <>
+        <section className="dsb-section">
           <GroupLabel>Status &amp; evidence</GroupLabel>
           <RowList rows={statusRows} {...rows} />
-        </>
+        </section>
       ) : null}
       {detail ? (
         <>
-          <GroupLabel>Props</GroupLabel>
-          {detail.props.length > 0 ? (
-            <table className="dsb-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Type</th>
-                  <th>Required</th>
-                  <th>Description</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.props.map((prop) => (
-                  <tr key={prop.name}>
-                    <td>{prop.name}</td>
-                    <td>{prop.type}</td>
-                    <td>{prop.required === true ? "yes" : "—"}</td>
-                    <td>{prop.description ?? "—"}</td>
+          <section className="dsb-section">
+            <GroupLabel>Props</GroupLabel>
+            {detail.props.length > 0 ? (
+              <table className="dsb-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Required</th>
+                    <th>Description</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="dsb-empty-body">No props declared.</p>
-          )}
-          <GroupLabel>Boundaries</GroupLabel>
-          {detail.boundaries.length > 0 ? (
-            <ul className="dsb-boundaries">
-              {detail.boundaries.map((boundary) => (
-                <li key={boundary}>{boundary}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="dsb-empty-body">No boundaries declared.</p>
-          )}
-          <GroupLabel>State matrix</GroupLabel>
-          {detail.stateMatrix.length > 0 ? (
-            <table className="dsb-table">
-              <thead>
-                <tr>
-                  {matrixColumns.map((column) => (
-                    <th key={column}>{column}</th>
+                </thead>
+                <tbody>
+                  {detail.props.map((prop) => (
+                    <tr key={prop.name}>
+                      <td>{prop.name}</td>
+                      <td>{prop.type}</td>
+                      <td>{prop.required === true ? "yes" : "—"}</td>
+                      <td>{prop.description ?? "—"}</td>
+                    </tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {detail.stateMatrix.map((stateRow, index) => (
-                  <tr key={index}>
+                </tbody>
+              </table>
+            ) : (
+              <p className="dsb-empty-body">No props declared.</p>
+            )}
+          </section>
+          <section className="dsb-section">
+            <GroupLabel>Boundaries</GroupLabel>
+            {detail.boundaries.length > 0 ? (
+              <ul className="dsb-boundaries">
+                {detail.boundaries.map((boundary) => (
+                  <li key={boundary}>{boundary}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="dsb-empty-body">No boundaries declared.</p>
+            )}
+          </section>
+          <section className="dsb-section">
+            <GroupLabel>State matrix</GroupLabel>
+            {detail.stateMatrix.length > 0 ? (
+              <table className="dsb-table">
+                <thead>
+                  <tr>
                     {matrixColumns.map((column) => (
-                      <td key={column}>{formatMatrixCell(stateRow[column])}</td>
+                      <th key={column}>{column}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="dsb-empty-body">No states declared.</p>
-          )}
+                </thead>
+                <tbody>
+                  {detail.stateMatrix.map((stateRow, index) => (
+                    <tr key={index}>
+                      {matrixColumns.map((column) => (
+                        <td key={column}>{formatMatrixCell(stateRow[column])}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="dsb-empty-body">No states declared.</p>
+            )}
+          </section>
         </>
       ) : (
         <p className="dsb-empty-body dsb-page-note">
