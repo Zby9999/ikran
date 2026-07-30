@@ -195,7 +195,14 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
         },
         "font.size.700": {
           value: "32px",
-          meaning: "Section heading size",
+          meaning: "Alternate hero size",
+          status: "formalized",
+          links: [designerEditedCardId],
+          domain: "typography"
+        },
+        "letterSpacing.hero": {
+          value: "-0.04em",
+          meaning: "Hero tracking",
           status: "formalized",
           links: [designerEditedCardId],
           domain: "typography"
@@ -320,6 +327,21 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     ).toBeLessThan(
       atlasCardIds.indexOf("ds-atlas-semantic.body")
     );
+    const atomicHeroCard = page.getByTestId(
+      "ds-atlas-primitive.font.size.700"
+    );
+    await expect(atomicHeroCard).toContainText("Tracking");
+    await expect(atomicHeroCard).toContainText("-0.04em");
+    await expect(atomicHeroCard).toContainText(
+      "primitive.letterSpacing.hero"
+    );
+    await expect
+      .poll(() =>
+        atomicHeroCard.locator(".dsb-atlas-sample").evaluate(
+          (element) => getComputedStyle(element).letterSpacing
+        )
+      )
+      .toBe("-1.28px");
     const displayCard = page.getByTestId(
       "ds-atlas-semantic.display.large"
     );

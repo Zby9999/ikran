@@ -594,6 +594,126 @@ describe("typographyAtlasItems", () => {
     ]);
   });
 
+  it("reattaches uniquely role-matched atomic tracking to a scale specimen", () => {
+    const heroSize = entry({
+      entry_id: "semantic.typography-hero-size",
+      name: "typography.heroSize",
+      section: "token.semantic",
+      value: { alias: "primitive.font-size-hero" },
+      alias: "primitive.font-size-hero",
+      meaning: "Hero statement size role"
+    });
+    const primitiveHeroSize = entry({
+      entry_id: "primitive.font-size-hero",
+      name: "fontSize.64",
+      section: "token.primitive",
+      value: "64px",
+      meaning: "Primary hero statement size"
+    });
+    const tightTracking = entry({
+      entry_id: "primitive.letter-spacing-tight",
+      name: "letterSpacing.tight",
+      section: "token.primitive",
+      value: "-0.05em",
+      meaning: "Hero, display and navigation tracking"
+    });
+    const supportingTracking = entry({
+      entry_id: "primitive.letter-spacing-supporting",
+      name: "letterSpacing.supporting",
+      section: "token.primitive",
+      value: "-0.02em",
+      meaning: "Supporting statement tracking"
+    });
+    const projection = projectTypographyLeaf([
+      {
+        layer: "primitive" as const,
+        entries: [
+          FAMILY_SANS,
+          primitiveHeroSize,
+          tightTracking,
+          supportingTracking
+        ]
+      },
+      { layer: "semantic" as const, entries: [heroSize] }
+    ]);
+
+    expect(typographyAtlasItems(projection)[0]).toMatchObject({
+      kind: "scale",
+      label: "Hero statement",
+      fontSize: "64px",
+      letterSpacing: "-0.05em",
+      specimenLetterSpacing: "-0.05em",
+      sourceRows: expect.arrayContaining([
+        expect.objectContaining({
+          entryId: "primitive.letter-spacing-tight"
+        })
+      ])
+    });
+  });
+
+  it("does not choose atomic tracking when role matches are tied", () => {
+    const heroSize = entry({
+      entry_id: "primitive.font-size-hero",
+      name: "fontSize.64",
+      section: "token.primitive",
+      value: "64px",
+      meaning: "Hero statement size"
+    });
+    const trackingA = entry({
+      entry_id: "primitive.tracking-a",
+      name: "letterSpacing.a",
+      section: "token.primitive",
+      value: "-0.05em",
+      meaning: "Hero tracking"
+    });
+    const trackingB = entry({
+      entry_id: "primitive.tracking-b",
+      name: "letterSpacing.b",
+      section: "token.primitive",
+      value: "-0.03em",
+      meaning: "Hero tracking"
+    });
+    const projection = projectTypographyLeaf([
+      {
+        layer: "primitive" as const,
+        entries: [FAMILY_SANS, heroSize, trackingA, trackingB]
+      }
+    ]);
+
+    expect(typographyAtlasItems(projection)[0]).toMatchObject({
+      letterSpacing: null,
+      specimenLetterSpacing: null
+    });
+  });
+
+  it("does not treat shared layout context as a typography-role match", () => {
+    const navigationSize = entry({
+      entry_id: "primitive.font-size-footer-navigation",
+      name: "fontSize.footerNavigation",
+      section: "token.primitive",
+      value: "20px",
+      meaning: "Footer navigation size"
+    });
+    const metadataTracking = entry({
+      entry_id: "primitive.tracking-footer-metadata",
+      name: "letterSpacing.footerMetadata",
+      section: "token.primitive",
+      value: "-0.03em",
+      meaning: "Footer metadata tracking"
+    });
+    const projection = projectTypographyLeaf([
+      {
+        layer: "primitive" as const,
+        entries: [FAMILY_SANS, navigationSize, metadataTracking]
+      }
+    ]);
+
+    expect(typographyAtlasItems(projection)[0]).toMatchObject({
+      letterSpacing: null,
+      specimenLetterSpacing: null
+    });
+  });
+
   it("does not duplicate a px size already represented by a composite style", () => {
     const projection = projectTypographyLeaf([
       { layer: "primitive" as const, entries: [FAMILY_SANS, SIZE_400] },

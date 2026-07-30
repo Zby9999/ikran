@@ -609,6 +609,63 @@ function uniqueRowsByKey(rows: readonly DsRow[]): DsRow[] {
   );
 }
 
+const TRACKING_TOKEN_PATTERN = /letter[-.]?spacing|tracking/i;
+const TRACKING_VALUE_PATTERN = /^-?\d+(?:\.\d+)?(?:px|em|rem|%)$/i;
+const TYPOGRAPHY_ROLE_WORDS = new Set([
+  "body",
+  "caption",
+  "display",
+  "hero",
+  "link",
+  "metadata",
+  "navigation",
+  "statistic",
+  "statistical",
+  "supporting"
+]);
+
+function roleWords(text: string): Set<string> {
+  return new Set(
+    text
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .toLowerCase()
+      .match(/[a-z0-9]+/g)
+      ?.filter((word) => TYPOGRAPHY_ROLE_WORDS.has(word)) ?? []
+  );
+}
+
+/**
+ * Old source sets sometimes retained a role size and its tracking as separate
+ * atomic tokens instead of one composite text style. Reattach tracking only
+ * when the tracking token's own meaning names the size role unambiguously.
+ * This is still a pure projection: every displayed value and relationship
+ * remains attached to its canonical DB row, and ties deliberately stay empty.
+ */
+function roleMatchedAtomicTracking(
+  primary: DsRow,
+  projection: TypographyProjection
+): { row: DsRow; value: string } | null {
+  const role = roleWords(`${primary.name} ${primary.meaning}`);
+  if (role.size === 0) return null;
+
+  const matches = projection.metricGroups
+    .flatMap((group) => group.rows)
+    .flatMap((row) => {
+      if (!TRACKING_TOKEN_PATTERN.test(row.name)) return [];
+      if (typeof row.entry.value !== "string") return [];
+      const value = row.entry.value.trim();
+      if (!TRACKING_VALUE_PATTERN.test(value)) return [];
+      const declaredRoles = roleWords(row.meaning);
+      const score = [...declaredRoles].filter((word) => role.has(word)).length;
+      return score > 0 ? [{ row, value, score }] : [];
+    })
+    .sort((a, b) => b.score - a.score);
+
+  if (matches.length === 0) return null;
+  if (matches[1]?.score === matches[0]!.score) return null;
+  return { row: matches[0]!.row, value: matches[0]!.value };
+}
+
 function specimenFieldValue(
   field: TypographyStyleField | null
 ): string | null {
@@ -711,9 +768,11 @@ export function typographyAtlasItems(
           row.entry.alias !== null || aliasTargetOf(row.entry.value) !== null
       ) ?? sizeRows[0];
     if (!primary) continue;
+    const matchedTracking = roleMatchedAtomicTracking(primary, projection);
     const sourceRows = uniqueRowsByKey([
       primary,
       ...sizeRows.filter((row) => row.key !== primary.key),
+      ...(matchedTracking ? [matchedTracking.row] : []),
       ...(soleFamily ? [soleFamily.row] : [])
     ]);
     items.push({
@@ -727,11 +786,11 @@ export function typographyAtlasItems(
       fontSizePx: step.px,
       fontWeight: null,
       lineHeight: null,
-      letterSpacing: null,
+      letterSpacing: matchedTracking?.value ?? null,
       textTransform: null,
       specimenFontWeight: null,
       specimenLineHeight: null,
-      specimenLetterSpacing: null,
+      specimenLetterSpacing: matchedTracking?.value ?? null,
       specimenTextTransform: null,
       status: combinedStatus(sourceRows),
       sourceRows
