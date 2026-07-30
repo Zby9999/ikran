@@ -400,9 +400,8 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     );
     expect(specimenSize).toBeGreaterThan(24);
 
-    // User-confirmed Atlas status treatment: 4px rounded rectangle with no
-    // border/stroke. This is scoped to Atlas; legacy Browser chips are not
-    // globally redesigned.
+    // User-confirmed shared Browser status treatment: 4px rounded rectangle
+    // with no border/stroke.
     const atlasStatus = displayCard.getByTestId("ds-atlas-status");
     await expect(atlasStatus).toHaveText("formalized");
     const statusStyle = await atlasStatus.evaluate((el) => {
@@ -423,6 +422,24 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await page.getByRole("button", { name: "Layout", exact: true }).click();
     const gridRow = page.getByTestId("ds-row-grid-page");
     await expect(gridRow).toBeVisible();
+    const layoutStatus = gridRow.getByTestId("ds-status-chip");
+    await expect(layoutStatus).toHaveText("candidate");
+    await expect
+      .poll(() =>
+        layoutStatus.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            borderRadius: style.borderRadius,
+            borderStyle: style.borderStyle,
+            boxShadow: style.boxShadow
+          };
+        })
+      )
+      .toEqual({
+        borderRadius: "4px",
+        borderStyle: "none",
+        boxShadow: "none"
+      });
     await expect(gridRow).toContainText("columns");
     await expect(gridRow).toContainText("→ spacing.200");
     await expect(gridRow).not.toContainText("{\"columns\"");

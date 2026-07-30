@@ -106,9 +106,15 @@ const INFO_HOVER_CLOSE_MS = 90;
 
 /* ------------------------------ small pieces ------------------------------ */
 
-export function StatusChip({ status }: { status: DsStatus }) {
+export function StatusChip({
+  status,
+  testId = "ds-status-chip"
+}: {
+  status: DsStatus;
+  testId?: string;
+}) {
   return (
-    <span className="dsb-chip" data-status={status} data-testid="ds-status-chip">
+    <span className="dsb-chip" data-status={status} data-testid={testId}>
       {status === "gap" ? "open gap" : status}
     </span>
   );
@@ -924,18 +930,6 @@ function atlasMetrics(
   ].filter((metric) => metric.value.length > 0);
 }
 
-function AtlasStatus({ status }: { status: DsStatus }) {
-  return (
-    <span
-      className="dsb-atlas-status"
-      data-status={status}
-      data-testid="ds-atlas-status"
-    >
-      {status === "gap" ? "open gap" : status}
-    </span>
-  );
-}
-
 function TypographyAtlasCard({
   item,
   rows
@@ -956,7 +950,7 @@ function TypographyAtlasCard({
         <div className="dsb-atlas-card-title">
           <span className="dsb-atlas-role">{item.label}</span>
         </div>
-        <AtlasStatus status={item.status} />
+        <StatusChip status={item.status} testId="ds-atlas-status" />
       </header>
       <div className="dsb-atlas-sample-wrap">
         {item.specimenFamily ? (

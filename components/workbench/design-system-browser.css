@@ -562,26 +562,26 @@
   transform: scale(0.97);
 }
 
-/* StatusChip — formalized green / candidate blue / gap neutral "open gap". */
+/* Shared Browser status treatment: compact 4px rounded rectangle, filled by
+   state, with no border/stroke or inset ring. */
 .dsb-chip {
   flex-shrink: 0;
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 11px;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 10%);
-  background: rgb(0 0 0 / 3%);
+  border: 0;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 5%);
+  padding: 3px 7px;
   color: var(--dsc-ink-3);
+  font-size: 9.5px;
+  line-height: 14px;
 }
 
 .dsb-chip[data-status="formalized"] {
-  background: rgb(17 197 20 / 8%);
-  box-shadow: 0 0 0 1px rgb(17 197 20 / 30%);
+  background: rgb(17 197 20 / 9%);
   color: #0f8f11;
 }
 
 .dsb-chip[data-status="candidate"] {
-  background: rgb(58 147 255 / 8%);
-  box-shadow: 0 0 0 1px rgb(58 147 255 / 30%);
+  background: rgb(58 147 255 / 10%);
   color: #2473cc;
 }
 
@@ -1155,29 +1155,6 @@
   font-weight: 500;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-}
-
-/* User-confirmed status treatment for the Atlas only: compact 4px rounded
-   rectangle, filled by state, with no border/stroke or inset ring. */
-.dsb-atlas-status {
-  flex-shrink: 0;
-  border: 0;
-  border-radius: 4px;
-  background: rgb(0 0 0 / 5%);
-  padding: 3px 7px;
-  color: var(--dsc-ink-3);
-  font-size: 9.5px;
-  line-height: 14px;
-}
-
-.dsb-atlas-status[data-status="formalized"] {
-  background: rgb(17 197 20 / 9%);
-  color: #0f8f11;
-}
-
-.dsb-atlas-status[data-status="candidate"] {
-  background: rgb(58 147 255 / 10%);
-  color: #2473cc;
 }
 
 .dsb-atlas-sample-wrap {
