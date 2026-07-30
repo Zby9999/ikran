@@ -6,6 +6,7 @@ import {
   formatTextStyleSummary,
   formatValueField,
   projectObjectFields,
+  projectInteractionLeaf,
   projectPrinciple,
   projectTypographyLeaf,
   pxOf,
@@ -15,6 +16,7 @@ import {
   typographyLayersFromView,
   type TypographyProjection
 } from "@/components/workbench/design-system-reader-projection";
+import { toRow } from "@/components/workbench/design-system-view-model";
 import type { DesignSystemView } from "@/components/workbench/design-system-view-model";
 
 function entry(
@@ -106,6 +108,222 @@ const ALL_ENTRIES = [
   BODY,
   FAMILY_SERIF
 ];
+
+describe("Interaction Reader Projection (09C-B)", () => {
+  it("projects a source-backed live specimen without adding undeclared states", () => {
+    const source = entry({
+      entry_id: "primary-button",
+      file_kind: "interaction-rules.json",
+      section: "interaction",
+      name: "Primary button",
+      value: {
+        appliesTo: ["Buttons", "Icon buttons"],
+        stateBehavior: [
+          { state: "default", behavior: "Filled ink surface" },
+          { state: "hover", behavior: "Surface darkens 4%" },
+          { state: "disabled", behavior: "35% opacity, no pointer" }
+        ],
+        motion: [
+          {
+            duration: "160ms",
+            easing: "ease-out",
+            target: "background-color"
+          }
+        ],
+        layoutInvariants: ["Press never shifts layout"],
+        accessibility: ["Space + Enter activate"],
+        acceptanceChecks: ["Disabled is skipped"]
+      },
+      meaning: "Commit actions across the workbench",
+      status: "candidate",
+      source_artifact_path: "design-system/interaction-rules.json"
+    });
+
+    expect(projectInteractionLeaf([toRow(source)])).toEqual([
+      expect.objectContaining({
+        anchor: 1,
+        name: "Primary button",
+        meaning: "Commit actions across the workbench",
+        status: "candidate",
+        origin: "source-generated",
+        control: "button",
+        states: [
+          { state: "default", behavior: "Filled ink surface" },
+          { state: "hover", behavior: "Surface darkens 4%" },
+          { state: "disabled", behavior: "35% opacity, no pointer" }
+        ],
+        motion: [
+          {
+            duration: "160ms",
+            easing: "ease-out",
+            target: "background-color"
+          }
+        ],
+        layoutInvariants: ["Press never shifts layout"],
+        unavailableReason: null
+      })
+    ]);
+  });
+
+  it("keeps a gap with no declared states unavailable", () => {
+    const source = entry({
+      entry_id: "loading-state",
+      file_kind: "interaction-rules.json",
+      section: "interaction",
+      name: "Loading behavior",
+      value: {
+        appliesTo: ["Buttons", "Panels"],
+        stateBehavior: [],
+        motion: [],
+        layoutInvariants: []
+      },
+      meaning: "Async wait feedback",
+      status: "gap",
+      source_artifact_path: "design-system/interaction-rules.json"
+    });
+
+    expect(projectInteractionLeaf([toRow(source)])[0]).toEqual(
+      expect.objectContaining({
+        anchor: 1,
+        status: "gap",
+        origin: "unavailable",
+        control: null,
+        states: [],
+        motion: [],
+        unavailableReason: "No states are declared for this interaction rule."
+      })
+    );
+  });
+
+  it("selects the link adapter from the source taxonomy's TextLink name", () => {
+    const source = entry({
+      entry_id: "navigation-link",
+      file_kind: "interaction-rules.json",
+      section: "interaction",
+      name: "Navigation link",
+      value: {
+        appliesTo: ["TextLink"],
+        stateBehavior: [
+          { state: "default", behavior: "Plain text link" },
+          { state: "hover", behavior: "Underline" }
+        ]
+      },
+      status: "formalized",
+      source_artifact_path: "design-system/interaction-rules.json"
+    });
+
+    expect(projectInteractionLeaf([toRow(source)])[0]).toEqual(
+      expect.objectContaining({
+        control: "link",
+        origin: "source-generated",
+        unavailableReason: null
+      })
+    );
+  });
+
+  it("keeps a live adapter unavailable without its resting state", () => {
+    const source = entry({
+      entry_id: "button-hover",
+      file_kind: "interaction-rules.json",
+      section: "interaction",
+      name: "Button hover",
+      value: {
+        appliesTo: ["Button"],
+        stateBehavior: [{ state: "hover", behavior: "Surface darkens" }]
+      },
+      status: "candidate",
+      source_artifact_path: "design-system/interaction-rules.json"
+    });
+
+    expect(projectInteractionLeaf([toRow(source)])[0]).toEqual(
+      expect.objectContaining({
+        control: null,
+        origin: "unavailable",
+        unavailableReason:
+          "The button preview adapter requires these states to be declared: default."
+      })
+    );
+  });
+
+  it("explains when declared states have no supported preview adapter", () => {
+    const source = entry({
+      entry_id: "canvas-gesture",
+      file_kind: "interaction-rules.json",
+      section: "interaction",
+      name: "Canvas gesture",
+      value: {
+        appliesTo: ["InfiniteCanvas"],
+        stateBehavior: [{ state: "dragging", behavior: "Pans the viewport" }]
+      },
+      status: "candidate",
+      source_artifact_path: "design-system/interaction-rules.json"
+    });
+
+    expect(projectInteractionLeaf([toRow(source)])[0]).toEqual(
+      expect.objectContaining({
+        control: null,
+        origin: "unavailable",
+        unavailableReason:
+          "No preview adapter supports the declared applies-to targets: InfiniteCanvas."
+      })
+    );
+  });
+
+  it("does not render an unsupported declared state as a generic control", () => {
+    const source = entry({
+      entry_id: "button-loading",
+      file_kind: "interaction-rules.json",
+      section: "interaction",
+      name: "Button loading",
+      value: {
+        appliesTo: ["Button"],
+        stateBehavior: [
+          { state: "default", behavior: "Ready" },
+          { state: "loading", behavior: "Wait feedback" }
+        ]
+      },
+      status: "gap",
+      source_artifact_path: "design-system/interaction-rules.json"
+    });
+
+    expect(projectInteractionLeaf([toRow(source)])[0]).toEqual(
+      expect.objectContaining({
+        control: null,
+        origin: "unavailable",
+        unavailableReason:
+          "The button preview adapter does not support these declared states: loading."
+      })
+    );
+  });
+
+  it("distinguishes narrative behavior notes from structured state pairs", () => {
+    const source = entry({
+      entry_id: "interaction.linkHover",
+      file_kind: "interaction-rules.json",
+      section: "interaction",
+      name: null,
+      value: {
+        appliesTo: ["Text Link"],
+        stateBehavior: [
+          "Slightly deepen the text color.",
+          "Do not introduce a filled background."
+        ]
+      },
+      status: "candidate",
+      source_artifact_path: "design-system/interaction-rules.json"
+    });
+
+    expect(projectInteractionLeaf([toRow(source)])[0]).toEqual(
+      expect.objectContaining({
+        name: "Link hover",
+        control: null,
+        origin: "unavailable",
+        unavailableReason:
+          "No structured state and behavior pairs are declared for this interaction rule."
+      })
+    );
+  });
+});
 
 function projectedEntryIds(projection: TypographyProjection): string[] {
   return [

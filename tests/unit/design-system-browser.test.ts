@@ -9,6 +9,7 @@ import {
   DesignSystemEntryButton,
   EvidenceInfoContent,
   FoundationsHomePage,
+  InteractionSamples,
   LayoutLeafPage,
   SpecRowView,
   StatusChip,
@@ -388,6 +389,119 @@ describe("TokenLeafPage", () => {
     expect(html).toContain('data-testid="ds-row-semantic.text.primary"');
     expect(html).toContain("→ primitive.ink.900");
     expect(html).toContain("2 tokens across 2 layers");
+  });
+});
+
+describe("InteractionSamples (09C-B Rig)", () => {
+  test("renders source-backed live state and only the declared state strip", () => {
+    const rule = toRow(
+      entry({
+        entry_id: "primary-button",
+        file_kind: "interaction-rules.json",
+        section: "interaction",
+        name: "Primary button",
+        value: {
+          appliesTo: ["Buttons", "Icon buttons"],
+          stateBehavior: [
+            { state: "default", behavior: "Filled ink surface" },
+            { state: "hover", behavior: "Surface darkens 4%" },
+            { state: "disabled", behavior: "35% opacity, no pointer" }
+          ],
+          motion: [
+            {
+              duration: "160ms",
+              easing: "ease-out",
+              target: "background-color"
+            }
+          ],
+          layoutInvariants: ["Press never shifts layout"]
+        },
+        meaning: "Commit actions across the workbench",
+        status: "candidate",
+        source_artifact_path: "design-system/interaction-rules.json"
+      })
+    );
+
+    const html = renderToStaticMarkup(
+      createElement(InteractionSamples, { rows: [rule] })
+    );
+
+    expect(html).toContain('data-testid="ds-interaction-rig"');
+    expect(html).toContain('data-testid="ds-interaction-rule-1"');
+    expect(html).toContain(">1<");
+    expect(html).toContain("Primary button");
+    expect(html).toContain('data-status="candidate"');
+    expect(html).toContain("Source-generated");
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain("Filled ink surface");
+    expect(html).toContain("160ms · ease-out · background-color");
+    expect(html).toContain("Press never shifts layout");
+    expect(html).toContain('aria-label="Declared states"');
+    expect(html).toContain(">default<");
+    expect(html).toContain(">hover<");
+    expect(html).toContain(">disabled<");
+    expect(html).not.toContain(">active<");
+    expect(html).toContain('data-has-hover="true"');
+    expect(html).not.toContain("data-has-active");
+    expect(html).toContain("--dsb-interaction-color-duration:160ms");
+    expect(html).toContain("--dsb-interaction-color-easing:ease-out");
+    expect(html).toContain("--dsb-interaction-transform-duration:0ms");
+  });
+
+  test("keeps the closed sheet scrim outside keyboard and accessibility navigation", () => {
+    const rule = toRow(
+      entry({
+        entry_id: "sheet-drawer",
+        file_kind: "interaction-rules.json",
+        section: "interaction",
+        name: "Sheet drawer",
+        value: {
+          appliesTo: ["Browser sheet"],
+          stateBehavior: [
+            { state: "open", behavior: "Visible" },
+            { state: "closed", behavior: "Off canvas" }
+          ]
+        },
+        status: "candidate",
+        source_artifact_path: "design-system/interaction-rules.json"
+      })
+    );
+
+    const html = renderToStaticMarkup(
+      createElement(InteractionSamples, { rows: [rule] })
+    );
+
+    expect(html).toMatch(
+      /<button(?=[^>]*class="dsb-interaction-sheet-scrim")(?=[^>]*aria-hidden="true")(?=[^>]*tabindex="-1")[^>]*>/
+    );
+    expect(html).toContain("Open sheet");
+  });
+
+  test("renders a gap as unavailable without inventing loading UI", () => {
+    const rule = toRow(
+      entry({
+        entry_id: "loading-state",
+        file_kind: "interaction-rules.json",
+        section: "interaction",
+        name: "Loading behavior",
+        value: {
+          appliesTo: ["Buttons", "Panels"],
+          stateBehavior: [],
+          motion: []
+        },
+        status: "gap",
+        source_artifact_path: "design-system/interaction-rules.json"
+      })
+    );
+
+    const html = renderToStaticMarkup(
+      createElement(InteractionSamples, { rows: [rule] })
+    );
+
+    expect(html).toContain('data-unavailable="true"');
+    expect(html).toContain("Unavailable");
+    expect(html).toContain("No states are declared for this interaction rule.");
+    expect(html).not.toMatch(/spinner/i);
   });
 });
 

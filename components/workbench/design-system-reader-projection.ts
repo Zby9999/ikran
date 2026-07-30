@@ -97,6 +97,231 @@ export function projectObjectFields(
   }));
 }
 
+/* ---------------------------- interaction rules --------------------------- */
+
+export type InteractionControlKind = "link" | "button" | "field" | "sheet";
+export type InteractionVisualOrigin =
+  | "source-generated"
+  | "schematic"
+  | "unavailable";
+
+export interface InteractionStateProjection {
+  state: string;
+  behavior: string;
+}
+
+export interface InteractionMotionProjection {
+  duration: string;
+  easing: string;
+  target?: string;
+}
+
+export interface InteractionRuleProjection {
+  key: string;
+  anchor: number;
+  name: string;
+  meaning: string;
+  status: DsStatus;
+  origin: InteractionVisualOrigin;
+  control: InteractionControlKind | null;
+  states: InteractionStateProjection[];
+  motion: InteractionMotionProjection[];
+  layoutInvariants: string[];
+  unavailableReason: string | null;
+  row: DsRow;
+}
+
+function stringCollection(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is string =>
+          typeof item === "string" && item.trim().length > 0
+      )
+    : [];
+}
+
+function interactionStates(value: unknown): InteractionStateProjection[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) =>
+    isPlainObject(item) &&
+    typeof item.state === "string" &&
+    item.state.trim().length > 0 &&
+    typeof item.behavior === "string" &&
+    item.behavior.trim().length > 0
+      ? [{ state: item.state, behavior: item.behavior }]
+      : []
+  );
+}
+
+function interactionMotion(value: unknown): InteractionMotionProjection[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (
+      !isPlainObject(item) ||
+      typeof item.duration !== "string" ||
+      item.duration.trim().length === 0 ||
+      typeof item.easing !== "string" ||
+      item.easing.trim().length === 0
+    ) {
+      return [];
+    }
+    return [
+      {
+        duration: item.duration,
+        easing: item.easing,
+        ...(typeof item.target === "string" && item.target.trim().length > 0
+          ? { target: item.target }
+          : {})
+      }
+    ];
+  });
+}
+
+function interactionControl(
+  appliesTo: readonly string[]
+): InteractionControlKind | null {
+  const names = appliesTo.map((name) =>
+    name.toLowerCase().replace(/[^a-z0-9]+/g, "")
+  );
+  if (names.some((name) => name.includes("sheet") || name.includes("drawer"))) {
+    return "sheet";
+  }
+  if (
+    names.some(
+      (name) =>
+        name.includes("field") ||
+        name.includes("input") ||
+        name.includes("search")
+    )
+  ) {
+    return "field";
+  }
+  if (names.some((name) => name.includes("button"))) return "button";
+  if (
+    names.some((name) => name.includes("link") || name.includes("breadcrumb"))
+  ) {
+    return "link";
+  }
+  return null;
+}
+
+function interactionRuleTitle(row: DsRow): string {
+  if (row.entry.name !== null && row.entry.name.trim().length > 0) {
+    return row.entry.name;
+  }
+  const words = row.entryId
+    .replace(/^interaction[._-]/i, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[._-]+/g, " ")
+    .trim()
+    .toLowerCase();
+  return words.length > 0
+    ? `${words[0]!.toUpperCase()}${words.slice(1)}`
+    : row.entryId;
+}
+
+const INTERACTION_ADAPTER_STATES: Record<
+  InteractionControlKind,
+  ReadonlySet<string>
+> = {
+  link: new Set(["default", "hover", "focus-visible"]),
+  button: new Set([
+    "default",
+    "hover",
+    "active",
+    "focus-visible",
+    "disabled"
+  ]),
+  field: new Set(["default", "hover", "focus-visible", "disabled"]),
+  sheet: new Set(["open", "closed"])
+};
+
+/** States the live adapter needs before it can render an honest resting and
+ * interactive specimen. Missing requirements make the sample unavailable;
+ * they never mutate the source entry into a gap or invent a fallback state. */
+const INTERACTION_ADAPTER_REQUIRED_STATES: Record<
+  InteractionControlKind,
+  readonly string[]
+> = {
+  link: ["default"],
+  button: ["default"],
+  field: ["default"],
+  sheet: ["open", "closed"]
+};
+
+/**
+ * Deterministic DB-row → Rig presentation. The projection only carries
+ * structured facts declared by interaction-rules.json; rendering capability
+ * is selected from `appliesTo`, never from a rule's display name.
+ */
+export function projectInteractionLeaf(
+  rows: readonly DsRow[]
+): InteractionRuleProjection[] {
+  return rows.map((row, index) => {
+    const value = isPlainObject(row.entry.value) ? row.entry.value : {};
+    const appliesTo = stringCollection(value.appliesTo);
+    const hasNarrativeStateBehavior =
+      Array.isArray(value.stateBehavior) && value.stateBehavior.length > 0;
+    const states = interactionStates(value.stateBehavior);
+    const matchedControl =
+      states.length > 0 ? interactionControl(appliesTo) : null;
+    const declaredStates = new Set(states.map((state) => state.state));
+    const unsupportedStates =
+      matchedControl === null
+        ? []
+        : states
+            .map((state) => state.state)
+            .filter(
+              (state) => !INTERACTION_ADAPTER_STATES[matchedControl].has(state)
+            );
+    const missingRequiredStates =
+      matchedControl === null
+        ? []
+        : INTERACTION_ADAPTER_REQUIRED_STATES[matchedControl].filter(
+            (state) => !declaredStates.has(state)
+          );
+    const control =
+      matchedControl !== null &&
+      unsupportedStates.length === 0 &&
+      missingRequiredStates.length === 0
+        ? matchedControl
+        : null;
+    const unavailableReason =
+      states.length === 0
+        ? hasNarrativeStateBehavior
+          ? "No structured state and behavior pairs are declared for this interaction rule."
+          : "No states are declared for this interaction rule."
+        : matchedControl === null
+          ? appliesTo.length === 0
+            ? "No applies-to targets are declared for this interaction rule."
+            : `No preview adapter supports the declared applies-to targets: ${appliesTo.join(", ")}.`
+          : unsupportedStates.length > 0
+            ? `The ${matchedControl} preview adapter does not support these declared states: ${unsupportedStates.join(", ")}.`
+            : missingRequiredStates.length > 0
+              ? `The ${matchedControl} preview adapter requires these states to be declared: ${missingRequiredStates.join(", ")}.`
+              : null;
+    return {
+      key: row.key,
+      anchor: index + 1,
+      name: interactionRuleTitle(row),
+      meaning: row.meaning,
+      status: row.status,
+      origin:
+        control === null
+          ? "unavailable"
+          : control === "sheet"
+            ? "schematic"
+            : "source-generated",
+      control,
+      states,
+      motion: interactionMotion(value.motion),
+      layoutInvariants: stringCollection(value.layoutInvariants),
+      unavailableReason,
+      row
+    };
+  });
+}
+
 /* ------------------------------ technical rows ---------------------------- */
 
 export interface TechnicalDetail {
