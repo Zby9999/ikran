@@ -5,31 +5,60 @@ import { describe, expect, test, vi } from "vitest";
 import { FolderChrome } from "../../components/workbench/folder-chrome";
 
 describe("FolderChrome tool group", () => {
-  test("renders completed/current and completed/overall extraction counts", () => {
-    const html = renderToStaticMarkup(createElement(FolderChrome, {
-      folderName: "Folder Name",
-      phase: "extraction",
-      extraction: {
-        stageCompleted: 3,
-        stageTotal: 5,
-        overallCompleted: 7,
-        overallTotal: 9
-      },
-      onBack: vi.fn()
-    }));
+  test("renders per-question Extraction progress bars from segments", () => {
+    const html = renderToStaticMarkup(
+      createElement(FolderChrome, {
+        folderName: "Folder Name",
+        phase: "extraction",
+        extraction: {
+          segments: [
+            {
+              id: "q1",
+              stageId: "design-principle",
+              color: "#e78460",
+              answered: true
+            },
+            {
+              id: "q2",
+              stageId: "design-principle",
+              color: "#e78460",
+              answered: false
+            },
+            {
+              id: "q3",
+              stageId: "interaction",
+              color: "#c1d03c",
+              answered: true
+            }
+          ]
+        },
+        onBack: vi.fn()
+      })
+    );
 
-    expect(html).toMatch(/extraction-stage-progress[^>]*>3\/5</);
-    expect(html).toMatch(/extraction-overall-progress[^>]*>7\/9</);
+    expect(html).toContain('data-testid="extraction-progress-track"');
+    expect(html).toContain(
+      'aria-label="Extraction progress: 2 of 3 questions answered"'
+    );
+    expect(html).toContain('seed-workbench__folder-extraction-group');
+    expect(html).toContain('data-answered="true"');
+    expect(html).toContain('data-answered="false"');
+    expect(html).toContain('data-stage="design-principle"');
+    expect(html).toContain('data-stage="interaction"');
+    expect(html).not.toContain("extraction-stage-progress");
+    expect(html).not.toContain("extraction-overall-progress");
   });
 
   test("renders the Figma select tool with the shared active-button state", () => {
-    const html = renderToStaticMarkup(createElement(FolderChrome, {
-      folderName: "Folder Name",
-      phase: "sign-seed",
-      onBack: vi.fn(),
-      onSelect: vi.fn(),
-      selectActive: true
-    }));
+    const html = renderToStaticMarkup(
+      createElement(FolderChrome, {
+        folderName: "Folder Name",
+        phase: "sign-seed",
+        onBack: vi.fn(),
+        onSelect: vi.fn(),
+        selectActive: true
+      })
+    );
 
     expect(html).toContain('data-testid="select-button"');
     expect(html).toContain('aria-label="Select (V)"');
@@ -38,14 +67,16 @@ describe("FolderChrome tool group", () => {
   });
 
   test("can retarget the existing Back affordance without adding UI", () => {
-    const html = renderToStaticMarkup(createElement(FolderChrome, {
-      folderName: "Folder Name",
-      phase: "extraction",
-      backLabel: "Back to Seed Reference",
-      onBack: vi.fn()
-    }));
+    const html = renderToStaticMarkup(
+      createElement(FolderChrome, {
+        folderName: "Folder Name",
+        phase: "extraction",
+        extraction: { segments: [] },
+        backLabel: "Back to Seed Reference",
+        onBack: vi.fn()
+      })
+    );
 
     expect(html).toContain('aria-label="Back to Seed Reference"');
-    expect(html).not.toContain("Back to Seed Reference</");
   });
 });

@@ -1,4 +1,4 @@
-// GET / POST / DELETE /api/region-annotation
+// GET / POST / PATCH / PUT / DELETE /api/region-annotation
 //
 // Thin HTTP adapter: authorize + active project + shared region commands.
 
@@ -15,6 +15,7 @@ import {
   listRegionAnnotationsCommand,
   parseCommandInput,
   requireActiveProjectCommand,
+  restoreRegionAnnotationCommand,
   updateRegionAnnotationBodyCommand,
   updateRegionAnnotationBodyInputSchema
 } from "../../../lib/runtime/commands";
@@ -209,5 +210,52 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
+  return NextResponse.json({ ok: true, id: result.id });
+}
+
+export async function PUT(request: NextRequest) {
+  const auth = authorize(request);
+  if (!auth.ok) {
+    return NextResponse.json(
+      { ok: false, error: auth.reason },
+      { status: auth.status }
+    );
+  }
+
+  const state = requireActiveProjectCommand();
+  if (!state.ok) {
+    return NextResponse.json(
+      { ok: false, error: state.reason },
+      { status: commandErrorHttpStatus(state.reason) }
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "invalid_json" },
+      { status: commandErrorHttpStatus("invalid_json") }
+    );
+  }
+  const id =
+    body && typeof body === "object"
+      ? String((body as Record<string, unknown>).annotationId ?? "").trim()
+      : "";
+  if (!id) {
+    return NextResponse.json(
+      { ok: false, error: "missing_annotation_id" },
+      { status: commandErrorHttpStatus("missing_annotation_id") }
+    );
+  }
+
+  const result = restoreRegionAnnotationCommand(state.project.path, id);
+  if (!result.ok) {
+    return NextResponse.json(
+      { ok: false, error: result.reason },
+      { status: commandErrorHttpStatus(result.reason) }
+    );
+  }
   return NextResponse.json({ ok: true, id: result.id });
 }

@@ -300,6 +300,20 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     await expect(select).toHaveAttribute("aria-pressed", "false");
     await expect(annotate).toHaveAttribute("aria-pressed", "true");
     await expect(annotate).toHaveAttribute("data-active", "true");
+    const tldraw = page.locator(".tl-container");
+    await expect(tldraw).toHaveAttribute(
+      "style",
+      /--tl-cursor: var\(--tl-cursor-cross\)/
+    );
+    // Esc makes tldraw leave a custom tool. The controlled Annotation mode
+    // must immediately reassert it so button state, cursor, and Frame hover
+    // never drift apart.
+    await page.keyboard.press("Escape");
+    await expect(annotate).toHaveAttribute("aria-pressed", "true");
+    await expect(tldraw).toHaveAttribute(
+      "style",
+      /--tl-cursor: var\(--tl-cursor-cross\)/
+    );
     await page.keyboard.press("v");
     await expect(select).toHaveAttribute("aria-pressed", "true");
     await expect(select).toHaveAttribute("data-active", "true");
@@ -582,7 +596,7 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     await expect(marker).toHaveAttribute("data-author", "designer");
   });
 
-  test("selecting a designer marker and pressing Delete removes Runtime record and marker", async ({
+  test("Delete removes the full designer annotation and Command-Z restores its region and text", async ({
     page,
     runtime,
     folder
@@ -615,7 +629,15 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     const marker = page.locator(
       `[data-testid="region-annotation"][data-runtime-record-id="${annotationId}"]`
     );
+    const card = page.locator(
+      `[data-testid="designer-annotation-card"][data-runtime-record-id="${annotationId}"]`
+    );
+    const connector = page.locator(
+      `[data-testid="designer-annotation-connector"][data-runtime-record-id="${annotationId}"]`
+    );
     await expect(marker).toHaveCount(1);
+    await expect(card).toContainText("Delete me");
+    await expect(connector).toHaveCount(1);
 
     await annotate.click();
     await expect(annotate).toHaveAttribute("aria-pressed", "false");
@@ -635,7 +657,24 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
       .poll(async () => (await listAnnotations(token, runtime.port)).length)
       .toBe(0);
     await expect(marker).toHaveCount(0);
-    await expect(page.getByTestId("designer-annotation-card")).toHaveCount(0);
+    await expect(card).toHaveCount(0);
+    await expect(connector).toHaveCount(0);
+
+    const restoreRequest = page.waitForRequest(
+      (request) =>
+        request.method() === "PUT" &&
+        new URL(request.url()).pathname === "/api/region-annotation"
+    );
+    await page.keyboard.press("Meta+z");
+    const restore = await restoreRequest;
+    expect(restore.postDataJSON()).toEqual({ annotationId });
+
+    await expect
+      .poll(async () => (await listAnnotations(token, runtime.port))[0]?.body)
+      .toBe("Delete me");
+    await expect(marker).toHaveCount(1);
+    await expect(card).toContainText("Delete me");
+    await expect(connector).toHaveCount(1);
   });
 
   test("clicking a filled card edits its body through Runtime PATCH", async ({

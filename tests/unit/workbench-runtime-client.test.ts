@@ -337,6 +337,50 @@ describe("Workbench Runtime consistency", () => {
     client.dispose();
   });
 
+  test("restoreAnnotation PUTs the tombstone id and reloads the original body", async () => {
+    let restored: unknown = null;
+    const snapshots: Array<{ annotations: Array<{ id: string; body: string }> }> =
+      [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "PUT" && url.includes("region-annotation")) {
+        restored = JSON.parse(String(init.body));
+        return new Response(JSON.stringify({ ok: true, id: "annotation-1" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.includes("region-annotation")) {
+        return jsonResponse([
+          { id: "annotation-1", body: "Text restored with the region" }
+        ]);
+      }
+      return batchResponse(url, []);
+    });
+    const { createWorkbenchDataClient } = await import(
+      "../../components/runtime/use-workbench-runtime"
+    );
+    const client = createWorkbenchDataClient("session", {
+      fetcher,
+      sleep: async () => {},
+      onSnapshot: (snapshot) => {
+        snapshots.push(
+          snapshot as {
+            annotations: Array<{ id: string; body: string }>;
+          }
+        );
+      },
+      onError: () => {}
+    });
+
+    expect(await client.restoreAnnotation("annotation-1")).toEqual({ ok: true });
+    expect(restored).toEqual({ annotationId: "annotation-1" });
+    expect(snapshots.at(-1)?.annotations).toEqual([
+      { id: "annotation-1", body: "Text restored with the region" }
+    ]);
+    client.dispose();
+  });
+
   test("connection-ready baseline closes the initial GET/SSE window with latest records", async () => {
     vi.stubGlobal("EventSource", MockEventSource);
     const {

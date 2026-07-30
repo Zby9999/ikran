@@ -10,6 +10,7 @@ import {
   createRegionAnnotation,
   confirmAnnotationPrimaryNode,
   deleteRegionAnnotation,
+  restoreRegionAnnotation,
   listRegionAnnotations,
   updateRegionAnnotationBody,
   expandPointToRect,
@@ -1008,6 +1009,46 @@ test.describe("createRegionAnnotation / listRegionAnnotations (unit)", () => {
       expect(removed).toEqual({ ok: true, id: designer.record.id });
       expect(listRegionAnnotations(dir).map((r) => r.id)).toEqual([
         agent.record.id
+      ]);
+    });
+  });
+
+  test("restoring a deleted designer annotation recovers its original text and identity", () => {
+    withTempProject((dir) => {
+      const surfaceId = seedSurface(dir);
+      const created = createRegionAnnotation(dir, {
+        target: {
+          kind: "figma-region",
+          surfaceArtifactId: surfaceId,
+          rect: validRect()
+        },
+        author: "designer",
+        section: "layout",
+        body: "Text that must survive Command-Z"
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+
+      expect(deleteRegionAnnotation(dir, created.record.id)).toEqual({
+        ok: true,
+        id: created.record.id
+      });
+      expect(listRegionAnnotations(dir)).toEqual([]);
+
+      expect(restoreRegionAnnotation(dir, created.record.id)).toEqual({
+        ok: true,
+        id: created.record.id
+      });
+      expect(listRegionAnnotations(dir)).toMatchObject([
+        {
+          id: created.record.id,
+          body: "Text that must survive Command-Z",
+          section: "layout",
+          rect_x: created.record.rect_x,
+          rect_y: created.record.rect_y,
+          rect_w: created.record.rect_w,
+          rect_h: created.record.rect_h
+        }
       ]);
     });
   });

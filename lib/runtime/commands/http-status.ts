@@ -18,6 +18,7 @@ const CONFLICT_REASONS = new Set([
   // Task D approval write-back: state conflicts (entry already formalized,
   // or DB row and source file have drifted apart).
   "already_formalized",
+  "already_exists",
   "entry_not_in_source_file"
 ]);
 const NOT_FOUND_REASONS = new Set(["not_found"]);

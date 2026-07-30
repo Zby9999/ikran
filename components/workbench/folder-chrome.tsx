@@ -10,12 +10,10 @@ import { Button } from "@/components/ui/button";
 import { SmallIconButton } from "./small-icon-button";
 import { SquircleChrome } from "./squircle-chrome";
 import { cn } from "@/lib/utils";
+import type { AlignmentQuestionSegment } from "./alignment-stage-panel";
 
 export type FolderChromeExtraction = {
-  stageCompleted: number;
-  stageTotal: number;
-  overallCompleted: number;
-  overallTotal: number;
+  segments: readonly AlignmentQuestionSegment[];
 };
 
 /** Post-gate folder stages (Figma 329:429). */
@@ -46,6 +44,24 @@ export type FolderChromeProps = {
   annotateActive?: boolean;
 };
 
+function groupSegmentsByStage(
+  segments: readonly AlignmentQuestionSegment[]
+): { stageId: AlignmentQuestionSegment["stageId"]; segments: AlignmentQuestionSegment[] }[] {
+  const groups: {
+    stageId: AlignmentQuestionSegment["stageId"];
+    segments: AlignmentQuestionSegment[];
+  }[] = [];
+  for (const segment of segments) {
+    const last = groups[groups.length - 1];
+    if (last && last.stageId === segment.stageId) {
+      last.segments.push(segment);
+    } else {
+      groups.push({ stageId: segment.stageId, segments: [segment] });
+    }
+  }
+  return groups;
+}
+
 export function FolderChrome({
   folderName,
   onBack,
@@ -64,6 +80,13 @@ export function FolderChrome({
   const showActions = phase === "sign-seed" || phase === "extraction";
   const showSignSeed = phase === "sign-seed";
   const showExtraction = phase === "extraction" && extraction != null;
+  const answeredCount = extraction
+    ? extraction.segments.filter((segment) => segment.answered).length
+    : 0;
+  const totalCount = extraction?.segments.length ?? 0;
+  const segmentGroups = extraction
+    ? groupSegmentsByStage(extraction.segments)
+    : [];
 
   return (
     <SquircleChrome
@@ -158,19 +181,33 @@ export function FolderChrome({
             data-testid="seed-workbench-extraction"
           >
             <span className="seed-workbench__folder-stage-label">Extraction</span>
-            <div className="seed-workbench__folder-extraction-counts">
-              <span
-                className="seed-workbench__folder-extraction-stage"
-                data-testid="extraction-stage-progress"
-              >
-                {extraction.stageCompleted}/{extraction.stageTotal}
-              </span>
-              <span
-                className="seed-workbench__folder-extraction-overall"
-                data-testid="extraction-overall-progress"
-              >
-                {extraction.overallCompleted}/{extraction.overallTotal}
-              </span>
+            <div
+              className="seed-workbench__folder-extraction-track"
+              role="img"
+              aria-label={`Extraction progress: ${answeredCount} of ${totalCount} questions answered`}
+              data-testid="extraction-progress-track"
+            >
+              {segmentGroups.map((group) => (
+                <span
+                  key={group.stageId}
+                  className="seed-workbench__folder-extraction-group"
+                  data-stage={group.stageId}
+                >
+                  {group.segments.map((segment) => (
+                    <span
+                      key={segment.id}
+                      className="seed-workbench__folder-extraction-bar"
+                      data-answered={segment.answered ? "true" : "false"}
+                      data-stage={segment.stageId}
+                      style={
+                        segment.answered
+                          ? { backgroundColor: segment.color }
+                          : undefined
+                      }
+                    />
+                  ))}
+                </span>
+              ))}
             </div>
           </div>
         </>

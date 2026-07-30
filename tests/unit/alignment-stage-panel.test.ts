@@ -7,7 +7,8 @@ import {
   DEFAULT_ALIGNMENT_STAGE,
   AlignmentStagePanel,
   getAlignmentCoverage,
-  getAlignmentQuestionProgress
+  getAlignmentQuestionProgress,
+  getAlignmentQuestionSegments
 } from "../../components/workbench/alignment-stage-panel";
 
 describe("AlignmentStagePanel", () => {
@@ -44,6 +45,46 @@ describe("AlignmentStagePanel", () => {
       overallCompleted: 7,
       overallTotal: 9
     });
+  });
+
+  test("orders Extraction segments by section, not answer chronology", () => {
+    const segments = getAlignmentQuestionSegments([
+      {
+        id: "later-interaction",
+        section: "interaction",
+        final_answer: "done"
+      },
+      {
+        id: "first-principle",
+        section: "design-principle",
+        final_answer: "done"
+      },
+      {
+        id: "open-visual",
+        section: "visual-language",
+        final_answer: null
+      },
+      {
+        id: "blank-principle",
+        section: "design-principle",
+        final_answer: "   "
+      }
+    ]);
+
+    expect(segments.map((segment) => segment.id)).toEqual([
+      "first-principle",
+      "blank-principle",
+      "open-visual",
+      "later-interaction"
+    ]);
+    expect(segments.map((segment) => segment.answered)).toEqual([
+      true,
+      false,
+      false,
+      true
+    ]);
+    expect(segments[0]?.color).toBe("#e78460");
+    expect(segments[3]?.color).toBe("#c1d03c");
   });
 
   test("projects the fixed six-part gate and enables Complete only with full coverage", () => {

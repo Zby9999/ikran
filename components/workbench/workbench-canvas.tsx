@@ -121,6 +121,7 @@ export function WorkbenchCanvas({
   onCreateAnnotation,
   onUpdateAnnotationBody,
   onDeleteAnnotation,
+  onRestoreAnnotation,
   onDeleteSeedReference,
   onRecordDesignerAnswer,
   onAppendAgentAnnotationInformation
@@ -173,6 +174,10 @@ export function WorkbenchCanvas({
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Designer DELETE via Runtime client — only remove after HTTP success. */
   onDeleteAnnotation?: (
+    annotationId: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Restore the exact Runtime record after a designer Command-Z. */
+  onRestoreAnnotation?: (
     annotationId: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Designer DELETE seed frame via Runtime — only remove after HTTP success. */
@@ -313,6 +318,7 @@ export function WorkbenchCanvas({
       <RegionAnnotationDeleteController
         annotateMode={annotateMode}
         onDelete={onDeleteAnnotation}
+        onRestore={onRestoreAnnotation}
       />
       <SeedReferenceDeleteController onDelete={onDeleteSeedReference} />
     </Tldraw>

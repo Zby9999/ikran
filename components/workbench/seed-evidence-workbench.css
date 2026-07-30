@@ -44,10 +44,10 @@
   transform-origin: left center;
 }
 .seed-workbench__shutdown-prompt[data-state="open"] {
-  animation: shutdown-prompt-in 180ms cubic-bezier(.2, .8, .2, 1);
+  animation: shutdown-prompt-in 180ms var(--motion-ease-out);
 }
 .seed-workbench__shutdown-prompt[data-state="closed"] {
-  animation: shutdown-prompt-out 140ms ease-in;
+  animation: shutdown-prompt-out 140ms var(--motion-ease-out);
 }
 .seed-workbench__shutdown-question,
 .seed-workbench__shutdown-yes {
@@ -102,24 +102,25 @@
   z-index: 45;
 }
 
-/* Issue 09A — "Draft Design System" entry (bottom of the alignment panel,
-   visible only after the six-part alignment completes). Deliberately uses the
-   stage-panel chrome palette (#f1f1f1 surface, inset-white + black/25% ring,
-   Inter 12px) rather than the Browser's --dsc-* tokens: the button is part
-   of the extraction panel chrome, not of the sheet it opens. */
+/* Issue 09A — "Draft Design System" entry (directly below the extraction
+   folder panel, visible only after the six-part alignment completes).
+   Matches the folder stack width (100% of 270px) and the squircle chrome
+   ring (inset-white + black/10%) so it reads as the same panel family.
+   Uses #f1f1f1 surface + Inter 12px rather than Browser --dsc-* tokens:
+   the button is part of the extraction panel chrome, not of the sheet it
+   opens. The folder stack's 8px column gap provides the spacing above. */
 .seed-workbench__ds-entry {
   display: flex;
-  width: 180px;
+  width: 100%;
   height: 32px;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  margin-top: 8px;
   padding: 0;
   border: 0;
   border-radius: 12px;
   background: #f1f1f1;
-  box-shadow: inset 0 0 0 1px #fff, 0 0 0 1px rgb(0 0 0 / 25%);
+  box-shadow: inset 0 0 0 1px #fff, 0 0 0 1px rgb(0 0 0 / 10%);
   color: #3d3d3d;
   font: 500 12px/normal Inter, ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.3px;
@@ -393,6 +394,7 @@
   opacity: 0;
 }
 
+/* Figma/Paper 42S-0 — Extraction label + per-question bars, grouped by section. */
 .seed-workbench__folder-extraction {
   display: flex;
   align-items: center;
@@ -400,25 +402,33 @@
   gap: 8px;
   width: 100%;
   min-width: 0;
-  padding-right: 8px;
+  padding-right: 4px;
 }
 
-/* Figma 329:425 — same horizontal inset as stage count; no vertical pad. */
-.seed-workbench__folder-extraction-counts {
+.seed-workbench__folder-extraction-track {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 4px;
-  padding: 0 4px;
+  height: 19px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.seed-workbench__folder-extraction-group {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 100%;
   flex: 0 0 auto;
-  white-space: nowrap;
 }
 
-.seed-workbench__folder-extraction-stage {
-  color: #3d3d3d;
-}
-
-.seed-workbench__folder-extraction-overall {
-  color: #949494;
+.seed-workbench__folder-extraction-bar {
+  flex: 0 0 auto;
+  width: 3px;
+  height: 100%;
+  border-radius: 1px;
+  background: #ffffff;
 }
 
 .small-icon-button {
@@ -436,11 +446,7 @@
   cursor: pointer;
   padding: 0;
   user-select: none;
-  transition:
-    transform 150ms ease,
-    background 150ms ease,
-    border-color 150ms ease,
-    color 150ms ease;
+  transition: transform 150ms var(--motion-ease-out);
 }
 
 .small-icon-button:active:enabled:not([data-active="true"]) {
@@ -581,8 +587,8 @@
   opacity: 0;
   pointer-events: none;
   transition:
-    opacity 160ms ease,
-    translate 160ms ease;
+    opacity 160ms var(--motion-ease-out),
+    translate 160ms var(--motion-ease-out);
 }
 
 .seed-ref-frame__action-wrap:hover:not(:has(button:disabled)):not(
@@ -689,7 +695,7 @@
   bottom: calc(100% + var(--seed-ref-tip-gap, 10px));
   z-index: 2;
   pointer-events: none;
-  animation: seed-ref-tip-enter 160ms ease forwards;
+  animation: seed-ref-tip-enter 160ms var(--motion-ease-out) forwards;
 }
 
 @keyframes seed-ref-tip-enter {
@@ -730,7 +736,46 @@
   bottom: calc(100% + var(--seed-ref-tip-gap, 10px));
   z-index: 3;
   pointer-events: auto;
-  animation: seed-ref-tip-enter 160ms ease forwards;
+  animation: seed-ref-tip-enter 160ms var(--motion-ease-out) forwards;
+}
+
+@keyframes workbench-loading-pulse {
+  from {
+    opacity: 0.45;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes seed-ref-tip-enter-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seed-ref-frame__action-hint-anchor {
+    translate: -50% 0;
+    transition: opacity 150ms var(--motion-ease-out);
+  }
+
+  .seed-ref-frame__tip-anchor,
+  .seed-ref-frame__notes-anchor {
+    animation: seed-ref-tip-enter-fade 150ms var(--motion-ease-out) forwards;
+  }
+
+  .small-icon-button__spinner,
+  .seed-ref-frame__refresh-spinner,
+  .seed-ref-frame__awaiting-spinner {
+    animation: workbench-loading-pulse 1.2s var(--motion-ease-in-out) infinite
+      alternate;
+  }
 }
 
 .seed-ref-frame__notes-panel {

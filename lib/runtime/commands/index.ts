@@ -52,6 +52,7 @@ export {
   confirmAnnotationPrimaryNodeCommand,
   listRegionAnnotationsCommand,
   deleteRegionAnnotationCommand,
+  restoreRegionAnnotationCommand,
   updateRegionAnnotationBodyCommand
 } from "./region-annotation";
 

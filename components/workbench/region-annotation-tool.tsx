@@ -496,7 +496,13 @@ export function RegionAnnotationToolController({
       createHandlerRef.current = null;
       cancelEntryHandlerRef.current = null;
     };
-  }, [annotateMode, editor, createHandlerRef, cancelEntryHandlerRef]);
+  }, [
+    annotateMode,
+    currentToolId,
+    editor,
+    createHandlerRef,
+    cancelEntryHandlerRef
+  ]);
 
   // Sweep entry drafts (pointer-session drafts and committing stand-ins) when
   // the tool is left; persisted markers have Runtime UUIDs, never "draft*".

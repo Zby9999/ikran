@@ -328,7 +328,29 @@ export function useWorkbenchRuntime(session: string) {
       if (!client) {
         return { ok: false, error: "runtime_client_unavailable" };
       }
-      return client.deleteAnnotation(annotationId);
+      const result = await client.deleteAnnotation(annotationId);
+      if (result.ok) {
+        // DELETE returns before its background full reload. Apply the accepted
+        // semantic removal immediately so an equally-fast Command-Z always
+        // produces an observable [] → restored-record projection transition.
+        setAnnotations((prev) =>
+          prev.some((record) => record.id === annotationId)
+            ? prev.filter((record) => record.id !== annotationId)
+            : prev
+        );
+      }
+      return result;
+    },
+    []
+  );
+
+  const restoreAnnotation = useCallback(
+    async (annotationId: string): Promise<MutationResult> => {
+      const client = clientRef.current;
+      if (!client) {
+        return { ok: false, error: "runtime_client_unavailable" };
+      }
+      return client.restoreAnnotation(annotationId);
     },
     []
   );
@@ -478,6 +500,7 @@ export function useWorkbenchRuntime(session: string) {
     createAnnotation,
     updateAnnotationBody,
     deleteAnnotation,
+    restoreAnnotation,
     deleteSeedReference,
     refreshSeedReference,
     putWorkbenchLayout,

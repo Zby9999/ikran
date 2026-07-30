@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 17;
+export const CURRENT_SCHEMA_VERSION = 18;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1022,6 +1022,25 @@ CREATE TABLE IF NOT EXISTS design_system_extraction_manifest_requests (
   created_at TEXT NOT NULL,
   PRIMARY KEY (alignment_attempt_id, idempotency_key)
 );
+      `);
+    }
+  },
+  {
+    version: 18,
+    up(db) {
+      // Designer Annotation deletion is reversible from the Workbench. Keep
+      // the exact Runtime-owned row (plus primary-node confirmations) outside
+      // the live annotation table so Command-Z can restore identity, text,
+      // evidence target, and geometry without trusting a canvas projection.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS region_annotation_delete_tombstones (
+  annotation_id TEXT PRIMARY KEY,
+  annotation_json TEXT NOT NULL,
+  confirmations_json TEXT NOT NULL DEFAULT '[]',
+  deleted_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_region_annotation_tombstones_deleted_at
+  ON region_annotation_delete_tombstones(deleted_at);
       `);
     }
   }

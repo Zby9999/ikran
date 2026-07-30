@@ -520,6 +520,35 @@ export function createWorkbenchDataClient(
     return { ok: true };
   };
 
+  const restoreAnnotation = async (
+    annotationId: string
+  ): Promise<RuntimeMutationResult> => {
+    const result = await fetchJson(
+      fetcher,
+      "/api/region-annotation",
+      session,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ annotationId })
+      }
+    );
+    if (!result.ok) {
+      return reportMutationError(
+        (typeof result.data.error === "string" && result.data.error) ||
+          "restore_annotation_failed"
+      );
+    }
+
+    const reloaded = await loadAll();
+    if (!reloaded.ok) {
+      return reportMutationError(
+        `restore_succeeded_reload_failed:${reloaded.error}`
+      );
+    }
+    return { ok: true };
+  };
+
   const deleteSeedReference = async (
     seedId: string
   ): Promise<RuntimeMutationResult> => {
@@ -726,6 +755,7 @@ export function createWorkbenchDataClient(
     createAnnotation,
     updateAnnotationBody,
     deleteAnnotation,
+    restoreAnnotation,
     deleteSeedReference,
     refreshSeedReference,
     putWorkbenchLayout,

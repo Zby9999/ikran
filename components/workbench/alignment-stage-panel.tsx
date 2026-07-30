@@ -28,6 +28,25 @@ export type AlignmentQuestionProgress = {
   overallTotal: number;
 };
 
+/** One Extraction progress bar — ordered by section, then card order. */
+export type AlignmentQuestionSegment = {
+  id: string;
+  stageId: AlignmentStageId;
+  color: string;
+  answered: boolean;
+};
+
+/** Paper 42S-0 — Extraction panel progress colors only (not card/stage accents). */
+export const EXTRACTION_PROGRESS_STAGE_COLORS: Record<AlignmentStageId, string> =
+  {
+    "design-principle": "#e78460",
+    "visual-language": "#5192e1",
+    token: "#c774e4",
+    layout: "#e863a4",
+    component: "#5cc7c3",
+    interaction: "#c1d03c"
+  };
+
 export function getAlignmentQuestionProgress(
   coverage: {
     sections: readonly {
@@ -53,6 +72,30 @@ export function getAlignmentQuestionProgress(
     ),
     overallTotal: coverage.total_questions
   };
+}
+
+/**
+ * Paper 42S-0 / Figma 678:1335 — one bar per question card, section order first,
+ * then relative card order within each section. Answered = non-empty final_answer.
+ * Colors are Extraction-panel-only (EXTRACTION_PROGRESS_STAGE_COLORS).
+ */
+export function getAlignmentQuestionSegments(
+  cards: readonly {
+    id: string;
+    section: AlignmentStageId;
+    final_answer: string | null;
+  }[]
+): AlignmentQuestionSegment[] {
+  return ALIGNMENT_STAGES.flatMap(({ id: stageId }) =>
+    cards
+      .filter((card) => card.section === stageId)
+      .map((card) => ({
+        id: card.id,
+        stageId,
+        color: EXTRACTION_PROGRESS_STAGE_COLORS[stageId],
+        answered: (card.final_answer?.trim() ?? "").length > 0
+      }))
+  );
 }
 
 export function getAlignmentCoverage(

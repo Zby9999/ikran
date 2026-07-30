@@ -22,16 +22,17 @@ import {
   ALIGNMENT_STAGES,
   DEFAULT_ALIGNMENT_STAGE,
   AlignmentStagePanel,
-  getAlignmentQuestionProgress,
+  getAlignmentQuestionSegments,
   type AlignmentCoverage,
   type AlignmentStageId
 } from "./alignment-stage-panel";
 import {
-  DESIGN_SYSTEM_SHEET_EXIT_MS,
   DesignSystemBrowser,
-  DesignSystemEntryButton
+  DesignSystemEntryButton,
+  designSystemSheetExitMs
 } from "./design-system-browser";
 import { canOpenDesignSystemBrowser } from "./design-system-view-model";
+import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
 
 // tldraw touches the DOM during render, so the canvas shell is loaded with
 // `next/dynamic({ ssr: false })` to keep Next.js SSR happy.
@@ -55,6 +56,8 @@ export function SeedEvidenceWorkbench({
   folderName: string;
   onBack: () => void;
 }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const designSystemExitMs = designSystemSheetExitMs(prefersReducedMotion);
   useWorkbenchPresence(session);
   const {
     seeds: records,
@@ -68,6 +71,7 @@ export function SeedEvidenceWorkbench({
     createAnnotation,
     updateAnnotationBody,
     deleteAnnotation,
+    restoreAnnotation,
     deleteSeedReference,
     refreshSeedReference,
     putWorkbenchLayout,
@@ -160,8 +164,8 @@ export function SeedEvidenceWorkbench({
     designSystemExitTimerRef.current = setTimeout(() => {
       designSystemExitTimerRef.current = null;
       setDesignSystemSheetClosing(false);
-    }, DESIGN_SYSTEM_SHEET_EXIT_MS);
-  }, []);
+    }, designSystemExitMs);
+  }, [designSystemExitMs]);
   useEffect(
     () => () => {
       if (designSystemExitTimerRef.current) {
@@ -182,17 +186,12 @@ export function SeedEvidenceWorkbench({
       ALIGNMENT_STAGES.map(({ id }) => [id, byStage.get(id) === true])
     ) as AlignmentCoverage;
   }, [alignment]);
-  const alignmentQuestionProgress = useMemo(
+  const alignmentQuestionSegments = useMemo(
     () =>
       alignment
-        ? getAlignmentQuestionProgress(alignment.coverage, alignmentStage)
-        : {
-            stageCompleted: 0,
-            stageTotal: 0,
-            overallCompleted: 0,
-            overallTotal: 0
-          },
-    [alignment, alignmentStage]
+        ? getAlignmentQuestionSegments(alignment.question_cards)
+        : [],
+    [alignment]
   );
 
   const showGate = gateStatus !== "open" || !canvasEntered;
@@ -340,10 +339,15 @@ export function SeedEvidenceWorkbench({
           onAnnotate={() => setAnnotateMode((v) => !v)}
           extraction={
             canvasStage === "extraction"
-              ? alignmentQuestionProgress
+              ? { segments: alignmentQuestionSegments }
               : null
           }
         />
+        {canvasStage === "extraction" && designSystemEntryVisible ? (
+          <DesignSystemEntryButton
+            onOpen={() => setDesignSystemBrowserOpen(true)}
+          />
+        ) : null}
         {phaseError ? (
           <p
             className={
@@ -378,11 +382,6 @@ export function SeedEvidenceWorkbench({
             }}
             onStageChange={setAlignmentStage}
           />
-          {designSystemEntryVisible ? (
-            <DesignSystemEntryButton
-              onOpen={() => setDesignSystemBrowserOpen(true)}
-            />
-          ) : null}
         </div>
       ) : null}
 
@@ -428,6 +427,7 @@ export function SeedEvidenceWorkbench({
               updateAnnotationBody({ annotationId, body })
             }
             onDeleteAnnotation={deleteAnnotation}
+            onRestoreAnnotation={restoreAnnotation}
             onDeleteSeedReference={deleteSeedReference}
             onRecordDesignerAnswer={recordDesignerAnswer}
             onAppendAgentAnnotationInformation={appendAgentAnnotationInformation}

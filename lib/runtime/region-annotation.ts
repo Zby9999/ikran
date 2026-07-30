@@ -953,6 +953,39 @@ export type RegionAnnotationDeleteResponse =
   | { ok: true; id: string }
   | { ok: false; reason: RegionAnnotationDeleteReason };
 
+export type RegionAnnotationRestoreReason =
+  | "not_found"
+  | "already_exists"
+  | "not_restorable"
+  | "db_error";
+
+export type RegionAnnotationRestoreResponse =
+  | { ok: true; id: string }
+  | { ok: false; reason: RegionAnnotationRestoreReason };
+
+type PersistedRegionAnnotationRow = {
+  id: string;
+  surface_id: string;
+  surface_artifact_id: string | null;
+  surface_node_id: string | null;
+  author: string;
+  type: string;
+  body: string;
+  rect_x: number;
+  rect_y: number;
+  rect_w: number;
+  rect_h: number;
+  primary_node_id: string | null;
+  candidates_json: string | null;
+  created_at: string;
+  geometry_version: string;
+  from_point: number;
+  target_kind: string;
+  target_evidence_version_id: string;
+  target_node_id: string | null;
+  section: string | null;
+};
+
 /**
  * Delete a Region Annotation by id.
  * Product rule: only `author === "designer"` rows may be deleted.
@@ -966,29 +999,167 @@ export function deleteRegionAnnotation(
     return { ok: false, reason: "not_found" };
   }
   const id = annotationId.trim();
-  const db = openProjectDb(projectPath);
   try {
-    const row = db
-      .prepare("SELECT id, author FROM region_annotations WHERE id = ?")
-      .get(id) as { id: string; author: string } | undefined;
-    if (!row) {
-      return { ok: false, reason: "not_found" };
-    }
-    if (row.author !== "designer") {
-      return { ok: false, reason: "not_deletable" };
-    }
-    db.prepare("DELETE FROM region_annotations WHERE id = ?").run(id);
+    const result = withProjectTransaction(projectPath, (db) => {
+      const row = db
+        .prepare("SELECT * FROM region_annotations WHERE id = ?")
+        .get(id) as PersistedRegionAnnotationRow | undefined;
+      if (!row) {
+        return { ok: false as const, reason: "not_found" as const };
+      }
+      if (row.author !== "designer") {
+        return { ok: false as const, reason: "not_deletable" as const };
+      }
+      const confirmations = db
+        .prepare(
+          `SELECT * FROM annotation_primary_confirmations
+           WHERE annotation_id = ?
+           ORDER BY created_at ASC`
+        )
+        .all(id) as unknown as AnnotationPrimaryConfirmationRecord[];
+      const deletedAt = new Date().toISOString();
+      db.prepare(
+        `INSERT INTO region_annotation_delete_tombstones (
+           annotation_id, annotation_json, confirmations_json, deleted_at
+         ) VALUES (?, ?, ?, ?)
+         ON CONFLICT(annotation_id) DO UPDATE SET
+           annotation_json = excluded.annotation_json,
+           confirmations_json = excluded.confirmations_json,
+           deleted_at = excluded.deleted_at`
+      ).run(id, JSON.stringify(row), JSON.stringify(confirmations), deletedAt);
+      db.prepare("DELETE FROM region_annotations WHERE id = ?").run(id);
+      logEventOnDb(db, "annotation_deleted", { annotation_id: id });
+      return { ok: true as const, id };
+    });
+    if (!result.ok) return result;
     emitRecordEvent({
       kind: "annotation",
       action: "deleted",
       id,
       projectPath: path.resolve(projectPath)
     });
-    return { ok: true, id };
+    return result;
   } catch {
     return { ok: false, reason: "db_error" };
-  } finally {
-    closeProjectDb(db);
+  }
+}
+
+/**
+ * Restore the exact Runtime row captured by the most recent designer delete.
+ * Canvas state is never accepted as restore input: the tombstone owns body,
+ * identity, evidence target, geometry, and primary-node confirmations.
+ */
+export function restoreRegionAnnotation(
+  projectPath: string,
+  annotationId: string
+): RegionAnnotationRestoreResponse {
+  if (typeof annotationId !== "string" || annotationId.trim().length === 0) {
+    return { ok: false, reason: "not_found" };
+  }
+  const id = annotationId.trim();
+  try {
+    const result = withProjectTransaction(projectPath, (db) => {
+      const existing = db
+        .prepare("SELECT id FROM region_annotations WHERE id = ?")
+        .get(id);
+      if (existing) {
+        return { ok: false as const, reason: "already_exists" as const };
+      }
+      const tombstone = db
+        .prepare(
+          `SELECT annotation_json, confirmations_json
+           FROM region_annotation_delete_tombstones
+           WHERE annotation_id = ?`
+        )
+        .get(id) as
+        | { annotation_json: string; confirmations_json: string }
+        | undefined;
+      if (!tombstone) {
+        return { ok: false as const, reason: "not_found" as const };
+      }
+
+      let row: PersistedRegionAnnotationRow;
+      let confirmations: AnnotationPrimaryConfirmationRecord[];
+      try {
+        row = JSON.parse(
+          tombstone.annotation_json
+        ) as PersistedRegionAnnotationRow;
+        confirmations = JSON.parse(
+          tombstone.confirmations_json
+        ) as AnnotationPrimaryConfirmationRecord[];
+      } catch {
+        return { ok: false as const, reason: "not_restorable" as const };
+      }
+      if (
+        row.id !== id ||
+        row.author !== "designer" ||
+        !Array.isArray(confirmations)
+      ) {
+        return { ok: false as const, reason: "not_restorable" as const };
+      }
+
+      db.prepare(
+        `INSERT INTO region_annotations (
+          id, surface_id, surface_artifact_id, surface_node_id,
+          author, type, body,
+          rect_x, rect_y, rect_w, rect_h,
+          primary_node_id, candidates_json, created_at,
+          geometry_version, from_point,
+          target_kind, target_evidence_version_id, target_node_id, section
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        row.id,
+        row.surface_id,
+        row.surface_artifact_id,
+        row.surface_node_id,
+        row.author,
+        row.type,
+        row.body,
+        row.rect_x,
+        row.rect_y,
+        row.rect_w,
+        row.rect_h,
+        row.primary_node_id,
+        row.candidates_json,
+        row.created_at,
+        row.geometry_version,
+        row.from_point,
+        row.target_kind,
+        row.target_evidence_version_id,
+        row.target_node_id,
+        row.section
+      );
+      const restoreConfirmation = db.prepare(
+        `INSERT INTO annotation_primary_confirmations (
+          id, annotation_id, evidence_version_id, source_node_id, created_at
+        ) VALUES (?, ?, ?, ?, ?)`
+      );
+      for (const confirmation of confirmations) {
+        restoreConfirmation.run(
+          confirmation.id,
+          confirmation.annotation_id,
+          confirmation.evidence_version_id,
+          confirmation.source_node_id,
+          confirmation.created_at
+        );
+      }
+      db.prepare(
+        `DELETE FROM region_annotation_delete_tombstones
+         WHERE annotation_id = ?`
+      ).run(id);
+      logEventOnDb(db, "annotation_restored", { annotation_id: id });
+      return { ok: true as const, id };
+    });
+    if (!result.ok) return result;
+    emitRecordEvent({
+      kind: "annotation",
+      action: "created",
+      id,
+      projectPath: path.resolve(projectPath)
+    });
+    return result;
+  } catch {
+    return { ok: false, reason: "db_error" };
   }
 }
 
@@ -1106,4 +1277,3 @@ export function listRegionAnnotations(
     closeProjectDb(db);
   }
 }
-

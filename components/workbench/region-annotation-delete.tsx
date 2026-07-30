@@ -18,12 +18,43 @@ import {
   type RegionAnnotationShape
 } from "./region-annotation-shape";
 import { allowRegionAnnotationDelete } from "./region-annotation-delete-guard";
+import { DESIGNER_ANNOTATION_CARD_TYPE } from "./designer-annotation-card-shape";
+import { DESIGNER_ANNOTATION_CONNECTOR_TYPE } from "./designer-annotation-connector-shape";
 
 function asRegionAnnotation(
   shape: TLShape
 ): RegionAnnotationShape | null {
   if (shape.type !== REGION_ANNOTATION_TYPE) return null;
   return shape as RegionAnnotationShape;
+}
+
+type AnnotationProjectionShape = {
+  id: string;
+  type: string;
+  meta: unknown;
+};
+
+/** All canvas projections owned by the given Runtime annotation records. */
+export function annotationProjectionShapeIds(
+  shapes: readonly AnnotationProjectionShape[],
+  annotationIds: readonly string[]
+): TLShapeId[] {
+  const wanted = new Set(annotationIds);
+  return shapes.flatMap((shape) => {
+    if (
+      shape.type !== REGION_ANNOTATION_TYPE &&
+      shape.type !== DESIGNER_ANNOTATION_CARD_TYPE &&
+      shape.type !== DESIGNER_ANNOTATION_CONNECTOR_TYPE
+    ) {
+      return [];
+    }
+    const runtimeRecordId = (shape.meta as { runtimeRecordId?: unknown })
+      .runtimeRecordId;
+    return typeof runtimeRecordId === "string" &&
+      wanted.has(runtimeRecordId)
+      ? [shape.id as TLShapeId]
+      : [];
+  });
 }
 
 /**
@@ -34,11 +65,16 @@ function asRegionAnnotation(
  */
 export function RegionAnnotationDeleteController({
   annotateMode,
-  onDelete
+  onDelete,
+  onRestore
 }: {
   annotateMode: boolean;
   /** Injected Runtime mutation — HTTP success required before shape remove. */
   onDelete?: (
+    annotationId: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Runtime tombstone restore used by Command-Z after a successful delete. */
+  onRestore?: (
     annotationId: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
@@ -47,6 +83,9 @@ export function RegionAnnotationDeleteController({
   annotateModeRef.current = annotateMode;
   const onDeleteRef = useRef(onDelete);
   onDeleteRef.current = onDelete;
+  const onRestoreRef = useRef(onRestore);
+  onRestoreRef.current = onRestore;
+  const pendingUndoIdsRef = useRef<string[]>([]);
 
   // Block user deletes while Annotate is on (except drafts), and always block
   // Agent on the user path. Projection sync uses mergeRemoteChanges so source
@@ -74,6 +113,28 @@ export function RegionAnnotationDeleteController({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      const undo =
+        event.key.toLowerCase() === "z" &&
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey;
+      if (undo && pendingUndoIdsRef.current.length > 0) {
+        const restore = onRestoreRef.current;
+        if (!restore) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        const annotationIds = [...pendingUndoIdsRef.current];
+        void (async () => {
+          const failed: string[] = [];
+          for (const annotationId of annotationIds) {
+            const result = await restore(annotationId);
+            if (!result.ok) failed.push(annotationId);
+          }
+          pendingUndoIdsRef.current = failed;
+        })();
+        return;
+      }
+
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       if (annotateModeRef.current) return;
       if (editor.getCurrentToolId() !== "select") return;
@@ -102,19 +163,29 @@ export function RegionAnnotationDeleteController({
       if (!mutate) return;
 
       void (async () => {
-        const removed: TLShapeId[] = [];
+        const removedAnnotationIds: string[] = [];
         for (const target of targets) {
           const result = await mutate(target.annotationId);
           if (result.ok) {
-            removed.push(target.shapeId);
+            removedAnnotationIds.push(target.annotationId);
           }
           // On failure: keep marker; mutation sets Workbench error state.
         }
-        if (removed.length > 0) {
-          // Markers are isLocked against drag; still allow Runtime-backed delete.
-          editor.run(() => {
-            editor.deleteShapes(removed);
-          }, { ignoreShapeLock: true });
+        if (removedAnnotationIds.length > 0) {
+          const projectionIds = annotationProjectionShapeIds(
+            editor.getCurrentPageShapes(),
+            removedAnnotationIds
+          );
+          // The marker, text card, and connector are one projection family.
+          // Remove all three immediately after Runtime accepts the delete;
+          // the background authoritative reload remains consistency healing.
+          editor.run(
+            () => {
+              editor.deleteShapes(projectionIds);
+            },
+            { ignoreShapeLock: true, history: "ignore" }
+          );
+          pendingUndoIdsRef.current.push(...removedAnnotationIds);
         }
       })();
     };

@@ -5,6 +5,7 @@ import {
   confirmAnnotationPrimaryNode,
   deleteRegionAnnotation,
   listRegionAnnotations,
+  restoreRegionAnnotation,
   updateRegionAnnotationBody,
   type RegionAnnotationResponse,
   type RegionAnnotationRecord
@@ -50,6 +51,13 @@ export function deleteRegionAnnotationCommand(
   id: string
 ) {
   return deleteRegionAnnotation(projectPath, id);
+}
+
+export function restoreRegionAnnotationCommand(
+  projectPath: string,
+  id: string
+) {
+  return restoreRegionAnnotation(projectPath, id);
 }
 
 export function updateRegionAnnotationBodyCommand(

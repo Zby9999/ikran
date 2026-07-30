@@ -23,6 +23,8 @@ export type EventType =
   | "annotation_created"
   | "annotation_primary_confirmed"
   | "annotation_body_updated"
+  | "annotation_deleted"
+  | "annotation_restored"
   | "question_card_created"
   | "question_card_title_updated"
   | "question_card_anchor_updated"

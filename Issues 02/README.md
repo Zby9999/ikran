@@ -31,6 +31,9 @@
 9. `09-draft-design-system-derived-view.md` - Draft Design System 与 Derived View JSON
 9A. `09A-design-system-browser-v1-form-and-source.md` - Design System Browser v1 形态与全 JSON 源
 9B. `09B-initial-design-system-extraction-completeness.md` - Initial Design System Extraction Completeness 与 Semantic Coverage Gate
+9C-A. `09C-A-design-system-reader-projection-resizable-split.md` - Design System Reader Projection 与可拖拽双栏
+9C-B. `09C-B-visual-grammar-component-preview-framework.md` - Visual Grammar 与通用 Component Preview Framework
+9C-C. `09C-C-visual-coverage-adapters-curated-overrides.md` - Visual Coverage、Component Adapters 与 Curated Overrides
 10. `10-seed-prototype-preview-record-preview.md` - Seed Prototype Preview 与 `record_preview`
 11. `11-prototype-region-context-dom-inspection.md` - Prototype Region Context 与 DOM Inspection
 12. `12-rule-update-proposal-confirm-cancel.md` - Rule Update Proposal Confirm/Cancel
