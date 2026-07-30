@@ -288,7 +288,10 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(displayCard).toContainText("1.05");
     await expect(displayCard).toContainText("semantic.display.large");
     await expect(displayCard).toContainText("primitive.font.family.sans");
-    await expect(page.getByTestId("ds-technical-details")).toBeVisible();
+    await expect(page.getByTestId("ds-technical-details")).toHaveCount(0);
+    await expect(
+      page.getByText("Source tokens", { exact: true })
+    ).toHaveCount(0);
 
     const displaySample = displayCard.locator(".dsb-atlas-sample");
     await expect(displaySample).toBeVisible();
@@ -349,13 +352,6 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
       borderStyle: "none",
       boxShadow: "none"
     });
-
-    // Raw source rows are still lossless, but secondary to the visual atlas.
-    const sourceDetails = page.locator(".dsb-atlas-source-details");
-    await expect(sourceDetails).toBeVisible();
-    await sourceDetails.locator("summary").click();
-    await expect(page.getByTestId("ds-token-layer-primitive")).toBeVisible();
-    await expect(page.getByTestId("ds-row-primitive.font.size.400")).toBeVisible();
 
     // ---- Layout leaf: object values + persisted resizable split. ----
     await page.getByRole("button", { name: "Layout", exact: true }).click();

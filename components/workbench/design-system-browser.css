@@ -1295,37 +1295,6 @@
   opacity: 0.55;
 }
 
-.dsb-atlas-source-details {
-  border-top: 1px solid rgb(0 0 0 / 6%);
-  padding-top: 10px;
-}
-
-.dsb-atlas-source-summary {
-  display: flex;
-  width: fit-content;
-  align-items: center;
-  gap: 5px;
-  color: var(--dsc-ink-3);
-  cursor: pointer;
-  font-size: 12px;
-  list-style: none;
-}
-
-.dsb-atlas-source-summary::-webkit-details-marker {
-  display: none;
-}
-
-.dsb-atlas-source-details[open] .dsb-tech-chevron {
-  transform: rotate(90deg);
-}
-
-.dsb-atlas-source-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  padding-top: 18px;
-}
-
 /* Two-column cards have less caption room than the page viewport suggests.
    Respond to the card itself so usage, metrics and source ids never compete
    for one compressed row. */
@@ -1374,77 +1343,6 @@
   min-width: 0;
   color: var(--dsc-ink-2);
   overflow-wrap: break-word;
-}
-
-/* Technical details — internal ids, alias graph and raw fields live here,
-   never in the main reading layer. */
-.dsb-tech {
-  border-top: 1px solid rgb(0 0 0 / 6%);
-  padding-top: 10px;
-}
-
-.dsb-tech-summary {
-  display: flex;
-  width: fit-content;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  padding: 2px 4px;
-  color: var(--dsc-ink-2);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
-  list-style: none;
-}
-
-.dsb-tech-summary::-webkit-details-marker {
-  display: none;
-}
-
-.dsb-tech-chevron {
-  transition: transform 150ms ease-out;
-}
-
-.dsb-tech[open] .dsb-tech-chevron {
-  transform: rotate(90deg);
-}
-
-.dsb-tech-items {
-  margin-top: 8px;
-}
-
-.dsb-tech-item {
-  border-top: 1px solid rgb(0 0 0 / 5%);
-  padding: 10px 0;
-}
-
-.dsb-tech-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  color: var(--dsc-ink-3);
-  font-size: 11.5px;
-}
-
-.dsb-tech-id {
-  color: var(--dsc-ink-2);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.dsb-tech-raw {
-  margin: 8px 0 0;
-  overflow-x: auto;
-  border-radius: 8px;
-  background: rgb(0 0 0 / 3%);
-  padding: 10px 12px;
-  color: var(--dsc-ink-2);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  line-height: 1.5;
-  white-space: pre;
 }
 
 /* Rich principle fields (statement card gets rationale / scope / use /

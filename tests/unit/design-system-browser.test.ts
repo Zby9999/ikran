@@ -516,18 +516,18 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
     expect(html).toContain('data-status="formalized"');
   });
 
-  test("keeps source rows and raw envelopes secondary but lossless", () => {
+  test("keeps raw source and technical audit panels out of the user surface", () => {
     const html = renderToStaticMarkup(
       createElement(TypographyLeafPage, {
         layers: typographyLayers(),
         rows: rowSharedProps()
       })
     );
-    expect(html).toContain("Source tokens");
-    expect(html).toContain("Tokens · Primitive");
-    expect(html).toContain('data-testid="ds-row-primitive.font-size-400"');
-    expect(html).toContain('data-testid="ds-technical-details"');
     expect(html).toContain("semantic.display-large");
+    expect(html).not.toContain("Source tokens");
+    expect(html).not.toContain("Tokens · Primitive");
+    expect(html).not.toContain('data-testid="ds-row-primitive.font-size-400"');
+    expect(html).not.toContain('data-testid="ds-technical-details"');
     expect(html).not.toContain('data-testid="ds-typography-roles"');
   });
 

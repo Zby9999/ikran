@@ -52,10 +52,8 @@ import {
   typographyAtlasItems,
   typographyLayersFromView,
   type PrincipleProjection,
-  type TechnicalDetail,
   type TokenLayerKey,
-  type TypographyAtlasItem,
-  type TypographyProjection,
+  type TypographyAtlasItem
 } from "./design-system-reader-projection";
 import {
   DS_SECTION_NAMES,
@@ -832,37 +830,6 @@ function VisualSamplesEmpty() {
   );
 }
 
-/** Internal ids, alias graph and raw fields — the only place raw JSON shows. */
-function TechnicalDetails({ items }: { items: TechnicalDetail[] }) {
-  if (items.length === 0) return null;
-  return (
-    <details className="dsb-tech" data-testid="ds-technical-details">
-      <summary className="dsb-tech-summary">
-        <HugeiconsIcon
-          icon={ArrowRight01Icon}
-          size={12}
-          className="dsb-tech-chevron"
-          color="currentColor"
-          strokeWidth={2}
-        />
-        Technical details
-      </summary>
-      <div className="dsb-tech-items">
-        {items.map((item) => (
-          <div key={item.key} className="dsb-tech-item">
-            <p className="dsb-tech-head">
-              <span className="dsb-tech-id">{item.entryId}</span>
-              <span>{item.sourcePath}</span>
-              <StatusChip status={item.status} />
-            </p>
-            <pre className="dsb-tech-raw">{item.rawJson}</pre>
-          </div>
-        ))}
-      </div>
-    </details>
-  );
-}
-
 /** Fixed sample copy per role kind — presentation literals, never
  * model-written and never treated as design-system facts. */
 function atlasSpecimenText(item: TypographyAtlasItem): string {
@@ -1057,68 +1024,10 @@ function TypographyAtlasCard({
   );
 }
 
-function TypographySourceRows({
-  projection,
-  rows
-}: {
-  projection: TypographyProjection;
-  rows: RowSharedProps;
-}) {
-  const hasRows =
-    projection.families.length > 0 ||
-    projection.styles.length > 0 ||
-    projection.metricGroups.length > 0;
-  if (!hasRows) return null;
-  return (
-    <details className="dsb-atlas-source-details">
-      <summary className="dsb-atlas-source-summary">
-        <HugeiconsIcon
-          icon={ArrowRight01Icon}
-          size={12}
-          className="dsb-tech-chevron"
-          color="currentColor"
-          strokeWidth={2}
-        />
-        Source tokens
-      </summary>
-      <div className="dsb-atlas-source-groups">
-        {projection.families.length > 0 ? (
-          <section className="dsb-section">
-            <GroupLabel>Font family</GroupLabel>
-            <RowList
-              rows={projection.families.map((family) => family.row)}
-              {...rows}
-            />
-          </section>
-        ) : null}
-        {projection.styles.length > 0 ? (
-          <section className="dsb-section">
-            <GroupLabel>Text styles</GroupLabel>
-            <RowList
-              rows={projection.styles.map((style) => style.row)}
-              {...rows}
-            />
-          </section>
-        ) : null}
-        {projection.metricGroups.map((group) => (
-          <section
-            key={group.layer}
-            className="dsb-section"
-            data-testid={`ds-token-layer-${group.layer}`}
-          >
-            <GroupLabel>Tokens · {TOKEN_LAYER_LABELS[group.layer]}</GroupLabel>
-            <RowList rows={group.rows} {...rows} />
-          </section>
-        ))}
-      </div>
-    </details>
-  );
-}
-
 /** Typography leaf (09C-A): standard Browser page heading followed by a
  * visual atlas. Each source-backed form keeps its construction data,
- * evidence and approval action attached to the specimen it describes.
- * Atomic tokens remain available in a secondary source/audit layer. */
+ * evidence and approval action attached to the specimen it describes. Raw
+ * source-token and technical audit panels stay out of the user surface. */
 export function TypographyLeafPage({
   layers,
   rows
@@ -1203,8 +1112,6 @@ export function TypographyLeafPage({
           No typography tokens classified here yet.
         </p>
       )}
-      <TypographySourceRows projection={projection} rows={rows} />
-      <TechnicalDetails items={projection.technicalDetails} />
     </div>
   );
 }

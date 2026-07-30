@@ -74,8 +74,9 @@ Layout / Interaction 等尚无正式视觉 grammar 的 leaf 仍保留统一可�
   tracking、transform 与 source / evidence；缺失字段不推测、不补全；
 - 只有 atomic size 而没有完整 style 的历史数据，形成诚实的 scale specimen：沿用唯一
   已声明 family，但不虚构 weight / line height / tracking；
-- 原始 source rows 降级为折叠的二级核对层，Technical details 继续保留完整 raw
-  envelope，因此视觉优先不改变 DB 真源、审批或证据链；
+- Typography 用户界面不呈现底部 Source tokens 或 Technical details 审计面板；
+  source identity、审批与 evidence 只保留在各 Atlas form 自身的 Source-backed 区域，
+  完整 raw envelope 仍留在 DB-backed projection，不改变真源或证据链；
 - Atlas 状态标记使用 4px 圆角、无 border / stroke / inset ring；此改动不扩散到
   Browser 其他既有 status chip；
 - 正式方案晋升后删除临时 `/prototypes/typography-reader` 路由。
@@ -106,6 +107,8 @@ Visual Sample 组织方式，不是最终实现稿：
 - [x] Atomic size 历史在缺少完整 style 时只展示有证据的字段，不虚构 weight、
       line height 或 tracking。
 - [x] Atlas 状态标记为 4px 圆角且无描边；其他 Browser status chip 不受影响。
+- [x] Typography 底部不呈现 Source tokens 或 Technical details；form 内的
+      Source-backed identity 与 evidence 入口继续可用。
 - [x] Instrument Sans 以项目内 self-hosted FontFace（400 / 500 / 600 / 700）实际加载，
       不再出现 CSS family 名正确但 glyph 静默 fallback 的情况。
 - [x] 双栏默认比例为 42% / 58%，可通过 pointer 拖拽连续调整。
