@@ -7,6 +7,7 @@ import {
   formatValueField,
   projectObjectFields,
   projectInteractionLeaf,
+  projectLayoutLeaf,
   projectPrinciple,
   projectTypographyLeaf,
   pxOf,
@@ -108,6 +109,227 @@ const ALL_ENTRIES = [
   BODY,
   FAMILY_SERIF
 ];
+
+describe("Layout Reader Projection (09C-B Blueprint)", () => {
+  it("derives anchors and supported spatial facts from DB-backed rule identity", () => {
+    const sources = [
+      entry({
+        entry_id: "shell-regions",
+        file_kind: "layout-rules.json",
+        section: "layout",
+        name: "shell.regions",
+        value: {
+          regions: ["header", "hero", "content", "footer"],
+          relationship: [{ from: "hero", to: "content" }]
+        },
+        meaning: "Page shell vertical stack",
+        status: "candidate"
+      }),
+      entry({
+        entry_id: "container-max",
+        file_kind: "layout-rules.json",
+        section: "layout",
+        name: "container.maxWidth",
+        value: {
+          maxWidth: "1200px",
+          responsiveBehavior: ["Use 16px page padding below 768px."],
+          tokenLinks: ["spacing.300"],
+          acceptanceChecks: ["Reading width never exceeds 1200px."]
+        },
+        meaning: "Marketing reading width",
+        status: "candidate"
+      }),
+      entry({
+        entry_id: "grid-columns",
+        file_kind: "layout-rules.json",
+        section: "layout",
+        name: "grid.columns",
+        value: { columns: 12 },
+        meaning: "Marketing and dashboard grid",
+        status: "candidate"
+      }),
+      entry({
+        entry_id: "grid-gap",
+        file_kind: "layout-rules.json",
+        section: "layout",
+        name: "grid.gap",
+        value: {
+          gap: "24px",
+          responsiveBehavior: ["Use 16px below 768px."]
+        },
+        meaning: "Grid spacing",
+        status: "candidate"
+      }),
+      entry({
+        entry_id: "section-rhythm",
+        file_kind: "layout-rules.json",
+        section: "layout",
+        name: "section.heroToNext",
+        value: {
+          heroToNext: "96px",
+          responsiveBehavior: ["Use 56px below 768px."]
+        },
+        meaning: "Scroll rhythm",
+        status: "candidate"
+      }),
+      entry({
+        entry_id: "breakpoints",
+        file_kind: "layout-rules.json",
+        section: "layout",
+        name: "breakpoints",
+        value: {
+          breakpoints: [
+            { name: "sm", value: "640px" },
+            { name: "md", value: "768px" },
+            { name: "lg", value: "1024px" },
+            { name: "xl", value: "1280px" }
+          ]
+        },
+        meaning: "Responsive thresholds",
+        status: "formalized"
+      }),
+      entry({
+        entry_id: "nav-mobile",
+        file_kind: "layout-rules.json",
+        section: "layout",
+        name: "nav.mobile",
+        value: {
+          missing: "Open state missing — cannot define menu layout or motion"
+        },
+        meaning: "Mobile navigation layout",
+        status: "gap"
+      })
+    ];
+
+    const projected = projectLayoutLeaf(sources.map(toRow));
+
+    expect(projected.map(({ anchor, name, origin, status }) => ({
+      anchor,
+      name,
+      origin,
+      status
+    }))).toEqual([
+      {
+        anchor: 1,
+        name: "shell.regions",
+        origin: "schematic",
+        status: "candidate"
+      },
+      {
+        anchor: 2,
+        name: "container.maxWidth",
+        origin: "source-generated",
+        status: "candidate"
+      },
+      {
+        anchor: 3,
+        name: "grid.columns",
+        origin: "schematic",
+        status: "candidate"
+      },
+      {
+        anchor: 4,
+        name: "grid.gap",
+        origin: "source-generated",
+        status: "candidate"
+      },
+      {
+        anchor: 5,
+        name: "section.heroToNext",
+        origin: "source-generated",
+        status: "candidate"
+      },
+      {
+        anchor: 6,
+        name: "breakpoints",
+        origin: "source-generated",
+        status: "formalized"
+      },
+      {
+        anchor: 7,
+        name: "nav.mobile",
+        origin: "unavailable",
+        status: "gap"
+      }
+    ]);
+    expect(projected[0]).toMatchObject({
+      regions: ["header", "hero", "content", "footer"]
+    });
+    expect(projected[1]).toMatchObject({
+      containerMaxWidth: "1200px",
+      responsiveBehavior: ["Use 16px page padding below 768px."],
+      tokenLinks: ["spacing.300"],
+      acceptanceChecks: ["Reading width never exceeds 1200px."]
+    });
+    expect(projected[2]).toMatchObject({ columns: 12 });
+    expect(projected[3]).toMatchObject({ gap: "24px" });
+    expect(projected[4]).toMatchObject({ sectionRhythm: "96px" });
+    expect(projected[5]?.breakpoints).toEqual([
+      { name: "sm", px: 640 },
+      { name: "md", px: 768 },
+      { name: "lg", px: 1024 },
+      { name: "xl", px: 1280 }
+    ]);
+    expect(projected[6]).toMatchObject({
+      unavailableReason:
+        "Open state missing — cannot define menu layout or motion"
+    });
+  });
+
+  it("does not invent a visual when a rule has no supported spatial fields", () => {
+    const projected = projectLayoutLeaf([
+      toRow(
+        entry({
+          entry_id: "layout-summary",
+          file_kind: "layout-rules.json",
+          section: "layout",
+          name: "layout.summary",
+          value: { rule: "Keep the composition calm." },
+          meaning: "General layout guidance",
+          status: "candidate"
+        })
+      )
+    ]);
+
+    expect(projected[0]).toMatchObject({
+      anchor: 1,
+      origin: "unavailable",
+      unavailableReason:
+        "No supported spatial measurement or relationship is declared for this rule."
+    });
+  });
+
+  it("keeps declared relationship prose as a schematic without parsing appearance", () => {
+    const projected = projectLayoutLeaf([
+      toRow(
+        entry({
+          entry_id: "horizontal-gallery",
+          file_kind: "layout-rules.json",
+          section: "layout",
+          name: "layout.horizontalGallery",
+          value: {
+            relationship: [
+              "Project images form a horizontal track.",
+              "The clipped right edge signals additional content."
+            ],
+            responsiveBehavior: ["Support touch scrolling on narrow screens."]
+          },
+          meaning: "A browsable gallery",
+          status: "candidate"
+        })
+      )
+    ]);
+
+    expect(projected[0]).toMatchObject({
+      origin: "schematic",
+      relationships: [
+        "Project images form a horizontal track.",
+        "The clipped right edge signals additional content."
+      ],
+      unavailableReason: null
+    });
+  });
+});
 
 describe("Interaction Reader Projection (09C-B)", () => {
   it("projects a source-backed live specimen without adding undeclared states", () => {

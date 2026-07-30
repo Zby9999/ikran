@@ -10,6 +10,8 @@ import {
   EvidenceInfoContent,
   FoundationsHomePage,
   InteractionSamples,
+  LayoutRulesLeafPage,
+  LayoutSamples,
   SpecRowView,
   StatusChip,
   TokenLeafPage,
@@ -472,6 +474,112 @@ describe("InteractionSamples (09C-B Rig)", () => {
     expect(html).toContain("Unavailable");
     expect(html).toContain("No states are declared for this interaction rule.");
     expect(html).not.toMatch(/spinner/i);
+  });
+});
+
+describe("LayoutSamples (09C-B Blueprint)", () => {
+  test("renders source-derived anchors, visible origins, and an honest gap", () => {
+    const rows = [
+      toRow(
+        entry({
+          entry_id: "layout.grid.page",
+          file_kind: "layout-rules.json",
+          section: "layout",
+          name: "grid.page",
+          value: {
+            columns: 12,
+            gap: "24px",
+            maxWidth: "1200px",
+            responsiveBehavior: ["Use 16px gap below 768px."]
+          },
+          meaning: "Default page grid",
+          status: "candidate",
+          source_artifact_path: "design-system/layout-rules.json"
+        })
+      ),
+      toRow(
+        entry({
+          entry_id: "layout.nav.mobile",
+          file_kind: "layout-rules.json",
+          section: "layout",
+          name: "nav.mobile",
+          value: { missing: "Open state missing" },
+          meaning: "Mobile navigation layout",
+          status: "gap",
+          source_artifact_path: "design-system/layout-rules.json"
+        })
+      )
+    ];
+
+    const html = renderToStaticMarkup(
+      createElement(LayoutSamples, {
+        rows,
+        activeAnchor: null,
+        onActiveAnchor: vi.fn()
+      })
+    );
+
+    expect(html).toContain('data-testid="ds-layout-blueprint"');
+    expect(html).toContain('data-layout-anchor="1"');
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain("Layout rule 1: grid.page");
+    expect(html).toContain("Source-generated");
+    expect(html).toContain('data-status="candidate"');
+    expect(html).toContain("12 columns");
+    expect(html).toContain("gap 24px");
+    expect(html).toContain("1200px");
+    expect(html).toContain('data-responsive="true"');
+    expect(html).toContain("Use 16px gap below 768px.");
+    expect(html).toContain('data-layout-anchor="2"');
+    expect(html).toContain("Unavailable");
+    expect(html).toContain("Open state missing");
+    expect(html).toContain('data-status="gap"');
+  });
+
+  test("keeps relationship-rich rules in compact two-line anchor rows", () => {
+    const row = toRow(
+      entry({
+        entry_id: "layout.gallery",
+        file_kind: "layout-rules.json",
+        section: "layout",
+        name: "layout.gallery",
+        value: {
+          relationship: [
+            "Images form a horizontal track.",
+            "The clipped edge signals more content."
+          ],
+          responsiveBehavior: ["Support touch scrolling."],
+          tokenLinks: ["semantic.layout.gallery"],
+          acceptanceChecks: ["Horizontal overflow remains discoverable."]
+        },
+        meaning: "A browsable gallery",
+        status: "candidate",
+        source_artifact_path: "design-system/layout-rules.json"
+      })
+    );
+
+    const html = renderToStaticMarkup(
+      createElement(LayoutRulesLeafPage, {
+        leaf: { rows: [row], chips: ["1 candidate"] },
+        rows: rowSharedProps(),
+        activeAnchor: null,
+        onActiveAnchor: vi.fn()
+      })
+    );
+
+    expect(html).toContain('data-layout-anchor="1"');
+    expect(html).toContain("layout.gallery");
+    expect(html).toContain("2 declared relationships");
+    expect(html).toContain("A browsable gallery");
+    expect(html).toContain("Schematic");
+    expect(html).toContain("Evidence for layout.gallery");
+    expect(html).toContain("Technical details");
+    expect(html).toContain("Responsive behavior");
+    expect(html).toContain("Support touch scrolling.");
+    expect(html).toContain("Token links");
+    expect(html).toContain("semantic.layout.gallery");
+    expect(html).toContain("Acceptance checks");
+    expect(html).toContain("Horizontal overflow remains discoverable.");
   });
 });
 

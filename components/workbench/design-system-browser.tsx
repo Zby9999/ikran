@@ -48,12 +48,15 @@ import {
 import {
   projectObjectFields,
   projectInteractionLeaf,
+  projectLayoutLeaf,
   projectPrinciple,
   projectTypographyLeaf,
   typographyAtlasItems,
   typographyLayersFromView,
   type PrincipleProjection,
   type InteractionRuleProjection,
+  type LayoutRuleProjection,
+  type LayoutVisualOrigin,
   type TokenLayerKey,
   type TypographyAtlasItem
 } from "./design-system-reader-projection";
@@ -866,6 +869,713 @@ function VisualSamplesEmpty() {
         <p className="dsb-samples-empty-title">No visual samples yet</p>
       </div>
     </div>
+  );
+}
+
+const LAYOUT_ORIGIN_LABEL: Record<LayoutVisualOrigin, string> = {
+  "source-generated": "Source-generated",
+  schematic: "Schematic",
+  unavailable: "Unavailable"
+};
+
+function LayoutOriginTag({ origin }: { origin: LayoutVisualOrigin }) {
+  return (
+    <span className="dsb-layout-origin" data-origin={origin}>
+      {LAYOUT_ORIGIN_LABEL[origin]}
+    </span>
+  );
+}
+
+function layoutRuleValue(rule: LayoutRuleProjection): string {
+  if (rule.origin === "unavailable" && rule.unavailableReason !== null) {
+    return rule.unavailableReason;
+  }
+  const values = [
+    rule.containerMaxWidth,
+    rule.pagePadding === null ? null : `padding ${rule.pagePadding}`,
+    rule.regions.length > 0 ? rule.regions.join(" · ") : null,
+    rule.columns === null ? null : `${rule.columns} columns`,
+    rule.gap === null ? null : `gap ${rule.gap}`,
+    rule.sectionRhythm,
+    rule.breakpoints.length > 0
+      ? rule.breakpoints
+          .map((breakpoint) => `${breakpoint.name} ${breakpoint.px}`)
+          .join(" · ")
+      : null,
+    rule.relationships.length > 0
+      ? `${rule.relationships.length} declared relationship${
+          rule.relationships.length === 1 ? "" : "s"
+        }`
+      : null
+  ].filter((value): value is string => value !== null);
+  return values.length > 0 ? values.join(" · ") : "—";
+}
+
+function layoutRuleAriaLabel(rule: LayoutRuleProjection): string {
+  const status = rule.status === "gap" ? "open gap" : rule.status;
+  const responsive =
+    rule.responsiveBehavior.length > 0
+      ? ` Responsive: ${rule.responsiveBehavior.join(" ")}`
+      : "";
+  return `Layout rule ${rule.anchor}: ${rule.name}. ${LAYOUT_ORIGIN_LABEL[rule.origin]}. ${status}.${responsive}`;
+}
+
+function LayoutTechnicalDetails({ rule }: { rule: LayoutRuleProjection }) {
+  const groups = [
+    { label: "Relationships", items: rule.relationships },
+    { label: "Responsive behavior", items: rule.responsiveBehavior },
+    { label: "Token links", items: rule.tokenLinks },
+    { label: "Acceptance checks", items: rule.acceptanceChecks }
+  ].filter((group) => group.items.length > 0);
+  if (groups.length === 0) return null;
+  return (
+    <details className="dsb-layout-technical">
+      <summary>Technical details</summary>
+      <dl>
+        {groups.map((group) => (
+          <div key={group.label}>
+            <dt>{group.label}</dt>
+            <dd>
+              {group.items.map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
+function LayoutRuleRows({
+  rules,
+  rows,
+  activeAnchor,
+  onActiveAnchor
+}: {
+  rules: LayoutRuleProjection[];
+  rows: RowSharedProps;
+  activeAnchor: number | null;
+  onActiveAnchor: (anchor: number | null) => void;
+}) {
+  return (
+    <div className="dsb-layout-rules">
+      {rules.map((rule) => {
+        const approval = rows.approvals[rule.key] ?? { kind: "idle" as const };
+        const value = layoutRuleValue(rule);
+        return (
+          <div
+            key={rule.key}
+            className="dsb-layout-rule"
+            data-testid={`ds-row-${rule.row.entryId}`}
+            data-layout-anchor={rule.anchor}
+            data-anchor-active={
+              activeAnchor === rule.anchor ? "" : undefined
+            }
+            data-origin={rule.origin}
+            data-status={rule.status}
+            role="group"
+            tabIndex={0}
+            aria-label={layoutRuleAriaLabel(rule)}
+            onMouseEnter={() => onActiveAnchor(rule.anchor)}
+            onMouseLeave={() => onActiveAnchor(null)}
+            onFocus={() => onActiveAnchor(rule.anchor)}
+            onBlur={(event) => {
+              if (
+                !event.currentTarget.contains(
+                  event.relatedTarget as Node | null
+                )
+              ) {
+                onActiveAnchor(null);
+              }
+            }}
+          >
+            <span className="dsb-layout-anchor" aria-hidden>
+              {rule.anchor}
+            </span>
+            <div className="dsb-layout-rule-row">
+              <span className="dsb-layout-rule-head">
+                <span className="dsb-layout-rule-name" title={rule.name}>
+                  {rule.name}
+                </span>
+                <StatusChip status={rule.status} />
+                <InfoPopover
+                  entry={rule.row.entry}
+                  approval={approval}
+                  infoOpen={rows.infoKey === rule.key}
+                  popoverInstant={rows.popoverInstant(rule.key)}
+                  portalContainer={rows.portalContainer}
+                  ariaLabel={`Evidence for ${rule.name}`}
+                  onInfoOpenChange={(open) =>
+                    rows.onInfoKey(open ? rule.key : null)
+                  }
+                  onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.key)}
+                  onInfoHoverClose={rows.onInfoHoverClose}
+                  onApprove={() => rows.onApprove(rule.row)}
+                />
+              </span>
+              <span className="dsb-layout-rule-detail">
+                <span className="dsb-layout-rule-value" title={value}>
+                  {value}
+                </span>
+                <span
+                  className="dsb-layout-rule-meaning"
+                  title={rule.meaning}
+                >
+                  {rule.meaning}
+                </span>
+              </span>
+              <LayoutTechnicalDetails rule={rule} />
+              {approval.kind === "error" ? (
+                <span className="dsb-row-error" role="alert">
+                  Approval failed: {approval.message}
+                </span>
+              ) : null}
+            </div>
+            <LayoutOriginTag origin={rule.origin} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function LayoutRulesLeafPage({
+  leaf,
+  rows,
+  activeAnchor,
+  onActiveAnchor
+}: {
+  leaf: { rows: DsRow[]; chips: string[] };
+  rows: RowSharedProps;
+  activeAnchor: number | null;
+  onActiveAnchor: (anchor: number | null) => void;
+}) {
+  const rules = useMemo(() => projectLayoutLeaf(leaf.rows), [leaf.rows]);
+  return (
+    <>
+      <PageHeading
+        title="Layout"
+        meta={`${leaf.rows.length} rules`}
+        chips={leaf.chips}
+      />
+      {rules.length > 0 ? (
+        <section className="dsb-section">
+          <GroupLabel>Semantic roles</GroupLabel>
+          <LayoutRuleRows
+            rules={rules}
+            rows={rows}
+            activeAnchor={activeAnchor}
+            onActiveAnchor={onActiveAnchor}
+          />
+        </section>
+      ) : (
+        <p className="dsb-empty-body dsb-page-note">No rules declared yet.</p>
+      )}
+    </>
+  );
+}
+
+const LAYOUT_VIEWPORT = { x: 52, y: 40, width: 616, height: 472 };
+const LAYOUT_CONTAINER = { x: 112, y: 64, width: 496, height: 424 };
+const LAYOUT_GRID = { x: 132, y: 286, width: 456, height: 58 };
+
+function LayoutAnchorDot({
+  anchor,
+  x,
+  y
+}: {
+  anchor: number;
+  x: number;
+  y: number;
+}) {
+  return (
+    <>
+      <circle className="dsb-layout-anchor-dot" cx={x} cy={y} r={9} />
+      <text
+        className="dsb-layout-anchor-number"
+        x={x}
+        y={y + 3}
+        textAnchor="middle"
+      >
+        {anchor}
+      </text>
+    </>
+  );
+}
+
+function LayoutBlueprintRule({
+  rule,
+  unavailableIndex,
+  activeAnchor,
+  onActiveAnchor
+}: {
+  rule: LayoutRuleProjection;
+  unavailableIndex: number;
+  activeAnchor: number | null;
+  onActiveAnchor: (anchor: number | null) => void;
+}) {
+  const columnCount = rule.columns === null ? 0 : Math.min(rule.columns, 24);
+  const gridGap = columnCount > 1 ? 6 : 0;
+  const columnWidth =
+    columnCount > 0
+      ? (LAYOUT_GRID.width - (columnCount - 1) * gridGap) / columnCount
+      : 0;
+  const maxBreakpoint = Math.max(
+    1,
+    ...rule.breakpoints.map((breakpoint) => breakpoint.px)
+  );
+  const unavailableY = 72 + unavailableIndex * 30;
+  const anchorPoint =
+    rule.containerMaxWidth !== null || rule.pagePadding !== null
+      ? { x: 96, y: 28 }
+      : rule.regions.length > 0
+        ? { x: 96, y: 246 }
+        : rule.columns !== null
+          ? { x: 342, y: 370 }
+          : rule.gap !== null
+            ? { x: 454, y: 370 }
+            : rule.sectionRhythm !== null
+              ? { x: 650, y: 248 }
+              : rule.breakpoints.length > 0
+                ? { x: 38, y: 548 }
+                : rule.relationships.length > 0
+                  ? {
+                      x: 348,
+                      y: 107 + ((rule.anchor - 1) % 5) * 88
+                    }
+                  : { x: 494, y: unavailableY + 10 };
+  const statusLabel = rule.status === "gap" ? "open gap" : rule.status;
+  const responsiveDirection = anchorPoint.x > 560 ? -1 : 1;
+  const responsiveX = anchorPoint.x + 74 * responsiveDirection;
+
+  return (
+    <g
+      className="dsb-layout-blueprint-rule"
+      data-layout-anchor={rule.anchor}
+      data-anchor-active={activeAnchor === rule.anchor ? "" : undefined}
+      data-origin={rule.origin}
+      data-status={rule.status}
+      data-responsive={
+        rule.responsiveBehavior.length > 0 ? "true" : undefined
+      }
+      role="group"
+      tabIndex={0}
+      aria-label={layoutRuleAriaLabel(rule)}
+      onMouseEnter={() => onActiveAnchor(rule.anchor)}
+      onMouseLeave={() => onActiveAnchor(null)}
+      onFocus={() => onActiveAnchor(rule.anchor)}
+      onBlur={() => onActiveAnchor(null)}
+    >
+      <title>{`${rule.anchor}. ${rule.name} · ${LAYOUT_ORIGIN_LABEL[rule.origin]} · ${statusLabel}`}</title>
+
+      {rule.containerMaxWidth !== null ? (
+        <>
+          <line
+            className="dsb-layout-dimension"
+            x1={LAYOUT_CONTAINER.x}
+            y1={28}
+            x2={LAYOUT_CONTAINER.x + LAYOUT_CONTAINER.width}
+            y2={28}
+          />
+          <line
+            className="dsb-layout-dimension"
+            x1={LAYOUT_CONTAINER.x}
+            y1={23}
+            x2={LAYOUT_CONTAINER.x}
+            y2={33}
+          />
+          <line
+            className="dsb-layout-dimension"
+            x1={LAYOUT_CONTAINER.x + LAYOUT_CONTAINER.width}
+            y1={23}
+            x2={LAYOUT_CONTAINER.x + LAYOUT_CONTAINER.width}
+            y2={33}
+          />
+          <text
+            x={LAYOUT_CONTAINER.x + LAYOUT_CONTAINER.width / 2}
+            y={19}
+            textAnchor="middle"
+          >
+            {rule.containerMaxWidth}
+          </text>
+        </>
+      ) : null}
+
+      {rule.regions.length > 0
+        ? rule.regions.map((region, index) => {
+            const height =
+              (LAYOUT_CONTAINER.height -
+                Math.max(0, rule.regions.length - 1) * 6) /
+              rule.regions.length;
+            const y = LAYOUT_CONTAINER.y + index * (height + 6);
+            return (
+              <g key={`${rule.key}-${region}-${index}`}>
+                <rect
+                  className={
+                    index === 1
+                      ? "dsb-layout-block dsb-layout-block--accent"
+                      : "dsb-layout-block"
+                  }
+                  x={LAYOUT_CONTAINER.x}
+                  y={y}
+                  width={LAYOUT_CONTAINER.width}
+                  height={height}
+                  rx={5}
+                />
+                <text
+                  x={LAYOUT_CONTAINER.x + LAYOUT_CONTAINER.width / 2}
+                  y={y + height / 2 + 4}
+                  textAnchor="middle"
+                >
+                  {region}
+                </text>
+              </g>
+            );
+          })
+        : null}
+
+      {rule.columns !== null ? (
+        <>
+          {Array.from({ length: columnCount }).map((_, index) => (
+            <rect
+              key={`${rule.key}-column-${index}`}
+              className="dsb-layout-block dsb-layout-block--accent"
+              x={LAYOUT_GRID.x + index * (columnWidth + gridGap)}
+              y={LAYOUT_GRID.y}
+              width={columnWidth}
+              height={LAYOUT_GRID.height}
+              rx={2}
+            />
+          ))}
+          <text
+            x={LAYOUT_GRID.x + LAYOUT_GRID.width / 2}
+            y={LAYOUT_GRID.y + LAYOUT_GRID.height + 24}
+            textAnchor="middle"
+          >
+            {rule.columns} columns
+          </text>
+        </>
+      ) : null}
+
+      {rule.gap !== null ? (
+        <>
+          <line
+            className="dsb-layout-dimension"
+            x1={LAYOUT_GRID.x + 120}
+            y1={LAYOUT_GRID.y + LAYOUT_GRID.height + 9}
+            x2={LAYOUT_GRID.x + 172}
+            y2={LAYOUT_GRID.y + LAYOUT_GRID.height + 9}
+          />
+          <text
+            x={LAYOUT_GRID.x + 146}
+            y={LAYOUT_GRID.y + LAYOUT_GRID.height + 25}
+            textAnchor="middle"
+          >
+            gap {rule.gap}
+          </text>
+        </>
+      ) : null}
+
+      {rule.sectionRhythm !== null ? (
+        <>
+          <line
+            className="dsb-layout-dimension"
+            x1={648}
+            y1={198}
+            x2={648}
+            y2={280}
+          />
+          <line
+            className="dsb-layout-dimension"
+            x1={643}
+            y1={198}
+            x2={653}
+            y2={198}
+          />
+          <line
+            className="dsb-layout-dimension"
+            x1={643}
+            y1={280}
+            x2={653}
+            y2={280}
+          />
+          <text x={638} y={244} textAnchor="end">
+            {rule.sectionRhythm}
+          </text>
+        </>
+      ) : null}
+
+      {rule.breakpoints.length > 0 ? (
+        <>
+          <line
+            className="dsb-layout-dimension"
+            x1={LAYOUT_VIEWPORT.x}
+            y1={548}
+            x2={LAYOUT_VIEWPORT.x + LAYOUT_VIEWPORT.width}
+            y2={548}
+          />
+          {rule.breakpoints.map((breakpoint) => {
+            const x =
+              LAYOUT_VIEWPORT.x +
+              (breakpoint.px / maxBreakpoint) * LAYOUT_VIEWPORT.width;
+            return (
+              <g key={`${rule.key}-${breakpoint.name}-${breakpoint.px}`}>
+                <line
+                  className="dsb-layout-dimension"
+                  x1={x}
+                  y1={542}
+                  x2={x}
+                  y2={554}
+                />
+                <text x={x} y={570} textAnchor="middle">
+                  {breakpoint.name} {breakpoint.px}
+                </text>
+              </g>
+            );
+          })}
+        </>
+      ) : null}
+
+      {rule.relationships.length > 0 ? (
+        <>
+          <rect
+            className="dsb-layout-block"
+            x={144}
+            y={86 + ((rule.anchor - 1) % 5) * 88}
+            width={142}
+            height={42}
+            rx={5}
+          />
+          <text
+            x={215}
+            y={111 + ((rule.anchor - 1) % 5) * 88}
+            textAnchor="middle"
+          >
+            rule {rule.anchor}
+          </text>
+          {rule.relationships.slice(0, 3).map((relationship, index) => {
+            const y =
+              88 +
+              ((rule.anchor - 1) % 5) * 88 +
+              index * 16;
+            return (
+              <g key={`${rule.key}-relationship-${index}`}>
+                <line
+                  className="dsb-layout-relation"
+                  x1={286}
+                  y1={107 + ((rule.anchor - 1) % 5) * 88}
+                  x2={416}
+                  y2={y + 6}
+                />
+                <rect
+                  className="dsb-layout-relation-node"
+                  x={416}
+                  y={y}
+                  width={152}
+                  height={12}
+                  rx={3}
+                />
+                <text
+                  className="dsb-layout-relation-label"
+                  x={576}
+                  y={y + 9}
+                >
+                  R{index + 1}
+                </text>
+                <title>{relationship}</title>
+              </g>
+            );
+          })}
+        </>
+      ) : null}
+
+      {rule.origin === "unavailable" ? (
+        <>
+          <rect
+            className="dsb-layout-unknown"
+            x={510}
+            y={unavailableY}
+            width={118}
+            height={22}
+            rx={4}
+          />
+          <text x={569} y={unavailableY + 15} textAnchor="middle">
+            {rule.name} ?
+          </text>
+        </>
+      ) : null}
+
+      {rule.origin !== "unavailable" &&
+      rule.responsiveBehavior.length > 0 ? (
+        <g className="dsb-layout-responsive">
+          <title>{rule.responsiveBehavior.join(" ")}</title>
+          <line
+            x1={anchorPoint.x + 10 * responsiveDirection}
+            y1={anchorPoint.y}
+            x2={responsiveX}
+            y2={anchorPoint.y}
+          />
+          <path
+            d={`M ${responsiveX - 4} ${anchorPoint.y} L ${responsiveX} ${
+              anchorPoint.y - 4
+            } L ${responsiveX + 4} ${anchorPoint.y} L ${responsiveX} ${
+              anchorPoint.y + 4
+            } Z`}
+          />
+          <text
+            x={responsiveX + 8 * responsiveDirection}
+            y={anchorPoint.y - 7}
+            textAnchor={responsiveDirection > 0 ? "start" : "end"}
+          >
+            responsive ×{rule.responsiveBehavior.length}
+          </text>
+        </g>
+      ) : null}
+
+      <LayoutAnchorDot
+        anchor={rule.anchor}
+        x={anchorPoint.x}
+        y={anchorPoint.y}
+      />
+    </g>
+  );
+}
+
+export function LayoutSamples({
+  rows,
+  activeAnchor,
+  onActiveAnchor
+}: {
+  rows: DsRow[];
+  activeAnchor: number | null;
+  onActiveAnchor: (anchor: number | null) => void;
+}) {
+  const rules = useMemo(() => projectLayoutLeaf(rows), [rows]);
+  const activeRule =
+    rules.find((rule) => rule.anchor === activeAnchor) ?? null;
+  const origins = [...new Set(rules.map((rule) => rule.origin))];
+  let unavailableIndex = -1;
+
+  return (
+    <section
+      className="dsb-samples dsb-layout-samples"
+      data-testid="ds-layout-blueprint"
+    >
+      <GroupLabel>Visual samples</GroupLabel>
+      <div className="dsb-layout-card">
+        <div className="dsb-layout-stage">
+          <svg
+            className="dsb-layout-blueprint"
+            viewBox="0 0 720 590"
+            role="group"
+            aria-label="Blueprint of declared layout relationships"
+            data-active-anchor={activeAnchor ?? undefined}
+          >
+            <rect
+              className="dsb-layout-viewport"
+              x={LAYOUT_VIEWPORT.x}
+              y={LAYOUT_VIEWPORT.y}
+              width={LAYOUT_VIEWPORT.width}
+              height={LAYOUT_VIEWPORT.height}
+              rx={6}
+            />
+            {rules.map((rule) => {
+              if (rule.origin === "unavailable") unavailableIndex += 1;
+              return (
+                <LayoutBlueprintRule
+                  key={rule.key}
+                  rule={rule}
+                  unavailableIndex={Math.max(unavailableIndex, 0)}
+                  activeAnchor={activeAnchor}
+                  onActiveAnchor={onActiveAnchor}
+                />
+              );
+            })}
+          </svg>
+        </div>
+        <div className="dsb-layout-caption" aria-live="polite">
+          <span className="dsb-layout-caption-copy">
+            {activeRule
+              ? `Anchor ${activeRule.anchor} · ${activeRule.name}`
+              : "Blueprint"}
+          </span>
+          {activeRule ? (
+            <>
+              <LayoutOriginTag origin={activeRule.origin} />
+              <StatusChip
+                status={activeRule.status}
+                testId="ds-layout-active-status"
+              />
+            </>
+          ) : (
+            <span className="dsb-layout-origin-legend" aria-label="Visual origins">
+              {origins.map((origin) => (
+                <LayoutOriginTag key={origin} origin={origin} />
+              ))}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {rules
+        .filter((rule) => rule.origin === "unavailable")
+        .map((rule) => (
+          <div
+            key={`${rule.key}-unavailable`}
+            className="dsb-layout-unavailable"
+            data-layout-anchor={rule.anchor}
+            data-status={rule.status}
+            data-origin={rule.origin}
+            role="note"
+          >
+            <span className="dsb-layout-unavailable-copy">
+              <strong>{rule.name}</strong>
+              <span>{rule.unavailableReason}</span>
+            </span>
+            <LayoutOriginTag origin={rule.origin} />
+            <StatusChip
+              status={rule.status}
+              testId={`ds-layout-unavailable-status-${rule.anchor}`}
+            />
+          </div>
+        ))}
+    </section>
+  );
+}
+
+function LayoutReaderLeaf({
+  leaf,
+  rows,
+  ratio,
+  onRatioChange,
+  onRatioCommit
+}: {
+  leaf: { rows: DsRow[]; chips: string[] };
+  rows: RowSharedProps;
+} & LeafSplitRatioProps) {
+  const [activeAnchor, setActiveAnchor] = useState<number | null>(null);
+  return (
+    <LeafSplit
+      ratio={ratio}
+      onRatioChange={onRatioChange}
+      onRatioCommit={onRatioCommit}
+      left={
+        <LayoutRulesLeafPage
+          leaf={leaf}
+          rows={rows}
+          activeAnchor={activeAnchor}
+          onActiveAnchor={setActiveAnchor}
+        />
+      }
+      right={
+        <LayoutSamples
+          rows={leaf.rows}
+          activeAnchor={activeAnchor}
+          onActiveAnchor={setActiveAnchor}
+        />
+      }
+    />
   );
 }
 
@@ -1980,16 +2690,10 @@ export function DesignSystemBrowser({
         return {
           layout: "leaf",
           node: (
-            <LeafSplit
+            <LayoutReaderLeaf
               {...splitProps}
-              left={
-                <RulesLeafPage
-                  kind={route.leaf}
-                  leaf={model.foundations[route.leaf]}
-                  rows={rowListProps}
-                />
-              }
-              right={<VisualSamplesEmpty />}
+              leaf={model.foundations.layout}
+              rows={rowListProps}
             />
           )
         };

@@ -241,9 +241,80 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     writeSource("design-system/layout-rules.json", {
       rules: [
         {
-          id: "grid-page",
-          value: { columns: "12", gutter: { alias: "spacing.200" }, maxWidth: "1120px" },
-          meaning: "Default page grid",
+          id: "shell-regions",
+          value: {
+            regions: ["header", "hero", "content", "footer"],
+            relationship: [{ from: "hero", to: "content" }]
+          },
+          meaning: "Page shell vertical stack",
+          status: "candidate",
+          links: [designerEditedCardId]
+        },
+        {
+          id: "container-max",
+          value: {
+            maxWidth: "1200px",
+            pagePadding: { alias: "spacing.200" },
+            responsiveBehavior: ["Use 16px page padding below 768px."],
+            tokenLinks: ["spacing.200"]
+          },
+          meaning: "Marketing reading width",
+          status: "candidate",
+          links: [designerEditedCardId]
+        },
+        {
+          id: "grid-columns",
+          value: { columns: 12 },
+          meaning: "Marketing and dashboard grid",
+          status: "candidate",
+          links: [designerEditedCardId]
+        },
+        {
+          id: "grid-gap",
+          value: {
+            gap: "24px",
+            responsiveBehavior: ["Use 16px below 768px."],
+            tokenLinks: ["spacing.200"]
+          },
+          meaning: "Grid spacing",
+          status: "candidate",
+          links: [designerEditedCardId]
+        },
+        {
+          id: "section-rhythm",
+          value: {
+            heroToNext: "96px",
+            responsiveBehavior: ["Use 56px below 768px."]
+          },
+          meaning: "Desktop-to-mobile scroll rhythm",
+          status: "candidate",
+          links: [designerEditedCardId]
+        },
+        {
+          id: "responsive-breakpoints",
+          value: {
+            breakpoints: [
+              { name: "sm", value: "640px" },
+              { name: "md", value: "768px" },
+              { name: "lg", value: "1024px" },
+              { name: "xl", value: "1280px" }
+            ]
+          },
+          meaning: "Responsive thresholds",
+          status: "formalized",
+          links: [designerEditedCardId]
+        },
+        {
+          id: "nav-mobile",
+          value: {
+            missing: "Open state missing — cannot define menu layout or motion"
+          },
+          meaning: "Mobile navigation layout",
+          status: "gap",
+          links: []
+        }
+      ]
+    });
     writeSource("design-system/interaction-rules.json", {
       rules: [
         {
@@ -555,9 +626,9 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
       boxShadow: "none"
     });
 
-    // ---- Layout leaf: object values + persisted resizable split. ----
+    // ---- Layout leaf: source-backed Blueprint + persisted resizable split. ----
     await page.getByRole("button", { name: "Layout", exact: true }).click();
-    const gridRow = page.getByTestId("ds-row-grid-page");
+    const gridRow = page.getByTestId("ds-row-grid-columns");
     await expect(gridRow).toBeVisible();
     const layoutStatus = gridRow.getByTestId("ds-status-chip");
     await expect(layoutStatus).toHaveText("candidate");
@@ -576,11 +647,42 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
         borderRadius: "4px",
         borderStyle: "none",
         boxShadow: "none"
-      });
+    });
     await expect(gridRow).toContainText("columns");
-    await expect(gridRow).toContainText("→ spacing.200");
     await expect(gridRow).not.toContainText("{\"columns\"");
-    await expect(page.getByTestId("ds-samples-empty")).toBeVisible();
+    await expect(page.getByTestId("ds-row-container-max")).toContainText(
+      "→ spacing.200"
+    );
+    await expect(page.getByTestId("ds-samples-empty")).toHaveCount(0);
+    const blueprint = page.getByTestId("ds-layout-blueprint");
+    await expect(blueprint).toBeVisible();
+    await expect(blueprint).toContainText("1200px");
+    await expect(blueprint).toContainText("12 columns");
+    await expect(blueprint).toContainText("gap 24px");
+    await expect(blueprint).toContainText("96px");
+    await expect(blueprint).toContainText("sm 640");
+    await expect(blueprint).toContainText("Unavailable");
+    await expect(blueprint).toContainText(
+      "Open state missing — cannot define menu layout or motion"
+    );
+    await expect(
+      blueprint.locator('[data-layout-anchor="7"][data-status="gap"]')
+    ).toHaveCount(2);
+
+    // Row ↔ drawing correspondence is pointer- and keyboard-equivalent.
+    const layoutRows = page.locator(".dsb-layout-rules");
+    const gridRule = layoutRows.locator('[data-layout-anchor="3"]');
+    const gridAnchor = blueprint.locator(
+      'svg [data-layout-anchor="3"]'
+    );
+    await gridRule.hover();
+    await expect(gridRule).toHaveAttribute("data-anchor-active", "");
+    await expect(gridAnchor).toHaveAttribute("data-anchor-active", "");
+    await gridRule.focus();
+    await expect(gridAnchor).toHaveAttribute("data-anchor-active", "");
+    await gridAnchor.focus();
+    await expect(gridRule).toHaveAttribute("data-anchor-active", "");
+
     const split = page.getByTestId("ds-leaf-split");
     await expect(split).toBeVisible();
     await expect(split).not.toHaveAttribute("data-stacked", "true");

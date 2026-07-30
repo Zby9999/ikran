@@ -97,6 +97,322 @@ export function projectObjectFields(
   }));
 }
 
+/* ------------------------------- layout rules ------------------------------ */
+
+export type LayoutVisualOrigin =
+  | "source-generated"
+  | "schematic"
+  | "unavailable";
+
+export interface LayoutBreakpointProjection {
+  name: string;
+  px: number;
+}
+
+export interface LayoutRuleProjection {
+  key: string;
+  anchor: number;
+  name: string;
+  meaning: string;
+  status: DsStatus;
+  origin: LayoutVisualOrigin;
+  containerMaxWidth: string | null;
+  pagePadding: string | null;
+  columns: number | null;
+  gap: string | null;
+  regions: string[];
+  relationships: string[];
+  sectionRhythm: string | null;
+  breakpoints: LayoutBreakpointProjection[];
+  responsiveBehavior: string[];
+  tokenLinks: string[];
+  acceptanceChecks: string[];
+  unavailableReason: string | null;
+  row: DsRow;
+}
+
+interface LayoutField {
+  key: string;
+  path: string;
+  value: unknown;
+}
+
+function normalizedLayoutKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function layoutFields(
+  value: unknown,
+  parentPath = "",
+  depth = 0
+): LayoutField[] {
+  if (!isPlainObject(value) || depth > 3) return [];
+  return Object.entries(value).flatMap(([key, fieldValue]) => {
+    const path = parentPath ? `${parentPath}.${key}` : key;
+    const current = { key, path, value: fieldValue };
+    return isPlainObject(fieldValue) && aliasTargetOf(fieldValue) === null
+      ? [current, ...layoutFields(fieldValue, path, depth + 1)]
+      : [current];
+  });
+}
+
+function findLayoutField(
+  fields: readonly LayoutField[],
+  aliases: readonly string[]
+): LayoutField | null {
+  const normalizedAliases = new Set(aliases.map(normalizedLayoutKey));
+  return (
+    fields.find((field) =>
+      normalizedAliases.has(normalizedLayoutKey(field.key))
+    ) ??
+    fields.find((field) =>
+      normalizedAliases.has(normalizedLayoutKey(field.path))
+    ) ??
+    null
+  );
+}
+
+function layoutScalar(value: unknown): string | null {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    aliasTargetOf(value) !== null
+  ) {
+    const formatted = formatValueField(value).trim();
+    return formatted.length > 0 ? formatted : null;
+  }
+  return null;
+}
+
+function layoutInteger(value: unknown): number | null {
+  const scalar = layoutScalar(value);
+  if (scalar === null) return null;
+  const parsed = Number.parseInt(scalar, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function layoutRegions(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === "string" && item.trim().length > 0) {
+      return [item.trim()];
+    }
+    if (!isPlainObject(item)) return [];
+    for (const key of ["name", "region", "area", "id"]) {
+      if (typeof item[key] === "string" && item[key].trim().length > 0) {
+        return [item[key].trim()];
+      }
+    }
+    return [];
+  });
+}
+
+function layoutRelationships(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === "string" && item.trim().length > 0) {
+      return [item.trim()];
+    }
+    if (!isPlainObject(item)) return [];
+    const from = layoutScalar(item.from);
+    const to = layoutScalar(item.to);
+    if (from !== null && to !== null) return [`${from} → ${to}`];
+    const label = layoutScalar(item.label ?? item.relationship);
+    return label === null ? [] : [label];
+  });
+}
+
+function breakpointFromUnknown(
+  value: unknown,
+  fallbackName: string
+): LayoutBreakpointProjection | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return { name: fallbackName, px: value };
+  }
+  if (typeof value !== "string") return null;
+  const px = pxOf(value);
+  if (px === null || px <= 0) return null;
+  const name = value
+    .replace(/-?\d+(?:\.\d+)?(?:px)?/i, "")
+    .replace(/[:=@]/g, " ")
+    .trim();
+  return { name: name || fallbackName, px };
+}
+
+function layoutBreakpoints(value: unknown): LayoutBreakpointProjection[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => {
+      if (isPlainObject(item)) {
+        const nameValue = item.name ?? item.label ?? item.id;
+        const name =
+          typeof nameValue === "string" && nameValue.trim().length > 0
+            ? nameValue.trim()
+            : `bp${index + 1}`;
+        const pxValue =
+          item.px ?? item.value ?? item.width ?? item.minWidth ?? item.min;
+        const point = breakpointFromUnknown(pxValue, name);
+        return point ? [{ ...point, name }] : [];
+      }
+      const point = breakpointFromUnknown(item, `bp${index + 1}`);
+      return point ? [point] : [];
+    });
+  }
+  if (isPlainObject(value)) {
+    return Object.entries(value).flatMap(([name, pxValue]) => {
+      const point = breakpointFromUnknown(pxValue, name);
+      return point ? [{ ...point, name }] : [];
+    });
+  }
+  if (typeof value === "string") {
+    const matches = [...value.matchAll(/(\d+(?:\.\d+)?)\s*(?:px)?/gi)];
+    return matches.map((match, index) => ({
+      name: `bp${index + 1}`,
+      px: Number.parseFloat(match[1]!)
+    }));
+  }
+  return [];
+}
+
+function layoutStringCollection(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is string =>
+          typeof item === "string" && item.trim().length > 0
+      )
+    : [];
+}
+
+/**
+ * Deterministic DB-row → Blueprint presentation. Only explicitly supported
+ * spatial fields are projected. The renderer may schematize their
+ * relationships, but it never supplies a missing measurement or appearance.
+ */
+export function projectLayoutLeaf(
+  rows: readonly DsRow[]
+): LayoutRuleProjection[] {
+  return rows.map((row, index) => {
+    const value = isPlainObject(row.entry.value) ? row.entry.value : {};
+    const fields = layoutFields(value);
+    const identity = normalizedLayoutKey(
+      `${row.entry.entry_id} ${row.name}`
+    );
+    const genericValue = layoutScalar(
+      findLayoutField(fields, ["value"])?.value
+    );
+    const fieldScalar = (aliases: readonly string[]) =>
+      layoutScalar(findLayoutField(fields, aliases)?.value);
+    const identityValue = (identityAliases: readonly string[]) =>
+      identityAliases.some((alias) =>
+        identity.includes(normalizedLayoutKey(alias))
+      )
+        ? genericValue
+        : null;
+
+    const containerMaxWidth =
+      fieldScalar(["maxWidth", "containerMaxWidth", "contentMaxWidth"]) ??
+      identityValue(["containerMaxWidth", "containerWidth"]);
+    const pagePadding = fieldScalar([
+      "pagePadding",
+      "containerPadding",
+      "paddingInline"
+    ]);
+    const columns =
+      layoutInteger(
+        findLayoutField(fields, ["columns", "columnCount", "gridColumns"])
+          ?.value
+      ) ??
+      (identity.includes("gridcolumns")
+        ? layoutInteger(genericValue)
+        : null);
+    const gap =
+      fieldScalar(["gap", "gutter", "gridGap", "columnGap"]) ??
+      identityValue(["gridGap", "gridGutter"]);
+    const regionsField = findLayoutField(fields, [
+      "regions",
+      "shellRegions",
+      "areas"
+    ]);
+    const regions = layoutRegions(regionsField?.value);
+    const relationships = layoutRelationships(
+      findLayoutField(fields, ["relationship", "relationships"])?.value
+    );
+    const sectionRhythm =
+      fieldScalar([
+        "heroToNext",
+        "sectionRhythm",
+        "sectionSpacing",
+        "verticalRhythm"
+      ]) ?? identityValue(["heroToNext", "sectionRhythm"]);
+    const breakpointsField = findLayoutField(fields, [
+      "breakpoints",
+      "responsiveBreakpoints"
+    ]);
+    const breakpoints = layoutBreakpoints(
+      breakpointsField?.value ??
+        (identity.includes("breakpoint") ? genericValue : null)
+    );
+    const responsiveBehavior = layoutStringCollection(
+      findLayoutField(fields, ["responsiveBehavior"])?.value
+    );
+    const tokenLinks = layoutStringCollection(
+      findLayoutField(fields, ["tokenLinks"])?.value
+    );
+    const acceptanceChecks = layoutStringCollection(
+      findLayoutField(fields, ["acceptanceChecks"])?.value
+    );
+    const missing =
+      fieldScalar([
+        "missing",
+        "missingReason",
+        "unavailableReason",
+        "openGap"
+      ]) ?? null;
+    const hasMeasurement =
+      containerMaxWidth !== null ||
+      pagePadding !== null ||
+      gap !== null ||
+      sectionRhythm !== null ||
+      breakpoints.length > 0;
+    const hasStructure =
+      columns !== null || regions.length > 0 || relationships.length > 0;
+    const origin: LayoutVisualOrigin =
+      row.status === "gap" || (!hasMeasurement && !hasStructure)
+        ? "unavailable"
+        : hasMeasurement
+          ? "source-generated"
+          : "schematic";
+    const unavailableReason =
+      origin !== "unavailable"
+        ? null
+        : missing ??
+          (row.status === "gap"
+            ? "This open gap does not declare a drawable spatial relationship."
+            : "No supported spatial measurement or relationship is declared for this rule.");
+
+    return {
+      key: row.key,
+      anchor: index + 1,
+      name: row.name,
+      meaning: row.meaning,
+      status: row.status,
+      origin,
+      containerMaxWidth,
+      pagePadding,
+      columns,
+      gap,
+      regions,
+      relationships,
+      sectionRhythm,
+      breakpoints,
+      responsiveBehavior,
+      tokenLinks,
+      acceptanceChecks,
+      unavailableReason,
+      row
+    };
+  });
+}
+
 /* ---------------------------- interaction rules --------------------------- */
 
 export type InteractionControlKind = "link" | "button" | "field" | "sheet";
