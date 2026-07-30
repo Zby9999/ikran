@@ -79,6 +79,8 @@ Layout / Interaction 等尚无正式视觉 grammar 的 leaf 仍保留统一可�
   完整 raw envelope 仍留在 DB-backed projection，不改变真源或证据链；
 - Atlas 状态标记使用 4px 圆角、无 border / stroke / inset ring；此改动不扩散到
   Browser 其他既有 status chip；
+- Atlas 排序控件固定为左 `Scale`、右 `Role`，首次进入默认按 Scale 从大到小排序；
+  按钮文案不使用 `By` 前缀；
 - 正式方案晋升后删除临时 `/prototypes/typography-reader` 路由。
 
 ## Design prerequisite
@@ -107,6 +109,7 @@ Visual Sample 组织方式，不是最终实现稿：
 - [x] Atomic size 历史在缺少完整 style 时只展示有证据的字段，不虚构 weight、
       line height 或 tracking。
 - [x] Atlas 状态标记为 4px 圆角且无描边；其他 Browser status chip 不受影响。
+- [x] 排序控件为 `Scale | Role`，默认 Scale，文案无 `By` 前缀。
 - [x] Typography 底部不呈现 Source tokens 或 Technical details；form 内的
       Source-backed identity 与 evidence 入口继续可用。
 - [x] Instrument Sans 以项目内 self-hosted FontFace（400 / 500 / 600 / 700）实际加载，

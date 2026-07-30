@@ -1038,7 +1038,7 @@ export function TypographyLeafPage({
   }[];
   rows: RowSharedProps;
 }) {
-  const [order, setOrder] = useState<"role" | "scale">("role");
+  const [order, setOrder] = useState<"role" | "scale">("scale");
   const projection = useMemo(() => projectTypographyLeaf(layers), [layers]);
   const atlasItems = useMemo(
     () => typographyAtlasItems(projection),
@@ -1084,20 +1084,20 @@ export function TypographyLeafPage({
               <Button
                 variant="ghost"
                 size="xs"
-                aria-pressed={order === "role"}
-                data-active={order === "role" || undefined}
-                onClick={() => setOrder("role")}
-              >
-                By role
-              </Button>
-              <Button
-                variant="ghost"
-                size="xs"
                 aria-pressed={order === "scale"}
                 data-active={order === "scale" || undefined}
                 onClick={() => setOrder("scale")}
               >
-                By scale
+                Scale
+              </Button>
+              <Button
+                variant="ghost"
+                size="xs"
+                aria-pressed={order === "role"}
+                data-active={order === "role" || undefined}
+                onClick={() => setOrder("role")}
+              >
+                Role
               </Button>
             </div>
           </div>

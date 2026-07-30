@@ -438,6 +438,13 @@ function typographyLayers() {
           status: "formalized"
         }),
         entry({
+          entry_id: "primitive.font-size-700",
+          section: "token.primitive",
+          name: "font.size.700",
+          value: "32px",
+          status: "formalized"
+        }),
+        entry({
           entry_id: "primitive.font-weight-bold",
           section: "token.primitive",
           name: "font.weight.bold",
@@ -450,6 +457,12 @@ function typographyLayers() {
       layer: "semantic" as const,
       entries: [
         entry({
+          entry_id: "semantic.body",
+          name: "body",
+          value: { family: "Inter", size: "16px", weight: "400", tracking: "0.01em" },
+          status: "candidate"
+        }),
+        entry({
           entry_id: "semantic.display-large",
           name: "display.large",
           value: {
@@ -459,12 +472,6 @@ function typographyLayers() {
             lineHeight: "1.05"
           },
           status: "formalized"
-        }),
-        entry({
-          entry_id: "semantic.body",
-          name: "body",
-          value: { family: "Inter", size: "16px", weight: "400", tracking: "0.01em" },
-          status: "candidate"
         })
       ]
     },
@@ -481,11 +488,27 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
       })
     );
     expect(html).toContain('<h1 class="dsb-h1">Typography</h1>');
-    expect(html).toContain("5 tokens");
+    expect(html).toContain("6 tokens");
     expect(html).toContain('data-testid="ds-typography-atlas"');
     expect(html).not.toContain('data-testid="ds-leaf-split"');
     expect(html).not.toContain("Eight forms, one family");
     expect(html).not.toContain("Typography · Comparative atlas");
+    expect(html.indexOf(">Scale</button>")).toBeLessThan(
+      html.indexOf(">Role</button>")
+    );
+    expect(html).toMatch(
+      /<button[^>]*aria-pressed="true"[^>]*>Scale<\/button>/
+    );
+    expect(html).toMatch(
+      /<button[^>]*aria-pressed="false"[^>]*>Role<\/button>/
+    );
+    expect(html).not.toContain(">By scale</button>");
+    expect(html).not.toContain(">By role</button>");
+    expect(
+      html.indexOf('data-testid="ds-atlas-primitive.font-size-700"')
+    ).toBeLessThan(
+      html.indexOf('data-testid="ds-atlas-semantic.body"')
+    );
   });
 
   test("keeps each specimen's usage, construction data and evidence attached", () => {

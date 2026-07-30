@@ -193,6 +193,13 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
           links: [designerEditedCardId],
           domain: "typography"
         },
+        "font.size.700": {
+          value: "32px",
+          meaning: "Section heading size",
+          status: "formalized",
+          links: [designerEditedCardId],
+          domain: "typography"
+        },
         "font.weight.bold": {
           value: "700",
           meaning: "Bold weight",
@@ -202,6 +209,13 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
         }
       },
       semantic: {
+        body: {
+          value: { family: "Inter", size: "16px", weight: "400", tracking: "0.01em" },
+          meaning: "Default reading role",
+          status: "candidate",
+          links: [designerEditedCardId],
+          domain: "typography"
+        },
         "display.large": {
           value: {
             fontFamily: { alias: "primitive.font.family.sans" },
@@ -211,13 +225,6 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
           },
           meaning: "Hero display role",
           status: "formalized",
-          links: [designerEditedCardId],
-          domain: "typography"
-        },
-        body: {
-          value: { family: "Inter", size: "16px", weight: "400", tracking: "0.01em" },
-          meaning: "Default reading role",
-          status: "candidate",
           links: [designerEditedCardId],
           domain: "typography"
         }
@@ -278,6 +285,27 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(page.getByTestId("ds-leaf-split")).toHaveCount(0);
     const atlas = page.getByTestId("ds-typography-atlas");
     await expect(atlas).toBeVisible();
+    const scaleOrder = page.getByRole("button", {
+      name: "Scale",
+      exact: true
+    });
+    const roleOrder = page.getByRole("button", {
+      name: "Role",
+      exact: true
+    });
+    await expect(scaleOrder).toHaveAttribute("aria-pressed", "true");
+    await expect(roleOrder).toHaveAttribute("aria-pressed", "false");
+    expect((await scaleOrder.boundingBox())!.x).toBeLessThan(
+      (await roleOrder.boundingBox())!.x
+    );
+    const atlasCardIds = await atlas.locator(".dsb-atlas-card").evaluateAll(
+      (cards) => cards.map((card) => card.getAttribute("data-testid"))
+    );
+    expect(
+      atlasCardIds.indexOf("ds-atlas-primitive.font.size.700")
+    ).toBeLessThan(
+      atlasCardIds.indexOf("ds-atlas-semantic.body")
+    );
     const displayCard = page.getByTestId(
       "ds-atlas-semantic.display.large"
     );
