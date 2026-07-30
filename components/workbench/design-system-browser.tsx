@@ -25,12 +25,12 @@ import {
   ArrowRight01Icon,
   ColorsIcon,
   ComponentIcon,
-  Cursor02Icon,
   GridViewIcon,
   Home01Icon,
   InformationCircleIcon,
   Layers01Icon,
   MultiplicationSignIcon,
+  Route01Icon,
   TextFontIcon
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -523,7 +523,7 @@ const FOUNDATIONS_LEAVES: {
   { id: "typography", name: "Typography", icon: TextFontIcon },
   { id: "materials", name: "Materials", icon: Layers01Icon },
   { id: "layout", name: "Layout", icon: GridViewIcon },
-  { id: "interaction", name: "Interaction", icon: Cursor02Icon }
+  { id: "interaction", name: "Interaction", icon: Route01Icon }
 ];
 
 /* ------------------------------- home pages ------------------------------- */
