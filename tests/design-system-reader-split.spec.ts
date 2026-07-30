@@ -334,6 +334,11 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     expect((await scaleOrder.boundingBox())!.x).toBeLessThan(
       (await roleOrder.boundingBox())!.x
     );
+    const orderControl = page.locator('[aria-label="Order type atlas"]');
+    const orderIndicator = page.getByTestId("ds-atlas-order-indicator");
+    const scaleTransform = await orderIndicator.evaluate(
+      (element) => getComputedStyle(element).transform
+    );
     const atlasCardIds = await atlas.locator(".dsb-atlas-card").evaluateAll(
       (cards) => cards.map((card) => card.getAttribute("data-testid"))
     );
@@ -342,6 +347,40 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     ).toBeLessThan(
       atlasCardIds.indexOf("ds-atlas-semantic.body")
     );
+    await roleOrder.click();
+    await expect(roleOrder).toHaveAttribute("aria-pressed", "true");
+    await expect(orderControl).toHaveAttribute("data-motion", "slide");
+    await expect
+      .poll(() =>
+        orderIndicator.evaluate(
+          (element) => getComputedStyle(element).transform
+        )
+      )
+      .not.toBe(scaleTransform);
+    await scaleOrder.focus();
+    await scaleOrder.press("Enter");
+    await expect(scaleOrder).toHaveAttribute("aria-pressed", "true");
+    await expect(orderControl).toHaveAttribute("data-motion", "instant");
+    await expect
+      .poll(() =>
+        orderIndicator.evaluate(
+          (element) => getComputedStyle(element).transitionDuration
+        )
+      )
+      .toBe("0s");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await roleOrder.click();
+    await expect(orderControl).toHaveAttribute("data-motion", "slide");
+    await expect
+      .poll(() =>
+        orderIndicator.evaluate(
+          (element) => getComputedStyle(element).transitionDuration
+        )
+      )
+      .toBe("0s");
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await scaleOrder.click();
+    await expect(scaleOrder).toHaveAttribute("aria-pressed", "true");
     const atomicHeroCard = page.getByTestId(
       "ds-atlas-primitive.font.size.700"
     );

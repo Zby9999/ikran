@@ -1071,32 +1071,56 @@
 }
 
 .dsb-atlas-order {
-  display: inline-flex;
+  position: relative;
+  display: inline-grid;
+  width: 108px;
   flex: 0 0 auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   border-radius: 8px;
   background: rgb(0 0 0 / 5%);
   padding: 2px;
 }
 
+.dsb-atlas-order-indicator {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+  pointer-events: none;
+  transform: translateX(0);
+  transition: transform 160ms var(--motion-ease-in-out);
+}
+
+.dsb-atlas-order[data-order="role"] .dsb-atlas-order-indicator {
+  transform: translateX(100%);
+}
+
+.dsb-atlas-order[data-motion="instant"] .dsb-atlas-order-indicator {
+  transition-duration: 0ms;
+}
+
 .dsb-atlas-order button {
+  position: relative;
+  z-index: 1;
+  width: 100%;
   height: 26px;
   border: 0;
   border-radius: 6px;
   background: transparent;
-  padding: 0 10px;
+  padding: 0;
   color: var(--dsc-ink-3);
   cursor: pointer;
   font-size: 11.5px;
   transition:
-    background-color 150ms ease-out,
-    color 150ms ease-out,
-    box-shadow 150ms ease-out,
-    transform 150ms ease-out;
+    color 120ms ease,
+    transform 150ms var(--motion-ease-out);
 }
 
 .dsb-atlas-order button[data-active] {
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
   color: var(--dsc-ink);
 }
 
@@ -1413,6 +1437,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .dsb-atlas-order-indicator {
+    transition-duration: 0ms;
+  }
+
   .dsb-atlas-order button {
     transition-duration: 1ms;
   }

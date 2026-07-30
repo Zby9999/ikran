@@ -83,7 +83,8 @@ Layout / Interaction 等尚无正式视觉 grammar 的 leaf 仍保留统一可�
 - Browser 内所有状态标记统一使用 4px 圆角、无 border / stroke / inset ring 的轻量
   填充矩形；Typography Atlas 与其他 foundation / component 页面复用同一组件；
 - Atlas 排序控件固定为左 `Scale`、右 `Role`，首次进入默认按 Scale 从大到小排序；
-  按钮文案不使用 `By` 前缀；
+  按钮文案不使用 `By` 前缀；选中态使用一个共享指示块在两侧间水平滑动，pointer
+  操作为 160ms 可中断 transform，键盘操作与 reduced-motion 即时切换；
 - 正式方案晋升后删除临时 `/prototypes/typography-reader` 路由。
 
 ## Design prerequisite

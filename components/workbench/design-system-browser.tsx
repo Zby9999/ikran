@@ -1042,6 +1042,7 @@ export function TypographyLeafPage({
   rows: RowSharedProps;
 }) {
   const [order, setOrder] = useState<"role" | "scale">("scale");
+  const [animateOrder, setAnimateOrder] = useState(true);
   const projection = useMemo(() => projectTypographyLeaf(layers), [layers]);
   const atlasItems = useMemo(
     () => typographyAtlasItems(projection),
@@ -1087,13 +1088,26 @@ export function TypographyLeafPage({
                 chips={projection.chips}
               />
             </div>
-            <div className="dsb-atlas-order" aria-label="Order type atlas">
+            <div
+              className="dsb-atlas-order"
+              aria-label="Order type atlas"
+              data-motion={animateOrder ? "slide" : "instant"}
+              data-order={order}
+            >
+              <span
+                aria-hidden
+                className="dsb-atlas-order-indicator"
+                data-testid="ds-atlas-order-indicator"
+              />
               <Button
                 variant="ghost"
                 size="xs"
                 aria-pressed={order === "scale"}
                 data-active={order === "scale" || undefined}
-                onClick={() => setOrder("scale")}
+                onClick={(event) => {
+                  setAnimateOrder(event.detail > 0);
+                  setOrder("scale");
+                }}
               >
                 Scale
               </Button>
@@ -1102,7 +1116,10 @@ export function TypographyLeafPage({
                 size="xs"
                 aria-pressed={order === "role"}
                 data-active={order === "role" || undefined}
-                onClick={() => setOrder("role")}
+                onClick={(event) => {
+                  setAnimateOrder(event.detail > 0);
+                  setOrder("role");
+                }}
               >
                 Role
               </Button>
