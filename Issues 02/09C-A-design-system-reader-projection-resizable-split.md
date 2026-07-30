@@ -69,7 +69,8 @@ Layout / Interaction 等尚无正式视觉 grammar 的 leaf 仍保留统一可�
 
 - Typography 不再把 token rows 与 visual samples 分置左右栏，而改为全宽 Atlas；
 - 页面顶部必须继续使用 Browser 其他 section 的标准 `PageHeading`，不使用原型中的
-  独立 kicker / marketing title / intro；
+  独立 kicker / marketing title / intro；Typography 只在顶部保留标准 page title，
+  token count / status summary 移入 Atlas toolbar 左侧，取代冗余的 `Type specimens`；
 - 每一种实际出现的字体形式直接附带 usage、family、size、weight、line height、
   tracking、transform 与 source / evidence；缺失字段不推测、不补全；
 - 只有 atomic size 而没有完整 style 的历史数据，形成诚实的 scale specimen：沿用唯一

@@ -500,6 +500,21 @@ function RowList({ rows, ...rest }: RowListProps) {
   );
 }
 
+function PageSummary({
+  meta,
+  chips
+}: {
+  meta: string;
+  chips: string[];
+}) {
+  return (
+    <div className="dsb-intro">
+      <p className="dsb-meta">{meta}</p>
+      <StatDots items={chips} />
+    </div>
+  );
+}
+
 function PageHeading({
   title,
   meta,
@@ -512,10 +527,7 @@ function PageHeading({
   return (
     <>
       <h1 className="dsb-h1">{title}</h1>
-      <div className="dsb-intro">
-        <p className="dsb-meta">{meta}</p>
-        <StatDots items={chips} />
-      </div>
+      <PageSummary meta={meta} chips={chips} />
     </>
   );
 }
@@ -1059,18 +1071,19 @@ export function TypographyLeafPage({
 
   return (
     <div className="dsb-typography-page">
-      <PageHeading
-        title="Typography"
-        meta={`${tokenCount} tokens`}
-        chips={projection.chips}
-      />
+      <h1 className="dsb-h1">Typography</h1>
       {orderedItems.length > 0 ? (
         <section
           className="dsb-section dsb-typography-atlas"
           data-testid="ds-typography-atlas"
         >
           <div className="dsb-atlas-toolbar">
-            <GroupLabel>Type specimens</GroupLabel>
+            <div data-testid="ds-typography-summary">
+              <PageSummary
+                meta={`${tokenCount} tokens`}
+                chips={projection.chips}
+              />
+            </div>
             <div className="dsb-atlas-order" aria-label="Order type atlas">
               <Button
                 variant="ghost"

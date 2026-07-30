@@ -490,6 +490,8 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
     expect(html).toContain('<h1 class="dsb-h1">Typography</h1>');
     expect(html).toContain("6 tokens");
     expect(html).toContain('data-testid="ds-typography-atlas"');
+    expect(html).toContain('data-testid="ds-typography-summary"');
+    expect(html).not.toContain("Type specimens");
     expect(html).not.toContain('data-testid="ds-leaf-split"');
     expect(html).not.toContain("Eight forms, one family");
     expect(html).not.toContain("Typography · Comparative atlas");

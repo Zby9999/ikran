@@ -306,6 +306,12 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(page.getByTestId("ds-leaf-split")).toHaveCount(0);
     const atlas = page.getByTestId("ds-typography-atlas");
     await expect(atlas).toBeVisible();
+    await expect(
+      atlas.getByText("Type specimens", { exact: true })
+    ).toHaveCount(0);
+    const typographySummary = page.getByTestId("ds-typography-summary");
+    await expect(typographySummary).toContainText("tokens");
+    await expect(typographySummary).toContainText("formalized");
     await expect(atlas.getByText("Scale token", { exact: true })).toHaveCount(0);
     await expect(atlas.getByText("Text style", { exact: true })).toHaveCount(0);
     const scaleOrder = page.getByRole("button", {
