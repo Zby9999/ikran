@@ -244,8 +244,69 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
           id: "grid-page",
           value: { columns: "12", gutter: { alias: "spacing.200" }, maxWidth: "1120px" },
           meaning: "Default page grid",
+    writeSource("design-system/interaction-rules.json", {
+      rules: [
+        {
+          id: "primary-button",
+          name: "Primary button",
+          value: {
+            appliesTo: ["Buttons", "Icon buttons"],
+            stateBehavior: [
+              { state: "default", behavior: "Filled ink surface" },
+              { state: "hover", behavior: "Surface darkens 4%" },
+              { state: "active", behavior: "Scale 0.97 press" },
+              { state: "disabled", behavior: "35% opacity, no pointer" }
+            ],
+            motion: [
+              {
+                duration: "160ms",
+                easing: "ease-out",
+                target: "background-color"
+              }
+            ],
+            layoutInvariants: ["Press never shifts layout"]
+          },
+          meaning: "Commit actions across the workbench",
           status: "candidate",
           links: [designerEditedCardId]
+        },
+        {
+          id: "sheet-drawer",
+          name: "Sheet drawer",
+          value: {
+            appliesTo: ["Browser sheet", "Overlays"],
+            stateBehavior: [
+              { state: "open", behavior: "Resting at 94vh, rounded top" },
+              {
+                state: "closed",
+                behavior: "Translated 102% down, hidden"
+              }
+            ],
+            motion: [
+              {
+                duration: "350ms",
+                easing: "cubic-bezier(0.32, 0.72, 0, 1)",
+                target: "transform"
+              }
+            ],
+            layoutInvariants: ["Sheet never covers the sidebar nav"]
+          },
+          meaning: "Bottom sheet enter and exit",
+          status: "candidate",
+          links: [designerEditedCardId]
+        },
+        {
+          id: "loading-state",
+          name: "Loading behavior",
+          value: {
+            appliesTo: ["Buttons", "Panels"],
+            stateBehavior: [],
+            motion: [],
+            layoutInvariants: []
+          },
+          meaning: "Async wait feedback",
+          status: "gap",
+          links: []
         }
       ]
     });
@@ -271,6 +332,10 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     expect(structuredContent(await declare(
       "design-system/layout-rules.json",
       "layout-rules.json"
+    ))).toMatchObject({ ok: true, record: { status: "ingested" } });
+    expect(structuredContent(await declare(
+      "design-system/interaction-rules.json",
+      "interaction-rules.json"
     ))).toMatchObject({ ok: true, record: { status: "ingested" } });
 
     // ---- Foundations home: the rich principle reads as labeled fields. ----
@@ -611,6 +676,86 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     );
     expect(splitOverflow).toBeLessThanOrEqual(1);
     await page.setViewportSize({ width: 1280, height: 720 });
+
+    // ---- 09C-B Interaction Rig: source-backed live states + honest gaps. ----
+    await page.getByRole("button", { name: "Interaction", exact: true }).click();
+    const rig = page.getByTestId("ds-interaction-rig");
+    await expect(rig).toBeVisible();
+
+    const buttonRule = page.getByTestId("ds-interaction-rule-1");
+    await expect(buttonRule).toContainText("Primary button");
+    await expect(buttonRule.getByTestId("ds-interaction-status")).toHaveText(
+      "candidate"
+    );
+    await expect(buttonRule).toContainText("Source-generated");
+    await expect(buttonRule.getByLabel("Declared states")).toContainText(
+      "default"
+    );
+    await expect(buttonRule.getByLabel("Declared states")).toContainText(
+      "disabled"
+    );
+    await expect(buttonRule.getByLabel("Declared states")).not.toContainText(
+      "focus-visible"
+    );
+    const liveButton = buttonRule.getByRole("button", {
+      name: "Save changes"
+    });
+    await liveButton.hover();
+    await expect(buttonRule.locator(".dsb-interaction-readout-state")).toHaveText(
+      "hover"
+    );
+    await expect(
+      buttonRule.locator(".dsb-interaction-readout-behavior")
+    ).toHaveText("Surface darkens 4%");
+    const liveButtonBox = await liveButton.boundingBox();
+    expect(liveButtonBox).not.toBeNull();
+    await page.mouse.move(
+      liveButtonBox!.x + liveButtonBox!.width / 2,
+      liveButtonBox!.y + liveButtonBox!.height / 2
+    );
+    await page.mouse.down();
+    await expect(buttonRule.locator(".dsb-interaction-readout-state")).toHaveText(
+      "active"
+    );
+    await page.mouse.up();
+
+    const sheetRule = page.getByTestId("ds-interaction-rule-2");
+    await expect(sheetRule).toContainText("Schematic");
+    const specimenStage = sheetRule.locator(".dsb-interaction-stage");
+    await sheetRule.getByRole("button", { name: "Open sheet" }).click();
+    await expect(specimenStage).toHaveAttribute("data-sheet-open", "");
+    await sheetRule.getByRole("button", {
+      name: "Close Sheet drawer specimen"
+    }).focus();
+    await page.keyboard.press("Escape");
+    await expect(specimenStage).not.toHaveAttribute("data-sheet-open");
+    await expect(sheet).toHaveAttribute("data-open", "true");
+    await expect(sheetRule.locator(".dsb-interaction-readout-state")).toHaveText(
+      "closed"
+    );
+
+    const loadingRule = page.getByTestId("ds-interaction-rule-3");
+    await expect(loadingRule).toHaveAttribute("data-unavailable", "true");
+    await expect(loadingRule).toContainText("Unavailable");
+    await expect(loadingRule).toContainText(
+      "No states are declared for this interaction rule."
+    );
+    await expect(rig.getByText(/spinner/i)).toHaveCount(0);
+
+    const interactionRow = page.getByTestId("ds-row-primary-button");
+    await expect(interactionRow.locator(".dsb-interaction-anchor")).toHaveText(
+      "1"
+    );
+
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await sheetRule.getByRole("button", { name: "Open sheet" }).click();
+    await expect
+      .poll(() =>
+        sheetRule
+          .locator(".dsb-interaction-sheet-panel")
+          .evaluate((element) => getComputedStyle(element).transitionDuration)
+      )
+      .toBe("0.001s");
   } finally {
     try {
       await client?.close();

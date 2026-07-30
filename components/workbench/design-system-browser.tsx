@@ -47,11 +47,13 @@ import {
 } from "@/lib/runtime/design-system-browser-preferences-shared";
 import {
   projectObjectFields,
+  projectInteractionLeaf,
   projectPrinciple,
   projectTypographyLeaf,
   typographyAtlasItems,
   typographyLayersFromView,
   type PrincipleProjection,
+  type InteractionRuleProjection,
   type TokenLayerKey,
   type TypographyAtlasItem
 } from "./design-system-reader-projection";
@@ -369,6 +371,7 @@ export function InfoPopover({
 
 export function SpecRowView({
   row,
+  anchor,
   approval,
   infoOpen,
   popoverInstant,
@@ -379,6 +382,7 @@ export function SpecRowView({
   onApprove
 }: {
   row: DsRow;
+  anchor?: number;
   approval: ApprovalState;
   infoOpen: boolean;
   popoverInstant: boolean;
@@ -409,10 +413,21 @@ export function SpecRowView({
       : null;
   return (
     <div
-      className={fields ? "dsb-row dsb-row--object" : "dsb-row"}
+      className={[
+        "dsb-row",
+        fields ? "dsb-row--object" : "",
+        anchor !== undefined ? "dsb-row--interaction" : ""
+      ]
+        .filter(Boolean)
+        .join(" ")}
       data-testid={`ds-row-${row.entryId}`}
       data-approve-error={approval.kind === "error" || undefined}
     >
+      {anchor !== undefined ? (
+        <span className="dsb-interaction-anchor" aria-hidden>
+          {anchor}
+        </span>
+      ) : null}
       {row.swatch !== null ? (
         <span
           aria-hidden
@@ -466,6 +481,7 @@ export function SpecRowView({
 
 type RowListProps = {
   rows: DsRow[];
+  numbered?: boolean;
   approvals: Record<string, ApprovalState>;
   infoKey: string | null;
   popoverInstant: (key: string) => boolean;
@@ -477,15 +493,16 @@ type RowListProps = {
 };
 
 /** Everything RowList needs except the rows themselves — shared by all pages. */
-export type RowSharedProps = Omit<RowListProps, "rows">;
+export type RowSharedProps = Omit<RowListProps, "rows" | "numbered">;
 
-function RowList({ rows, ...rest }: RowListProps) {
+function RowList({ rows, numbered = false, ...rest }: RowListProps) {
   return (
     <div className="dsb-rows">
-      {rows.map((row) => (
+      {rows.map((row, index) => (
         <SpecRowView
           key={row.key}
           row={row}
+          anchor={numbered ? index + 1 : undefined}
           approval={rest.approvals[row.key] ?? { kind: "idle" }}
           infoOpen={rest.infoKey === row.key}
           popoverInstant={rest.popoverInstant(row.key)}
@@ -775,7 +792,11 @@ export function RulesLeafPage({
         chips={leaf.chips}
       />
       {leaf.rows.length > 0 ? (
-        <RowList rows={leaf.rows} {...rows} />
+        <RowList
+          rows={leaf.rows}
+          numbered={kind === "interaction"}
+          {...rows}
+        />
       ) : (
         <p className="dsb-empty-body dsb-page-note">No rules declared yet.</p>
       )}
@@ -844,6 +865,329 @@ function VisualSamplesEmpty() {
       <div className="dsb-samples-empty">
         <p className="dsb-samples-empty-title">No visual samples yet</p>
       </div>
+    </div>
+  );
+}
+
+function InteractionOriginBadge({
+  origin
+}: {
+  origin: InteractionRuleProjection["origin"];
+}) {
+  const label =
+    origin === "source-generated"
+      ? "Source-generated"
+      : origin === "schematic"
+        ? "Schematic"
+        : "Unavailable";
+  return (
+    <span className="dsb-interaction-origin" data-origin={origin}>
+      {label}
+    </span>
+  );
+}
+
+function InteractionMiniSpecimen({
+  rule,
+  state
+}: {
+  rule: InteractionRuleProjection;
+  state: string;
+}) {
+  if (rule.control === "link") {
+    return (
+      <span className="dsb-interaction-mini-link" data-state={state}>
+        Projects
+      </span>
+    );
+  }
+  if (rule.control === "button") {
+    return (
+      <span className="dsb-interaction-mini-button" data-state={state}>
+        Save changes
+      </span>
+    );
+  }
+  if (rule.control === "field") {
+    return (
+      <span className="dsb-interaction-mini-field" data-state={state}>
+        <span>Search tokens…</span>
+      </span>
+    );
+  }
+  if (rule.control === "sheet") {
+    return (
+      <span className="dsb-interaction-mini-sheet" data-state={state}>
+        <span className="dsb-interaction-mini-sheet-scrim" />
+        <span className="dsb-interaction-mini-sheet-panel">
+          <span />
+        </span>
+      </span>
+    );
+  }
+  return null;
+}
+
+function InteractionRigHeader({
+  rule
+}: {
+  rule: InteractionRuleProjection;
+}) {
+  return (
+    <header className="dsb-interaction-block-head">
+      <span className="dsb-interaction-anchor" aria-hidden>
+        {rule.anchor}
+      </span>
+      <span className="dsb-interaction-block-name">{rule.name}</span>
+      <StatusChip status={rule.status} testId="ds-interaction-status" />
+      <InteractionOriginBadge origin={rule.origin} />
+    </header>
+  );
+}
+
+function InteractionUnavailable({
+  rule
+}: {
+  rule: InteractionRuleProjection;
+}) {
+  return (
+    <section
+      className="dsb-interaction-block"
+      data-testid={`ds-interaction-rule-${rule.anchor}`}
+      data-unavailable
+    >
+      <InteractionRigHeader rule={rule} />
+      <div className="dsb-interaction-unavailable" role="note">
+        <p className="dsb-interaction-unavailable-title">No visual sample</p>
+        <p className="dsb-interaction-unavailable-reason">
+          {rule.unavailableReason}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function InteractionRigBlock({
+  rule
+}: {
+  rule: InteractionRuleProjection;
+}) {
+  const fallbackState =
+    rule.states.find((state) => state.state === "default")?.state ??
+    rule.states.find((state) => state.state === "closed")?.state ??
+    rule.states[0]!.state;
+  const [liveState, setLiveState] = useState(fallbackState);
+  const [focusVisible, setFocusVisible] = useState(false);
+  const pointerDown = useRef(false);
+  const hasState = useCallback(
+    (state: string) => rule.states.some((item) => item.state === state),
+    [rule.states]
+  );
+  const current =
+    focusVisible && hasState("focus-visible") ? "focus-visible" : liveState;
+  const behavior = rule.states.find((state) => state.state === current)!;
+  const motion = rule.motion[0];
+  const isSheet = rule.control === "sheet";
+  const genericMotion = rule.motion.find((item) => item.target === undefined);
+  const motionFor = (targets: readonly string[]) =>
+    rule.motion.find((item) => {
+      const target = item.target?.toLowerCase();
+      return target
+        ? targets.some((candidate) => target.includes(candidate))
+        : false;
+    }) ?? genericMotion;
+  const colorMotion = motionFor(["color", "background"]);
+  const transformMotion = motionFor(["transform"]);
+  const borderMotion = motionFor(["border", "ring"]);
+  const scrimMotion = motionFor(["scrim"]);
+  const motionStyle = {
+    "--dsb-interaction-color-duration": colorMotion?.duration ?? "0ms",
+    "--dsb-interaction-color-easing": colorMotion?.easing ?? "linear",
+    "--dsb-interaction-transform-duration":
+      transformMotion?.duration ?? "0ms",
+    "--dsb-interaction-transform-easing":
+      transformMotion?.easing ?? "linear",
+    "--dsb-interaction-border-duration": borderMotion?.duration ?? "0ms",
+    "--dsb-interaction-border-easing": borderMotion?.easing ?? "linear",
+    "--dsb-interaction-scrim-duration": scrimMotion?.duration ?? "0ms",
+    "--dsb-interaction-scrim-easing": scrimMotion?.easing ?? "linear"
+  } as React.CSSProperties;
+
+  const setDeclaredState = (state: string, fallback = fallbackState) => {
+    setLiveState(hasState(state) ? state : fallback);
+  };
+  const pointerHandlers = {
+    onPointerEnter: () => setDeclaredState("hover"),
+    onPointerLeave: () => {
+      pointerDown.current = false;
+      setLiveState(fallbackState);
+    },
+    onPointerDown: () => {
+      pointerDown.current = true;
+      setDeclaredState("active", hasState("hover") ? "hover" : fallbackState);
+    },
+    onPointerUp: () => {
+      if (pointerDown.current) {
+        setDeclaredState("hover");
+      }
+      pointerDown.current = false;
+    }
+  };
+
+  return (
+    <section
+      className="dsb-interaction-block"
+      data-testid={`ds-interaction-rule-${rule.anchor}`}
+      style={motionStyle}
+    >
+      <InteractionRigHeader rule={rule} />
+      <div className="dsb-interaction-stage-row">
+        <div
+          className="dsb-interaction-stage"
+          data-sheet-open={
+            isSheet && liveState === "open" ? "" : undefined
+          }
+          onKeyDown={(event) => {
+            if (
+              isSheet &&
+              liveState === "open" &&
+              hasState("closed") &&
+              event.key === "Escape"
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              setLiveState("closed");
+            }
+          }}
+        >
+          {rule.control === "link" ? (
+            <button
+              type="button"
+              className="dsb-interaction-live-link"
+              data-has-hover={hasState("hover") || undefined}
+              data-has-focus-visible={
+                hasState("focus-visible") || undefined
+              }
+              {...pointerHandlers}
+              onFocus={() => setFocusVisible(true)}
+              onBlur={() => setFocusVisible(false)}
+            >
+              Projects
+            </button>
+          ) : null}
+          {rule.control === "button" ? (
+            <button
+              type="button"
+              className="dsb-interaction-live-button"
+              data-has-hover={hasState("hover") || undefined}
+              data-has-active={hasState("active") || undefined}
+              data-has-focus-visible={
+                hasState("focus-visible") || undefined
+              }
+              {...pointerHandlers}
+              onFocus={() => setFocusVisible(true)}
+              onBlur={() => setFocusVisible(false)}
+            >
+              Save changes
+            </button>
+          ) : null}
+          {rule.control === "field" ? (
+            <input
+              className="dsb-interaction-live-field"
+              placeholder="Search tokens…"
+              aria-label="Search tokens"
+              data-has-hover={hasState("hover") || undefined}
+              data-has-focus-visible={
+                hasState("focus-visible") || undefined
+              }
+              {...pointerHandlers}
+              onFocus={() => setFocusVisible(true)}
+              onBlur={() => setFocusVisible(false)}
+            />
+          ) : null}
+          {rule.control === "sheet" ? (
+            <>
+              <button
+                type="button"
+                className="dsb-interaction-sheet-scrim"
+                aria-label={`Close ${rule.name} specimen`}
+                onClick={() => setDeclaredState("closed")}
+              />
+              <span className="dsb-interaction-sheet-panel" aria-hidden>
+                <span className="dsb-interaction-sheet-grabber" />
+                <span className="dsb-interaction-sheet-lines">
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              </span>
+              {liveState !== "open" ? (
+                <button
+                  type="button"
+                  className="dsb-interaction-live-button"
+                  onClick={() => setDeclaredState("open")}
+                >
+                  Open sheet
+                </button>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+
+        <div className="dsb-interaction-readout" aria-live="polite">
+          <p className="dsb-interaction-readout-label">Current state</p>
+          <p className="dsb-interaction-readout-state">{current}</p>
+          <p className="dsb-interaction-readout-behavior">
+            {behavior.behavior}
+          </p>
+          {motion ? (
+            <p className="dsb-interaction-readout-motion">
+              {motion.duration} · {motion.easing}
+              {motion.target ? ` · ${motion.target}` : ""}
+            </p>
+          ) : null}
+          {rule.layoutInvariants[0] ? (
+            <p className="dsb-interaction-readout-invariant">
+              {rule.layoutInvariants[0]}
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="dsb-interaction-strip" aria-label="Declared states">
+        {rule.states.map((state) => (
+          <span
+            className="dsb-interaction-strip-item"
+            data-current={state.state === current ? "" : undefined}
+            key={state.state}
+          >
+            <InteractionMiniSpecimen rule={rule} state={state.state} />
+            <span className="dsb-interaction-strip-label">{state.state}</span>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export function InteractionSamples({ rows }: { rows: DsRow[] }) {
+  const rules = useMemo(() => projectInteractionLeaf(rows), [rows]);
+  return (
+    <div
+      className="dsb-samples dsb-interaction-rig"
+      data-testid="ds-interaction-rig"
+    >
+      <div className="dsb-interaction-toolbar">
+        <GroupLabel>Live specimens</GroupLabel>
+        <p>Hover, press, and focus each control</p>
+      </div>
+      {rules.map((rule) =>
+        rule.control === null ? (
+          <InteractionUnavailable key={rule.key} rule={rule} />
+        ) : (
+          <InteractionRigBlock key={rule.key} rule={rule} />
+        )
+      )}
     </div>
   );
 }
@@ -1632,7 +1976,7 @@ export function DesignSystemBrowser({
     };
 
     if (route.section === "foundations") {
-      if (route.leaf === "layout" || route.leaf === "interaction") {
+      if (route.leaf === "layout") {
         return {
           layout: "leaf",
           node: (
@@ -1646,6 +1990,28 @@ export function DesignSystemBrowser({
                 />
               }
               right={<VisualSamplesEmpty />}
+            />
+          )
+        };
+      }
+      if (route.leaf === "interaction") {
+        return {
+          layout: "leaf",
+          node: (
+            <LeafSplit
+              {...splitProps}
+              left={
+                <RulesLeafPage
+                  kind={route.leaf}
+                  leaf={model.foundations[route.leaf]}
+                  rows={rowListProps}
+                />
+              }
+              right={
+                <InteractionSamples
+                  rows={model.foundations.interaction.rows}
+                />
+              }
             />
           )
         };
