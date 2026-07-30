@@ -206,6 +206,10 @@ export interface TypographyStyleField {
   /** Display text: literal value or "→ alias.target". */
   text: string;
   aliasTarget: string | null;
+  /** Terminal scalar reached through the alias chain, when resolvable. */
+  resolvedText?: string | null;
+  /** Direct target through terminal entry ids, in traversal order. */
+  sourceEntryIds?: string[];
 }
 
 export interface TypographyStyleProjection {
@@ -222,16 +226,35 @@ export interface TypographyStyleProjection {
   summary: string;
   /** CSS font-family for the specimen, resolved through the alias graph
    * (full declared stack, e.g. `"Instrument Sans", system-ui, sans-serif`).
-   * Null when the style declares no usable family — the specimen then
-   * renders in the inherited face and the annotation stays honest. */
+   * Null when the style declares no usable family — the Atlas renders an
+   * explicit unresolved state instead of inheriting the Browser face. */
   specimenFamily: string | null;
   meaning: string;
   row: DsRow;
 }
 
-function toStyleField(value: unknown): TypographyStyleField | null {
+type AliasResolution = {
+  value: unknown;
+  sourceEntryIds: string[];
+};
+
+function toStyleField(
+  value: unknown,
+  resolveAlias?: (target: string) => AliasResolution
+): TypographyStyleField | null {
   if (value === undefined) return null;
-  return { text: formatValueField(value), aliasTarget: aliasTargetOf(value) };
+  const aliasTarget = aliasTargetOf(value);
+  const resolved =
+    aliasTarget !== null && resolveAlias ? resolveAlias(aliasTarget) : null;
+  return {
+    text: formatValueField(value),
+    aliasTarget,
+    resolvedText:
+      resolved && resolved.value !== undefined
+        ? formatValueField(resolved.value)
+        : null,
+    sourceEntryIds: resolved?.sourceEntryIds ?? []
+  };
 }
 
 /** Compact summary: size / line-height · weight · tracking · transform.
@@ -295,6 +318,29 @@ export interface TypographyProjection {
   chips: string[];
 }
 
+export interface TypographyAtlasItem {
+  key: string;
+  kind: "style" | "scale";
+  label: string;
+  usage: string;
+  fontFamily: string | null;
+  specimenFamily: string | null;
+  fontSize: string | null;
+  fontSizePx: number | null;
+  fontWeight: string | null;
+  lineHeight: string | null;
+  letterSpacing: string | null;
+  textTransform: string | null;
+  /** Terminal scalar values used to render aliased style fields. */
+  specimenFontWeight: string | null;
+  specimenLineHeight: string | null;
+  specimenLetterSpacing: string | null;
+  specimenTextTransform: string | null;
+  status: DsStatus;
+  /** Every DB-backed row consumed by this visual form. */
+  sourceRows: DsRow[];
+}
+
 const FAMILY_NAME_PATTERN = /font[-.]?family|typeface/i;
 
 /**
@@ -316,10 +362,24 @@ export function projectTypographyLeaf(
     for (const entry of entries) byId.set(entry.entry_id, entry);
   }
 
+  const resolveAlias = (target: string): AliasResolution => {
+    const sourceEntryIds: string[] = [];
+    const seen = new Set<string>();
+    let current = target;
+    while (!seen.has(current)) {
+      seen.add(current);
+      const entry = byId.get(current);
+      if (!entry) return { value: undefined, sourceEntryIds };
+      sourceEntryIds.push(entry.entry_id);
+      const next = entry.alias ?? aliasTargetOf(entry.value);
+      if (next === null) return { value: entry.value, sourceEntryIds };
+      current = next;
+    }
+    return { value: undefined, sourceEntryIds };
+  };
+
   const resolveFamilyStack = (target: string): string[] | null => {
-    const entry = byId.get(target);
-    if (!entry) return null;
-    const value = entry.value;
+    const value = resolveAlias(target).value;
     if (typeof value === "string") {
       const stack = stackFromString(value);
       return stack.length > 0 ? stack : null;
@@ -353,11 +413,18 @@ export function projectTypographyLeaf(
         : undefined;
 
       if (isComposite && hasStyleKeys) {
-        const fontFamily = toStyleField(familyField);
-        const fontSize = toStyleField(readStyleField(value, "fontSize"));
+        const fontFamily = toStyleField(familyField, resolveAlias);
+        const fontSize = toStyleField(
+          readStyleField(value, "fontSize"),
+          resolveAlias
+        );
         const fontSizePx =
-          fontSize && fontSize.aliasTarget === null
-            ? pxOf(readStyleField(value, "fontSize"))
+          fontSize
+            ? pxOf(
+                fontSize.aliasTarget === null
+                  ? readStyleField(value, "fontSize")
+                  : fontSize.resolvedText
+              )
             : null;
         // Specimen family: literal stack on the style itself, else resolve
         // the family alias through the token graph, else inherit honestly.
@@ -369,24 +436,28 @@ export function projectTypographyLeaf(
           const stack = resolveFamilyStack(fontFamily.aliasTarget);
           specimenFamily = stack ? cssFontStack(stack) : null;
         }
-        if (specimenFamily === null && families.length > 0) {
-          // A style with no family link still renders in the system's
-          // declared family when exactly one is known — the annotation keeps
-          // showing what the source actually says.
-          if (families.length === 1) {
-            specimenFamily = cssFontStack(families[0]!.stack);
-          }
-        }
         const projected: TypographyStyleProjection = {
           key: row.key,
           role: name,
           fontFamily,
           fontSize,
           fontSizePx,
-          fontWeight: toStyleField(readStyleField(value, "fontWeight")),
-          lineHeight: toStyleField(readStyleField(value, "lineHeight")),
-          letterSpacing: toStyleField(readStyleField(value, "letterSpacing")),
-          textTransform: toStyleField(readStyleField(value, "textTransform")),
+          fontWeight: toStyleField(
+            readStyleField(value, "fontWeight"),
+            resolveAlias
+          ),
+          lineHeight: toStyleField(
+            readStyleField(value, "lineHeight"),
+            resolveAlias
+          ),
+          letterSpacing: toStyleField(
+            readStyleField(value, "letterSpacing"),
+            resolveAlias
+          ),
+          textTransform: toStyleField(
+            readStyleField(value, "textTransform"),
+            resolveAlias
+          ),
           summary: "",
           specimenFamily,
           meaning: entry.meaning,
@@ -470,11 +541,34 @@ export function typographyLayersFromView(
 export function typeScaleSteps(
   projection: TypographyProjection
 ): { px: number; sourceKeys: string[] }[] {
+  const rowsByEntryId = new Map(
+    [
+      ...projection.families.map((family) => family.row),
+      ...projection.styles.map((style) => style.row),
+      ...projection.metricGroups.flatMap((group) => group.rows)
+    ].map((row) => [row.entryId, row])
+  );
   const byPx = new Map<number, string[]>();
   const add = (px: number, key: string) => {
     const list = byPx.get(px) ?? [];
-    list.push(key);
+    if (!list.includes(key)) list.push(key);
     byPx.set(px, list);
+  };
+  const resolveMetricRow = (
+    row: DsRow
+  ): { value: unknown; rows: DsRow[] } => {
+    const rows: DsRow[] = [];
+    const seen = new Set<string>();
+    let current: DsRow | undefined = row;
+    while (current && !seen.has(current.entryId)) {
+      seen.add(current.entryId);
+      rows.push(current);
+      const target =
+        current.entry.alias ?? aliasTargetOf(current.entry.value);
+      if (target === null) return { value: current.entry.value, rows };
+      current = rowsByEntryId.get(target);
+    }
+    return { value: undefined, rows };
   };
   for (const style of projection.styles) {
     if (style.fontSizePx !== null) add(style.fontSizePx, style.key);
@@ -484,13 +578,167 @@ export function typeScaleSteps(
       // Only tokens named as sizes belong on the type scale — a bare "700"
       // weight parses as a number but is not a font size.
       if (!/size/i.test(row.name)) continue;
-      const px = pxOf(row.value);
-      if (px !== null && px > 0) add(px, row.key);
+      const resolved = resolveMetricRow(row);
+      const px = pxOf(resolved.value);
+      if (px !== null && px > 0) {
+        for (const sourceRow of resolved.rows) add(px, sourceRow.key);
+      }
     }
   }
   return [...byPx.entries()]
     .map(([px, sourceKeys]) => ({ px, sourceKeys }))
     .sort((a, b) => a.px - b.px);
+}
+
+function combinedStatus(rows: readonly DsRow[]): DsStatus {
+  if (rows.some((row) => row.status === "gap")) return "gap";
+  if (rows.some((row) => row.status === "candidate")) return "candidate";
+  return "formalized";
+}
+
+function atlasLabel(row: DsRow): string {
+  const meaning = row.meaning.trim().replace(/\.$/, "");
+  if (!meaning) return row.name;
+  return meaning.replace(/\s+size(?:\s+role)?$/i, "");
+}
+
+function uniqueRowsByKey(rows: readonly DsRow[]): DsRow[] {
+  return rows.filter(
+    (row, index) =>
+      rows.findIndex((candidate) => candidate.key === row.key) === index
+  );
+}
+
+function specimenFieldValue(
+  field: TypographyStyleField | null
+): string | null {
+  if (!field) return null;
+  return field.aliasTarget === null ? field.text : field.resolvedText ?? null;
+}
+
+function atlasFieldDisplay(
+  field: TypographyStyleField | null
+): string | null {
+  if (!field) return null;
+  return field.aliasTarget !== null && field.resolvedText
+    ? `${field.text} · ${field.resolvedText}`
+    : field.text;
+}
+
+/**
+ * Visual-first Typography atlas.
+ *
+ * Composite style entries become complete source-backed forms. Atomic px
+ * sizes that are not already represented by a composite style remain honest
+ * scale specimens: they use the sole declared family when available, but do
+ * not invent a weight, line-height, or tracking value. Every consumed row is
+ * retained for status/evidence and Technical-details audit.
+ */
+export function typographyAtlasItems(
+  projection: TypographyProjection
+): TypographyAtlasItem[] {
+  const rowsByKey = new Map<string, DsRow>();
+  const rowsByEntryId = new Map<string, DsRow>();
+  for (const family of projection.families) {
+    rowsByKey.set(family.row.key, family.row);
+    rowsByEntryId.set(family.row.entryId, family.row);
+  }
+  for (const style of projection.styles) {
+    rowsByKey.set(style.row.key, style.row);
+    rowsByEntryId.set(style.row.entryId, style.row);
+  }
+  for (const group of projection.metricGroups) {
+    for (const row of group.rows) {
+      rowsByKey.set(row.key, row);
+      rowsByEntryId.set(row.entryId, row);
+    }
+  }
+
+  const soleFamily =
+    projection.families.length === 1 ? projection.families[0]! : null;
+  const items: TypographyAtlasItem[] = projection.styles.map((style) => {
+    const sourceEntryIds = [
+      style.fontFamily,
+      style.fontSize,
+      style.fontWeight,
+      style.lineHeight,
+      style.letterSpacing,
+      style.textTransform
+    ].flatMap((field) => field?.sourceEntryIds ?? []);
+    const sourceRows = uniqueRowsByKey([
+      style.row,
+      ...sourceEntryIds.flatMap((entryId) => {
+        const row = rowsByEntryId.get(entryId);
+        return row ? [row] : [];
+      })
+    ]);
+    return {
+      key: style.key,
+      kind: "style",
+      label: style.role,
+      usage: style.meaning,
+      fontFamily: atlasFieldDisplay(style.fontFamily),
+      specimenFamily: style.specimenFamily,
+      fontSize: atlasFieldDisplay(style.fontSize),
+      fontSizePx: style.fontSizePx,
+      fontWeight: atlasFieldDisplay(style.fontWeight),
+      lineHeight: atlasFieldDisplay(style.lineHeight),
+      letterSpacing: atlasFieldDisplay(style.letterSpacing),
+      textTransform: atlasFieldDisplay(style.textTransform),
+      specimenFontWeight: specimenFieldValue(style.fontWeight),
+      specimenLineHeight: specimenFieldValue(style.lineHeight),
+      specimenLetterSpacing: specimenFieldValue(style.letterSpacing),
+      specimenTextTransform: specimenFieldValue(style.textTransform),
+      status: combinedStatus(sourceRows),
+      sourceRows
+    };
+  });
+
+  const representedPx = new Set(
+    projection.styles.flatMap((style) =>
+      style.fontSizePx === null ? [] : [style.fontSizePx]
+    )
+  );
+  for (const step of typeScaleSteps(projection)) {
+    if (representedPx.has(step.px)) continue;
+    const sizeRows = step.sourceKeys.flatMap((key) => {
+      const row = rowsByKey.get(key);
+      return row ? [row] : [];
+    });
+    const primary =
+      sizeRows.find(
+        (row) =>
+          row.entry.alias !== null || aliasTargetOf(row.entry.value) !== null
+      ) ?? sizeRows[0];
+    if (!primary) continue;
+    const sourceRows = uniqueRowsByKey([
+      primary,
+      ...sizeRows.filter((row) => row.key !== primary.key),
+      ...(soleFamily ? [soleFamily.row] : [])
+    ]);
+    items.push({
+      key: `scale-${step.px}`,
+      kind: "scale",
+      label: atlasLabel(primary),
+      usage: primary.meaning,
+      fontFamily: soleFamily?.primary ?? null,
+      specimenFamily: soleFamily ? cssFontStack(soleFamily.stack) : null,
+      fontSize: `${step.px}px`,
+      fontSizePx: step.px,
+      fontWeight: null,
+      lineHeight: null,
+      letterSpacing: null,
+      textTransform: null,
+      specimenFontWeight: null,
+      specimenLineHeight: null,
+      specimenLetterSpacing: null,
+      specimenTextTransform: null,
+      status: combinedStatus(sourceRows),
+      sourceRows
+    });
+  }
+
+  return items;
 }
 
 /* ------------------------------ rich principle ---------------------------- */

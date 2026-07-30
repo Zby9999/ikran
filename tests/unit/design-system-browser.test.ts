@@ -418,12 +418,6 @@ describe("ComponentDetail", () => {
 
 /* --------------------------- 09C-A: Reader Projection ---------------------- */
 
-const SPLIT_PROPS = {
-  ratio: 0.42,
-  onRatioChange: () => {},
-  onRatioCommit: () => {}
-};
-
 function typographyLayers() {
   return [
     {
@@ -478,70 +472,66 @@ function typographyLayers() {
   ];
 }
 
-describe("TypographyLeafPage (09C-A tracer bullet)", () => {
-  test("left pane reads as family / roles / metric groups + technical details", () => {
+describe("TypographyLeafPage (09C-A Type Atlas)", () => {
+  test("keeps the standard section heading and renders a full-width visual atlas", () => {
     const html = renderToStaticMarkup(
       createElement(TypographyLeafPage, {
         layers: typographyLayers(),
-        rows: rowSharedProps(),
-        split: SPLIT_PROPS
+        rows: rowSharedProps()
       })
     );
-    // Split chrome: left rules pane, right samples pane (SSR renders stacked,
-    // the divider only appears once the container measures wide enough).
-    expect(html).toContain('data-testid="ds-leaf-split"');
-    expect(html).toContain('data-testid="ds-split-left"');
-    expect(html).toContain('data-testid="ds-split-right"');
-
-    // Font family card: real stack, rendered in its own declared face.
-    expect(html).toContain('data-testid="ds-typography-families"');
-    expect(html).toContain("Instrument Sans");
-    expect(html).toContain("font-family:");
-    expect(html).toContain("Weights in use 400 · 700");
-
-    // Semantic roles: alias shown as arrow, compact summary, never raw JSON.
-    expect(html).toContain('data-testid="ds-typography-roles"');
-    expect(html).toContain('data-testid="ds-role-semantic.display-large"');
-    expect(html).toContain("→ primitive.font-family-sans");
-    expect(html).toContain("64 / 1.05 · 700");
-    expect(html).not.toContain("{&quot;fontFamily&quot;");
-    expect(html).not.toContain('{"fontFamily"');
-
-    // Atomic metrics stay token rows, grouped by layer.
-    expect(html).toContain("Tokens · Primitive");
-    expect(html).toContain('data-testid="ds-row-primitive.font-size-400"');
-
-    // Internal ids and raw envelopes live only behind Technical details.
-    expect(html).toContain('data-testid="ds-technical-details"');
-    expect(html).toContain("semantic.display-large");
+    expect(html).toContain('<h1 class="dsb-h1">Typography</h1>');
+    expect(html).toContain("5 tokens");
+    expect(html).toContain('data-testid="ds-typography-atlas"');
+    expect(html).not.toContain('data-testid="ds-leaf-split"');
+    expect(html).not.toContain("Eight forms, one family");
+    expect(html).not.toContain("Typography · Comparative atlas");
   });
 
-  test("right pane renders source-backed specimens and the type scale", () => {
+  test("keeps each specimen's usage, construction data and evidence attached", () => {
     const html = renderToStaticMarkup(
       createElement(TypographyLeafPage, {
         layers: typographyLayers(),
-        rows: rowSharedProps(),
-        split: SPLIT_PROPS
+        rows: rowSharedProps()
       })
     );
-    expect(html).toContain('data-testid="ds-typography-samples"');
-    expect(html).toContain('data-testid="ds-specimen-semantic.display-large"');
-    // Display-sized roles get the display sample copy.
-    expect(html).toContain("Design with intent.");
-    // The specimen style resolves the family alias to the declared stack.
+    expect(html).toContain('data-testid="ds-atlas-semantic.display-large"');
+    expect(html).toContain("We shape clear stories for ambitious ideas.");
     expect(html).toContain(
       "font-family:&quot;Instrument Sans&quot;, system-ui, sans-serif"
     );
-    // Annotation restates role · family · summary · tracking.
-    expect(html).toContain("tracking 0.01em");
-    // Type scale merges style sizes and px size tokens (weight excluded).
-    expect(html).toContain('data-testid="ds-type-scale"');
-    expect(html).toContain(">16px<");
+    expect(html).toContain("Family");
+    expect(html).toContain("Size");
     expect(html).toContain(">64px<");
-    expect(html).not.toContain(">700px<");
+    expect(html).toContain("Weight");
+    expect(html).toContain(">700<");
+    expect(html).toContain("Line height");
+    expect(html).toContain(">1.05<");
+    expect(html).toContain("Tracking");
+    expect(html).toContain(">0.01em<");
+    expect(html).toContain("Source-backed");
+    expect(html).toContain("primitive.font-family-sans");
+    expect(html).toContain("Evidence for display.large");
+    expect(html).toContain('data-testid="ds-atlas-status"');
+    expect(html).toContain('data-status="formalized"');
   });
 
-  test("empty typography stays honest on both panes", () => {
+  test("keeps source rows and raw envelopes secondary but lossless", () => {
+    const html = renderToStaticMarkup(
+      createElement(TypographyLeafPage, {
+        layers: typographyLayers(),
+        rows: rowSharedProps()
+      })
+    );
+    expect(html).toContain("Source tokens");
+    expect(html).toContain("Tokens · Primitive");
+    expect(html).toContain('data-testid="ds-row-primitive.font-size-400"');
+    expect(html).toContain('data-testid="ds-technical-details"');
+    expect(html).toContain("semantic.display-large");
+    expect(html).not.toContain('data-testid="ds-typography-roles"');
+  });
+
+  test("empty typography stays honest without inventing specimens", () => {
     const html = renderToStaticMarkup(
       createElement(TypographyLeafPage, {
         layers: [
@@ -549,13 +539,101 @@ describe("TypographyLeafPage (09C-A tracer bullet)", () => {
           { layer: "semantic" as const, entries: [] },
           { layer: "component" as const, entries: [] }
         ],
-        rows: rowSharedProps(),
-        split: SPLIT_PROPS
+        rows: rowSharedProps()
       })
     );
     expect(html).toContain("No typography tokens classified here yet.");
-    expect(html).toContain('data-testid="ds-samples-empty"');
-    expect(html).toContain("No visual samples yet");
+    expect(html).not.toContain('data-testid="ds-typography-atlas"');
+    expect(html).not.toContain('data-testid="ds-atlas-status"');
+  });
+
+  test("shows an unresolved state instead of inheriting the Browser font", () => {
+    const html = renderToStaticMarkup(
+      createElement(TypographyLeafPage, {
+        layers: [
+          {
+            layer: "primitive" as const,
+            entries: [
+              entry({
+                entry_id: "primitive.font-size-400",
+                section: "token.primitive",
+                name: "font.size.400",
+                value: "16px",
+                status: "formalized"
+              })
+            ]
+          },
+          { layer: "semantic" as const, entries: [] },
+          { layer: "component" as const, entries: [] }
+        ],
+        rows: rowSharedProps()
+      })
+    );
+    expect(html).toContain("Typeface unresolved");
+    expect(html).toContain(
+      "No source-backed font family is declared for this form."
+    );
+    expect(html).not.toContain('class="dsb-atlas-sample"');
+  });
+
+  test("applies terminal values from metric alias chains to the specimen", () => {
+    const html = renderToStaticMarkup(
+      createElement(TypographyLeafPage, {
+        layers: [
+          {
+            layer: "primitive" as const,
+            entries: [
+              entry({
+                entry_id: "primitive.font-family-sans",
+                name: "font.family.sans",
+                value: "Instrument Sans, sans-serif"
+              }),
+              entry({
+                entry_id: "primitive.font-size-hero",
+                name: "font.size.hero",
+                value: "72px"
+              }),
+              entry({
+                entry_id: "primitive.font-weight-hero",
+                name: "font.weight.hero",
+                value: "600"
+              })
+            ]
+          },
+          {
+            layer: "semantic" as const,
+            entries: [
+              entry({
+                entry_id: "semantic.font-size-hero",
+                name: "font.size.hero",
+                value: { alias: "primitive.font-size-hero" },
+                alias: "primitive.font-size-hero"
+              })
+            ]
+          },
+          {
+            layer: "component" as const,
+            entries: [
+              entry({
+                entry_id: "component.hero-title",
+                name: "hero.title",
+                value: {
+                  fontFamily: { alias: "primitive.font-family-sans" },
+                  fontSize: { alias: "semantic.font-size-hero" },
+                  fontWeight: { alias: "primitive.font-weight-hero" },
+                  lineHeight: "1.1"
+                }
+              })
+            ]
+          }
+        ],
+        rows: rowSharedProps()
+      })
+    );
+    expect(html).toContain("font-size:min(72px, 12cqi)");
+    expect(html).toContain("font-weight:600");
+    expect(html).toContain("line-height:1.1");
+    expect(html).toContain("→ semantic.font-size-hero · 72px");
   });
 });
 

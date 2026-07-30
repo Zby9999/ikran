@@ -36,6 +36,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
 import { subscribeRuntimeEvents } from "@/components/runtime/runtime-client";
+import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
 import { LeafSplit } from "./ds-split-pane";
@@ -45,17 +46,16 @@ import {
   parseDesignSystemBrowserPreferences
 } from "@/lib/runtime/design-system-browser-preferences-shared";
 import {
-  cssFontStack,
   projectObjectFields,
   projectPrinciple,
   projectTypographyLeaf,
-  typeScaleSteps,
+  typographyAtlasItems,
   typographyLayersFromView,
   type PrincipleProjection,
   type TechnicalDetail,
   type TokenLayerKey,
+  type TypographyAtlasItem,
   type TypographyProjection,
-  type TypographyStyleProjection
 } from "./design-system-reader-projection";
 import {
   DS_SECTION_NAMES,
@@ -865,21 +865,27 @@ function TechnicalDetails({ items }: { items: TechnicalDetail[] }) {
 
 /** Fixed sample copy per role kind — presentation literals, never
  * model-written and never treated as design-system facts. */
-function specimenText(style: TypographyStyleProjection): string {
-  const role = style.role.toLowerCase();
+function atlasSpecimenText(item: TypographyAtlasItem): string {
+  const role = `${item.label} ${item.usage}`.toLowerCase();
+  if (/statistic|statistical|number/.test(role)) {
+    return "128";
+  }
   if (
-    (style.fontSizePx !== null && style.fontSizePx >= 32) ||
+    (item.fontSizePx !== null && item.fontSizePx >= 48) ||
     /display|heading|title|hero/.test(role)
   ) {
-    return "Design with intent.";
+    return "We shape clear stories for ambitious ideas.";
   }
   if (
-    (style.fontSizePx !== null && style.fontSizePx <= 14) ||
+    (item.fontSizePx !== null && item.fontSizePx <= 14) ||
     /label|caption|meta|button|overline/.test(role)
   ) {
-    return "Navigation label";
+    return "Navigation · Projects · About";
   }
-  return "A quiet system where content carries the expression, and the interface stays out of the way. Paragraphs use the body role everywhere.";
+  if (item.fontSizePx !== null && item.fontSizePx >= 28) {
+    return "Typography with a clear point of view.";
+  }
+  return "Thoughtful structure gives every idea room to breathe.";
 }
 
 function numericWeight(text: string | undefined): number | undefined {
@@ -912,265 +918,294 @@ const CSS_TEXT_TRANSFORMS = new Set([
   "capitalize"
 ]);
 
-/** The specimen's own style, verbatim from the token fields the source
- * declares. Fields that don't parse as CSS are skipped (the annotation row
- * still shows the source text — honest, never substituted). Large display
- * sizes cap in container units so a narrow right pane reflows instead of
- * clipping; the annotation always states the true token value. */
-function specimenCss(style: TypographyStyleProjection): React.CSSProperties {
+/** The specimen's own style, verbatim from the source-backed atlas item.
+ * Fields that don't parse as CSS are skipped while their literal source value
+ * remains visible in the attached data. Display sizes cap in container units
+ * on narrow cards; the data row always states the declared size. */
+function atlasSpecimenCss(item: TypographyAtlasItem): React.CSSProperties {
   const css: React.CSSProperties = {};
-  if (style.specimenFamily) css.fontFamily = style.specimenFamily;
-  if (style.fontSizePx !== null) {
+  if (item.specimenFamily) css.fontFamily = item.specimenFamily;
+  if (item.fontSizePx !== null) {
     css.fontSize =
-      style.fontSizePx >= 40
-        ? `min(${style.fontSizePx}px, 9cqi)`
-        : `${style.fontSizePx}px`;
+      item.fontSizePx >= 40
+        ? `min(${item.fontSizePx}px, 12cqi)`
+        : `${item.fontSizePx}px`;
   }
-  const weight = numericWeight(style.fontWeight?.text);
+  const weight = numericWeight(item.specimenFontWeight ?? undefined);
   if (weight !== undefined) css.fontWeight = weight;
-  const lineHeight = cssLineHeight(style.lineHeight?.text);
+  const lineHeight = cssLineHeight(item.specimenLineHeight ?? undefined);
   if (lineHeight !== undefined) css.lineHeight = lineHeight;
-  const tracking = cssLength(style.letterSpacing?.text);
+  const tracking = cssLength(item.specimenLetterSpacing ?? undefined);
   if (tracking !== undefined) css.letterSpacing = tracking;
-  const transform = style.textTransform?.text.trim().toLowerCase();
+  const transform = item.specimenTextTransform?.trim().toLowerCase();
   if (transform && CSS_TEXT_TRANSFORMS.has(transform)) {
     css.textTransform = transform as React.CSSProperties["textTransform"];
   }
   return css;
 }
 
-/** Annotation row under a specimen: role · family · summary (which already
- * carries tracking / transform), plus the entry's status dot — values
- * restated as visual annotation only. */
-function specimenAnnotation(style: TypographyStyleProjection): string {
-  const parts = [style.role];
-  const family = style.fontFamily?.text ?? style.specimenFamily ?? null;
-  if (family) parts.push(family);
-  if (style.summary) parts.push(style.summary);
-  return parts.join(" · ");
+function atlasMetrics(
+  item: TypographyAtlasItem
+): { label: string; value: string }[] {
+  return [
+    { label: "Family", value: item.fontFamily ?? "" },
+    { label: "Size", value: item.fontSize ?? "" },
+    { label: "Weight", value: item.fontWeight ?? "" },
+    { label: "Line height", value: item.lineHeight ?? "" },
+    { label: "Tracking", value: item.letterSpacing ?? "" },
+    { label: "Transform", value: item.textTransform ?? "" }
+  ].filter((metric) => metric.value.length > 0);
 }
 
-function TypographySamples({
-  projection
-}: {
-  projection: TypographyProjection;
-}) {
-  const scale = typeScaleSteps(projection);
-  if (projection.styles.length === 0 && scale.length === 0) {
-    return <VisualSamplesEmpty />;
-  }
-  const scaleFamily =
-    projection.families.length === 1
-      ? cssFontStack(projection.families[0]!.stack)
-      : undefined;
+function AtlasStatus({ status }: { status: DsStatus }) {
   return (
-    <div className="dsb-samples" data-testid="ds-typography-samples">
-      <GroupLabel>Visual samples</GroupLabel>
-      {projection.styles.map((style) => (
-        <div
-          key={style.key}
-          className="dsb-specimen"
-          data-testid={`ds-specimen-${style.row.entryId}`}
-        >
-          <p className="dsb-specimen-sample" style={specimenCss(style)}>
-            {specimenText(style)}
-          </p>
-          <p className="dsb-specimen-annotation">
-            <span
-              aria-hidden
-              className="dsb-annotation-dot"
-              style={{ background: statusDotColor(style.row.status) }}
-            />
-            {specimenAnnotation(style)}
-          </p>
-        </div>
-      ))}
-      {scale.length > 0 ? (
-        <div className="dsb-scale" data-testid="ds-type-scale">
-          {scale.map((step) => (
-            <div key={step.px} className="dsb-scale-row">
-              <span className="dsb-scale-size">{step.px}px</span>
-              <span
-                className="dsb-scale-sample"
-                style={{
-                  fontSize: `${step.px}px`,
-                  fontFamily: scaleFamily
-                }}
-              >
-                Ag
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
+    <span
+      className="dsb-atlas-status"
+      data-status={status}
+      data-testid="ds-atlas-status"
+    >
+      {status === "gap" ? "open gap" : status}
+    </span>
   );
 }
 
-/** Typography leaf (09C-A tracer bullet): the Reader Projection turns
- * family / semantic roles / scale / metrics into readable left-column
- * groups; the right column renders source-backed specimens and the base
- * type scale — same source facts, two presentations. */
+function TypographyAtlasCard({
+  item,
+  rows
+}: {
+  item: TypographyAtlasItem;
+  rows: RowSharedProps;
+}) {
+  const metrics = atlasMetrics(item);
+  return (
+    <article
+      className="dsb-atlas-card"
+      data-wide={
+        item.fontSizePx !== null && item.fontSizePx >= 48 ? "" : undefined
+      }
+      data-testid={`ds-atlas-${item.sourceRows[0]?.entryId ?? item.key}`}
+    >
+      <header className="dsb-atlas-card-head">
+        <div className="dsb-atlas-card-title">
+          <span className="dsb-atlas-role">{item.label}</span>
+          <span className="dsb-atlas-kind">
+            {item.kind === "style" ? "Text style" : "Scale token"}
+          </span>
+        </div>
+        <AtlasStatus status={item.status} />
+      </header>
+      <div className="dsb-atlas-sample-wrap">
+        {item.specimenFamily ? (
+          <p className="dsb-atlas-sample" style={atlasSpecimenCss(item)}>
+            {atlasSpecimenText(item)}
+          </p>
+        ) : (
+          <div className="dsb-atlas-unresolved" role="note">
+            <span>Typeface unresolved</span>
+            <p>No source-backed font family is declared for this form.</p>
+          </div>
+        )}
+      </div>
+      <footer className="dsb-atlas-caption">
+        <div className="dsb-atlas-usage">
+          <span className="dsb-atlas-data-label">Used for</span>
+          <p>{item.usage || "No usage note declared"}</p>
+        </div>
+        <dl className="dsb-atlas-metrics">
+          {metrics.map((metric) => (
+            <div key={metric.label} className="dsb-atlas-metric">
+              <dt>{metric.label}</dt>
+              <dd>{metric.value}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="dsb-atlas-sources">
+          <span className="dsb-atlas-data-label">Source-backed</span>
+          {item.sourceRows.map((sourceRow) => {
+            const approval =
+              rows.approvals[sourceRow.key] ?? ({ kind: "idle" } as const);
+            return (
+              <div key={sourceRow.key} className="dsb-atlas-source">
+                <span title={sourceRow.entryId}>{sourceRow.entryId}</span>
+                <InfoPopover
+                  entry={sourceRow.entry}
+                  approval={approval}
+                  infoOpen={rows.infoKey === sourceRow.key}
+                  popoverInstant={rows.popoverInstant(sourceRow.key)}
+                  portalContainer={rows.portalContainer}
+                  ariaLabel={`Evidence for ${sourceRow.name}`}
+                  onInfoOpenChange={(open) =>
+                    rows.onInfoKey(open ? sourceRow.key : null)
+                  }
+                  onInfoHoverOpen={() =>
+                    rows.onInfoHoverOpen(sourceRow.key)
+                  }
+                  onInfoHoverClose={rows.onInfoHoverClose}
+                  onApprove={() => rows.onApprove(sourceRow)}
+                />
+                {approval.kind === "error" ? (
+                  <span className="dsb-row-error" role="alert">
+                    Approval failed: {approval.message}
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </footer>
+    </article>
+  );
+}
+
+function TypographySourceRows({
+  projection,
+  rows
+}: {
+  projection: TypographyProjection;
+  rows: RowSharedProps;
+}) {
+  const hasRows =
+    projection.families.length > 0 ||
+    projection.styles.length > 0 ||
+    projection.metricGroups.length > 0;
+  if (!hasRows) return null;
+  return (
+    <details className="dsb-atlas-source-details">
+      <summary className="dsb-atlas-source-summary">
+        <HugeiconsIcon
+          icon={ArrowRight01Icon}
+          size={12}
+          className="dsb-tech-chevron"
+          color="currentColor"
+          strokeWidth={2}
+        />
+        Source tokens
+      </summary>
+      <div className="dsb-atlas-source-groups">
+        {projection.families.length > 0 ? (
+          <section className="dsb-section">
+            <GroupLabel>Font family</GroupLabel>
+            <RowList
+              rows={projection.families.map((family) => family.row)}
+              {...rows}
+            />
+          </section>
+        ) : null}
+        {projection.styles.length > 0 ? (
+          <section className="dsb-section">
+            <GroupLabel>Text styles</GroupLabel>
+            <RowList
+              rows={projection.styles.map((style) => style.row)}
+              {...rows}
+            />
+          </section>
+        ) : null}
+        {projection.metricGroups.map((group) => (
+          <section
+            key={group.layer}
+            className="dsb-section"
+            data-testid={`ds-token-layer-${group.layer}`}
+          >
+            <GroupLabel>Tokens · {TOKEN_LAYER_LABELS[group.layer]}</GroupLabel>
+            <RowList rows={group.rows} {...rows} />
+          </section>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+/** Typography leaf (09C-A): standard Browser page heading followed by a
+ * visual atlas. Each source-backed form keeps its construction data,
+ * evidence and approval action attached to the specimen it describes.
+ * Atomic tokens remain available in a secondary source/audit layer. */
 export function TypographyLeafPage({
   layers,
-  rows,
-  split
+  rows
 }: {
   layers: {
     layer: TokenLayerKey;
     entries: DesignSystemEntryView[];
   }[];
   rows: RowSharedProps;
-  split: LeafSplitRatioProps;
 }) {
+  const [order, setOrder] = useState<"role" | "scale">("role");
   const projection = useMemo(() => projectTypographyLeaf(layers), [layers]);
+  const atlasItems = useMemo(
+    () => typographyAtlasItems(projection),
+    [projection]
+  );
+  const orderedItems = useMemo(
+    () =>
+      order === "role"
+        ? atlasItems
+        : [...atlasItems].sort((a, b) => {
+            if (a.fontSizePx === null && b.fontSizePx === null) {
+              return a.label.localeCompare(b.label);
+            }
+            if (a.fontSizePx === null) return 1;
+            if (b.fontSizePx === null) return -1;
+            return b.fontSizePx - a.fontSizePx;
+          }),
+    [atlasItems, order]
+  );
   const tokenCount =
     projection.families.length +
     projection.styles.length +
-    projection.metricGroups.reduce((total, group) => total + group.rows.length, 0);
-  const weightsInUse = [
-    ...new Set(
-      projection.styles
-        .map((style) => numericWeight(style.fontWeight?.text))
-        .filter((weight): weight is number => weight !== undefined)
-    )
-  ].sort((a, b) => a - b);
+    projection.metricGroups.reduce(
+      (total, group) => total + group.rows.length,
+      0
+    );
 
   return (
-    <LeafSplit
-      ratio={split.ratio}
-      onRatioChange={split.onRatioChange}
-      onRatioCommit={split.onRatioCommit}
-      left={
-        <>
-          <PageHeading
-            title="Typography"
-            meta={`${tokenCount} tokens`}
-            chips={projection.chips}
-          />
-          {projection.families.length > 0 ? (
-            <section className="dsb-section" data-testid="ds-typography-families">
-              <GroupLabel>Font family</GroupLabel>
-              {projection.families.map((family) => (
-                <div key={family.key} className="dsb-family-card">
-                  <span
-                    className="dsb-family-name"
-                    style={{ fontFamily: cssFontStack(family.stack) }}
-                  >
-                    {family.primary}
-                  </span>
-                  <span className="dsb-family-meta">
-                    <span className="dsb-family-stack" title={family.stack.join(", ")}>
-                      {family.stack.join(", ")}
-                    </span>
-                    <span className="dsb-family-sub">
-                      {family.name}
-                      {weightsInUse.length > 0
-                        ? ` · Weights in use ${weightsInUse.join(" · ")}`
-                        : ""}
-                    </span>
-                  </span>
-                  <StatusChip status={family.row.status} />
-                  <InfoPopover
-                    entry={family.row.entry}
-                    approval={rows.approvals[family.row.key] ?? { kind: "idle" }}
-                    infoOpen={rows.infoKey === family.row.key}
-                    popoverInstant={rows.popoverInstant(family.row.key)}
-                    portalContainer={rows.portalContainer}
-                    ariaLabel={`Evidence for ${family.name}`}
-                    onInfoOpenChange={(open) =>
-                      rows.onInfoKey(open ? family.row.key : null)
-                    }
-                    onInfoHoverOpen={() => rows.onInfoHoverOpen(family.row.key)}
-                    onInfoHoverClose={rows.onInfoHoverClose}
-                    onApprove={() => rows.onApprove(family.row)}
-                  />
-                </div>
-              ))}
-            </section>
-          ) : null}
-          {projection.styles.length > 0 ? (
-            <section className="dsb-section" data-testid="ds-typography-roles">
-              <GroupLabel>Semantic roles</GroupLabel>
-              <div className="dsb-rows">
-                {projection.styles.map((style) => (
-                  <div
-                    key={style.key}
-                    className="dsb-role-row"
-                    data-testid={`ds-role-${style.row.entryId}`}
-                  >
-                    <span className="dsb-role-name" title={style.role}>
-                      {style.role}
-                    </span>
-                    <span
-                      aria-hidden
-                      className="dsb-role-aa"
-                      style={{
-                        fontFamily: style.specimenFamily ?? undefined,
-                        fontSize:
-                          style.fontSizePx !== null
-                            ? `${Math.min(style.fontSizePx, 18)}px`
-                            : undefined
-                      }}
-                    >
-                      Aa
-                    </span>
-                    <span className="dsb-role-value" title={style.summary}>
-                      {style.summary || "—"}
-                    </span>
-                    {style.fontFamily ? (
-                      <span
-                        className="dsb-role-family"
-                        title={style.fontFamily.text}
-                      >
-                        {style.fontFamily.text}
-                      </span>
-                    ) : null}
-                    <span className="dsb-role-meaning" title={style.meaning}>
-                      {style.meaning}
-                    </span>
-                    <StatusChip status={style.row.status} />
-                    <InfoPopover
-                      entry={style.row.entry}
-                      approval={rows.approvals[style.row.key] ?? { kind: "idle" }}
-                      infoOpen={rows.infoKey === style.row.key}
-                      popoverInstant={rows.popoverInstant(style.row.key)}
-                      portalContainer={rows.portalContainer}
-                      ariaLabel={`Evidence for ${style.role}`}
-                      onInfoOpenChange={(open) =>
-                        rows.onInfoKey(open ? style.row.key : null)
-                      }
-                      onInfoHoverOpen={() => rows.onInfoHoverOpen(style.row.key)}
-                      onInfoHoverClose={rows.onInfoHoverClose}
-                      onApprove={() => rows.onApprove(style.row)}
-                    />
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
-          {projection.metricGroups.map((group) => (
-            <section
-              key={group.layer}
-              className="dsb-section"
-              data-testid={`ds-token-layer-${group.layer}`}
-            >
-              <GroupLabel>Tokens · {TOKEN_LAYER_LABELS[group.layer]}</GroupLabel>
-              <RowList rows={group.rows} {...rows} />
-            </section>
-          ))}
-          {projection.families.length === 0 &&
-          projection.styles.length === 0 &&
-          projection.metricGroups.length === 0 ? (
-            <p className="dsb-empty-body dsb-page-note">
-              No typography tokens classified here yet.
-            </p>
-          ) : null}
-          <TechnicalDetails items={projection.technicalDetails} />
-        </>
-      }
-      right={<TypographySamples projection={projection} />}
-    />
+    <div className="dsb-typography-page">
+      <PageHeading
+        title="Typography"
+        meta={`${tokenCount} tokens`}
+        chips={projection.chips}
+      />
+      {orderedItems.length > 0 ? (
+        <section
+          className="dsb-section dsb-typography-atlas"
+          data-testid="ds-typography-atlas"
+        >
+          <div className="dsb-atlas-toolbar">
+            <GroupLabel>Type specimens</GroupLabel>
+            <div className="dsb-atlas-order" aria-label="Order type atlas">
+              <Button
+                variant="ghost"
+                size="xs"
+                aria-pressed={order === "role"}
+                data-active={order === "role" || undefined}
+                onClick={() => setOrder("role")}
+              >
+                By role
+              </Button>
+              <Button
+                variant="ghost"
+                size="xs"
+                aria-pressed={order === "scale"}
+                data-active={order === "scale" || undefined}
+                onClick={() => setOrder("scale")}
+              >
+                By scale
+              </Button>
+            </div>
+          </div>
+          <div className="dsb-atlas-grid" aria-live="polite">
+            {orderedItems.map((item) => (
+              <TypographyAtlasCard key={item.key} item={item} rows={rows} />
+            ))}
+          </div>
+        </section>
+      ) : (
+        <p className="dsb-empty-body dsb-page-note">
+          No typography tokens classified here yet.
+        </p>
+      )}
+      <TypographySourceRows projection={projection} rows={rows} />
+      <TechnicalDetails items={projection.technicalDetails} />
+    </div>
   );
 }
 
@@ -1697,7 +1732,6 @@ export function DesignSystemBrowser({
               <TypographyLeafPage
                 layers={typographyLayersFromView(view)}
                 rows={rowListProps}
-                split={splitProps}
               />
             )
           };

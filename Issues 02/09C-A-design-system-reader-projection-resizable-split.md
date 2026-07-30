@@ -61,6 +61,25 @@ Instrument Sans 等事实不再只以 token row 出现。
 - 调整比例是 Browser 级用户偏好，不按 leaf 保存，避免切页时布局跳动。
 - candidate / formalized / gap 的语义、审批写回和 evidence lineage 不改变。
 
+### 2026-07-30 Typography visual-first follow-up（覆盖上文相关版式）
+
+**Type Atlas** 是 Typography 的正式视觉呈现。以下决定覆盖本 issue 上文中仅针对
+Typography 的左右栏描述；
+Layout / Interaction 等尚无正式视觉 grammar 的 leaf 仍保留统一可拖拽 split：
+
+- Typography 不再把 token rows 与 visual samples 分置左右栏，而改为全宽 Atlas；
+- 页面顶部必须继续使用 Browser 其他 section 的标准 `PageHeading`，不使用原型中的
+  独立 kicker / marketing title / intro；
+- 每一种实际出现的字体形式直接附带 usage、family、size、weight、line height、
+  tracking、transform 与 source / evidence；缺失字段不推测、不补全；
+- 只有 atomic size 而没有完整 style 的历史数据，形成诚实的 scale specimen：沿用唯一
+  已声明 family，但不虚构 weight / line height / tracking；
+- 原始 source rows 降级为折叠的二级核对层，Technical details 继续保留完整 raw
+  envelope，因此视觉优先不改变 DB 真源、审批或证据链；
+- Atlas 状态标记使用 4px 圆角、无 border / stroke / inset ring；此改动不扩散到
+  Browser 其他既有 status chip；
+- 正式方案晋升后删除临时 `/prototypes/typography-reader` 路由。
+
 ## Design prerequisite
 
 用户已确认本 issue 的信息架构和交互边界。以下 Paper 页面只用于记录讨论中确认的
@@ -79,16 +98,21 @@ Visual Sample 组织方式，不是最终实现稿：
       Reader Projection 后形成可读字段组，不在主阅读层出现原始 JSON。
 - [x] Projection 对每个展示字段保留 source entry identity，完整信息仍可在
       Technical details / Evidence 中访问。
-- [x] Typography 左栏能呈现 family、semantic role、size、weight、line height、
-      letter spacing、transform 和适用的 token relationships。
-- [x] Typography 右栏使用实际 source-backed font family 和 token 值渲染基础 specimen
-      与字阶，不用示意字体替代。
-- [x] 页面没有额外“一句话结论”；标题、状态、规则和说明均位于左栏。
+- [x] Typography 使用全宽 Type Atlas；每个 source-backed specimen 就地呈现 family、
+      semantic role / usage、size、weight、line height、letter spacing、transform
+      和适用的 token relationships。
+- [x] 页面顶部继续使用统一 Browser section 标题；没有额外 kicker、marketing title
+      或“一句话结论”。
+- [x] Atomic size 历史在缺少完整 style 时只展示有证据的字段，不虚构 weight、
+      line height 或 tracking。
+- [x] Atlas 状态标记为 4px 圆角且无描边；其他 Browser status chip 不受影响。
+- [x] Instrument Sans 以项目内 self-hosted FontFace（400 / 500 / 600 / 700）实际加载，
+      不再出现 CSS family 名正确但 glyph 静默 fallback 的情况。
 - [x] 双栏默认比例为 42% / 58%，可通过 pointer 拖拽连续调整。
 - [x] 用户调整后的比例跨 leaf、跨关闭重开保持一致；双击可恢复默认比例。
 - [x] 分隔线可以用键盘调整，具备可访问名称、focus indicator 和足够的操作区域。
 - [x] 两栏最小宽度受保护；窄屏自动切换为规则在上、样本在下的单列结构。
-- [x] 调整栏宽时 Typography sample 实时 reflow，不出现裁切、横向溢出或不可读文本。
+- [x] Type Atlas 在双列、单列与窄屏下 reflow，不出现裁切、横向溢出或不可读文本。
 - [x] formalized / candidate / gap、evidence popover 和 candidate approval 行为无回归。
 - [x] 自动测试覆盖 projection 信息无损、复杂 object 不泄露 JSON、比例 persistence、
       reset、keyboard resize 和 responsive fallback。
@@ -182,9 +206,13 @@ Visual Sample 组织方式，不是最终实现稿：
 
 **验证记录**
 
-- `npx vitest run`：90 文件 821 测试全绿（含新增 projection / preferences /
-  split-pane model 单测与 JSON 无损断言）。
+- `npx vitest run`：91 文件 832 测试全绿（含 Atlas、multi-hop alias、
+  unresolved-family、self-hosted font、projection / preferences / split-pane
+  model 单测与 JSON 无损断言）。
 - `npm run check`（typecheck + e2e）：80 passed，含新 spec
   `tests/design-system-reader-split.spec.ts`（真实 Workbench 链路：拖拽 / 键盘 /
-  双击 / 关闭重开持久化 / 500px stacked 无横向溢出）与 09A 既有 spec 无回归。
-- 截图人工复核：1440px 双栏与 500px stacked 布局均正常。
+  双击 / 关闭重开持久化 / 500px stacked 无横向溢出；Typography Type Atlas、
+  4px 无描边 status 与 Instrument Sans 实际 FontFace load）与 09A 既有 spec 无回归。
+- 真实 Browser 复核：当前项目 7 个 source-backed 字号 form 均进入 Atlas；标准
+  Typography section title 保持不变，双列卡片 `scrollWidth === clientWidth`，状态
+  计算样式为 `border-radius: 4px; border-style: none; box-shadow: none`。

@@ -11,6 +11,7 @@ import {
   pxOf,
   toTechnicalDetail,
   typeScaleSteps,
+  typographyAtlasItems,
   typographyLayersFromView,
   type TypographyProjection
 } from "@/components/workbench/design-system-reader-projection";
@@ -350,7 +351,7 @@ describe("projectTypographyLeaf classification", () => {
 /* --------------------------- specimen family fallback ---------------------- */
 
 describe("specimen family fallback", () => {
-  it("uses the single declared family for family-less styles", () => {
+  it("does not infer the single declared family for family-less composite styles", () => {
     const projection = projectTypographyLeaf([
       { layer: "primitive" as const, entries: [FAMILY_SANS] },
       {
@@ -360,9 +361,7 @@ describe("specimen family fallback", () => {
         ]
       }
     ]);
-    expect(projection.styles[0]!.specimenFamily).toBe(
-      '"Instrument Sans", system-ui, sans-serif'
-    );
+    expect(projection.styles[0]!.specimenFamily).toBeNull();
   });
 
   it("stays honest (null) when several families are declared", () => {
@@ -492,6 +491,198 @@ describe("typeScaleSteps", () => {
       }
     ]);
     expect(typeScaleSteps(projection)).toEqual([]);
+  });
+
+  it("resolves whole-token size aliases and keeps every source key", () => {
+    const sizeBase = entry({
+      entry_id: "primitive.font-size-500",
+      name: "font.size.500",
+      value: "20px"
+    });
+    const sizeAlias = entry({
+      entry_id: "semantic.font-size-navigation",
+      name: "font.size.navigation",
+      value: { alias: "primitive.font-size-500" },
+      alias: "primitive.font-size-500",
+      meaning: "Navigation size",
+      status: "candidate"
+    });
+    const projection = projectTypographyLeaf([
+      {
+        layer: "primitive" as const,
+        entries: [FAMILY_SANS, sizeBase]
+      },
+      { layer: "semantic" as const, entries: [sizeAlias] }
+    ]);
+    const steps = typeScaleSteps(projection);
+    expect(steps).toEqual([
+      {
+        px: 20,
+        sourceKeys: [
+          "design-system/token.json::primitive.font-size-500",
+          "design-system/token.json::semantic.font-size-navigation"
+        ]
+      }
+    ]);
+    const atlasItem = typographyAtlasItems(projection)[0]!;
+    expect(atlasItem).toMatchObject({
+      kind: "scale",
+      label: "Navigation",
+      usage: "Navigation size",
+      fontSize: "20px",
+      status: "candidate"
+    });
+    expect(atlasItem.sourceRows.map((row) => row.entryId)).toEqual([
+      "semantic.font-size-navigation",
+      "primitive.font-size-500",
+      "primitive.font-family-sans"
+    ]);
+  });
+});
+
+/* ------------------------------- type atlas ------------------------------- */
+
+describe("typographyAtlasItems", () => {
+  it("projects composite styles with their declared construction data and alias sources", () => {
+    const projection = projectTypographyLeaf([
+      { layer: "primitive" as const, entries: [FAMILY_SANS] },
+      { layer: "semantic" as const, entries: [DISPLAY_LARGE] }
+    ]);
+    const atlas = typographyAtlasItems(projection);
+    const display = atlas.find((item) => item.label === "display.large");
+
+    expect(display).toMatchObject({
+      kind: "style",
+      usage: DISPLAY_LARGE.meaning,
+      fontFamily:
+        "→ primitive.font-family-sans · Instrument Sans, system-ui, sans-serif",
+      specimenFamily: '"Instrument Sans", system-ui, sans-serif',
+      fontSize: "64px",
+      fontSizePx: 64,
+      fontWeight: "700",
+      lineHeight: "1.05",
+      letterSpacing: null,
+      status: "formalized"
+    });
+    expect(display?.sourceRows.map((row) => row.entryId)).toEqual([
+      "semantic.display-large",
+      "primitive.font-family-sans"
+    ]);
+  });
+
+  it("renders uncovered atomic sizes without inventing weight, leading or tracking", () => {
+    const projection = projectTypographyLeaf([
+      { layer: "primitive" as const, entries: [FAMILY_SANS, SIZE_400] },
+      { layer: "semantic" as const, entries: [] }
+    ]);
+    const atlas = typographyAtlasItems(projection);
+    const scale = atlas.find((item) => item.kind === "scale");
+
+    expect(scale).toMatchObject({
+      fontFamily: "Instrument Sans",
+      specimenFamily: '"Instrument Sans", system-ui, sans-serif',
+      fontSize: "16px",
+      fontSizePx: 16,
+      fontWeight: null,
+      lineHeight: null,
+      letterSpacing: null,
+      textTransform: null
+    });
+    expect(scale?.sourceRows.map((row) => row.entryId)).toEqual([
+      "primitive.font-size-400",
+      "primitive.font-family-sans"
+    ]);
+  });
+
+  it("does not duplicate a px size already represented by a composite style", () => {
+    const projection = projectTypographyLeaf([
+      { layer: "primitive" as const, entries: [FAMILY_SANS, SIZE_400] },
+      { layer: "semantic" as const, entries: [BODY] }
+    ]);
+    const atlas = typographyAtlasItems(projection);
+    expect(atlas.filter((item) => item.fontSizePx === 16)).toHaveLength(1);
+    expect(atlas[0]?.kind).toBe("style");
+  });
+
+  it("uses the least-complete consumed status for each visual form", () => {
+    const candidateFamily = entry({
+      ...FAMILY_SANS,
+      id: "uuid-candidate-family",
+      status: "candidate"
+    });
+    const projection = projectTypographyLeaf([
+      { layer: "primitive" as const, entries: [candidateFamily] },
+      { layer: "semantic" as const, entries: [DISPLAY_LARGE] }
+    ]);
+    expect(typographyAtlasItems(projection)[0]?.status).toBe("candidate");
+  });
+
+  it("resolves multi-hop metric aliases for the specimen and retains the full evidence chain", () => {
+    const familyAlias = entry({
+      entry_id: "semantic.font-family-brand",
+      name: "font.family.brand",
+      value: { alias: "primitive.font-family-sans" },
+      alias: "primitive.font-family-sans"
+    });
+    const sizeBase = entry({
+      entry_id: "primitive.font-size-hero",
+      name: "font.size.hero",
+      value: "72px"
+    });
+    const sizeAlias = entry({
+      entry_id: "semantic.font-size-hero",
+      name: "font.size.hero",
+      value: { alias: "primitive.font-size-hero" },
+      alias: "primitive.font-size-hero",
+      status: "candidate"
+    });
+    const weightBase = entry({
+      entry_id: "primitive.font-weight-hero",
+      name: "font.weight.hero",
+      value: "600"
+    });
+    const style = entry({
+      entry_id: "component.hero-title",
+      name: "hero.title",
+      value: {
+        fontFamily: { alias: "semantic.font-family-brand" },
+        fontSize: { alias: "semantic.font-size-hero" },
+        fontWeight: { alias: "primitive.font-weight-hero" },
+        lineHeight: "1.1"
+      }
+    });
+    const projection = projectTypographyLeaf([
+      {
+        layer: "primitive" as const,
+        entries: [FAMILY_SANS, sizeBase, weightBase]
+      },
+      {
+        layer: "semantic" as const,
+        entries: [familyAlias, sizeAlias]
+      },
+      { layer: "component" as const, entries: [style] }
+    ]);
+    const atlasItem = typographyAtlasItems(projection).find(
+      (item) => item.label === "hero.title"
+    );
+
+    expect(atlasItem).toMatchObject({
+      fontSize: "→ semantic.font-size-hero · 72px",
+      fontSizePx: 72,
+      fontWeight: "→ primitive.font-weight-hero · 600",
+      specimenFontWeight: "600",
+      specimenLineHeight: "1.1",
+      specimenFamily: '"Instrument Sans", system-ui, sans-serif',
+      status: "candidate"
+    });
+    expect(atlasItem?.sourceRows.map((row) => row.entryId)).toEqual([
+      "component.hero-title",
+      "semantic.font-family-brand",
+      "primitive.font-family-sans",
+      "semantic.font-size-hero",
+      "primitive.font-size-hero",
+      "primitive.font-weight-hero"
+    ]);
   });
 });
 

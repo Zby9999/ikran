@@ -1046,199 +1046,297 @@
   color: var(--dsc-ink-2);
 }
 
-/* One specimen card per text style: the sample line is rendered verbatim in
-   the token's own family / size / weight / line-height / tracking /
-   transform (inline styles from the source entry); the annotation row below
-   is the only place values are restated — visual annotation, not prose. */
-.dsb-specimen {
-  border-radius: 10px;
-  background: #fff;
-  padding: 20px 20px 12px;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
+/* -------------------------- 09C-A: Type Atlas ----------------------------- */
+
+.dsb-typography-page {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 28px 32px;
 }
 
-.dsb-specimen-sample {
-  color: var(--dsc-ink);
-  overflow-wrap: break-word;
-}
-
-.dsb-specimen-annotation {
+.dsb-atlas-toolbar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 14px;
-  border-top: 1px solid rgb(0 0 0 / 5%);
-  padding-top: 10px;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dsb-atlas-order {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 5%);
+  padding: 2px;
+}
+
+.dsb-atlas-order button {
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0 10px;
   color: var(--dsc-ink-3);
+  cursor: pointer;
   font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.4;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    box-shadow 150ms ease-out,
+    transform 150ms ease-out;
 }
 
-.dsb-annotation-dot {
-  width: 8px;
-  height: 8px;
-  flex-shrink: 0;
-  border-radius: 3px;
-}
-
-/* Base type scale strip: each step rendered at its actual px size. */
-.dsb-scale {
-  border-radius: 10px;
+.dsb-atlas-order button[data-active] {
   background: #fff;
-  padding: 8px 20px;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
-}
-
-.dsb-scale-row {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  border-bottom: 1px solid rgb(0 0 0 / 5%);
-  padding: 8px 0;
-}
-
-.dsb-scale-row:last-child {
-  border-bottom: 0;
-}
-
-.dsb-scale-size {
-  width: 52px;
-  flex-shrink: 0;
-  color: var(--dsc-ink-3);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-.dsb-scale-sample {
-  min-width: 0;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
   color: var(--dsc-ink);
-  line-height: 1.25;
-  overflow-wrap: break-word;
 }
 
-/* ------------------------ 09C-A: typography left -------------------------- */
+.dsb-atlas-order button:active {
+  transform: scale(0.97);
+}
 
-/* Font family group — a normal left-column group (not a bottom bar). Wraps:
-   below ~220px of meta room the stack lines drop under the specimen instead
-   of truncating to "Instrum…" in narrow panes. */
-.dsb-family-card {
+.dsb-atlas-order button:focus-visible {
+  outline: 2px solid rgb(58 147 255 / 45%);
+  outline-offset: 2px;
+}
+
+.dsb-atlas-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dsb-atlas-card {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
-  border-radius: 10px;
-  background: #fff;
-  padding: 16px;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
-}
-
-.dsb-family-name {
   min-width: 0;
+  min-height: 280px;
   overflow: hidden;
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex-direction: column;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 7%);
+  container-type: inline-size;
 }
 
-.dsb-family-meta {
+.dsb-atlas-card[data-wide] {
+  grid-column: 1 / -1;
+  min-height: 320px;
+}
+
+.dsb-atlas-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px 0;
+}
+
+.dsb-atlas-card-title {
   display: flex;
   min-width: 0;
-  flex: 1 1 220px;
   flex-direction: column;
   gap: 2px;
 }
 
-.dsb-family-stack {
+.dsb-atlas-role {
   overflow: hidden;
-  color: var(--dsc-ink-2);
-  font-size: 12px;
+  font-size: 11.5px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.dsb-family-sub {
+.dsb-atlas-kind,
+.dsb-atlas-data-label {
+  color: var(--dsc-ink-3);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* User-confirmed status treatment for the Atlas only: compact 4px rounded
+   rectangle, filled by state, with no border/stroke or inset ring. */
+.dsb-atlas-status {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 5%);
+  padding: 3px 7px;
+  color: var(--dsc-ink-3);
+  font-size: 9.5px;
+  line-height: 14px;
+}
+
+.dsb-atlas-status[data-status="formalized"] {
+  background: rgb(17 197 20 / 9%);
+  color: #0f8f11;
+}
+
+.dsb-atlas-status[data-status="candidate"] {
+  background: rgb(58 147 255 / 10%);
+  color: #2473cc;
+}
+
+.dsb-atlas-sample-wrap {
+  display: flex;
+  min-height: 150px;
+  flex: 1;
+  align-items: center;
+  padding: 22px;
+}
+
+.dsb-atlas-card[data-wide] .dsb-atlas-sample-wrap {
+  padding: 32px;
+}
+
+.dsb-atlas-sample {
+  min-width: 0;
+  margin: 0;
+  color: var(--dsc-ink);
+  overflow-wrap: anywhere;
+}
+
+.dsb-atlas-unresolved {
+  display: flex;
+  max-width: 360px;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--dsc-ink-2);
+}
+
+.dsb-atlas-unresolved > span {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.dsb-atlas-unresolved p {
+  margin: 0;
   color: var(--dsc-ink-3);
   font-size: 11.5px;
+  line-height: 1.45;
 }
 
-/* Semantic roles table: role / small specimen / value summary / meaning /
-   status / ⓘ — rows in the existing .dsb-row visual language. */
-.dsb-role-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  row-gap: 4px;
-  column-gap: 12px;
-  border-bottom: 1px solid rgb(0 0 0 / 5%);
-  padding: 10px 0;
-}
-
-.dsb-role-row:last-child {
-  border-bottom: 0;
-}
-
-.dsb-role-name {
-  width: 96px;
-  flex-shrink: 0;
-  overflow: hidden;
-  font-size: 12.5px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dsb-role-aa {
-  display: flex;
-  width: 40px;
-  height: 32px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  background: rgb(0 0 0 / 3%);
-  color: var(--dsc-ink);
-  overflow: hidden;
-}
-
-.dsb-role-value {
-  /* Grow past 120px so the summary (incl. tracking / transform segments)
-     isn't truncated; the row's flex-wrap drops it to its own line when the
-     pane is too narrow for name + family + value side by side. */
-  min-width: 120px;
-  flex: 0 0 auto;
-  max-width: 100%;
-  overflow: hidden;
+.dsb-atlas-caption {
+  display: grid;
+  grid-template-columns:
+    minmax(130px, 0.75fr)
+    minmax(220px, 1.15fr)
+    minmax(190px, 1fr);
+  gap: 16px;
+  border-top: 1px solid rgb(0 0 0 / 6%);
+  padding: 13px 16px;
   color: var(--dsc-ink-3);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.4;
 }
 
-/* The role's family field — a literal family or the "→ layer.name" alias
-   link; token relationships stay visible in the left reading column.
-   Shrinkable so narrow stacked panes wrap instead of overflowing. */
-.dsb-role-family {
-  flex: 0 1 150px;
+.dsb-atlas-usage {
   min-width: 0;
-  overflow: hidden;
+}
+
+.dsb-atlas-usage p {
+  margin: 4px 0 0;
+  color: var(--dsc-ink-2);
+}
+
+.dsb-atlas-metrics {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 12px;
+  margin: 0;
+}
+
+.dsb-atlas-metric {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.dsb-atlas-metric dt {
   color: var(--dsc-ink-3);
-  font-size: 12px;
+}
+
+.dsb-atlas-metric dd {
+  margin: 0;
+  overflow: hidden;
+  color: var(--dsc-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.dsb-role-meaning {
-  flex: 1 1 160px;
+.dsb-atlas-sources {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dsb-atlas-source {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.dsb-atlas-source > span:first-child {
   min-width: 0;
   overflow: hidden;
   color: var(--dsc-ink-2);
-  font-size: 12.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dsb-atlas-source .dsb-info-trigger {
+  opacity: 0.55;
+}
+
+.dsb-atlas-source-details {
+  border-top: 1px solid rgb(0 0 0 / 6%);
+  padding-top: 10px;
+}
+
+.dsb-atlas-source-summary {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 5px;
+  color: var(--dsc-ink-3);
+  cursor: pointer;
+  font-size: 12px;
+  list-style: none;
+}
+
+.dsb-atlas-source-summary::-webkit-details-marker {
+  display: none;
+}
+
+.dsb-atlas-source-details[open] .dsb-tech-chevron {
+  transform: rotate(90deg);
+}
+
+.dsb-atlas-source-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-top: 18px;
+}
+
+/* Two-column cards have less caption room than the page viewport suggests.
+   Respond to the card itself so usage, metrics and source ids never compete
+   for one compressed row. */
+@container (max-width: 600px) {
+  .dsb-atlas-caption {
+    grid-template-columns: 1fr;
+  }
+
+  .dsb-atlas-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 /* Object field lines — structured values rendered as labeled lines instead
@@ -1397,4 +1495,43 @@
   flex-shrink: 0;
   color: var(--dsc-ink-3);
   content: "—";
+}
+
+@media (max-width: 920px) {
+  .dsb-atlas-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dsb-atlas-card[data-wide] {
+    grid-column: auto;
+  }
+
+  .dsb-atlas-caption {
+    grid-template-columns: 1fr;
+  }
+
+  .dsb-atlas-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .dsb-typography-page {
+    padding: 24px 20px;
+  }
+
+  .dsb-atlas-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dsb-atlas-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsb-atlas-order button {
+    transition-duration: 1ms;
+  }
 }

@@ -4,11 +4,10 @@
 // Full chain: alignment completes → 09B-rich sources (composite text styles,
 // alias chains, candidate + gap statuses, a rich principle, an object layout
 // rule) declared + ingested through MCP → the Typography leaf renders the
-// Reader Projection: left rules pane (family / roles / metrics / technical
-// details) + right Visual samples pane (source-backed specimens, type scale)
-// → the divider drags, nudges by keyboard, double-click resets → the ratio
-// persists project-locally across sheet close/reopen → narrow viewports
-// stack the panes without horizontal scroll.
+// visual Type Atlas with construction data attached to each source-backed
+// specimen → the Layout leaf divider drags, nudges by keyboard, double-click
+// resets → the ratio persists project-locally across sheet close/reopen →
+// narrow viewports stack split leaves without horizontal scroll.
 //
 // Staging mirrors tests/design-system-browser.spec.ts.
 
@@ -70,7 +69,7 @@ async function waitForPreferenceWrite(page: import("@playwright/test").Page) {
   await page.waitForTimeout(600);
 }
 
-test("09C-A reader projection: split, specimens, persistence, stacking", async ({
+test("09C-A reader projection: atlas, split persistence, stacking", async ({
   page
 }) => {
   test.setTimeout(240_000);
@@ -271,28 +270,27 @@ test("09C-A reader projection: split, specimens, persistence, stacking", async (
     await expect(richPrinciple).toContainText("Every choice needs a reason");
     await expect(richPrinciple).toContainText("Marketing one-offs");
 
-    // ---- Typography leaf: Reader Projection left, Visual samples right. ----
+    // ---- Typography leaf: standard heading + source-backed Type Atlas. ----
     await page.getByRole("button", { name: "Typography", exact: true }).click();
-    const split = page.getByTestId("ds-leaf-split");
-    await expect(split).toBeVisible();
-    await expect(split).not.toHaveAttribute("data-stacked", "true");
-
-    const families = page.getByTestId("ds-typography-families");
-    await expect(families).toBeVisible();
-    await expect(families).toContainText("Instrument Sans");
-    const displayRole = page.getByTestId("ds-role-semantic.display.large");
-    await expect(displayRole).toBeVisible();
-    await expect(displayRole).toContainText("→ primitive.font.family.sans");
-    await expect(displayRole).toContainText("64 / 1.05 · 700");
-    await expect(page.getByTestId("ds-token-layer-primitive")).toBeVisible();
-    await expect(page.getByTestId("ds-row-primitive.font.size.400")).toBeVisible();
+    await expect(
+      page.locator(".dsb-typography-page > .dsb-h1")
+    ).toHaveText("Typography");
+    await expect(page.getByTestId("ds-leaf-split")).toHaveCount(0);
+    const atlas = page.getByTestId("ds-typography-atlas");
+    await expect(atlas).toBeVisible();
+    const displayCard = page.getByTestId(
+      "ds-atlas-semantic.display.large"
+    );
+    await expect(displayCard).toBeVisible();
+    await expect(displayCard).toContainText("Hero display role");
+    await expect(displayCard).toContainText("64px");
+    await expect(displayCard).toContainText("700");
+    await expect(displayCard).toContainText("1.05");
+    await expect(displayCard).toContainText("semantic.display.large");
+    await expect(displayCard).toContainText("primitive.font.family.sans");
     await expect(page.getByTestId("ds-technical-details")).toBeVisible();
 
-    const samples = page.getByTestId("ds-typography-samples");
-    await expect(samples).toBeVisible();
-    const displaySample = page
-      .getByTestId("ds-specimen-semantic.display.large")
-      .locator(".dsb-specimen-sample");
+    const displaySample = displayCard.locator(".dsb-atlas-sample");
     await expect(displaySample).toBeVisible();
     // The specimen renders in the typeface the source declares (resolved
     // through the family alias) — computed, not just annotated.
@@ -300,11 +298,76 @@ test("09C-A reader projection: split, specimens, persistence, stacking", async (
       (el) => getComputedStyle(el).fontFamily
     );
     expect(specimenFont).toContain("Instrument Sans");
+    // A computed family name alone is not proof that the browser rendered
+    // that face: an unregistered family silently falls back while preserving
+    // the requested CSS string. Pin the self-hosted FontFace registration
+    // and load state so the specimen cannot regress to "correct label,
+    // fallback glyphs".
+    const instrumentSansFaces = await page.evaluate(async () => {
+      await document.fonts.load('400 16px "Instrument Sans"', "Ag");
+      await document.fonts.load('700 64px "Instrument Sans"', "Ag");
+      const faces = Array.from(document.fonts).filter(
+        (face) => face.family.replaceAll('"', "") === "Instrument Sans"
+      );
+      return {
+        weights: [...new Set(faces.map((face) => Number(face.weight)))].sort(
+          (a, b) => a - b
+        ),
+        loadedWeights: [
+          ...new Set(
+            faces
+              .filter((face) => face.status === "loaded")
+              .map((face) => Number(face.weight))
+          )
+        ].sort((a, b) => a - b)
+      };
+    });
+    expect(instrumentSansFaces.weights).toEqual([400, 500, 600, 700]);
+    expect(instrumentSansFaces.loadedWeights).toEqual(
+      expect.arrayContaining([400, 700])
+    );
     const specimenSize = await displaySample.evaluate(
       (el) => Number.parseFloat(getComputedStyle(el).fontSize)
     );
     expect(specimenSize).toBeGreaterThan(24);
-    await expect(page.getByTestId("ds-type-scale")).toBeVisible();
+
+    // User-confirmed Atlas status treatment: 4px rounded rectangle with no
+    // border/stroke. This is scoped to Atlas; legacy Browser chips are not
+    // globally redesigned.
+    const atlasStatus = displayCard.getByTestId("ds-atlas-status");
+    await expect(atlasStatus).toHaveText("formalized");
+    const statusStyle = await atlasStatus.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        borderRadius: style.borderRadius,
+        borderStyle: style.borderStyle,
+        boxShadow: style.boxShadow
+      };
+    });
+    expect(statusStyle).toEqual({
+      borderRadius: "4px",
+      borderStyle: "none",
+      boxShadow: "none"
+    });
+
+    // Raw source rows are still lossless, but secondary to the visual atlas.
+    const sourceDetails = page.locator(".dsb-atlas-source-details");
+    await expect(sourceDetails).toBeVisible();
+    await sourceDetails.locator("summary").click();
+    await expect(page.getByTestId("ds-token-layer-primitive")).toBeVisible();
+    await expect(page.getByTestId("ds-row-primitive.font.size.400")).toBeVisible();
+
+    // ---- Layout leaf: object values + persisted resizable split. ----
+    await page.getByRole("button", { name: "Layout", exact: true }).click();
+    const gridRow = page.getByTestId("ds-row-grid-page");
+    await expect(gridRow).toBeVisible();
+    await expect(gridRow).toContainText("columns");
+    await expect(gridRow).toContainText("→ spacing.200");
+    await expect(gridRow).not.toContainText("{\"columns\"");
+    await expect(page.getByTestId("ds-samples-empty")).toBeVisible();
+    const split = page.getByTestId("ds-leaf-split");
+    await expect(split).toBeVisible();
+    await expect(split).not.toHaveAttribute("data-stacked", "true");
 
     // ---- Drag the divider: live resize + debounced preference write. ----
     const divider = page.getByTestId("ds-split-divider");
@@ -381,20 +444,11 @@ test("09C-A reader projection: split, specimens, persistence, stacking", async (
     await expect(page.getByTestId("design-system-browser")).toHaveCount(0);
     await entryButton.click();
     await expect(sheet).toHaveAttribute("data-open", "true");
-    await page.getByRole("button", { name: "Typography", exact: true }).click();
+    await page.getByRole("button", { name: "Layout", exact: true }).click();
     await expect(page.getByTestId("ds-split-divider")).toHaveAttribute(
       "aria-valuenow",
       "46"
     );
-
-    // ---- Layout leaf: object values read as fields; right pane honest. ----
-    await page.getByRole("button", { name: "Layout", exact: true }).click();
-    const gridRow = page.getByTestId("ds-row-grid-page");
-    await expect(gridRow).toBeVisible();
-    await expect(gridRow).toContainText("columns");
-    await expect(gridRow).toContainText("→ spacing.200");
-    await expect(gridRow).not.toContainText("{\"columns\"");
-    await expect(page.getByTestId("ds-samples-empty")).toBeVisible();
 
     // ---- Narrow viewport: panes stack, samples below, no horizontal scroll. ----
     await page.setViewportSize({ width: 500, height: 800 });
