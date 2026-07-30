@@ -15,6 +15,7 @@
 //   - token.json's 3 layers project onto Color / Typography / Materials
 //     leaves; alias references render as "→ layer.name".
 
+import { specPathMatchesSourceArtifact } from "@/lib/runtime/design-system-spec-path";
 import type {
   DesignSystemEntryView,
   DesignSystemView
@@ -331,8 +332,10 @@ export function buildDesignSystemBrowserModel(
   const interactionRows = view.interaction.map(toRow);
 
   // Component leaves: data-driven from the inventory, paired with the spec
-  // whose source artifact path matches the inventory's specPath. Specs with
-  // no inventory row still surface (honest about what's in the DB).
+  // whose source artifact path matches the inventory's specPath (both the
+  // project-relative and design-system-root-relative spellings pair — see
+  // specPathMatchesSourceArtifact). Specs with no inventory row still
+  // surface (honest about what's in the DB).
   const usedSpecs = new Set<string>();
   const components: DsComponentModel[] = view.components.inventory.map(
     (entry) => {
@@ -342,8 +345,11 @@ export function buildDesignSystemBrowserModel(
           : null;
       const spec =
         (specPath
-          ? view.components.specs.find(
-              (candidate) => candidate.source_artifact_path === specPath
+          ? view.components.specs.find((candidate) =>
+              specPathMatchesSourceArtifact(
+                specPath,
+                candidate.source_artifact_path
+              )
             )
           : undefined) ?? null;
       if (spec) usedSpecs.add(spec.entry_id);

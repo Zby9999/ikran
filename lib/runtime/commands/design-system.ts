@@ -9,6 +9,7 @@ import {
   type DesignSystemEntryView,
   type DesignSystemViewResult
 } from "../design-system-view";
+import { specPathMatchesSourceArtifact } from "../design-system-spec-path";
 import {
   approveDesignSystemEntry,
   type ApproveDesignSystemEntryInput,
@@ -65,8 +66,8 @@ export function getDesignSystemComponentCommand(
     const specPath = (inventory.value as { specPath?: unknown }).specPath;
     spec =
       typeof specPath === "string"
-        ? (result.view.components.specs.find(
-            (s) => s.source_artifact_path === specPath
+        ? (result.view.components.specs.find((s) =>
+            specPathMatchesSourceArtifact(specPath, s.source_artifact_path)
           ) ?? null)
         : null;
   } else {

@@ -292,6 +292,21 @@ describe("buildDesignSystemBrowserModel", () => {
     expect(model.components.list[0]!.leafId).toBe("component:button-spec");
     expect(model.components.list[0]!.inventory).toBeNull();
   });
+
+  test("design-system-root-relative specPath still pairs (no duplicate leaf)", () => {
+    // Real agents write specPath relative to the design-system root
+    // ("components/button.json") while source_artifact_path is
+    // project-relative — both are schema-legal and must pair, otherwise the
+    // spec surfaces a second time as an unpaired leaf (duplicate React key).
+    const view = fixtureView();
+    (
+      view.components.inventory[0]!.value as { specPath: string }
+    ).specPath = "components/button.json";
+    const model = buildDesignSystemBrowserModel(view);
+    expect(model.components.list).toHaveLength(1);
+    expect(model.components.list[0]!.leafId).toBe("component:button");
+    expect(model.components.list[0]!.spec?.entry_id).toBe("button-spec");
+  });
 });
 
 describe("withEntryStatus (optimistic approval flip)", () => {

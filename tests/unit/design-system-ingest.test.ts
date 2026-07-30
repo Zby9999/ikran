@@ -814,6 +814,51 @@ describe("getDesignSystemComponentCommand", () => {
       expect(missing.reason).toBe("not_found");
     });
   });
+
+  test("design-system-root-relative specPath still resolves the spec", () => {
+    withTempProject((dir) => {
+      // Real agents write specPath relative to the design-system root while
+      // source_artifact_path is project-relative — both spellings are
+      // schema-legal and must pair, or the detail API returns spec: null.
+      seedEvidenceCards(dir);
+      writeProjectFile(dir, "design-system/component-list.json", {
+        components: [
+          {
+            id: "component-button",
+            value: { name: "Button", specPath: "components/button.json" },
+            meaning: "主按钮",
+            status: "candidate",
+            links: ["card-accepted"]
+          }
+        ]
+      });
+      writeProjectFile(dir, "design-system/components/button.json", {
+        id: "button-spec",
+        name: "Button",
+        meaning: "触发主操作",
+        status: "candidate",
+        links: ["card-accepted"],
+        value: {
+          description: "主操作按钮",
+          props: [{ name: "variant", type: "string" }],
+          boundaries: ["一个屏幕区域最多一个主按钮"],
+          stateMatrix: [{ state: "default", behavior: "主色背景" }]
+        }
+      });
+      expect(
+        declareFile(dir, "design-system/component-list.json", "component-list.json").ok
+      ).toBe(true);
+      expect(
+        declareFile(dir, "design-system/components/button.json", "component-spec").ok
+      ).toBe(true);
+
+      const detail = getDesignSystemComponentCommand(dir, "component-button");
+      expect(detail.ok).toBe(true);
+      if (!detail.ok) return;
+      expect(detail.component.inventory?.entry_id).toBe("component-button");
+      expect(detail.component.spec?.entry_id).toBe("button-spec");
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
