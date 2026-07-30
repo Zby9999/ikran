@@ -406,6 +406,26 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(displayCard).toContainText("1.05");
     await expect(displayCard).toContainText("semantic.display.large");
     await expect(displayCard).toContainText("primitive.font.family.sans");
+    const usedForLabel = displayCard.getByText("Used for", { exact: true });
+    const sourceBackedLabel = displayCard.getByText("Source-backed", {
+      exact: true,
+    });
+    await expect(usedForLabel).toBeVisible();
+    await expect(sourceBackedLabel).toBeVisible();
+    await expect
+      .poll(() =>
+        usedForLabel.evaluate(
+          (element) => getComputedStyle(element).textTransform
+        )
+      )
+      .toBe("none");
+    await expect
+      .poll(() =>
+        sourceBackedLabel.evaluate(
+          (element) => getComputedStyle(element).textTransform
+        )
+      )
+      .toBe("none");
     await expect(page.getByTestId("ds-technical-details")).toHaveCount(0);
     await expect(
       page.getByText("Source tokens", { exact: true })
