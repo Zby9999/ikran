@@ -81,6 +81,12 @@ export {
   finalizeAlignmentPreparationCommand
 } from "./alignment-agent-command";
 
+export {
+  claimInitialDesignSystemPreparationCommand,
+  finalizeInitialDesignSystemPreparationCommand,
+  recordDesignSystemExtractionManifestCommand
+} from "./initial-design-system-preparation";
+
 export { abandonCurrentAlignmentAttemptCommand } from "./alignment-attempt-lifecycle";
 
 export {
@@ -118,6 +124,8 @@ export {
   createAgentAnnotationInputSchema,
   createAlignmentQuestionCardInputSchema,
   finalizeAlignmentPreparationInputSchema,
+  finalizeInitialDesignSystemPreparationInputSchema,
+  recordDesignSystemExtractionManifestInputSchema,
   recordDesignerAnswerInputSchema,
   updateAlignmentQuestionAnchorInputSchema,
   updateAlignmentQuestionTitleInputSchema

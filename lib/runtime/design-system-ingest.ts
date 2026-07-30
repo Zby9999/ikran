@@ -25,7 +25,8 @@ import {
   TOKEN_LAYERS,
   type DesignSystemFileKind,
   type DesignSystemSchemaReason,
-  type DesignSystemStatus
+  type DesignSystemStatus,
+  type TokenDomain
 } from "./design-system-schema";
 import {
   checkDesignSystemEntryStatus,
@@ -137,6 +138,8 @@ export interface DesignSystemEntryRowInput {
   entry_id: string;
   section: DesignSystemSection;
   name: string | null;
+  /** Explicit token taxonomy; null for legacy tokens and non-token entries. */
+  domain: TokenDomain | null;
   value: unknown;
   meaning: string;
   status: DesignSystemStatus;
@@ -147,6 +150,7 @@ export interface DesignSystemEntryRowInput {
 
 type RawEntry = {
   id?: string;
+  domain?: TokenDomain;
   value: unknown;
   meaning: string;
   status: DesignSystemStatus;
@@ -168,13 +172,15 @@ export function collectDesignSystemEntryRows(
     section: DesignSystemSection,
     entryId: string,
     name: string | null,
-    position: number
+    position: number,
+    domain: TokenDomain | null = null
   ): DesignSystemEntryRowInput => {
     const entry = raw as RawEntry;
     return {
       entry_id: entryId,
       section,
       name,
+      domain,
       value: entry.value,
       meaning: entry.meaning,
       status: entry.status,
@@ -201,7 +207,14 @@ export function collectDesignSystemEntryRows(
         let position = 0;
         for (const [name, raw] of Object.entries(entries)) {
           out.push(
-            row(raw, `token.${layer}`, `${layer}.${name}`, name, position++)
+            row(
+              raw,
+              `token.${layer}`,
+              `${layer}.${name}`,
+              name,
+              position++,
+              (raw as RawEntry).domain ?? null
+            )
           );
         }
       }
@@ -356,9 +369,9 @@ export function applyDesignSystemIngestOnDb(
 
   const insert = db.prepare(
     `INSERT INTO design_system_entries (
-      id, file_kind, section, entry_id, name, value_json, meaning, status,
+      id, file_kind, section, entry_id, name, domain, value_json, meaning, status,
       links_json, source_artifact_path, position, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   for (const row of plan.rows) {
     insert.run(
@@ -367,6 +380,7 @@ export function applyDesignSystemIngestOnDb(
       row.section,
       row.entry_id,
       row.name,
+      row.domain,
       JSON.stringify(row.value),
       row.meaning,
       row.status,

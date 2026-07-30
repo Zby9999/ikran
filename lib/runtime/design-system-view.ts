@@ -26,7 +26,8 @@ import {
 } from "./design-intent-alignment";
 import type {
   DesignSystemFileKind,
-  DesignSystemStatus
+  DesignSystemStatus,
+  TokenDomain
 } from "./design-system-schema";
 import {
   DESIGN_SYSTEM_BUCKETS,
@@ -91,6 +92,8 @@ export interface DesignSystemEntryView {
   file_kind: DesignSystemFileKind;
   section: DesignSystemSection;
   name: string | null;
+  /** Explicit source taxonomy; null/omitted only for legacy token rows. */
+  domain?: TokenDomain | null;
   /** Structured payload verbatim from the source (token values may be alias objects). */
   value: unknown;
   /** Reserved token alias target ("layer.name") when `value` is an alias object. */
@@ -137,6 +140,7 @@ type EntryRow = {
   section: string;
   entry_id: string;
   name: string | null;
+  domain: string | null;
   value_json: string;
   meaning: string;
   status: string;
@@ -242,7 +246,7 @@ export function getDesignSystemView(
 
     const rows = db
       .prepare(
-        `SELECT id, file_kind, section, entry_id, name, value_json, meaning,
+        `SELECT id, file_kind, section, entry_id, name, domain, value_json, meaning,
                 status, links_json, source_artifact_path, position
          FROM design_system_entries
          ORDER BY section ASC, position ASC, entry_id ASC`
@@ -347,6 +351,7 @@ export function getDesignSystemView(
           file_kind: row.file_kind as DesignSystemFileKind,
           section: row.section as DesignSystemSection,
           name: row.name,
+          domain: row.domain as TokenDomain | null,
           value,
           alias: aliasOf(value),
           meaning: row.meaning,

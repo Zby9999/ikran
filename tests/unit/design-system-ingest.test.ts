@@ -595,6 +595,206 @@ describe("ingest cross-validation gate", () => {
 // ---------------------------------------------------------------------------
 
 describe("design-system-view.json derived export", () => {
+  test("explicit token domain survives source ingest, DB view, and derived export", () => {
+    withTempProject((dir) => {
+      seedEvidenceCards(dir);
+      writeProjectFile(dir, "design-system/token.json", {
+        primitive: {
+          "fontFamily.instrumentSans": {
+            domain: "typography",
+            value: "Instrument Sans, sans-serif",
+            meaning: "System type family",
+            status: "formalized",
+            links: ["card-edited"]
+          }
+        },
+        semantic: {},
+        component: {}
+      });
+      expect(
+        declareFile(dir, "design-system/token.json", "token.json").ok
+      ).toBe(true);
+
+      const view = getDesignSystemViewCommand(dir);
+      expect(view.ok).toBe(true);
+      if (!view.ok) return;
+      expect(view.view.tokens.primitive[0]).toMatchObject({
+        entry_id: "primitive.fontFamily.instrumentSans",
+        domain: "typography"
+      });
+
+      const exported = JSON.parse(
+        readFileSync(
+          path.join(getArtifactsDir(dir), "design-system-view.json"),
+          "utf8"
+        )
+      );
+      expect(exported.tokens.primitive[0].domain).toBe("typography");
+    });
+  });
+
+  test("rich component spec fields survive ingest, DB view, and derived export", () => {
+    withTempProject((dir) => {
+      seedEvidenceCards(dir);
+      const richDetail = {
+        description: "Label-and-arrow CTA",
+        props: [{ name: "label", type: "string" }],
+        boundaries: ["Never render a filled button background."],
+        stateMatrix: [{ state: "default", behavior: "Inline text link" }],
+        anatomy: [{ part: "label" }, { part: "arrow" }],
+        variants: [{ name: "text-link" }],
+        sizes: [{ name: "default" }],
+        tokenLinks: ["semantic.text.action"],
+        usageRules: ["Use for a single inline CTA."],
+        contentRules: ["Keep the label concise."],
+        responsiveBehavior: ["Preserve inline flow."],
+        codeLinks: ["components/TextLink.tsx"],
+        verificationTargets: ["No filled background."],
+        openGaps: []
+      };
+      writeProjectFile(dir, "design-system/components/text-link.json", {
+        id: "text-link-spec",
+        name: "TextLink",
+        value: richDetail,
+        meaning: "Inline call to action",
+        status: "candidate",
+        links: ["card-accepted"]
+      });
+      expect(
+        declareFile(
+          dir,
+          "design-system/components/text-link.json",
+          "component-spec"
+        ).ok
+      ).toBe(true);
+
+      const view = getDesignSystemViewCommand(dir);
+      expect(view.ok).toBe(true);
+      if (!view.ok) return;
+      expect(view.view.components.specs[0].value).toEqual(richDetail);
+
+      const exported = JSON.parse(
+        readFileSync(
+          path.join(getArtifactsDir(dir), "design-system-view.json"),
+          "utf8"
+        )
+      );
+      expect(exported.components.specs[0].value).toEqual(richDetail);
+    });
+  });
+
+  test("rich principle, layout, and interaction fields survive the full read path", () => {
+    withTempProject((dir) => {
+      seedEvidenceCards(dir);
+      const principleValue = {
+        statement: "Typography establishes hierarchy.",
+        rationale: "The Seed is editorial and type-led.",
+        scope: "Product surfaces",
+        use: ["Large display type"],
+        avoid: ["Competing emphasis"],
+        exceptions: []
+      };
+      const layoutValue = {
+        rule: "Display titles lead each section.",
+        relationship: [{ from: "title", to: "content" }],
+        responsiveBehavior: ["Preserve hierarchy at narrow widths."],
+        tokenLinks: ["spacing.section"],
+        acceptanceChecks: ["Title remains the strongest layer."]
+      };
+      const interactionValue = {
+        rule: "Text links underline on hover.",
+        appliesTo: ["TextLink"],
+        stateBehavior: [{ state: "hover", behavior: "Underline" }],
+        motion: [{ duration: "120ms", easing: "ease-out" }],
+        layoutInvariants: ["No layout shift"],
+        accessibility: ["Visible focus"],
+        acceptanceChecks: ["Keyboard activation works"]
+      };
+      writeProjectFile(dir, "design-system/design-system.json", {
+        name: "Rich rules",
+        visualLanguage: {
+          id: "visual-language",
+          value: { description: "Editorial and precise." },
+          meaning: "Visual language",
+          status: "candidate",
+          links: ["card-accepted"]
+        },
+        principles: [
+          {
+            id: "principle-hierarchy",
+            value: principleValue,
+            meaning: "Type-led hierarchy",
+            status: "candidate",
+            links: ["card-accepted"]
+          }
+        ]
+      });
+      writeProjectFile(dir, "design-system/layout-rules.json", {
+        rules: [
+          {
+            id: "layout-title-hierarchy",
+            value: layoutValue,
+            meaning: "Title-content relationship",
+            status: "candidate",
+            links: ["card-accepted"]
+          }
+        ]
+      });
+      writeProjectFile(dir, "design-system/interaction-rules.json", {
+        rules: [
+          {
+            id: "interaction-text-link",
+            value: interactionValue,
+            meaning: "Accessible text-link feedback",
+            status: "candidate",
+            links: ["card-accepted"]
+          }
+        ]
+      });
+      expect(
+        declareFile(
+          dir,
+          "design-system/design-system.json",
+          "design-system.json"
+        ).ok
+      ).toBe(true);
+      expect(
+        declareFile(
+          dir,
+          "design-system/layout-rules.json",
+          "layout-rules.json"
+        ).ok
+      ).toBe(true);
+      expect(
+        declareFile(
+          dir,
+          "design-system/interaction-rules.json",
+          "interaction-rules.json"
+        ).ok
+      ).toBe(true);
+
+      const view = getDesignSystemViewCommand(dir);
+      if (!view.ok) throw new Error(view.reason);
+      expect(view.view.foundations.principles[0].value).toEqual(
+        principleValue
+      );
+      expect(view.view.layout[0].value).toEqual(layoutValue);
+      expect(view.view.interaction[0].value).toEqual(interactionValue);
+
+      const exported = JSON.parse(
+        readFileSync(
+          path.join(getArtifactsDir(dir), "design-system-view.json"),
+          "utf8"
+        )
+      );
+      expect(exported.foundations.principles[0].value).toEqual(
+        principleValue
+      );
+      expect(exported.layout[0].value).toEqual(layoutValue);
+      expect(exported.interaction[0].value).toEqual(interactionValue);
+    });
+  });
+
   test("export is written under .ikran/artifacts with deterministic content", () => {
     withTempProject((dir) => {
       seedEvidenceCards(dir);

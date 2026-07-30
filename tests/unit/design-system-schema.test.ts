@@ -277,6 +277,28 @@ test.describe("design-system.json", () => {
     expect(res.reason).toBe("missing_required_field");
   });
 
+  test("09B principle detail fields have stable string/array shapes", () => {
+    const rich = validDesignSystemJson();
+    Object.assign(rich.principles[0].value, {
+      rationale: "Preserve editorial hierarchy.",
+      scope: "Product surfaces",
+      use: ["Large display type"],
+      avoid: ["Competing emphasis"],
+      exceptions: []
+    });
+    expect(validateDesignSystemJson("design-system.json", rich).ok).toBe(true);
+
+    const invalid = validDesignSystemJson();
+    Object.assign(invalid.principles[0].value, { use: "everywhere" });
+    expect(
+      validateDesignSystemJson("design-system.json", invalid)
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: { field: "value.use", expected: "array" }
+    });
+  });
+
   test("visual language value must carry a description string", () => {
     const res = validateDesignSystemJson("design-system.json", {
       ...validDesignSystemJson(),
@@ -299,6 +321,21 @@ test.describe("token.json", () => {
   test("valid 3-layer file incl. component → primitive layer skip", () => {
     const res = validateDesignSystemJson("token.json", validTokenJson());
     expect(res.ok).toBe(true);
+  });
+
+  test("accepts a declared token domain and rejects unknown domains", () => {
+    const valid = validTokenJson();
+    valid.primitive["color.blue.500"].domain = "color";
+    expect(validateDesignSystemJson("token.json", valid).ok).toBe(true);
+
+    const invalid = validTokenJson();
+    invalid.primitive["color.blue.500"].domain = "marketing";
+    const result = validateDesignSystemJson("token.json", invalid);
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "invalid_token_domain",
+      details: { token: "primitive.color.blue.500", domain: "marketing" }
+    });
   });
 
   test("missing a layer → missing_required_field", () => {
@@ -496,6 +533,33 @@ test.describe("component-spec", () => {
     if (res.ok) return;
     expect(res.reason).toBe("invalid_field_type");
   });
+
+  test("09B component detail groups use stable array shapes when present", () => {
+    const rich = validComponentSpec();
+    Object.assign(rich.value, {
+      anatomy: [{ part: "label" }, { part: "icon" }],
+      variants: [{ name: "text-link" }],
+      sizes: [{ name: "default" }],
+      tokenLinks: ["semantic.text.action"],
+      usageRules: ["Use for a single inline CTA."],
+      contentRules: ["Pair a short label with an arrow."],
+      responsiveBehavior: ["Preserve inline flow."],
+      codeLinks: ["components/TextLink.tsx"],
+      verificationTargets: ["No filled background."],
+      openGaps: []
+    });
+    expect(validateDesignSystemJson("component-spec", rich).ok).toBe(true);
+
+    const invalid = validComponentSpec();
+    Object.assign(invalid.value, { anatomy: { part: "label" } });
+    expect(
+      validateDesignSystemJson("component-spec", invalid)
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: { field: "value.anatomy", expected: "array" }
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -519,6 +583,42 @@ test.describe("layout-rules.json / interaction-rules.json", () => {
       if (res.ok) continue;
       expect(res.reason).toBe("invalid_field_type");
     }
+  });
+
+  test("09B layout and interaction detail groups use collection shapes", () => {
+    const layout = validRulesJson();
+    Object.assign(layout.rules[0].value, {
+      relationship: [{ from: "title", to: "content" }],
+      responsiveBehavior: ["Preserve hierarchy"],
+      tokenLinks: ["spacing.section"],
+      acceptanceChecks: ["Title remains dominant"]
+    });
+    expect(validateDesignSystemJson("layout-rules.json", layout).ok).toBe(true);
+
+    const interaction = validRulesJson();
+    Object.assign(interaction.rules[0].value, {
+      appliesTo: ["TextLink"],
+      stateBehavior: [{ state: "hover", behavior: "Underline" }],
+      motion: [{ duration: "120ms", easing: "ease-out" }],
+      layoutInvariants: ["No layout shift"],
+      accessibility: ["Visible focus"],
+      acceptanceChecks: ["Keyboard activation works"]
+    });
+    expect(
+      validateDesignSystemJson("interaction-rules.json", interaction).ok
+    ).toBe(true);
+
+    const invalid = validRulesJson();
+    Object.assign(invalid.rules[0].value, {
+      accessibility: "visible focus"
+    });
+    expect(
+      validateDesignSystemJson("interaction-rules.json", invalid)
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: { field: "value.accessibility", expected: "array" }
+    });
   });
 });
 

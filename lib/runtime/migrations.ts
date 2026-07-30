@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 16;
+export const CURRENT_SCHEMA_VERSION = 17;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -973,6 +973,55 @@ CREATE TABLE IF NOT EXISTS design_system_meta (
 );
 INSERT OR IGNORE INTO design_system_meta (singleton, name, updated_at)
 VALUES (1, '', NULL);
+      `);
+    }
+  },
+  {
+    version: 17,
+    up(db) {
+      // Issue 09B: one replace-by-attempt extraction manifest records the
+      // atomic Alignment claims and their design-system entry targets. The
+      // manifest is a Runtime semantic record, not a source artifact.
+      // Token domain is stored separately from value_json so consumers can
+      // classify known typography/color/material decisions deterministically;
+      // NULL preserves backward compatibility with pre-09B sources.
+      const designSystemColumns = db
+        .prepare("PRAGMA table_info(design_system_entries)")
+        .all() as Array<{ name: string }>;
+      if (!designSystemColumns.some((column) => column.name === "domain")) {
+        db.exec("ALTER TABLE design_system_entries ADD COLUMN domain TEXT");
+      }
+      db.exec(`
+CREATE TABLE IF NOT EXISTS design_system_extraction_manifests (
+  id TEXT PRIMARY KEY,
+  alignment_attempt_id TEXT NOT NULL UNIQUE
+    REFERENCES alignment_attempts(id) ON DELETE RESTRICT,
+  agent_command_id TEXT NOT NULL
+    REFERENCES agent_commands(id) ON DELETE RESTRICT,
+  idempotency_key TEXT NOT NULL,
+  manifest_json TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_design_system_extraction_manifest_command
+  ON design_system_extraction_manifests(agent_command_id);
+
+-- Keep every idempotency result so a delayed retry of v1 can never replace a
+-- newer corrected manifest v2.
+CREATE TABLE IF NOT EXISTS design_system_extraction_manifest_requests (
+  alignment_attempt_id TEXT NOT NULL
+    REFERENCES alignment_attempts(id) ON DELETE RESTRICT,
+  idempotency_key TEXT NOT NULL,
+  manifest_id TEXT NOT NULL
+    REFERENCES design_system_extraction_manifests(id) ON DELETE RESTRICT,
+  agent_command_id TEXT NOT NULL
+    REFERENCES agent_commands(id) ON DELETE RESTRICT,
+  manifest_json TEXT NOT NULL,
+  manifest_version INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (alignment_attempt_id, idempotency_key)
+);
       `);
     }
   }

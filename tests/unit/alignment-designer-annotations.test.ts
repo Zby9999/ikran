@@ -12,7 +12,11 @@ import { getDesignIntentAlignment } from "../../lib/runtime/design-intent-alignm
 import { createRegionAnnotation } from "../../lib/runtime/region-annotation";
 import { recordEvidencePackage } from "../../lib/runtime/evidence-package";
 import { registerSeedReference } from "../../lib/runtime/seed-reference";
-import { initializeProjectDb } from "../../lib/runtime/db";
+import {
+  closeProjectDb,
+  initializeProjectDb,
+  openProjectDb
+} from "../../lib/runtime/db";
 
 const VALID_FIGMA = "https://www.figma.com/design/AbCdEf/Checkout?node-id=1:2";
 
@@ -77,6 +81,30 @@ describe("getDesignIntentAlignment designer_annotations", () => {
       expect(snapshot.designer_annotations.map((r) => r.id)).not.toContain(
         agent.ok ? agent.record.id : ""
       );
+    });
+  });
+
+  test("legacy unsectioned designer annotations are not Alignment inputs", () => {
+    withTempProject((dir) => {
+      const surfaceId = seedSurface(dir);
+      const designer = createRegionAnnotation(dir, {
+        target: { kind: "figma-surface", evidenceVersionId: surfaceId },
+        author: "designer",
+        body: "Legacy note without an Alignment section",
+        section: "visual-language"
+      });
+      if (!designer.ok) throw new Error(designer.reason);
+
+      const db = openProjectDb(dir);
+      try {
+        db.prepare(
+          "UPDATE region_annotations SET section = NULL WHERE id = ?"
+        ).run(designer.record.id);
+      } finally {
+        closeProjectDb(db);
+      }
+
+      expect(getDesignIntentAlignment(dir).designer_annotations).toEqual([]);
     });
   });
 

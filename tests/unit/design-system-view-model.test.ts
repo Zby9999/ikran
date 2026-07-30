@@ -220,6 +220,15 @@ describe("row value mapping", () => {
   });
 });
 
+describe("token leaf classification", () => {
+  test("explicit domain wins while legacy tokens retain keyword fallback", () => {
+    expect(classifyToken("color.brand", "typography")).toBe("typography");
+    expect(classifyToken("font.body", null)).toBe("typography");
+    expect(classifyToken("color.brand", null)).toBe("color");
+    expect(classifyToken("radius.card", null)).toBe("materials");
+  });
+});
+
 describe("buildDesignSystemBrowserModel", () => {
   test("empty view → honest empty state", () => {
     const model = buildDesignSystemBrowserModel(emptyView());

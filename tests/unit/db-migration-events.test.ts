@@ -792,12 +792,48 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
+  test("v16→v17 adds explicit token domain and extraction manifests", () => {
+    withTempProject((dir) => {
+      const initialized = openProjectDb(dir);
+      closeProjectDb(initialized);
+      const dbPath = getProjectDbPath(dir);
+      const v16 = new DatabaseSync(dbPath);
+      try {
+        v16.exec(`
+          DROP TABLE design_system_extraction_manifest_requests;
+          DROP TABLE design_system_extraction_manifests;
+          ALTER TABLE design_system_entries DROP COLUMN domain;
+          PRAGMA user_version = 16;
+        `);
+      } finally {
+        v16.close();
+      }
+
+      const migrated = openProjectDb(dir);
+      try {
+        expect(userVersion(migrated)).toBe(CURRENT_SCHEMA_VERSION);
+        expect(tableNames(migrated)).toContain(
+          "design_system_extraction_manifests"
+        );
+        expect(tableNames(migrated)).toContain(
+          "design_system_extraction_manifest_requests"
+        );
+        const columns = migrated
+          .prepare("PRAGMA table_info(design_system_entries)")
+          .all() as Array<{ name: string }>;
+        expect(columns.map((column) => column.name)).toContain("domain");
+      } finally {
+        closeProjectDb(migrated);
+      }
+    });
+  });
+
   test("fresh DB opens at CURRENT_SCHEMA_VERSION without backup", () => {
     withTempProject((dir) => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(16);
+        expect(CURRENT_SCHEMA_VERSION).toBe(17);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
@@ -817,7 +853,9 @@ test.describe("PRAGMA user_version migration runner", () => {
             "project_workflow",
             "source_artifacts",
             "design_system_entries",
-            "design_system_meta"
+            "design_system_meta",
+            "design_system_extraction_manifests",
+            "design_system_extraction_manifest_requests"
           ])
         );
         const meta = db

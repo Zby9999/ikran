@@ -284,6 +284,39 @@ export const finalizeAlignmentPreparationInputSchema = z.object({
   alignmentAttemptId: z.string()
 });
 
+const designSystemExtractionTargetSchema = z.object({
+  artifactPath: z.string(),
+  entryId: z.string(),
+  jsonPointer: z.string()
+});
+
+const designSystemExtractionClaimSchema = z.object({
+  claimId: z.string(),
+  section: z.string(),
+  statement: z.string(),
+  sourceRecordIds: z.array(z.string()),
+  sourceExcerpts: z.array(z.string()),
+  confidence: z.string(),
+  outcome: z.string(),
+  reason: z.string().optional(),
+  targets: z.array(designSystemExtractionTargetSchema)
+});
+
+export const recordDesignSystemExtractionManifestInputSchema = z.object({
+  alignmentAttemptId: z.string(),
+  idempotencyKey: z.string(),
+  claims: z.array(designSystemExtractionClaimSchema),
+  audit: z.object({
+    status: z.string(),
+    checkedClaimIds: z.array(z.string()),
+    issues: z.array(z.string())
+  })
+});
+
+export const finalizeInitialDesignSystemPreparationInputSchema = z.object({
+  alignmentAttemptId: z.string()
+});
+
 export const createAgentAnnotationInputSchema = z.object({
   alignmentAttemptId: z.string(),
   idempotencyKey: z.string(),

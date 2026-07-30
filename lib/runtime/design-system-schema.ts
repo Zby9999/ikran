@@ -45,6 +45,7 @@ export type DesignSystemSchemaReason =
   | "invalid_status"
   | "entry_links_required"
   | "gap_must_not_link"
+  | "invalid_token_domain"
   | "token_primitive_alias"
   | "token_alias_unresolvable"
   | "token_alias_invalid_layer"
@@ -224,6 +225,67 @@ export const TOKEN_LAYERS = ["primitive", "semantic", "component"] as const;
 
 export type TokenLayer = (typeof TOKEN_LAYERS)[number];
 
+/**
+ * Semantic token domain is explicit source data. The Browser may retain its
+ * legacy name-based fallback for old rows, but newly extracted tokens should
+ * declare one of these values so typography, color, spacing, and other
+ * established decisions are never lost to naming heuristics.
+ */
+export const TOKEN_DOMAINS = [
+  "color",
+  "typography",
+  "spacing",
+  "size",
+  "ratio",
+  "radius",
+  "border",
+  "shadow",
+  "opacity",
+  "motion",
+  "breakpoint",
+  "other"
+] as const;
+
+export type TokenDomain = (typeof TOKEN_DOMAINS)[number];
+
+/** Additional component-detail groups produced by the 09B extraction flow. */
+export const RICH_COMPONENT_SPEC_FIELDS = [
+  "anatomy",
+  "variants",
+  "sizes",
+  "tokenLinks",
+  "usageRules",
+  "contentRules",
+  "responsiveBehavior",
+  "codeLinks",
+  "verificationTargets",
+  "openGaps"
+] as const;
+
+export const RICH_PRINCIPLE_STRING_FIELDS = [
+  "rationale",
+  "scope"
+] as const;
+export const RICH_PRINCIPLE_COLLECTION_FIELDS = [
+  "use",
+  "avoid",
+  "exceptions"
+] as const;
+export const RICH_LAYOUT_RULE_FIELDS = [
+  "relationship",
+  "responsiveBehavior",
+  "tokenLinks",
+  "acceptanceChecks"
+] as const;
+export const RICH_INTERACTION_RULE_FIELDS = [
+  "appliesTo",
+  "stateBehavior",
+  "motion",
+  "layoutInvariants",
+  "accessibility",
+  "acceptanceChecks"
+] as const;
+
 const ALLOWED_ALIAS_TARGET_LAYERS: Record<TokenLayer, readonly TokenLayer[]> =
   {
     primitive: [],
@@ -305,6 +367,17 @@ function validateTokenJson(json: Record<string, unknown>): DesignSystemSchemaRes
       const ctx = { token: qualified };
       if (!isPlainObject(raw)) {
         return fail("invalid_field_type", { ...ctx, expected: "object" });
+      }
+      if (
+        raw.domain !== undefined &&
+        (typeof raw.domain !== "string" ||
+          !(TOKEN_DOMAINS as readonly string[]).includes(raw.domain))
+      ) {
+        return fail("invalid_token_domain", {
+          ...ctx,
+          domain: raw.domain,
+          allowed: TOKEN_DOMAINS
+        });
       }
       const alias = aliasTargetOf(raw.value);
       if (!alias.ok) return alias;
@@ -408,7 +481,30 @@ function validateDesignSystemMeta(
       if (!isPlainObject(value)) {
         return fail("invalid_field_type", { ...ctx, field: "value", expected: "object" });
       }
-      return requireString(value, "statement", { ...ctx, field: "value" });
+      const statementFailure = requireString(value, "statement", {
+        ...ctx,
+        field: "value"
+      });
+      if (statementFailure) return statementFailure;
+      for (const field of RICH_PRINCIPLE_STRING_FIELDS) {
+        if (value[field] !== undefined && !isNonEmptyString(value[field])) {
+          return fail("invalid_field_type", {
+            ...ctx,
+            field: `value.${field}`,
+            expected: "non-empty string"
+          });
+        }
+      }
+      for (const field of RICH_PRINCIPLE_COLLECTION_FIELDS) {
+        if (value[field] !== undefined && !Array.isArray(value[field])) {
+          return fail("invalid_field_type", {
+            ...ctx,
+            field: `value.${field}`,
+            expected: "array"
+          });
+        }
+      }
+      return null;
     }) ?? { ok: true }
   );
 }
@@ -482,13 +578,26 @@ function validateComponentSpec(
         const stateFailure = requireString(state, "state", { ...ctx, field: `value.stateMatrix[${i}]` });
         if (stateFailure) return stateFailure;
       }
+      // Backward compatible at declaration time: 09A specs remain valid.
+      // When a 09B field is present, however, it has a stable collection
+      // shape so ingest/view/export can preserve it without interpretation.
+      for (const field of RICH_COMPONENT_SPEC_FIELDS) {
+        if (value[field] !== undefined && !Array.isArray(value[field])) {
+          return fail("invalid_field_type", {
+            ...ctx,
+            field: `value.${field}`,
+            expected: "array"
+          });
+        }
+      }
       return null;
     }
   }) ?? { ok: true };
 }
 
 function validateRulesFile(
-  json: Record<string, unknown>
+  json: Record<string, unknown>,
+  richFields: readonly string[]
 ): DesignSystemSchemaResult {
   return (
     checkEntryArray(json.rules, "rules", (value, ctx) => {
@@ -496,6 +605,15 @@ function validateRulesFile(
       // rule category and Task C persists them verbatim.
       if (!isPlainObject(value)) {
         return fail("invalid_field_type", { ...ctx, field: "value", expected: "object" });
+      }
+      for (const field of richFields) {
+        if (value[field] !== undefined && !Array.isArray(value[field])) {
+          return fail("invalid_field_type", {
+            ...ctx,
+            field: `value.${field}`,
+            expected: "array"
+          });
+        }
       }
       return null;
     }) ?? { ok: true }
@@ -514,8 +632,10 @@ const FILE_KIND_VALIDATORS: Record<
   "token.json": validateTokenJson,
   "component-list.json": validateComponentList,
   "component-spec": validateComponentSpec,
-  "layout-rules.json": validateRulesFile,
-  "interaction-rules.json": validateRulesFile
+  "layout-rules.json": (json) =>
+    validateRulesFile(json, RICH_LAYOUT_RULE_FIELDS),
+  "interaction-rules.json": (json) =>
+    validateRulesFile(json, RICH_INTERACTION_RULE_FIELDS)
 };
 
 export function validateDesignSystemJson(

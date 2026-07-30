@@ -168,7 +168,13 @@ const TYPOGRAPHY_TOKEN_PATTERN =
  * typography ("text.primary" is a color role); Materials is the honest
  * catch-all (radius, shadow, spacing, opacity, …).
  */
-export function classifyToken(name: string): TokenLeafId {
+export function classifyToken(
+  name: string,
+  domain: DesignSystemEntryView["domain"] | string | null = null
+): TokenLeafId {
+  if (domain === "color") return "color";
+  if (domain === "typography") return "typography";
+  if (domain !== null && domain !== undefined) return "materials";
   if (COLOR_TOKEN_PATTERN.test(name)) return "color";
   if (TYPOGRAPHY_TOKEN_PATTERN.test(name)) return "typography";
   return "materials";
@@ -308,7 +314,10 @@ export function buildDesignSystemBrowserModel(
   );
   for (const layer of TOKEN_LAYER_ORDER) {
     for (const entry of view.tokens[layer]) {
-      const leafId = classifyToken(entryDisplayName(entry));
+      const leafId = classifyToken(
+        entryDisplayName(entry),
+        entry.domain ?? null
+      );
       const groups = byLeafLayer.get(leafId)!;
       const rows = groups.get(layer) ?? [];
       rows.push(toRow(entry));

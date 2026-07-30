@@ -993,57 +993,68 @@ export function updateQuestionCardAnchor(
   }
 }
 
+export function getDesignIntentAlignmentOnDb(db: DatabaseType) {
+  const preparation = getAlignmentPreparationOnDb(db);
+  const questionCards = listQuestionsOnDb(
+    db,
+    preparation.current_attempt?.id ?? null
+  );
+  const annotationRows = preparation.current_attempt
+    ? db
+        .prepare(
+          `SELECT * FROM agent_alignment_annotations
+           WHERE alignment_attempt_id = ?
+           ORDER BY created_at ASC, id ASC`
+        )
+        .all(preparation.current_attempt.id)
+    : db
+        .prepare(
+          `SELECT * FROM agent_alignment_annotations
+           WHERE alignment_attempt_id IS NULL
+           ORDER BY created_at ASC, id ASC`
+        )
+        .all();
+  const annotations = (annotationRows as Record<string, unknown>[]).map(
+    (row) => mapAnnotation(db, row)
+  );
+  const state = db
+    .prepare(
+      "SELECT status, completed_at FROM design_intent_alignment WHERE singleton = 1"
+    )
+    .get() as {
+    status: "draft" | "completed";
+    completed_at: string | null;
+  };
+  const coverage = coverageFor(questionCards);
+  // Issue 08A: Designer Annotations (author=designer, section-bound) are the
+  // designer's own intent input and part of the same Alignment — they ship
+  // in the snapshot alongside Agent cards so the semantic read surface
+  // (MCP read_design_intent_alignment) never needs a second channel. They
+  // are input, not a gate: coverage / can_complete never count them.
+  const designerAnnotations = listRegionAnnotationsOnDb(db, {
+    author: "designer"
+  }).filter((annotation) => annotation.section !== null);
+  return {
+    sections: ALIGNMENT_SECTIONS,
+    alignment: state,
+    preparation,
+    annotations,
+    question_cards: questionCards,
+    designer_annotations: designerAnnotations,
+    coverage: {
+      ...coverage,
+      can_complete:
+        state.status !== "completed" &&
+        preparation.workflow.stage === "alignment-answering" &&
+        coverage.can_complete
+    }
+  };
+}
+
 export function getDesignIntentAlignment(projectPath: string) {
   const db = openProjectDb(projectPath);
   try {
-    const preparation = getAlignmentPreparationOnDb(db);
-    const questionCards = listQuestionsOnDb(
-      db,
-      preparation.current_attempt?.id ?? null
-    );
-    const annotationRows = preparation.current_attempt
-      ? db
-          .prepare(
-            `SELECT * FROM agent_alignment_annotations
-             WHERE alignment_attempt_id = ?
-             ORDER BY created_at ASC, id ASC`
-          )
-          .all(preparation.current_attempt.id)
-      : db
-          .prepare(
-            `SELECT * FROM agent_alignment_annotations
-             WHERE alignment_attempt_id IS NULL
-             ORDER BY created_at ASC, id ASC`
-          )
-          .all();
-    const annotations = (annotationRows as Record<string, unknown>[]).map(
-      (row) => mapAnnotation(db, row)
-    );
-    const state = db.prepare("SELECT status, completed_at FROM design_intent_alignment WHERE singleton = 1").get() as { status: "draft" | "completed"; completed_at: string | null };
-    const coverage = coverageFor(questionCards);
-    // Issue 08A: Designer Annotations (author=designer, section-bound) are the
-    // designer's own intent input and part of the same Alignment — they ship
-    // in the snapshot alongside Agent cards so the semantic read surface
-    // (MCP read_design_intent_alignment) never needs a second channel. They
-    // are input, not a gate: coverage / can_complete never count them.
-    const designerAnnotations = listRegionAnnotationsOnDb(db, {
-      author: "designer"
-    });
-    return {
-      sections: ALIGNMENT_SECTIONS,
-      alignment: state,
-      preparation,
-      annotations,
-      question_cards: questionCards,
-      designer_annotations: designerAnnotations,
-      coverage: {
-        ...coverage,
-        can_complete:
-          state.status !== "completed" &&
-          preparation.workflow.stage === "alignment-answering" &&
-          coverage.can_complete
-      }
-    };
+    return getDesignIntentAlignmentOnDb(db);
   } finally {
     closeProjectDb(db);
   }
@@ -1103,12 +1114,19 @@ export function completeDesignIntentAlignment(
       ).run(now);
 
       const completedCards = listQuestionsOnDb(db, attempt.id);
+      const completedAlignment = getDesignIntentAlignmentOnDb(db);
       const commandId = randomUUID();
       const commandPayload = {
         alignment_attempt_id: attempt.id,
         input_snapshot_id: attempt.input_snapshot_id,
         alignment_completed_at: now,
-        question_cards: completedCards
+        question_cards: completedCards,
+        initial_design_system_input: {
+          input_snapshot: preparation.input_snapshot,
+          annotations: completedAlignment.annotations,
+          question_cards: completedAlignment.question_cards,
+          designer_annotations: completedAlignment.designer_annotations
+        }
       };
       db.prepare(
         `INSERT INTO agent_commands

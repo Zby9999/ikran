@@ -27,7 +27,10 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
         "append_agent_annotation_information",
         "record_designer_answer",
         "read_design_intent_alignment",
-        "wait_for_agent_command"
+        "wait_for_agent_command",
+        "claim_initial_design_system_preparation",
+        "record_design_system_extraction_manifest",
+        "finalize_initial_design_system_preparation"
       ])
     );
     expect(names).not.toContain("complete_design_intent_alignment");
@@ -353,6 +356,62 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
       command: {
         command_type: "prepare_initial_design_system",
         alignment_attempt_id: attemptId
+      }
+    });
+    const claimedInitialDesignSystem = sc(await client.callTool({
+      name: "claim_initial_design_system_preparation",
+      arguments: {}
+    }));
+    expect(claimedInitialDesignSystem).toMatchObject({
+      ok: true,
+      command: {
+        command_type: "prepare_initial_design_system",
+        status: "claimed"
+      },
+      attempt: { id: attemptId, status: "completed" },
+      input_snapshot: {
+        data: {
+          design_language_description: "A calm, precise product language"
+        }
+      },
+      required_artifacts: expect.arrayContaining([
+        "design-system/token.json"
+      ])
+    });
+    expect(
+      (claimedInitialDesignSystem.question_cards as unknown[])
+    ).toHaveLength(12);
+    const incompleteManifest = sc(await client.callTool({
+      name: "record_design_system_extraction_manifest",
+      arguments: {
+        alignmentAttemptId: attemptId,
+        idempotencyKey: "incomplete-mcp-manifest",
+        claims: [
+          {
+            claimId: "only-first-card",
+            section: "design-principle",
+            statement: "The first answered decision.",
+            sourceRecordIds: [firstCardId],
+            sourceExcerpts: ["同意"],
+            confidence: "confirmed",
+            outcome: "omitted",
+            reason: "Not reusable by itself.",
+            targets: []
+          }
+        ],
+        audit: {
+          status: "passed",
+          checkedClaimIds: ["only-first-card"],
+          issues: []
+        }
+      }
+    }));
+    expect(incompleteManifest).toMatchObject({
+      ok: false,
+      error: "input_coverage_incomplete",
+      details: {
+        missing_question_card_ids: expect.any(Array),
+        missing_agent_annotation_ids: expect.any(Array)
       }
     });
     sse.close();
