@@ -312,6 +312,13 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     const typographySummary = page.getByTestId("ds-typography-summary");
     await expect(typographySummary).toContainText("tokens");
     await expect(typographySummary).toContainText("formalized");
+    await expect
+      .poll(() =>
+        typographySummary.locator(".dsb-intro").evaluate(
+          (element) => getComputedStyle(element).flexDirection
+        )
+      )
+      .toBe("row");
     await expect(atlas.getByText("Scale token", { exact: true })).toHaveCount(0);
     await expect(atlas.getByText("Text style", { exact: true })).toHaveCount(0);
     const scaleOrder = page.getByRole("button", {

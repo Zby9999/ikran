@@ -1078,7 +1078,10 @@ export function TypographyLeafPage({
           data-testid="ds-typography-atlas"
         >
           <div className="dsb-atlas-toolbar">
-            <div data-testid="ds-typography-summary">
+            <div
+              className="dsb-atlas-summary"
+              data-testid="ds-typography-summary"
+            >
               <PageSummary
                 meta={`${tokenCount} tokens`}
                 chips={projection.chips}

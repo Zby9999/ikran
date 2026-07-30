@@ -1064,6 +1064,12 @@
   gap: 16px;
 }
 
+.dsb-atlas-summary .dsb-intro {
+  align-items: center;
+  flex-direction: row;
+  gap: 14px;
+}
+
 .dsb-atlas-order {
   display: inline-flex;
   flex: 0 0 auto;
