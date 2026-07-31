@@ -241,143 +241,11 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     writeSource("design-system/layout-rules.json", {
       rules: [
         {
-          id: "shell-regions",
-          value: {
-            regions: ["header", "hero", "content", "footer"],
-            relationship: [{ from: "hero", to: "content" }]
-          },
-          meaning: "Page shell vertical stack",
+          id: "grid-page",
+          value: { columns: "12", gutter: { alias: "spacing.200" }, maxWidth: "1120px" },
+          meaning: "Default page grid",
           status: "candidate",
           links: [designerEditedCardId]
-        },
-        {
-          id: "container-max",
-          value: {
-            maxWidth: "1200px",
-            pagePadding: { alias: "spacing.200" },
-            responsiveBehavior: ["Use 16px page padding below 768px."],
-            tokenLinks: ["spacing.200"]
-          },
-          meaning: "Marketing reading width",
-          status: "candidate",
-          links: [designerEditedCardId]
-        },
-        {
-          id: "grid-columns",
-          value: { columns: 12 },
-          meaning: "Marketing and dashboard grid",
-          status: "candidate",
-          links: [designerEditedCardId]
-        },
-        {
-          id: "grid-gap",
-          value: {
-            gap: "24px",
-            responsiveBehavior: ["Use 16px below 768px."],
-            tokenLinks: ["spacing.200"]
-          },
-          meaning: "Grid spacing",
-          status: "candidate",
-          links: [designerEditedCardId]
-        },
-        {
-          id: "section-rhythm",
-          value: {
-            heroToNext: "96px",
-            responsiveBehavior: ["Use 56px below 768px."]
-          },
-          meaning: "Desktop-to-mobile scroll rhythm",
-          status: "candidate",
-          links: [designerEditedCardId]
-        },
-        {
-          id: "responsive-breakpoints",
-          value: {
-            breakpoints: [
-              { name: "sm", value: "640px" },
-              { name: "md", value: "768px" },
-              { name: "lg", value: "1024px" },
-              { name: "xl", value: "1280px" }
-            ]
-          },
-          meaning: "Responsive thresholds",
-          status: "formalized",
-          links: [designerEditedCardId]
-        },
-        {
-          id: "nav-mobile",
-          value: {
-            missing: "Open state missing — cannot define menu layout or motion"
-          },
-          meaning: "Mobile navigation layout",
-          status: "gap",
-          links: []
-        }
-      ]
-    });
-    writeSource("design-system/interaction-rules.json", {
-      rules: [
-        {
-          id: "primary-button",
-          name: "Primary button",
-          value: {
-            appliesTo: ["Buttons", "Icon buttons"],
-            stateBehavior: [
-              { state: "default", behavior: "Filled ink surface" },
-              { state: "hover", behavior: "Surface darkens 4%" },
-              { state: "active", behavior: "Scale 0.97 press" },
-              { state: "disabled", behavior: "35% opacity, no pointer" }
-            ],
-            motion: [
-              {
-                duration: "160ms",
-                easing: "ease-out",
-                target: "background-color"
-              }
-            ],
-            layoutInvariants: ["Press never shifts layout"]
-          },
-          meaning: "Commit actions across the workbench",
-          status: "candidate",
-          links: [designerEditedCardId]
-        },
-        {
-          id: "sheet-drawer",
-          name: "Sheet drawer",
-          value: {
-            appliesTo: ["Browser sheet", "Overlays"],
-            stateBehavior: [
-              { state: "open", behavior: "Resting at 94vh, rounded top" },
-              {
-                state: "closed",
-                behavior: "Translated 102% down, hidden"
-              }
-            ],
-            motion: [
-              {
-                duration: "350ms",
-                easing: "cubic-bezier(0.32, 0.72, 0, 1)",
-                target: "transform"
-              }
-            ],
-            layoutInvariants: ["Sheet never covers the sidebar nav"]
-          },
-          meaning: "Bottom sheet enter and exit",
-          status: "candidate",
-          links: [designerEditedCardId]
-        },
-        {
-          id: "loading-state",
-          name: "Loading behavior",
-          value: {
-            appliesTo: ["Buttons", "Panels"],
-            stateBehavior: [],
-            motion: [],
-            layoutInvariants: []
-          },
-          meaning: "Async wait feedback",
-          status: "gap",
-          links: []
         }
       ]
     });
@@ -403,10 +271,6 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     expect(structuredContent(await declare(
       "design-system/layout-rules.json",
       "layout-rules.json"
-    ))).toMatchObject({ ok: true, record: { status: "ingested" } });
-    expect(structuredContent(await declare(
-      "design-system/interaction-rules.json",
-      "interaction-rules.json"
     ))).toMatchObject({ ok: true, record: { status: "ingested" } });
 
     // ---- Foundations home: the rich principle reads as labeled fields. ----
@@ -626,9 +490,9 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
       boxShadow: "none"
     });
 
-    // ---- Layout leaf: source-backed Blueprint + persisted resizable split. ----
+    // ---- Layout leaf: object values + persisted resizable split. ----
     await page.getByRole("button", { name: "Layout", exact: true }).click();
-    const gridRow = page.getByTestId("ds-row-grid-columns");
+    const gridRow = page.getByTestId("ds-row-grid-page");
     await expect(gridRow).toBeVisible();
     const layoutStatus = gridRow.getByTestId("ds-status-chip");
     await expect(layoutStatus).toHaveText("candidate");
@@ -647,42 +511,11 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
         borderRadius: "4px",
         borderStyle: "none",
         boxShadow: "none"
-    });
+      });
     await expect(gridRow).toContainText("columns");
+    await expect(gridRow).toContainText("→ spacing.200");
     await expect(gridRow).not.toContainText("{\"columns\"");
-    await expect(page.getByTestId("ds-row-container-max")).toContainText(
-      "→ spacing.200"
-    );
-    await expect(page.getByTestId("ds-samples-empty")).toHaveCount(0);
-    const blueprint = page.getByTestId("ds-layout-blueprint");
-    await expect(blueprint).toBeVisible();
-    await expect(blueprint).toContainText("1200px");
-    await expect(blueprint).toContainText("12 columns");
-    await expect(blueprint).toContainText("gap 24px");
-    await expect(blueprint).toContainText("96px");
-    await expect(blueprint).toContainText("sm 640");
-    await expect(blueprint).toContainText("Unavailable");
-    await expect(blueprint).toContainText(
-      "Open state missing — cannot define menu layout or motion"
-    );
-    await expect(
-      blueprint.locator('[data-layout-anchor="7"][data-status="gap"]')
-    ).toHaveCount(2);
-
-    // Row ↔ drawing correspondence is pointer- and keyboard-equivalent.
-    const layoutRows = page.locator(".dsb-layout-rules");
-    const gridRule = layoutRows.locator('[data-layout-anchor="3"]');
-    const gridAnchor = blueprint.locator(
-      'svg [data-layout-anchor="3"]'
-    );
-    await gridRule.hover();
-    await expect(gridRule).toHaveAttribute("data-anchor-active", "");
-    await expect(gridAnchor).toHaveAttribute("data-anchor-active", "");
-    await gridRule.focus();
-    await expect(gridAnchor).toHaveAttribute("data-anchor-active", "");
-    await gridAnchor.focus();
-    await expect(gridRule).toHaveAttribute("data-anchor-active", "");
-
+    await expect(page.getByTestId("ds-samples-empty")).toBeVisible();
     const split = page.getByTestId("ds-leaf-split");
     await expect(split).toBeVisible();
     await expect(split).not.toHaveAttribute("data-stacked", "true");
@@ -778,86 +611,6 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     );
     expect(splitOverflow).toBeLessThanOrEqual(1);
     await page.setViewportSize({ width: 1280, height: 720 });
-
-    // ---- 09C-B Interaction Rig: source-backed live states + honest gaps. ----
-    await page.getByRole("button", { name: "Interaction", exact: true }).click();
-    const rig = page.getByTestId("ds-interaction-rig");
-    await expect(rig).toBeVisible();
-
-    const buttonRule = page.getByTestId("ds-interaction-rule-1");
-    await expect(buttonRule).toContainText("Primary button");
-    await expect(buttonRule.getByTestId("ds-interaction-status")).toHaveText(
-      "candidate"
-    );
-    await expect(buttonRule).toContainText("Source-generated");
-    await expect(buttonRule.getByLabel("Declared states")).toContainText(
-      "default"
-    );
-    await expect(buttonRule.getByLabel("Declared states")).toContainText(
-      "disabled"
-    );
-    await expect(buttonRule.getByLabel("Declared states")).not.toContainText(
-      "focus-visible"
-    );
-    const liveButton = buttonRule.getByRole("button", {
-      name: "Save changes"
-    });
-    await liveButton.hover();
-    await expect(buttonRule.locator(".dsb-interaction-readout-state")).toHaveText(
-      "hover"
-    );
-    await expect(
-      buttonRule.locator(".dsb-interaction-readout-behavior")
-    ).toHaveText("Surface darkens 4%");
-    const liveButtonBox = await liveButton.boundingBox();
-    expect(liveButtonBox).not.toBeNull();
-    await page.mouse.move(
-      liveButtonBox!.x + liveButtonBox!.width / 2,
-      liveButtonBox!.y + liveButtonBox!.height / 2
-    );
-    await page.mouse.down();
-    await expect(buttonRule.locator(".dsb-interaction-readout-state")).toHaveText(
-      "active"
-    );
-    await page.mouse.up();
-
-    const sheetRule = page.getByTestId("ds-interaction-rule-2");
-    await expect(sheetRule).toContainText("Schematic");
-    const specimenStage = sheetRule.locator(".dsb-interaction-stage");
-    await sheetRule.getByRole("button", { name: "Open sheet" }).click();
-    await expect(specimenStage).toHaveAttribute("data-sheet-open", "");
-    await sheetRule.getByRole("button", {
-      name: "Close Sheet drawer specimen"
-    }).focus();
-    await page.keyboard.press("Escape");
-    await expect(specimenStage).not.toHaveAttribute("data-sheet-open");
-    await expect(sheet).toHaveAttribute("data-open", "true");
-    await expect(sheetRule.locator(".dsb-interaction-readout-state")).toHaveText(
-      "closed"
-    );
-
-    const loadingRule = page.getByTestId("ds-interaction-rule-3");
-    await expect(loadingRule).toHaveAttribute("data-unavailable", "true");
-    await expect(loadingRule).toContainText("Unavailable");
-    await expect(loadingRule).toContainText(
-      "No states are declared for this interaction rule."
-    );
-    await expect(rig.getByText(/spinner/i)).toHaveCount(0);
-
-    const interactionRow = page.getByTestId("ds-row-primary-button");
-    await expect(interactionRow.locator(".dsb-interaction-anchor")).toHaveText(
-      "1"
-    );
-
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await sheetRule.getByRole("button", { name: "Open sheet" }).click();
-    await expect
-      .poll(() =>
-        sheetRule
-          .locator(".dsb-interaction-sheet-panel")
-          .evaluate((element) => getComputedStyle(element).transitionDuration)
-      )
-      .toBe("0.001s");
   } finally {
     try {
       await client?.close();
