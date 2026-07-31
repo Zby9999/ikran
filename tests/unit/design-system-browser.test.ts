@@ -9,6 +9,7 @@ import {
   DesignSystemEntryButton,
   EvidenceInfoContent,
   FoundationsHomePage,
+  LayoutLeafPage,
   SpecRowView,
   StatusChip,
   TokenLeafPage,
@@ -18,6 +19,7 @@ import {
 } from "../../components/workbench/design-system-browser";
 import {
   buildDesignSystemBrowserModel,
+  toRow,
   type DesignSystemEntryView,
   type DesignSystemView,
   type DsRow
@@ -779,5 +781,158 @@ describe("FoundationsHomePage rich principles (09B shapes, 09C-A reading)", () =
     // Legacy card: flat statement, no rich field labels bleeding out.
     expect(html).toContain('data-testid="ds-principle-p-legacy"');
     expect(html).toContain("Evidence before inference");
+  });
+});
+
+/* ---------------------- Layout leaf: Blueprint (09C-B) ---------------------- */
+
+function layoutEntry(
+  entryId: string,
+  name: string,
+  value: Record<string, unknown>,
+  extra: Partial<DesignSystemEntryView> = {}
+): DsRow {
+  return toRow(
+    entry({
+      entry_id: entryId,
+      file_kind: "layout-rules.json",
+      section: "layout",
+      name,
+      value,
+      links: [],
+      ...extra
+    })
+  );
+}
+
+function layoutLeafRows(): DsRow[] {
+  return [
+    layoutEntry("grid-page", "grid.page", {
+      columns: "12",
+      gutter: { alias: "spacing.200" },
+      maxWidth: "1120px"
+    }),
+    layoutEntry("shell-regions", "shell.regions", {
+      regions: ["header", "hero", "content", "footer"]
+    }),
+    layoutEntry("section-rhythm", "section.heroToNext", {
+      heroToNext: "96 → 56px"
+    }),
+    layoutEntry(
+      "breakpoints",
+      "breakpoints",
+      { breakpoints: ["640", "768", "1024", "1280"] },
+      { status: "formalized" }
+    ),
+    layoutEntry(
+      "nav-mobile",
+      "nav.mobile",
+      { layout: "—" },
+      { status: "gap", meaning: "Mobile navigation layout" }
+    )
+  ];
+}
+
+describe("LayoutLeafPage Blueprint (09C-B)", () => {
+  function renderLayoutLeaf() {
+    const rows = layoutLeafRows();
+    return renderToStaticMarkup(
+      createElement(LayoutLeafPage, {
+        leaf: {
+          rows,
+          chips: ["1 formalized", "3 candidate", "1 open gap"]
+        },
+        rows: rowSharedProps(),
+        split: {
+          ratio: 0.42,
+          onRatioChange: vi.fn(),
+          onRatioCommit: vi.fn()
+        }
+      })
+    );
+  }
+
+  test("keeps the standard Browser heading and anchored rule rows", () => {
+    const html = renderLayoutLeaf();
+    expect(html).toContain('class="dsb-h1">Layout</h1>');
+    expect(html).toContain("5 rules");
+    expect(html).toContain("1 formalized");
+    expect(html).toContain("3 candidate");
+    expect(html).toContain("1 open gap");
+    // Every rule row carries its 1-based anchor number.
+    expect(html.match(/dsb-anchor-num/g)!.length).toBeGreaterThanOrEqual(5);
+    expect(html).toContain('data-testid="ds-row-grid-page"');
+    expect(html).toContain('data-testid="ds-row-nav-mobile"');
+    // Object values stay field lines; aliases render through, never raw JSON.
+    expect(html).toContain("→ spacing.200");
+    expect(html).not.toContain("{&quot;columns&quot;");
+  });
+
+  test("draws one schematic blueprint with anchors, origins, and status dots", () => {
+    const html = renderLayoutLeaf();
+    expect(html).toContain('data-testid="ds-layout-blueprint"');
+    expect(html).toContain('data-testid="ds-layout-blueprint-svg"');
+    expect(html).toContain('role="img"');
+    expect(html).toContain("Schematic layout blueprint");
+    // grid.page contributes three facts under one anchor.
+    expect(html.match(/data-anchor="1"/g)!.length).toBe(3);
+    expect(html).toContain('data-anchor="2"');
+    expect(html).toContain('data-anchor="3"');
+    expect(html).toContain('data-anchor="4"');
+    // Anchor dots carry status into the visual module.
+    expect(html).toContain('data-anchor="4" data-status="formalized"');
+    // Source values label the measurements.
+    expect(html).toContain(">1120px</text>");
+    expect(html).toContain("12 columns");
+    expect(html).toContain("96 → 56px");
+    expect(html).toContain(">1024</text>");
+    // The drawing declares its origin; keyboard path exists via focusable dots.
+    expect(html).toContain('data-origin="schematic"');
+    expect(html).toContain("Schematic");
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain("Anchor 1: grid.page");
+  });
+
+  test("undrawable rules surface as explicit unavailable samples", () => {
+    const html = renderLayoutLeaf();
+    expect(html).toContain('data-testid="ds-layout-unavailable-nav-mobile"');
+    expect(html).toContain("No visual sample");
+    expect(html).toContain('data-origin="unavailable"');
+    expect(html).toContain("nav.mobile");
+    expect(html).toContain("Mobile navigation layout");
+    expect(html).toContain("open gap");
+    // The honest unknown is also docked in the drawing as a dashed marker.
+    expect(html).toContain('data-anchor="5"');
+    expect(html).toContain("nav.mobile ?");
+    // The empty-samples fallback is gone once the blueprint exists.
+    expect(html).not.toContain('data-testid="ds-samples-empty"');
+  });
+
+  test("every rule row carries a checklist control for composition", () => {
+    const html = renderLayoutLeaf();
+    // One check control per row, all unchecked by default.
+    expect(html.match(/dsb-row-check/g)!.length).toBeGreaterThanOrEqual(5);
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain('aria-label="Include grid.page in the drawing"');
+    expect(html).toContain('aria-label="Include nav.mobile in the drawing"');
+    // The whole row is the pointer toggle target.
+    expect(html.match(/data-selectable/g)!.length).toBeGreaterThanOrEqual(5);
+    // Nothing selected, nothing hovered: the full-leaf caption holds.
+    expect(html).toContain("One schematic drawing per rule set");
+  });
+
+  test("empty leaf keeps the honest empty states on both panes", () => {    const html = renderToStaticMarkup(
+      createElement(LayoutLeafPage, {
+        leaf: { rows: [], chips: [] },
+        rows: rowSharedProps(),
+        split: {
+          ratio: 0.42,
+          onRatioChange: vi.fn(),
+          onRatioCommit: vi.fn()
+        }
+      })
+    );
+    expect(html).toContain("No rules declared yet.");
+    expect(html).toContain('data-testid="ds-samples-empty"');
   });
 });

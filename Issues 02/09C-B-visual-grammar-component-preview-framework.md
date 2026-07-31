@@ -139,3 +139,74 @@ Button 只作为交互控件类 fixture 之一。本 issue 还必须使用至少
 - 不为了填满右栏而生成没有 source 或 code 支持的装饰性样本。
 - 不新增复杂 Design System 编辑器或任意 props playground。
 - 不改变 component spec 的 evidence / status 资格。
+
+## Comments
+
+### 2026-07-31 — Layout 碎片信息的页面化可视化
+
+设计师确认：Layout source 只提供碎片化信息时，Browser 不得据此伪造一个完整页面；
+但“不能伪造完整页面”不等于“不能使用页面形式呈现”。页面、section、component 或
+viewport 外框可以作为规则的中性坐标系，让单条空间事实获得足够上下文并被直观看懂。
+
+**最小充分场景**
+
+- 每条 Layout 规则应生成一个只包含理解该规则所需上下文的最小场景。
+- 例如仅有左右 page inset 时，仍可绘制一个页面实例：页面外框与中性 content field
+  提供坐标，左右两侧用高亮区域和标尺呈现已声明的 inset。
+- 场景中的页面外框是 presentation scaffold，不代表 source 已声明完整 Page Shell；
+  不得补入未经证据支持的 Header、Hero、Footer、内容模块或视觉样式。
+- page-level 事实使用页面场景，section-level 事实使用 section 场景，component-level
+  事实使用 component 场景；场景尺度由规则的 semantic scope 决定。
+
+**已知、上下文与未知的视觉边界**
+
+- 当前选中的 source-backed 空间事实使用明确的高亮、测量线和数值 / token 标注。
+- 为理解事实而存在的外框或占位区域使用中性样式，并与 source-backed 内容在视觉和
+  accessibility tree 中可区分。
+- 空白表示未声明 / 未知，不表示设计已经确认该区域为空。
+- 每个此类实例必须显示 `Schematic` origin，避免被理解为真实页面还原。
+- 已知 viewport 与 content 尺寸时可以按比例绘制；缺少构成比例所需的尺寸时使用规范化
+  外框并标明 `Not to scale`，不得让示意比例冒充 source measurement。
+- candidate / formalized / gap 继续表达 source 状态；高亮仅表达当前选中事实，不能与
+  status 颜色含义混用。
+
+**Isolate / Compose**
+
+- `Isolate`：一次只把一条规则应用到最小充分场景，作为默认的精确阅读方式。
+- `Compose`：允许把相同 semantic scope、引用兼容实体且互不冲突的已知规则叠加到
+  同一个场景中。
+- Compose 必须列出当前应用的 source rules，并允许逐条开关；组合结果仍是规则演示，
+  不宣称是完整页面或真实设计稿。
+- 不同 scope、无法建立共同坐标系或存在冲突的规则保持为独立场景，不强行合并。
+- renderer 不可用属于 presentation fallback，不自动产生新的 Design System gap。
+
+**适用示例**
+
+- Page inset → 页面两侧高亮边带。
+- Max width → viewport 内居中的 content field 与宽度标尺。
+- Section gap → 两个中性 section 之间的垂直测量区。
+- Grid gap / columns → 重复轨道、栏数和间距标记。
+- Sticky header → 简化滚动页面中锚定顶部的区域。
+- Horizontal overflow → 被裁切的横向轨道与可发现的后续内容。
+- Responsive stack → 同一最小场景在已声明 breakpoint 两侧的结构变化，同时区分
+  change 与 invariant。
+
+该决定补充 Layout Visual Grammar 的信息组织边界；具体构图、控件样式和动效仍需在
+正式 Figma reference 中确认，issue 状态保持 `needs-info`。
+
+### 2026-07-31 — Blueprint + Checklist 实现完成，待确认事项
+
+已实现并全量验证（vitest 857 全绿、typecheck 干净、Playwright e2e、Chrome 实机逐项
+验证）：Layout Blueprint 组合图、规则行与图形的 anchor 对应、hover Isolate、整行点击
+勾选 Compose（无 chips / Clear 控件）。
+
+待设计师确认：
+
+1. 本次构图、控件样式和动效均属自设计（对话中逐项拍板），仍待正式 Figma reference
+   确认。
+2. 默认态是“全规则组合图”，hover 单条规则才 Isolate——与本文件验收标准中
+   “Isolate 为默认阅读方式”不同，是按 Checklist 原型语义集成时的判断。
+3. `page insets` 目前只作行内字段展示，未画成页面两侧高亮边带（projection 尚无
+   inset 事实类型）。
+4. 选中态与 candidate status 共用 `--dsc-accent` 蓝色；若严格执行“高亮不复用
+   status 颜色”，需另行定夺。

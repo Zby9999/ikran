@@ -5,7 +5,9 @@
 // alias chains, candidate + gap statuses, a rich principle, an object layout
 // rule) declared + ingested through MCP → the Typography leaf renders the
 // visual Type Atlas with construction data attached to each source-backed
-// specimen → the Layout leaf divider drags, nudges by keyboard, double-click
+// specimen → the Layout leaf Blueprint anchors rows to the drawing, isolates
+// one rule's scene on hover, and composes the checked rules through the row
+// checklist → the divider drags, nudges by keyboard, double-click
 // resets → the ratio persists project-locally across sheet close/reopen →
 // narrow viewports stack split leaves without horizontal scroll.
 //
@@ -246,6 +248,34 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
           meaning: "Default page grid",
           status: "candidate",
           links: [designerEditedCardId]
+        },
+        {
+          id: "shell-regions",
+          value: { regions: ["header", "hero", "content", "footer"] },
+          meaning: "Page shell vertical stack",
+          status: "candidate",
+          links: [designerEditedCardId]
+        },
+        {
+          id: "section-rhythm",
+          value: { heroToNext: "96 → 56px" },
+          meaning: "Scroll rhythm, desktop → mobile",
+          status: "candidate",
+          links: [designerEditedCardId]
+        },
+        {
+          id: "breakpoints",
+          value: { breakpoints: ["640", "768", "1024", "1280"] },
+          meaning: "Same source as code",
+          status: "formalized",
+          links: [designerEditedCardId]
+        },
+        {
+          id: "nav-mobile",
+          value: { layout: "—" },
+          meaning: "Mobile navigation layout — open state missing",
+          status: "gap",
+          links: []
         }
       ]
     });
@@ -515,7 +545,99 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(gridRow).toContainText("columns");
     await expect(gridRow).toContainText("→ spacing.200");
     await expect(gridRow).not.toContainText("{\"columns\"");
-    await expect(page.getByTestId("ds-samples-empty")).toBeVisible();
+
+    // ---- Layout Blueprint (09C-B): anchored rows ↔ one schematic drawing. ----
+    await expect(page.getByTestId("ds-samples-empty")).toHaveCount(0);
+    const blueprint = page.getByTestId("ds-layout-blueprint");
+    await expect(blueprint).toBeVisible();
+    const blueprintSvg = page.getByTestId("ds-layout-blueprint-svg");
+    await expect(blueprintSvg).toHaveAttribute("role", "img");
+    await expect(blueprintSvg).toHaveAttribute(
+      "aria-label",
+      /Schematic layout blueprint/
+    );
+    // Five anchored rule rows; grid.page draws three facts under anchor 1.
+    await expect(page.locator(".dsb-row-anchor > .dsb-anchor-num")).toHaveCount(
+      5
+    );
+    await expect(blueprintSvg.locator('[data-anchor="1"]')).toHaveCount(3);
+    await expect(blueprintSvg.locator('[data-anchor="2"]')).toHaveCount(1);
+    await expect(blueprintSvg.locator('[data-anchor="4"]')).toHaveCount(1);
+    // Status stays recognizable inside the visual module.
+    await expect(
+      blueprintSvg.locator('[data-anchor="4"][data-status="formalized"]')
+    ).toHaveCount(1);
+    await expect(
+      blueprintSvg.locator('[data-anchor="5"][data-status="gap"]')
+    ).toHaveCount(1);
+    // Source values label the measurements; the nav.mobile gap docks as an
+    // honest dashed unknown.
+    await expect(blueprintSvg).toContainText("1120px");
+    await expect(blueprintSvg).toContainText("12 columns");
+    await expect(blueprintSvg).toContainText("96 → 56px");
+    await expect(blueprintSvg).toContainText("1024");
+    await expect(blueprintSvg).toContainText("nav-mobile ?");
+    // Origin outcomes are distinguishable in the UI and accessibility tree.
+    await expect(
+      blueprint.locator('.dsb-origin[data-origin="schematic"]')
+    ).toBeVisible();
+    const unavailable = page.getByTestId("ds-layout-unavailable-nav-mobile");
+    await expect(unavailable).toBeVisible();
+    await expect(unavailable).toContainText("No visual sample");
+    await expect(unavailable).toContainText("Mobile navigation layout");
+    await expect(
+      unavailable.locator('.dsb-origin[data-origin="unavailable"]')
+    ).toBeVisible();
+    await expect(
+      unavailable.getByTestId("ds-layout-unavailable-status-nav-mobile")
+    ).toHaveText("open gap");
+
+    // ---- Row ↔ drawing isolation works by pointer and by keyboard. ----
+    await page.getByTestId("ds-row-shell-regions").hover();
+    await expect(blueprintSvg).toHaveAttribute("data-active-anchor", "2");
+    await expect(
+      page.locator(".dsb-row-anchor[data-anchor-active]")
+    ).toContainText("shell-regions");
+    await page.getByRole("heading", { name: "Layout", exact: true }).hover();
+    await expect(blueprintSvg).not.toHaveAttribute("data-active-anchor");
+    await blueprintSvg.locator('[data-anchor="3"] .dsb-bp-dot-focus').focus();
+    await expect(blueprintSvg).toHaveAttribute("data-active-anchor", "3");
+    await expect(
+      page.locator(".dsb-row-anchor[data-anchor-active]")
+    ).toContainText("section-rhythm");
+    await page.evaluate(() =>
+      (document.activeElement as HTMLElement | null)?.blur()
+    );
+    await expect(blueprintSvg).not.toHaveAttribute("data-active-anchor");
+
+    // ---- Checklist composition: every row carries a check control; the whole
+    // row toggles membership; the drawing slices to the checked rules. ----
+    const checks = page.locator(".dsb-row-anchor > .dsb-row-check");
+    await expect(checks).toHaveCount(5);
+    await expect(checks.first()).toHaveAttribute("aria-pressed", "false");
+    // Whole-row click on the field text selects the rule (no checkbox-only
+    // hit target); the caption names the composition.
+    await page.getByTestId("ds-row-shell-regions").click();
+    await expect(
+      page.locator(".dsb-row-anchor[data-selected]")
+    ).toHaveCount(1);
+    await expect(blueprint).toContainText("Composed from 1 rule");
+    await expect(blueprintSvg.locator("[data-anchor]")).toHaveCount(1);
+    // A second rule joins through its check control; original anchor numbers
+    // survive the slice.
+    await checks.first().click();
+    await expect(blueprint).toContainText("Composed from 2 rules");
+    await expect(blueprintSvg.locator('[data-anchor="1"]')).toHaveCount(3);
+    await expect(blueprintSvg.locator('[data-anchor="2"]')).toHaveCount(1);
+    await expect(blueprintSvg.locator('[data-anchor="3"]')).toHaveCount(0);
+    // Undo both; once nothing is checked and the pointer leaves the rows, the
+    // full-leaf drawing and its caption return.
+    await checks.first().click();
+    await page.getByTestId("ds-row-shell-regions").click();
+    await page.getByRole("heading", { name: "Layout", exact: true }).hover();
+    await expect(blueprint).toContainText("One schematic drawing per rule set");
+    await expect(blueprintSvg.locator('[data-anchor="3"]')).toHaveCount(1);
+
     const split = page.getByTestId("ds-leaf-split");
     await expect(split).toBeVisible();
     await expect(split).not.toHaveAttribute("data-stacked", "true");
@@ -606,6 +728,7 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(split).toHaveAttribute("data-stacked", "true");
     await expect(page.getByTestId("ds-split-divider")).toHaveCount(0);
     await expect(page.getByTestId("ds-split-right")).toBeVisible();
+    await expect(blueprintSvg).toBeVisible();
     const splitOverflow = await split.evaluate(
       (el) => el.scrollWidth - el.clientWidth
     );

@@ -38,7 +38,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 /** `{ alias: "layer.name" }` is how source JSON expresses a token reference
  * inside composite values; whole-value aliases already arrive as entry.alias. */
-function aliasTargetOf(value: unknown): string | null {
+export function aliasTargetOf(value: unknown): string | null {
   if (!isPlainObject(value)) return null;
   const keys = Object.keys(value);
   if (keys.length === 1 && typeof value.alias === "string") {

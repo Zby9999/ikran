@@ -1048,6 +1048,284 @@
   color: var(--dsc-ink-2);
 }
 
+/* -------------------------- 09C-B: visual origin --------------------------- */
+
+/* Outlined tag — deliberately distinct from the filled, borderless status
+ * chip so origin and status never read as the same dimension. */
+.dsb-origin {
+  flex-shrink: 0;
+  border-radius: 4px;
+  padding: 2px 6px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 12%) inset;
+  color: var(--dsc-ink-2);
+  font-size: 9.5px;
+  line-height: 14px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.dsb-origin[data-origin="unavailable"] {
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 20%) inset;
+  color: var(--dsc-ink-3);
+}
+
+/* ------------------------- 09C-B: layout blueprint ------------------------- */
+
+/* Sample card: same shell as the prototype's lproto-sample. */
+.dsb-sample {
+  border-radius: 10px;
+  background: var(--dsc-card);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
+  overflow: hidden;
+}
+
+.dsb-sample-stage {
+  padding: 12px;
+  background: rgb(0 0 0 / 1.5%);
+}
+
+.dsb-sample-caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 10px 14px;
+  border-top: 1px solid rgb(0 0 0 / 5%);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsc-ink-3);
+}
+
+.dsb-sample-caption > span:first-child {
+  flex: 1 1 auto;
+  min-width: 200px;
+}
+
+.dsb-sample-caption .dsb-anchor-num {
+  margin-right: 2px;
+}
+
+.dsb-sample-unavailable {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px dashed rgb(0 0 0 / 16%);
+  border-radius: 8px;
+  padding: 18px 20px;
+  color: var(--dsc-ink-3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dsb-sample-unavailable-mark {
+  font-size: 14px;
+}
+
+/* Anchor numbers: the circled 1-based key between rule rows, drawing
+ * measurements and unavailable captions. */
+.dsb-anchor-num {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 6%);
+  color: var(--dsc-ink-2);
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+
+.dsb-row-anchor {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  transition: background-color 150ms ease-out;
+}
+
+.dsb-row-anchor > .dsb-anchor-num {
+  margin-top: 11px;
+}
+
+.dsb-row-anchor > .dsb-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.dsb-row-anchor[data-anchor-active] {
+  background: rgb(58 147 255 / 6%);
+}
+
+.dsb-row-anchor[data-anchor-active] > .dsb-anchor-num {
+  background: var(--dsc-accent);
+  color: #fff;
+}
+
+/* Checklist composition (09C-B): the leading check control marks a rule as
+ * part of the composed drawing; the whole row is the pointer toggle target. */
+.dsb-row-anchor[data-selectable] {
+  cursor: pointer;
+}
+
+.dsb-row-anchor[data-selected] {
+  background: rgb(58 147 255 / 9%);
+  box-shadow: inset 2px 0 0 var(--dsc-accent);
+}
+
+.dsb-row-check {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 10px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid rgb(0 0 0 / 24%);
+  border-radius: 5px;
+  background: #fff;
+  color: #fff;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease-out,
+    border-color 150ms ease-out;
+}
+
+.dsb-row-check svg {
+  width: 10px;
+  height: 10px;
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity 150ms ease-out,
+    transform 150ms ease-out;
+}
+
+.dsb-row-check[data-checked] {
+  background: var(--dsc-accent);
+  border-color: var(--dsc-accent);
+}
+
+.dsb-row-check[data-checked] svg {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.dsb-row-check:focus-visible {
+  outline: 2px solid rgb(58 147 255 / 50%);
+  outline-offset: 2px;
+}
+
+/* Blueprint SVG parts. */
+.dsb-bp-svg text {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  fill: var(--dsc-ink-3);
+}
+
+.dsb-bp-note {
+  fill: var(--dsc-ink-3);
+  opacity: 0.8;
+}
+
+.dsb-bp-anchor {
+  transition: opacity 150ms ease-out;
+}
+
+.dsb-bp-svg[data-active-anchor] .dsb-bp-anchor {
+  opacity: 0.28;
+}
+
+.dsb-bp-svg[data-active-anchor] .dsb-bp-anchor[data-anchor-active] {
+  opacity: 1;
+}
+
+.dsb-bp-dim {
+  stroke: var(--dsc-accent);
+  stroke-width: 1;
+  opacity: 0.65;
+}
+
+.dsb-bp-anchor[data-anchor-active] .dsb-bp-dim {
+  opacity: 1;
+  stroke-width: 1.5;
+}
+
+.dsb-bp-block {
+  fill: rgb(0 0 0 / 7%);
+}
+
+.dsb-bp-block-accent {
+  fill: rgb(58 147 255 / 14%);
+}
+
+.dsb-bp-scaffold {
+  fill: none;
+  stroke: rgb(0 0 0 / 14%);
+  stroke-dasharray: 3 3;
+}
+
+.dsb-bp-unknown {
+  fill: none;
+  stroke: rgb(0 0 0 / 30%);
+  stroke-dasharray: 3 3;
+}
+
+/* Anchor dots carry the rule's status color — the same three tokens as the
+ * stat dots and chips, so candidate / gap stay visible inside the drawing.
+ * Isolation is opacity-only; it never recolors status. */
+.dsb-bp-dot {
+  fill: var(--dsc-ink-3);
+  transition:
+    fill 150ms ease-out,
+    stroke 150ms ease-out;
+}
+
+.dsb-bp-anchor[data-status="formalized"] .dsb-bp-dot {
+  fill: var(--dsc-green);
+}
+
+.dsb-bp-anchor[data-status="candidate"] .dsb-bp-dot {
+  fill: var(--dsc-accent);
+}
+
+.dsb-bp-dot-num {
+  fill: #fff;
+}
+
+.dsb-bp-anchor[data-status="gap"] .dsb-bp-dot-num {
+  fill: var(--dsc-ink-2);
+}
+
+.dsb-bp-anchor[data-anchor-active] .dsb-bp-dot {
+  stroke: var(--dsc-ink);
+  stroke-width: 1.5;
+}
+
+.dsb-bp-dot-focus {
+  outline: none;
+}
+
+.dsb-bp-dot-focus:focus-visible .dsb-bp-dot {
+  stroke: var(--dsc-ink);
+  stroke-width: 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsb-anchor-num,
+  .dsb-row-anchor,
+  .dsb-row-check,
+  .dsb-row-check svg,
+  .dsb-bp-anchor,
+  .dsb-bp-dot {
+    transition: none;
+  }
+}
+
 /* -------------------------- 09C-A: Type Atlas ----------------------------- */
 
 .dsb-typography-page {
@@ -1320,6 +1598,14 @@
    of serialized JSON (Reader Projection generic fallback). */
 .dsb-row--object {
   align-items: flex-start;
+}
+
+/* Object rows carry multi-field values that cannot share one line with the
+   name + meaning + chip (real sources collapse the text column to ~1ch).
+   Give the field block its own full-width line — same wrap pattern as
+   .dsb-row-error. */
+.dsb-row--object .dsb-fields {
+  flex-basis: 100%;
 }
 
 .dsb-fields {
