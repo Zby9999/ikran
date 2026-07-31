@@ -5,7 +5,10 @@ import {
   isDefaultSelectableFigmaNode,
   type PositionalEvidenceNode
 } from "./figma-positional-evidence";
-import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { Agent, EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
+import type { Dispatcher } from "undici";
 
 export type FigmaAccountIdentity = {
   /** Non-sensitive account handle / email for UI status. Never a token. */
@@ -59,29 +62,168 @@ const DEFAULT_BASE = "https://api.figma.com";
 
 type FetchLike = typeof fetch;
 
-/**
- * Node's global fetch does not consistently honor HTTP_PROXY / HTTPS_PROXY
- * unless the process is started with a version-specific CLI flag. Figma's
- * render endpoint returns a signed S3 URL, so a machine that requires its
- * standard outbound proxy can reach api.figma.com but stall forever while
- * reading the screenshot body. Keep proxy handling local to the Figma client
- * and preserve NO_PROXY semantics through Undici's environment agent.
- */
-function createRuntimeFigmaFetch(): FetchLike {
-  const httpProxy = process.env.http_proxy ?? process.env.HTTP_PROXY;
-  const httpsProxy = process.env.https_proxy ?? process.env.HTTPS_PROXY;
-  if (!httpProxy && !httpsProxy) return fetch;
+type ProxyEnvironment = Record<string, string | undefined>;
 
-  const dispatcher = new EnvHttpProxyAgent({
+type RuntimeFigmaNetworkOptions = {
+  platform?: NodeJS.Platform;
+  env?: ProxyEnvironment;
+  readMacSystemProxy?: () => string | null | Promise<string | null>;
+};
+
+type FigmaProxyConfiguration = {
+  httpProxy?: string;
+  httpsProxy?: string;
+  noProxy: string;
+};
+
+const proxyDispatchers = new Map<string, EnvHttpProxyAgent>();
+const directDispatcher = new Agent();
+const execFileAsync = promisify(execFile);
+
+async function readMacSystemProxy(): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync("/usr/sbin/scutil", ["--proxy"], {
+      encoding: "utf8",
+      timeout: 1_000
+    });
+    return stdout;
+  } catch {
+    // Direct requests still follow VPN/TUN routing when SystemConfiguration
+    // cannot be queried. Do not fall back to possibly stale process env vars.
+    return null;
+  }
+}
+
+function scalarFromScutil(snapshot: string, key: string): string | undefined {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = snapshot.match(new RegExp(`^\\s*${escaped}\\s*:\\s*(.+?)\\s*$`, "m"));
+  return match?.[1]?.trim() || undefined;
+}
+
+function proxyUrlFromScutil(
+  snapshot: string,
+  prefix: "HTTP" | "HTTPS"
+): string | undefined {
+  if (scalarFromScutil(snapshot, `${prefix}Enable`) !== "1") return undefined;
+  const host = scalarFromScutil(snapshot, `${prefix}Proxy`);
+  const portRaw = scalarFromScutil(snapshot, `${prefix}Port`);
+  const port = portRaw ? Number(portRaw) : NaN;
+  if (!host || !Number.isInteger(port) || port < 1 || port > 65_535) {
+    return undefined;
+  }
+  const normalizedHost = host.includes(":") && !host.startsWith("[")
+    ? `[${host}]`
+    : host;
+  return `http://${normalizedHost}:${port}`;
+}
+
+function exceptionsFromScutil(snapshot: string): string | undefined {
+  const block = snapshot.match(
+    /^\s*ExceptionsList\s*:\s*<array>\s*\{([\s\S]*?)^\s*\}/m
+  )?.[1];
+  if (!block) return undefined;
+  const entries = [...block.matchAll(/^\s*\d+\s*:\s*(.+?)\s*$/gm)]
+    .map((match) => match[1]?.trim())
+    .filter((value): value is string => Boolean(value));
+  return entries.length > 0 ? entries.join(",") : undefined;
+}
+
+function proxyConfigurationFromMacSystem(
+  snapshot: string | null
+): FigmaProxyConfiguration | null {
+  if (!snapshot) return null;
+  const configuration = {
+    httpProxy: proxyUrlFromScutil(snapshot, "HTTP"),
+    httpsProxy: proxyUrlFromScutil(snapshot, "HTTPS"),
+    noProxy: exceptionsFromScutil(snapshot) ?? ""
+  };
+  return configuration.httpProxy || configuration.httpsProxy
+    ? configuration
+    : null;
+}
+
+function proxyConfigurationFromEnvironment(
+  env: ProxyEnvironment
+): FigmaProxyConfiguration | null {
+  const httpProxy = env.http_proxy ?? env.HTTP_PROXY;
+  const explicitHttpsProxy = env.https_proxy ?? env.HTTPS_PROXY;
+  const httpsProxy = explicitHttpsProxy ?? httpProxy;
+  if (!httpProxy && !httpsProxy) return null;
+  return {
     httpProxy,
     httpsProxy,
-    noProxy: process.env.no_proxy ?? process.env.NO_PROXY
+    noProxy: env.no_proxy ?? env.NO_PROXY ?? ""
+  };
+}
+
+function proxyForRequest(
+  input: Parameters<FetchLike>[0],
+  configuration: FigmaProxyConfiguration
+): string | undefined {
+  const rawUrl =
+    typeof input === "string" || input instanceof URL ? String(input) : input.url;
+  const protocol = new URL(rawUrl).protocol;
+  return protocol === "http:"
+    ? configuration.httpProxy
+    : protocol === "https:"
+      ? configuration.httpsProxy
+      : undefined;
+}
+
+function dispatcherForProxy(
+  proxy: string,
+  noProxy: string
+): EnvHttpProxyAgent {
+  const key = `${proxy}\n${noProxy}`;
+  const cached = proxyDispatchers.get(key);
+  if (cached) return cached;
+  const dispatcher = new EnvHttpProxyAgent({
+    // The request scheme is selected before this dispatcher is used. Setting
+    // both avoids EnvHttpProxyAgent's HTTP-to-HTTPS fallback changing macOS'
+    // per-protocol proxy choice.
+    httpProxy: proxy,
+    httpsProxy: proxy,
+    noProxy
   });
-  return ((input, init) =>
-    undiciFetch(input as Parameters<typeof undiciFetch>[0], {
+  proxyDispatchers.set(key, dispatcher);
+  return dispatcher;
+}
+
+/**
+ * Follow the machine's active network policy for every Figma request.
+ *
+ * On macOS, process proxy variables may belong to the shell or host app and
+ * can remain set after the user disables the system proxy. SystemConfiguration
+ * (`scutil --proxy`) is therefore authoritative: manual web proxies are used,
+ * while an empty setting goes direct and still follows VPN/TUN routing.
+ * Re-reading it per request also makes network changes take effect without an
+ * Ikran restart. Other platforms retain the standard proxy-env behavior.
+ */
+function createRuntimeFigmaFetch(
+  options: RuntimeFigmaNetworkOptions = {}
+): FetchLike {
+  const platform = options.platform ?? process.platform;
+  const env = options.env ?? process.env;
+  const readSystemProxy = options.readMacSystemProxy ?? readMacSystemProxy;
+
+  return (async (input, init) => {
+    const configuration =
+      platform === "darwin"
+        ? proxyConfigurationFromMacSystem(await readSystemProxy())
+        : proxyConfigurationFromEnvironment(env);
+    let dispatcher: Dispatcher = directDispatcher;
+    if (configuration) {
+      const proxy = proxyForRequest(input, configuration);
+      if (proxy) {
+        dispatcher = dispatcherForProxy(proxy, configuration.noProxy);
+      }
+    }
+
+    return undiciFetch(input as Parameters<typeof undiciFetch>[0], {
       ...(init as Parameters<typeof undiciFetch>[1]),
       dispatcher
-    }) as unknown as Promise<Response>) as FetchLike;
+    }) as unknown as Promise<Response>;
+  }) as FetchLike;
 }
 
 const DEFAULT_API_TIMEOUT_MS = 10_000;
@@ -301,9 +443,11 @@ export function createFigmaApiClient(
     baseUrl?: string;
     apiTimeoutMs?: number;
     screenshotTimeoutMs?: number;
+    runtimeNetwork?: RuntimeFigmaNetworkOptions;
   }
 ): FigmaApiClient {
-  const fetchImpl = options?.fetchImpl ?? createRuntimeFigmaFetch();
+  const fetchImpl =
+    options?.fetchImpl ?? createRuntimeFigmaFetch(options?.runtimeNetwork);
   const baseUrl = options?.baseUrl ?? resolveBaseUrl();
   const apiTimeoutMs = options?.apiTimeoutMs ?? DEFAULT_API_TIMEOUT_MS;
   const screenshotTimeoutMs =

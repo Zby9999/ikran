@@ -323,7 +323,7 @@ test("capturePositionalEvidence times out while reading an unfinished screenshot
   expect((screenshotSignal as AbortSignal | null)?.aborted).toBe(true);
 });
 
-test("default Figma transport honors standard proxy env for screenshot downloads", async () => {
+test("default Figma transport follows the current macOS proxy state", async () => {
   let targetPort = 0;
   const target = createServer((req, res) => {
     const url = new URL(req.url ?? "/", `http://127.0.0.1:${targetPort}`);
@@ -379,44 +379,47 @@ test("default Figma transport honors standard proxy env for screenshot downloads
   );
   const proxyPort = (proxy.address() as AddressInfo).port;
 
-  const proxyKeys = [
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "NO_PROXY",
-    "http_proxy",
-    "https_proxy",
-    "no_proxy"
-  ] as const;
-  const previous = Object.fromEntries(
-    proxyKeys.map((key) => [key, process.env[key]])
-  );
-  const proxyUrl = `http://127.0.0.1:${proxyPort}`;
-  process.env.HTTP_PROXY = proxyUrl;
-  process.env.HTTPS_PROXY = proxyUrl;
-  process.env.http_proxy = proxyUrl;
-  process.env.https_proxy = proxyUrl;
-  process.env.NO_PROXY = "";
-  process.env.no_proxy = "";
+  let systemProxySnapshot = `<dictionary> {
+  HTTPEnable : 1
+  HTTPPort : ${proxyPort}
+  HTTPProxy : 127.0.0.1
+  HTTPSEnable : 1
+  HTTPSPort : ${proxyPort}
+  HTTPSProxy : 127.0.0.1
+}`;
 
   try {
     const client = createFigmaApiClient({
       baseUrl: `http://127.0.0.1:${targetPort}`,
       apiTimeoutMs: 2_000,
-      screenshotTimeoutMs: 2_000
+      screenshotTimeoutMs: 2_000,
+      runtimeNetwork: {
+        platform: "darwin",
+        env: {
+          HTTP_PROXY: "http://127.0.0.1:1",
+          HTTPS_PROXY: "http://127.0.0.1:1"
+        },
+        readMacSystemProxy: () => systemProxySnapshot
+      }
     });
-    const result = await client.capturePositionalEvidence({
+    const proxied = await client.capturePositionalEvidence({
       token: "figd_x",
       fileKey: "file",
       nodeId: "1:2"
     });
-    expect(result.ok).toBe(true);
+    expect(proxied.ok).toBe(true);
     expect(proxyConnects).toBeGreaterThan(0);
+
+    const connectsBeforeDirectRequest = proxyConnects;
+    systemProxySnapshot = "<dictionary> {\n}";
+    const direct = await client.capturePositionalEvidence({
+      token: "figd_x",
+      fileKey: "file",
+      nodeId: "1:2"
+    });
+    expect(direct.ok).toBe(true);
+    expect(proxyConnects).toBe(connectsBeforeDirectRequest);
   } finally {
-    for (const key of proxyKeys) {
-      const value = previous[key];
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
     for (const socket of sockets) socket.destroy();
     await Promise.all([
       new Promise<void>((resolve) => proxy.close(() => resolve())),
