@@ -648,6 +648,72 @@ function validateRulesFile(
 }
 
 // ---------------------------------------------------------------------------
+// Layout rule source captures (09C-D02)
+// ---------------------------------------------------------------------------
+
+/** Rule → Figma node screenshot provenance. Captures are structured records,
+ * not writing-style constraint sentences, so the field lives outside
+ * RICH_LAYOUT_RULE_FIELDS and gets its own item shape check below. */
+export const LAYOUT_RULE_CAPTURE_FIELD = "sourceCaptures";
+export const LAYOUT_RULE_CAPTURE_REQUIRED_FIELDS = [
+  "nodeName",
+  "artifactPath",
+  "capturedAt"
+] as const;
+export const LAYOUT_RULE_CAPTURE_OPTIONAL_FIELDS = [
+  "nodeId",
+  "surfaceId"
+] as const;
+
+function validateLayoutRulesFile(
+  json: Record<string, unknown>
+): DesignSystemSchemaResult {
+  const base = validateRulesFile(json, RICH_LAYOUT_RULE_FIELDS);
+  if (!base.ok) return base;
+  // Base validation passed: every rule is a plain object with a plain-object
+  // value. Walk the capture lists for their item shape.
+  const rules = json.rules as Record<string, unknown>[];
+  for (const rule of rules) {
+    const value = rule.value as Record<string, unknown>;
+    const captures = value[LAYOUT_RULE_CAPTURE_FIELD];
+    if (captures === undefined) continue;
+    if (!Array.isArray(captures)) {
+      return fail("invalid_field_type", {
+        field: `value.${LAYOUT_RULE_CAPTURE_FIELD}`,
+        expected: "array"
+      });
+    }
+    for (let i = 0; i < captures.length; i++) {
+      const item = captures[i];
+      const itemField = `value.${LAYOUT_RULE_CAPTURE_FIELD}[${i}]`;
+      if (!isPlainObject(item)) {
+        return fail("invalid_field_type", {
+          field: itemField,
+          expected: "object"
+        });
+      }
+      for (const field of LAYOUT_RULE_CAPTURE_REQUIRED_FIELDS) {
+        if (!isNonEmptyString(item[field])) {
+          return fail("invalid_field_type", {
+            field: `${itemField}.${field}`,
+            expected: "non-empty string"
+          });
+        }
+      }
+      for (const field of LAYOUT_RULE_CAPTURE_OPTIONAL_FIELDS) {
+        if (item[field] !== undefined && !isNonEmptyString(item[field])) {
+          return fail("invalid_field_type", {
+            field: `${itemField}.${field}`,
+            expected: "non-empty string"
+          });
+        }
+      }
+    }
+  }
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -659,8 +725,7 @@ const FILE_KIND_VALIDATORS: Record<
   "token.json": validateTokenJson,
   "component-list.json": validateComponentList,
   "component-spec": validateComponentSpec,
-  "layout-rules.json": (json) =>
-    validateRulesFile(json, RICH_LAYOUT_RULE_FIELDS),
+  "layout-rules.json": validateLayoutRulesFile,
   "interaction-rules.json": (json) =>
     validateRulesFile(
       json,

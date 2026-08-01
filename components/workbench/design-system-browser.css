@@ -1069,260 +1069,202 @@
   color: var(--dsc-ink-3);
 }
 
-/* ------------------------- 09C-B: layout blueprint ------------------------- */
+/* ----------------------- 09C-D02: layout source capture ---------------------- */
 
-/* Sample card: same shell as the prototype's lproto-sample. */
-.dsb-sample {
-  border-radius: 10px;
-  background: var(--dsc-card);
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
-  overflow: hidden;
+/* Placard stream: whitespace plus one hairline between rule blocks. */
+.dsb-placard {
+  padding: 26px 0;
+  border-bottom: 1px solid rgb(0 0 0 / 7%);
 }
 
-.dsb-sample-stage {
-  padding: 12px;
-  background: rgb(0 0 0 / 1.5%);
+.dsb-placard:first-child {
+  padding-top: 4px;
 }
 
-.dsb-sample-caption {
+.dsb-placard:last-child {
+  border-bottom: 0;
+}
+
+/* The capture hangs in a hairline frame. Images are height-capped so a tall
+ * node capture can never push the placard body out of the reading column. */
+.dsb-placard-figure {
+  margin: 0;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  padding: 10px 14px;
-  border-top: 1px solid rgb(0 0 0 / 5%);
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-  color: var(--dsc-ink-3);
+  justify-content: center;
+  border: 1px solid rgb(0 0 0 / 8%);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
 }
 
-.dsb-sample-caption > span:first-child {
-  flex: 1 1 auto;
-  min-width: 200px;
+.dsb-placard-figure img {
+  display: block;
+  max-width: 100%;
+  max-height: 340px;
 }
 
-.dsb-sample-caption .dsb-anchor-num {
-  margin-right: 2px;
+.dsb-placard-thumbs {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
 }
 
-.dsb-sample-unavailable {
+.dsb-placard-thumb {
+  width: 56px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid rgb(0 0 0 / 10%);
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.dsb-placard-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dsb-placard-thumb[data-active] {
+  border-color: var(--dsc-accent);
+  box-shadow: 0 0 0 1px var(--dsc-accent);
+}
+
+.dsb-placard-body {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dsb-placard-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  border: 1px dashed rgb(0 0 0 / 16%);
-  border-radius: 8px;
-  padding: 18px 20px;
-  color: var(--dsc-ink-3);
-  font-size: 12px;
-  line-height: 1.5;
 }
 
-.dsb-sample-unavailable-mark {
-  font-size: 14px;
-}
-
-/* Anchor numbers: the circled 1-based key between rule rows, drawing
- * measurements and unavailable captions. */
-.dsb-anchor-num {
-  display: inline-flex;
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: rgb(0 0 0 / 6%);
-  color: var(--dsc-ink-2);
-  font-size: 9px;
+.dsb-placard-statement {
+  font-size: 15px;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  transition:
-    background-color 150ms ease-out,
-    color 150ms ease-out;
+  letter-spacing: -0.01em;
 }
 
-.dsb-row-anchor {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  transition: background-color 150ms ease-out;
+.dsb-placard-facts {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsc-ink-3);
 }
 
-.dsb-row-anchor > .dsb-anchor-num {
-  margin-top: 11px;
-}
-
-.dsb-row-anchor > .dsb-row {
-  flex: 1;
-  min-width: 0;
-}
-
-.dsb-row-anchor[data-anchor-active] {
-  background: rgb(58 147 255 / 6%);
-}
-
-.dsb-row-anchor[data-anchor-active] > .dsb-anchor-num {
-  background: var(--dsc-accent);
-  color: #fff;
-}
-
-/* Checklist composition (09C-B): the leading check control marks a rule as
- * part of the composed drawing; the whole row is the pointer toggle target. */
-.dsb-row-anchor[data-selectable] {
-  cursor: pointer;
-}
-
-.dsb-row-anchor[data-selected] {
-  background: rgb(58 147 255 / 9%);
-  box-shadow: inset 2px 0 0 var(--dsc-accent);
-}
-
-.dsb-row-check {
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  margin-top: 10px;
-  padding: 0;
+.dsb-placard-caption {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border: 1.5px solid rgb(0 0 0 / 24%);
-  border-radius: 5px;
-  background: #fff;
-  color: #fff;
+  gap: 10px;
+  font-size: 10.5px;
+  color: var(--dsc-ink-3);
+}
+
+.dsb-placard-caption [data-stale] {
+  color: #9a6a00;
+}
+
+.dsb-placard-frame-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--dsc-ink-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
   cursor: pointer;
-  transition:
-    background-color 150ms ease-out,
-    border-color 150ms ease-out;
 }
 
-.dsb-row-check svg {
-  width: 10px;
-  height: 10px;
-  opacity: 0;
-  transform: scale(0.6);
-  transition:
-    opacity 150ms ease-out,
-    transform 150ms ease-out;
+.dsb-placard-frame-link:hover {
+  color: var(--dsc-ink);
 }
 
-.dsb-row-check[data-checked] {
-  background: var(--dsc-accent);
-  border-color: var(--dsc-accent);
+/* Honest unavailable — no fabricated visual. */
+.dsb-placard-unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 40px 20px;
+  border: 1.5px dashed rgb(0 0 0 / 14%);
+  border-radius: 8px;
+  text-align: center;
 }
 
-.dsb-row-check[data-checked] svg {
-  opacity: 1;
-  transform: scale(1);
+.dsb-placard-unavailable-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--dsc-ink-2);
 }
 
-.dsb-row-check:focus-visible {
-  outline: 2px solid rgb(58 147 255 / 50%);
-  outline-offset: 2px;
+.dsb-placard-unavailable-note {
+  font-size: 11.5px;
+  color: var(--dsc-ink-3);
 }
 
-/* Blueprint SVG parts. */
-.dsb-bp-svg text {
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  fill: var(--dsc-ink-3);
+/* Full-frame lightbox. z-index must beat the sheet root (60) and its header
+ * (61); the overlay is portaled to document.body. */
+.dsb-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgb(0 0 0 / 55%);
+  animation: dsb-lightbox-in 180ms var(--dsc-ease) both;
+  cursor: zoom-out;
 }
 
-.dsb-bp-note {
-  fill: var(--dsc-ink-3);
-  opacity: 0.8;
+@keyframes dsb-lightbox-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
-.dsb-bp-anchor {
-  transition: opacity 150ms ease-out;
+.dsb-lightbox-img {
+  max-width: min(920px, 92vw);
+  max-height: 80vh;
+  border-radius: 10px;
+  box-shadow: 0 24px 64px rgb(0 0 0 / 35%);
 }
 
-.dsb-bp-svg[data-active-anchor] .dsb-bp-anchor {
-  opacity: 0.28;
+.dsb-lightbox-hint {
+  font-size: 11px;
+  color: rgb(255 255 255 / 75%);
 }
 
-.dsb-bp-svg[data-active-anchor] .dsb-bp-anchor[data-anchor-active] {
-  opacity: 1;
+/* Placard entrance: sub-300ms, transform/opacity only, staggered per block. */
+.dsb-placard-enter {
+  animation: dsb-placard-enter 240ms var(--dsc-ease) both;
+  animation-delay: calc(var(--i, 0) * 35ms);
 }
 
-.dsb-bp-dim {
-  stroke: var(--dsc-accent);
-  stroke-width: 1;
-  opacity: 0.65;
-}
-
-.dsb-bp-anchor[data-anchor-active] .dsb-bp-dim {
-  opacity: 1;
-  stroke-width: 1.5;
-}
-
-.dsb-bp-block {
-  fill: rgb(0 0 0 / 7%);
-}
-
-.dsb-bp-block-accent {
-  fill: rgb(58 147 255 / 14%);
-}
-
-.dsb-bp-scaffold {
-  fill: none;
-  stroke: rgb(0 0 0 / 14%);
-  stroke-dasharray: 3 3;
-}
-
-.dsb-bp-unknown {
-  fill: none;
-  stroke: rgb(0 0 0 / 30%);
-  stroke-dasharray: 3 3;
-}
-
-/* Anchor dots carry the rule's status color — the same three tokens as the
- * stat dots and chips, so candidate / gap stay visible inside the drawing.
- * Isolation is opacity-only; it never recolors status. */
-.dsb-bp-dot {
-  fill: var(--dsc-ink-3);
-  transition:
-    fill 150ms ease-out,
-    stroke 150ms ease-out;
-}
-
-.dsb-bp-anchor[data-status="formalized"] .dsb-bp-dot {
-  fill: var(--dsc-green);
-}
-
-.dsb-bp-anchor[data-status="candidate"] .dsb-bp-dot {
-  fill: var(--dsc-accent);
-}
-
-.dsb-bp-dot-num {
-  fill: #fff;
-}
-
-.dsb-bp-anchor[data-status="gap"] .dsb-bp-dot-num {
-  fill: var(--dsc-ink-2);
-}
-
-.dsb-bp-anchor[data-anchor-active] .dsb-bp-dot {
-  stroke: var(--dsc-ink);
-  stroke-width: 1.5;
-}
-
-.dsb-bp-dot-focus {
-  outline: none;
-}
-
-.dsb-bp-dot-focus:focus-visible .dsb-bp-dot {
-  stroke: var(--dsc-ink);
-  stroke-width: 2;
+@keyframes dsb-placard-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dsb-anchor-num,
-  .dsb-row-anchor,
-  .dsb-row-check,
-  .dsb-row-check svg,
-  .dsb-bp-anchor,
-  .dsb-bp-dot {
-    transition: none;
+  .dsb-lightbox,
+  .dsb-placard-enter {
+    animation: none;
   }
 }
 

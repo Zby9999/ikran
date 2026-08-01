@@ -986,6 +986,176 @@ describe("getDesignSystemView evidence join", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Layout source captures (09C-D02) — rule → node screenshot provenance
+// ---------------------------------------------------------------------------
+
+describe("getDesignSystemView layout captures", () => {
+  function declareLayoutRules(dir: string, value: Record<string, unknown>) {
+    writeProjectFile(dir, "design-system/layout-rules.json", {
+      rules: [
+        {
+          id: "grid-page",
+          value,
+          meaning: "Page grid",
+          status: "candidate",
+          links: ["card-accepted"]
+        }
+      ]
+    });
+    expect(
+      declareFile(dir, "design-system/layout-rules.json", "layout-rules.json").ok
+    ).toBe(true);
+  }
+
+  function captureOf(
+    dir: string
+  ): import("../../lib/runtime/design-system-view").DesignSystemEntryView {
+    const result = getDesignSystemView(dir);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.reason);
+    return result.view.layout[0]!;
+  }
+
+  test("decorates layout entries with captures; current surface is fresh", () => {
+    withTempProject((dir) => {
+      const { surfaceId } = seedEvidenceCards(dir);
+      declareLayoutRules(dir, {
+        columns: "12",
+        sourceCaptures: [
+          {
+            nodeName: "Work grid",
+            artifactPath: "design-system/captures/grid-page-work-grid.png",
+            capturedAt: "2026-08-01T04:00:00.000Z",
+            surfaceId
+          },
+          {
+            nodeId: "1:99",
+            nodeName: "Hero",
+            artifactPath: "design-system/captures/grid-page-hero.png",
+            capturedAt: "2026-08-01T04:01:00.000Z"
+          }
+        ]
+      });
+
+      const entry = captureOf(dir);
+      expect(entry.layoutCaptures).toEqual([
+        {
+          nodeId: null,
+          nodeName: "Work grid",
+          artifactPath: "design-system/captures/grid-page-work-grid.png",
+          capturedAt: "2026-08-01T04:00:00.000Z",
+          surfaceId,
+          stale: false
+        },
+        {
+          nodeId: "1:99",
+          nodeName: "Hero",
+          artifactPath: "design-system/captures/grid-page-hero.png",
+          capturedAt: "2026-08-01T04:01:00.000Z",
+          surfaceId: null,
+          stale: false
+        }
+      ]);
+    });
+  });
+
+  test("marks captures stale when their surface is superseded or unknown", () => {
+    withTempProject((dir) => {
+      const { surfaceId } = seedEvidenceCards(dir);
+      // A second capture on the same seed supersedes the first surface.
+      const next = recordEvidencePackage(dir, {
+        figmaSeedReference: VALID_FIGMA,
+        frame: { nodeId: "1:2", name: "Checkout" },
+        evidenceViews: { rawData: "available", screenshot: "missing" }
+      });
+      if (!next.ok) throw new Error(`re-capture failed: ${next.reason}`);
+
+      declareLayoutRules(dir, {
+        columns: "12",
+        sourceCaptures: [
+          {
+            nodeName: "Old",
+            artifactPath: "design-system/captures/old.png",
+            capturedAt: "2026-08-01T04:00:00.000Z",
+            surfaceId
+          },
+          {
+            nodeName: "Forged",
+            artifactPath: "design-system/captures/forged.png",
+            capturedAt: "2026-08-01T04:00:00.000Z",
+            surfaceId: "surface-does-not-exist"
+          },
+          {
+            nodeName: "Current",
+            artifactPath: "design-system/captures/current.png",
+            capturedAt: "2026-08-01T04:00:00.000Z",
+            surfaceId: next.record.id
+          }
+        ]
+      });
+
+      const entry = captureOf(dir);
+      expect(entry.layoutCaptures?.map((capture) => capture.stale)).toEqual([
+        true,
+        true,
+        false
+      ]);
+    });
+  });
+
+  test("layout entries without sourceCaptures stay undecorated", () => {
+    withTempProject((dir) => {
+      seedEvidenceCards(dir);
+      declareLayoutRules(dir, { columns: "12" });
+      expect(captureOf(dir).layoutCaptures).toBeUndefined();
+    });
+  });
+
+  test("non-layout entries are never decorated", () => {
+    withTempProject((dir) => {
+      seedEvidenceCards(dir);
+      writeProjectFile(dir, "design-system/design-system.json", {
+        name: "Captures",
+        visualLanguage: {
+          id: "visual-language",
+          value: { description: "Editorial." },
+          meaning: "Visual language",
+          status: "candidate",
+          links: ["card-accepted"]
+        },
+        principles: [
+          {
+            id: "principle-1",
+            value: {
+              statement: "Type leads.",
+              sourceCaptures: [
+                {
+                  nodeName: "Hero",
+                  artifactPath: "design-system/captures/hero.png",
+                  capturedAt: "2026-08-01T04:00:00.000Z"
+                }
+              ]
+            },
+            meaning: "Hierarchy",
+            status: "candidate",
+            links: ["card-accepted"]
+          }
+        ]
+      });
+      expect(
+        declareFile(dir, "design-system/design-system.json", "design-system.json")
+          .ok
+      ).toBe(true);
+
+      const result = getDesignSystemView(dir);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.view.foundations.principles[0]!.layoutCaptures).toBeUndefined();
+    });
+  });
+});
+
 describe("getDesignSystemComponentCommand", () => {
   test("inventory id resolves inventory + spec via specPath; unknown id → not_found", () => {
     withTempProject((dir) => {

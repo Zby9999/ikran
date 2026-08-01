@@ -443,6 +443,16 @@ describe("Initial Design System preparation", () => {
           "tokenLinks",
           "acceptanceChecks"
         ]),
+        layout_rule_capture_field: {
+          field: "sourceCaptures",
+          item_required: expect.arrayContaining([
+            "nodeName",
+            "artifactPath",
+            "capturedAt"
+          ]),
+          item_optional: expect.arrayContaining(["nodeId", "surfaceId"]),
+          guidance: expect.stringContaining("Figma MCP")
+        },
         interaction_rule_value_fields: expect.arrayContaining([
           "statement",
           "description",

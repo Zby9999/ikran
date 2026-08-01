@@ -5,15 +5,16 @@
 // alias chains, candidate + gap statuses, a rich principle, an object layout
 // rule) declared + ingested through MCP → the Typography leaf renders the
 // visual Type Atlas with construction data attached to each source-backed
-// specimen → the Layout leaf Blueprint anchors rows to the drawing, isolates
-// one rule's scene on hover, and composes the checked rules through the row
-// checklist → the divider drags, nudges by keyboard, double-click
-// resets → the ratio persists project-locally across sheet close/reopen →
-// narrow viewports stack split leaves without horizontal scroll.
+// specimen → the Layout leaf renders Source Capture placards (09C-D02): a
+// captured Figma node per rule with provenance caption, an honest unavailable
+// block when no node is linked → the divider drags, nudges by keyboard,
+// double-click resets → the ratio persists project-locally across sheet
+// close/reopen → narrow viewports stack split leaves without horizontal
+// scroll.
 //
 // Staging mirrors tests/design-system-browser.spec.ts.
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -146,6 +147,14 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     // ---- 09B-rich sources: composite text styles with an alias chain,
     // candidate + gap statuses, a rich principle, an object layout rule. ----
     mkdirSync(path.join(projectDir, "design-system"), { recursive: true });
+    // 09C-D02: a real capture PNG the placard <img> loads via /api/artifacts.
+    mkdirSync(path.join(projectDir, "design-system", "captures"), {
+      recursive: true
+    });
+    copyFileSync(
+      path.join(process.cwd(), "tests", "fixtures", "layout-capture-grid.png"),
+      path.join(projectDir, "design-system", "captures", "grid-page.png")
+    );
     const writeSource = (relative: string, json: unknown) =>
       writeFileSync(
         path.join(projectDir, relative),
@@ -244,14 +253,39 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
       rules: [
         {
           id: "grid-page",
-          value: { columns: "12", gutter: { alias: "spacing.200" }, maxWidth: "1120px" },
+          value: {
+            columns: "12",
+            gutter: { alias: "spacing.200" },
+            maxWidth: "1120px",
+            sourceCaptures: [
+              {
+                nodeId: "11:20",
+                nodeName: "Landing / Grid",
+                artifactPath: "design-system/captures/grid-page.png",
+                capturedAt: "2026-07-30T14:05:22Z",
+                surfaceId: evidence.record.id
+              }
+            ]
+          },
           meaning: "Default page grid",
           status: "candidate",
           links: [designerEditedCardId]
         },
         {
           id: "shell-regions",
-          value: { regions: ["header", "hero", "content", "footer"] },
+          value: {
+            regions: ["header", "hero", "content", "footer"],
+            sourceCaptures: [
+              {
+                nodeId: "11:30",
+                nodeName: "Landing / Shell",
+                artifactPath: "design-system/captures/grid-page.png",
+                capturedAt: "2026-07-28T09:12:00Z",
+                // No live surface carries this id — the capture must read stale.
+                surfaceId: "surf-shell-missing"
+              }
+            ]
+          },
           meaning: "Page shell vertical stack",
           status: "candidate",
           links: [designerEditedCardId]
@@ -419,8 +453,7 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(displayCard).toContainText("Hero display role");
     await expect(displayCard.getByText("Weight", { exact: true })).toHaveCount(0);
     const displayDisclosure = displayCard.getByRole("button", {
-      name: "Show details for display.large",
-      exact: true
+      name: /details for display.large/
     });
     await expect(displayDisclosure).toHaveAttribute("aria-expanded", "false");
     await displayDisclosure.click();
@@ -491,127 +524,84 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     );
     expect(specimenSize).toBeGreaterThan(24);
 
-    // ---- Layout leaf: object values + persisted resizable split. ----
+    // ---- Layout leaf (09C-D02): Source Capture placards, one per rule. ----
     await page.getByRole("button", { name: "Layout", exact: true }).click();
-    const gridRow = page.getByTestId("ds-row-grid-page");
-    await expect(gridRow).toBeVisible();
-    const layoutStatus = gridRow.getByTestId("ds-status-chip");
-    await expect(layoutStatus).toHaveText("candidate");
+    // Layout is a full-width page now — no split panes, no empty samples.
+    await expect(page.getByTestId("ds-leaf-split")).toHaveCount(0);
+    await expect(page.getByTestId("ds-samples-empty")).toHaveCount(0);
+    const placards = page.getByTestId("ds-layout-placards");
+    await expect(placards).toBeVisible();
+
+    const gridPlacard = page.getByTestId("ds-layout-placard-grid-page");
+    await expect(gridPlacard).toBeVisible();
+    await expect(gridPlacard).toContainText("Default page grid");
+    await expect(
+      gridPlacard.getByTestId("ds-layout-status-grid-page")
+    ).toHaveText("candidate");
+    // Recognized facts read as one quiet line — never raw JSON.
+    const gridFacts = gridPlacard.locator(".dsb-placard-facts");
+    await expect(gridFacts).toContainText("1120px");
+    await expect(gridFacts).toContainText("→ spacing.200");
+    await expect(gridPlacard).not.toContainText('{"columns"');
+    // The capture image renders and actually loads through /api/artifacts.
+    const gridImg = gridPlacard.locator(".dsb-placard-figure img");
+    await expect(gridImg).toHaveAttribute(
+      "alt",
+      "Source capture of Landing / Grid"
+    );
     await expect
       .poll(() =>
-        layoutStatus.evaluate((element) => {
-          const style = getComputedStyle(element);
-          return {
-            borderRadius: style.borderRadius,
-            borderStyle: style.borderStyle,
-            boxShadow: style.boxShadow
-          };
-        })
+        gridImg.evaluate((el) => (el as HTMLImageElement).naturalWidth)
       )
-      .toEqual({
-        borderRadius: "4px",
-        borderStyle: "none",
-        boxShadow: "none"
-      });
-    await expect(gridRow).toContainText("columns");
-    await expect(gridRow).toContainText("→ spacing.200");
-    await expect(gridRow).not.toContainText("{\"columns\"");
+      .toBeGreaterThan(0);
+    // The height cap keeps any capture from breaking the reading rhythm.
+    const gridImgBox = await gridImg.boundingBox();
+    expect(gridImgBox).not.toBeNull();
+    expect(gridImgBox!.height).toBeLessThanOrEqual(341);
+    // Provenance caption: origin tag, node name, formatted capture time.
+    await expect(
+      gridPlacard.locator('.dsb-origin[data-origin="source-capture"]')
+    ).toBeVisible();
+    await expect(gridPlacard).toContainText("Landing / Grid");
+    await expect(gridPlacard).toContainText("captured 2026-07-30 14:05");
+    await expect(gridPlacard).not.toContainText("stale");
 
-    // ---- Layout Blueprint (09C-B): anchored rows ↔ one schematic drawing. ----
-    await expect(page.getByTestId("ds-samples-empty")).toHaveCount(0);
-    const blueprint = page.getByTestId("ds-layout-blueprint");
-    await expect(blueprint).toBeVisible();
-    const blueprintSvg = page.getByTestId("ds-layout-blueprint-svg");
-    await expect(blueprintSvg).toHaveAttribute("role", "img");
-    await expect(blueprintSvg).toHaveAttribute(
-      "aria-label",
-      /Schematic layout blueprint/
-    );
-    // Five anchored rule rows; grid.page draws three facts under anchor 1.
-    await expect(page.locator(".dsb-row-anchor > .dsb-anchor-num")).toHaveCount(
-      5
-    );
-    await expect(blueprintSvg.locator('[data-anchor="1"]')).toHaveCount(3);
-    await expect(blueprintSvg.locator('[data-anchor="2"]')).toHaveCount(1);
-    await expect(blueprintSvg.locator('[data-anchor="4"]')).toHaveCount(1);
-    // Status stays recognizable inside the visual module.
+    // A capture whose surface vanished reads stale.
+    const shellPlacard = page.getByTestId("ds-layout-placard-shell-regions");
+    await expect(shellPlacard).toContainText("Page shell vertical stack");
+    await expect(shellPlacard).toContainText("Landing / Shell");
+    await expect(shellPlacard.locator("[data-stale]")).toContainText("· stale");
+
+    // Rules with no linked node get the honest unavailable block.
+    const navPlacard = page.getByTestId("ds-layout-placard-nav-mobile");
+    await expect(navPlacard).toContainText("Mobile navigation layout");
     await expect(
-      blueprintSvg.locator('[data-anchor="4"][data-status="formalized"]')
-    ).toHaveCount(1);
-    await expect(
-      blueprintSvg.locator('[data-anchor="5"][data-status="gap"]')
-    ).toHaveCount(1);
-    // Source values label the measurements; the nav.mobile gap docks as an
-    // honest dashed unknown.
-    await expect(blueprintSvg).toContainText("1120px");
-    await expect(blueprintSvg).toContainText("12 columns");
-    await expect(blueprintSvg).toContainText("96 → 56px");
-    await expect(blueprintSvg).toContainText("1024");
-    await expect(blueprintSvg).toContainText("nav-mobile ?");
-    // Origin outcomes are distinguishable in the UI and accessibility tree.
-    await expect(
-      blueprint.locator('.dsb-origin[data-origin="schematic"]')
+      navPlacard.getByTestId("ds-layout-unavailable-nav-mobile")
     ).toBeVisible();
-    const unavailable = page.getByTestId("ds-layout-unavailable-nav-mobile");
-    await expect(unavailable).toBeVisible();
-    await expect(unavailable).toContainText("No visual sample");
-    await expect(unavailable).toContainText("Mobile navigation layout");
+    await expect(navPlacard).toContainText("No source capture");
     await expect(
-      unavailable.locator('.dsb-origin[data-origin="unavailable"]')
+      navPlacard.locator('.dsb-origin[data-origin="unavailable"]')
     ).toBeVisible();
     await expect(
-      unavailable.getByTestId("ds-layout-unavailable-status-nav-mobile")
+      navPlacard.getByTestId("ds-layout-status-nav-mobile")
     ).toHaveText("open gap");
 
-    // ---- Row ↔ drawing isolation works by pointer and by keyboard. ----
-    await page.getByTestId("ds-row-shell-regions").hover();
-    await expect(blueprintSvg).toHaveAttribute("data-active-anchor", "2");
-    await expect(
-      page.locator(".dsb-row-anchor[data-anchor-active]")
-    ).toContainText("shell-regions");
-    await page.getByRole("heading", { name: "Layout", exact: true }).hover();
-    await expect(blueprintSvg).not.toHaveAttribute("data-active-anchor");
-    await blueprintSvg.locator('[data-anchor="3"] .dsb-bp-dot-focus').focus();
-    await expect(blueprintSvg).toHaveAttribute("data-active-anchor", "3");
-    await expect(
-      page.locator(".dsb-row-anchor[data-anchor-active]")
-    ).toContainText("section-rhythm");
-    await page.evaluate(() =>
-      (document.activeElement as HTMLElement | null)?.blur()
-    );
-    await expect(blueprintSvg).not.toHaveAttribute("data-active-anchor");
+    // View in frame opens the full-frame lightbox; Esc closes it without
+    // closing the sheet (capture-phase Esc handling).
+    await gridPlacard.getByRole("button", { name: "View in frame" }).click();
+    const lightbox = page.locator(".dsb-lightbox");
+    await expect(lightbox).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(lightbox).toHaveCount(0);
+    await expect(sheet).toHaveAttribute("data-open", "true");
 
-    // ---- Checklist composition: every row carries a check control; the whole
-    // row toggles membership; the drawing slices to the checked rules. ----
-    const checks = page.locator(".dsb-row-anchor > .dsb-row-check");
-    await expect(checks).toHaveCount(5);
-    await expect(checks.first()).toHaveAttribute("aria-pressed", "false");
-    // Whole-row click on the field text selects the rule (no checkbox-only
-    // hit target); the caption names the composition.
-    await page.getByTestId("ds-row-shell-regions").click();
-    await expect(
-      page.locator(".dsb-row-anchor[data-selected]")
-    ).toHaveCount(1);
-    await expect(blueprint).toContainText("Composed from 1 rule");
-    await expect(blueprintSvg.locator("[data-anchor]")).toHaveCount(1);
-    // A second rule joins through its check control; original anchor numbers
-    // survive the slice.
-    await checks.first().click();
-    await expect(blueprint).toContainText("Composed from 2 rules");
-    await expect(blueprintSvg.locator('[data-anchor="1"]')).toHaveCount(3);
-    await expect(blueprintSvg.locator('[data-anchor="2"]')).toHaveCount(1);
-    await expect(blueprintSvg.locator('[data-anchor="3"]')).toHaveCount(0);
-    // Undo both; once nothing is checked and the pointer leaves the rows, the
-    // full-leaf drawing and its caption return.
-    await checks.first().click();
-    await page.getByTestId("ds-row-shell-regions").click();
-    await page.getByRole("heading", { name: "Layout", exact: true }).hover();
-    await expect(blueprint).toContainText("One schematic drawing per rule set");
-    await expect(blueprintSvg.locator('[data-anchor="3"]')).toHaveCount(1);
-
+    // ---- Split divider (09C-A): exercised on the Color leaf, which keeps
+    // the reading/samples split. ----
+    await page.getByRole("button", { name: "Color", exact: true }).click();
     const split = page.getByTestId("ds-leaf-split");
     await expect(split).toBeVisible();
     await expect(split).not.toHaveAttribute("data-stacked", "true");
+
 
     // ---- Drag the divider: live resize + debounced preference write. ----
     const divider = page.getByTestId("ds-split-divider");
@@ -688,7 +678,7 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(page.getByTestId("design-system-browser")).toHaveCount(0);
     await entryButton.click();
     await expect(sheet).toHaveAttribute("data-open", "true");
-    await page.getByRole("button", { name: "Layout", exact: true }).click();
+    await page.getByRole("button", { name: "Color", exact: true }).click();
     await expect(page.getByTestId("ds-split-divider")).toHaveAttribute(
       "aria-valuenow",
       "46"
@@ -699,7 +689,6 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(split).toHaveAttribute("data-stacked", "true");
     await expect(page.getByTestId("ds-split-divider")).toHaveCount(0);
     await expect(page.getByTestId("ds-split-right")).toBeVisible();
-    await expect(blueprintSvg).toBeVisible();
     const splitOverflow = await split.evaluate(
       (el) => el.scrollWidth - el.clientWidth
     );

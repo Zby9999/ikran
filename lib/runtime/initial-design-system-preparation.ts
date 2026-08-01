@@ -14,6 +14,9 @@ import { emitRecordEvent } from "./record-bus";
 import { listDeclaredArtifacts } from "./source-artifact";
 import { specPathMatchesSourceArtifact } from "./design-system-spec-path";
 import {
+  LAYOUT_RULE_CAPTURE_FIELD,
+  LAYOUT_RULE_CAPTURE_OPTIONAL_FIELDS,
+  LAYOUT_RULE_CAPTURE_REQUIRED_FIELDS,
   RICH_COMPONENT_SPEC_FIELDS,
   RICH_INTERACTION_RULE_FIELDS,
   RICH_LAYOUT_RULE_FIELDS,
@@ -137,6 +140,19 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
     collections: RICH_PRINCIPLE_COLLECTION_FIELDS
   },
   layout_rule_value_fields: RICH_LAYOUT_RULE_FIELDS,
+  layout_rule_capture_field: {
+    field: LAYOUT_RULE_CAPTURE_FIELD,
+    item_required: LAYOUT_RULE_CAPTURE_REQUIRED_FIELDS,
+    item_optional: LAYOUT_RULE_CAPTURE_OPTIONAL_FIELDS,
+    guidance:
+      "Optional per-rule Figma node screenshots (09C-D02). Capture the node " +
+      "with the Figma MCP (get_screenshot on the rule's frame/section node), " +
+      "save the PNG under design-system/captures/<entry>-<node>.png, and " +
+      "reference the project-relative path as artifactPath. nodeName and " +
+      "capturedAt are required; add nodeId and surfaceId when the provenance " +
+      "is known so the browser can mark stale captures. Rules without " +
+      "captures render an honest unavailable block — never fabricate one."
+  },
   interaction_rule_value_fields: RICH_INTERACTION_RULE_FIELDS,
   interaction_entry_split: {
     interaction_rules: "Cross-component interaction and motion strategies only.",

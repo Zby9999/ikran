@@ -21,6 +21,8 @@
 // root so its keydown events stay inside the isolation boundary.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowDown01Icon,
   ArrowRight01Icon,
@@ -63,14 +65,10 @@ import {
   type TypographyAtlasItem
 } from "./design-system-reader-projection";
 import {
-  BLUEPRINT_SCALE_REFERENCE_PX,
-  containerDrawsToScale,
-  firstFactOfKind,
-  projectLayoutBlueprint,
-  sliceLayoutBlueprint,
-  type LayoutBlueprintModel,
+  projectLayoutLeaf,
   type LayoutRuleProjection
 } from "./design-system-layout-projection";
+import { artifactScreenshotUrl } from "./projection/seed-projection";
 import {
   DS_SECTION_NAMES,
   TOKEN_LAYER_LABELS,
@@ -177,19 +175,22 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
 
 /* ------------------------------ visual origin ------------------------------ */
 
-/** Where a visual sample comes from (09C-B): the four outcomes must stay
+/** Where a visual sample comes from (09C-B/D): the outcomes must stay
  * distinguishable in the UI and the accessibility tree, so a schematic
- * composition is never mistaken for a rendered component. Rendered as an
+ * composition is never mistaken for a rendered component, and a captured
+ * Figma node (09C-D02) is never mistaken for either. Rendered as an
  * outlined tag — visually distinct from the filled status chip. */
 export type DsVisualOrigin =
   | "code-backed"
   | "source-generated"
+  | "source-capture"
   | "schematic"
   | "unavailable";
 
 export const DS_VISUAL_ORIGIN_LABELS: Record<DsVisualOrigin, string> = {
   "code-backed": "Code-backed",
   "source-generated": "Source-generated",
+  "source-capture": "Source capture",
   schematic: "Schematic",
   unavailable: "Unavailable"
 };
@@ -531,106 +532,29 @@ type RowListProps = {
   onInfoHoverOpen: (key: string) => void;
   onInfoHoverClose: () => void;
   onApprove: (row: DsRow) => void;
-  /** 09C-B Blueprint anchor wiring: when present, each row carries its 1-based
-   * anchor number and hover/focus drives row ↔ drawing isolation. */
-  anchorState?: {
-    active: number | null;
-    onHover: (anchor: number | null) => void;
-  };
-  /** 09C-B Checklist composition: when present, rows gain a leading check
-   * control and the whole row toggles membership in the composed drawing. */
-  selectState?: {
-    selected: ReadonlySet<number>;
-    onToggle: (anchor: number) => void;
-  };
 };
 
 /** Everything RowList needs except the rows themselves — shared by all pages. */
 export type RowSharedProps = Omit<RowListProps, "rows" | "numbered">;
 
-function RowList({
-  rows,
-  numbered = false,
-  anchorState,
-  selectState,
-  ...rest
-}: RowListProps) {
+function RowList({ rows, numbered = false, ...rest }: RowListProps) {
   return (
     <div className="dsb-rows">
-      {rows.map((row, index) => {
-        const specRow = (
-          <SpecRowView
-            key={row.key}
-            row={row}
-            anchor={numbered ? index + 1 : undefined}
-            approval={rest.approvals[row.key] ?? { kind: "idle" }}
-            infoOpen={rest.infoKey === row.key}
-            popoverInstant={rest.popoverInstant(row.key)}
-            portalContainer={rest.portalContainer}
-            onInfoOpenChange={(open) => rest.onInfoKey(open ? row.key : null)}
-            onInfoHoverOpen={() => rest.onInfoHoverOpen(row.key)}
-            onInfoHoverClose={rest.onInfoHoverClose}
-            onApprove={() => rest.onApprove(row)}
-          />
-        );
-        if (!anchorState) return specRow;
-        const anchor = index + 1;
-        const selected = selectState?.selected.has(anchor) ?? false;
-        return (
-          <div
-            key={row.key}
-            className="dsb-row-anchor"
-            data-anchor-active={anchorState.active === anchor || undefined}
-            data-selectable={selectState ? "" : undefined}
-            data-selected={selected || undefined}
-            onMouseEnter={() => anchorState.onHover(anchor)}
-            onMouseLeave={() => anchorState.onHover(null)}
-            onClick={
-              selectState
-                ? (event) => {
-                    // The whole row is the toggle target — but clicks meant
-                    // for nested controls (info popover, approve) stay theirs.
-                    if (
-                      event.target instanceof HTMLElement &&
-                      event.target.closest("button, a, input") !== null
-                    ) {
-                      return;
-                    }
-                    selectState.onToggle(anchor);
-                  }
-                : undefined
-            }
-          >
-            {selectState ? (
-              <button
-                type="button"
-                className="dsb-row-check"
-                data-checked={selected || undefined}
-                aria-pressed={selected}
-                aria-label={`Include ${row.name} in the drawing`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  selectState.onToggle(anchor);
-                }}
-              >
-                <svg viewBox="0 0 10 10" fill="none" aria-hidden>
-                  <path
-                    d="M1.5 5.2 4 7.5 8.5 2.5"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
-            ) : null}
-            <span aria-hidden className="dsb-anchor-num">
-              {anchor}
-            </span>
-            {specRow}
-          </div>
-        );
-      })}
+      {rows.map((row, index) => (
+        <SpecRowView
+          key={row.key}
+          row={row}
+          anchor={numbered ? index + 1 : undefined}
+          approval={rest.approvals[row.key] ?? { kind: "idle" }}
+          infoOpen={rest.infoKey === row.key}
+          popoverInstant={rest.popoverInstant(row.key)}
+          portalContainer={rest.portalContainer}
+          onInfoOpenChange={(open) => rest.onInfoKey(open ? row.key : null)}
+          onInfoHoverOpen={() => rest.onInfoHoverOpen(row.key)}
+          onInfoHoverClose={rest.onInfoHoverClose}
+          onApprove={() => rest.onApprove(row)}
+        />
+      ))}
     </div>
   );
 }
@@ -1307,736 +1231,249 @@ export function TypographyLeafPage({
   );
 }
 
-/* ------------------------- 09C-B: layout blueprint ------------------------- */
+/* ----------------------- 09C-D02: layout source capture ----------------------- */
 
 /**
- * Layout leaf (09C-B, designer-selected Blueprint direction): one schematic
- * architectural drawing composes every drawable rule — container dimension,
- * shell regions, grid columns, gutter measure, section rhythm, breakpoint
- * ruler — with circled anchors keying each measurement to its rule row.
- * Hovering or keyboard-focusing either side isolates the other (逐项对应).
- * Rules with no drawable spatial vocabulary stay out of the drawing and get
- * an explicit unavailable sample instead of a fabricated visual.
+ * Layout leaf (09C-D02, designer-selected Source Capture direction — Placard
+ * variant): one vertical placard block per rule. A real Figma node capture
+ * hangs in a hairline frame; below it the rule's statement, its recognized
+ * spatial facts as one quiet line, and a provenance caption (origin tag,
+ * node name, capture time, staleness). Rules with no linked capture get an
+ * honest dashed unavailable block instead of a fabricated visual.
  *
- * Visual language (locked against the prototype):
- *   - accent fills / dimension lines = quantitative source-backed facts;
- *   - gray blocks = declared structural regions (qualitative);
- *   - dashed frames = presentation scaffold (viewport, content field) or
- *     honest unknowns — never source claims;
- *   - anchor dots carry the rule's status color (the same three tokens as
- *     stat dots and chips), so candidate/gap stay recognizable INSIDE the
- *     visual module; isolation is opacity-only and never recolors status.
+ * Captures are declared by the agent in layout-rules.json `sourceCaptures`
+ * (screenshot taken via Figma MCP, stored under design-system/captures/) and
+ * decorated onto the entry by the Runtime view. The Blueprint schematic
+ * drawing (09C-B) is retired — a composition of parsed values could never
+ * show what the layout actually looks like; a capture can.
  */
 
-const BP_VP = { x: 70, y: 40, w: 620, h: 480 } as const;
-const BP_BODY = { y: 48, h: 460 } as const;
-
-interface LayoutAnchorWiring {
-  activeAnchor: number | null;
-  onActiveAnchor: (anchor: number | null) => void;
+/** "2026-07-31T14:05:22Z" → "2026-07-31 14:05"; anything else passes through. */
+function formatCapturedAt(iso: string): string {
+  const match = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(iso.trim());
+  return match ? `${match[1]} ${match[2]}` : iso;
 }
 
-function LayoutAnchorGroup({
-  anchor,
-  status,
-  wiring,
-  children
+/** Full-frame lightbox for a capture's evidence surface screenshot. Portaled
+ * to document.body: ancestors carry the entrance animation's fill-mode
+ * transform, which would trap position:fixed inside the placard box. Esc is
+ * handled on document CAPTURE with stopPropagation so the sheet's own layered
+ * Esc handler never sees it (pressing Esc inside the lightbox must not close
+ * the whole sheet). */
+function LayoutFrameLightbox({
+  surfaceId,
+  session,
+  title,
+  open,
+  onClose
 }: {
-  anchor: number;
-  status: DsStatus;
-  wiring: LayoutAnchorWiring;
-  children: React.ReactNode;
+  surfaceId: string;
+  session: string;
+  title: string;
+  open: boolean;
+  onClose: () => void;
 }) {
-  return (
-    <g
-      className="dsb-bp-anchor"
-      data-anchor={anchor}
-      data-status={status}
-      data-anchor-active={wiring.activeAnchor === anchor ? "" : undefined}
-      onMouseEnter={() => wiring.onActiveAnchor(anchor)}
-      onMouseLeave={() => wiring.onActiveAnchor(null)}
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      onClose();
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [open, onClose]);
+  if (!open) return null;
+  return createPortal(
+    <div
+      className="dsb-lightbox"
+      role="dialog"
+      aria-label={`${title} — full frame`}
+      onClick={onClose}
     >
-      {children}
-    </g>
-  );
-}
-
-/** Circled anchor number, keyboard-focusable so the correspondence path does
- * not require a pointer. Focus/blur isolates exactly like hover. */
-function AnchorDot({
-  n,
-  cx,
-  cy,
-  label,
-  wiring
-}: {
-  n: number;
-  cx: number;
-  cy: number;
-  label: string;
-  wiring: LayoutAnchorWiring;
-}) {
-  return (
-    <g
-      className="dsb-bp-dot-focus"
-      tabIndex={0}
-      role="img"
-      aria-label={`Anchor ${n}: ${label}`}
-      onFocus={() => wiring.onActiveAnchor(n)}
-      onBlur={() => wiring.onActiveAnchor(null)}
-    >
-      <circle className="dsb-bp-dot" cx={cx} cy={cy} r={8} />
-      <text
-        className="dsb-bp-dot-num"
-        x={cx}
-        y={cy + 3}
-        textAnchor="middle"
-        fontSize={9}
-        fontWeight={600}
-      >
-        {n}
-      </text>
-    </g>
-  );
-}
-
-function LayoutBlueprintSvg({
-  model,
-  wiring
-}: {
-  model: LayoutBlueprintModel;
-  wiring: LayoutAnchorWiring;
-}) {
-  const containerEntry = firstFactOfKind(model, "container");
-  const regionsEntry = firstFactOfKind(model, "regions");
-  const columnsEntry = firstFactOfKind(model, "columns");
-  const gutterEntry = firstFactOfKind(model, "gutter");
-  const rhythmEntry = firstFactOfKind(model, "rhythm");
-  const breakpointsEntry = firstFactOfKind(model, "breakpoints");
-
-  // Container: proportional against a nominal 1440 reference viewport when a
-  // px width is declared; normalized otherwise, and the drawing says so.
-  const containerPx = containerEntry?.fact.maxWidthPx ?? null;
-  const toScale = containerDrawsToScale(containerPx);
-  const containerW = toScale
-    ? Math.round((BP_VP.w * containerPx!) / BLUEPRINT_SCALE_REFERENCE_PX)
-    : 517;
-  const containerX = BP_VP.x + (BP_VP.w - containerW) / 2;
-  const containerRight = containerX + containerW;
-
-  // Shell regions: declared stacks divide the body; without them a single
-  // dashed content field provides neutral coordinates (scaffold, not a claim).
-  const regions = regionsEntry?.fact.regions ?? null;
-  const regionGap = 6;
-  const regionH = regions
-    ? (BP_BODY.h - (regions.length - 1) * regionGap) / regions.length
-    : 0;
-  const regionRect = (index: number) => ({
-    x: containerX,
-    y: BP_BODY.y + index * (regionH + regionGap),
-    w: containerW,
-    h: regionH
-  });
-
-  // Columns live inside the second-to-last region (above the footer, the
-  // content position), or in a centered zone of the scaffold field.
-  let columnsZone: { x: number; y: number; w: number; h: number } | null = null;
-  if (columnsEntry) {
-    if (regions) {
-      const host = Math.max(0, regions.length - 2);
-      const rect = regionRect(host);
-      columnsZone = {
-        x: rect.x + 12,
-        y: rect.y + 10,
-        w: rect.w - 24,
-        h: rect.h - 20
-      };
-    } else {
-      columnsZone = {
-        x: containerX + 16,
-        y: BP_BODY.y + BP_BODY.h / 2 - 32,
-        w: containerW - 32,
-        h: 64
-      };
-    }
-  }
-  const colCount = columnsEntry?.fact.columns ?? 0;
-  const schematicGap = 6;
-  const colH = columnsZone ? Math.min(columnsZone.h, 64) : 0;
-  const colY = columnsZone ? columnsZone.y + (columnsZone.h - colH) / 2 : 0;
-  const colW = columnsZone
-    ? (columnsZone.w - (colCount - 1) * schematicGap) / colCount
-    : 0;
-
-  // Rhythm: a vertical measure across the hero→next boundary (the region
-  // above the content position), or between two scaffold sections.
-  let rhythmBracket: { x: number; top: number; bottom: number } | null = null;
-  let rhythmSections: { x: number; y: number; w: number; h: number }[] | null =
-    null;
-  if (rhythmEntry) {
-    const x = containerRight - 16;
-    if (regions && regions.length >= 2) {
-      const upper = Math.max(0, regions.length - 3);
-      const boundaryY = regionRect(upper).y + regionH + regionGap / 2;
-      rhythmBracket = { x, top: boundaryY - 17, bottom: boundaryY + 17 };
-    } else if (!regions) {
-      rhythmSections = [
-        { x: containerX + 16, y: 88, w: containerW - 32, h: 140 },
-        { x: containerX + 16, y: 268, w: containerW - 32, h: 170 }
-      ];
-      rhythmBracket = { x, top: 228, bottom: 268 };
-    }
-  }
-
-  // Gutter-only rules (no grid): two neutral blocks with the measure between.
-  const gutterOnly = gutterEntry !== null && columnsEntry === null;
-  const gutterOnlyX = containerX + (containerW - 216) / 2;
-  const gutterOnlyY = BP_BODY.y + BP_BODY.h / 2;
-
-  const bpRulerY = 545;
-  const bpTickX = (
-    mark: { px: number | null },
-    index: number,
-    total: number
-  ): number =>
-    mark.px !== null
-      ? Math.min(BP_VP.x + (mark.px / 1400) * BP_VP.w, BP_VP.x + BP_VP.w)
-      : BP_VP.x + ((index + 1) / (total + 1)) * BP_VP.w;
-
-  const ariaFacts = [
-    containerEntry ? `container ${containerEntry.fact.label}` : null,
-    regionsEntry ? `regions ${regionsEntry.fact.regions!.join(", ")}` : null,
-    columnsEntry ? `${columnsEntry.fact.label} columns` : null,
-    gutterEntry ? `gutter ${gutterEntry.fact.label}` : null,
-    rhythmEntry ? `section rhythm ${rhythmEntry.fact.label}` : null,
-    breakpointsEntry ? `breakpoints ${breakpointsEntry.fact.label}` : null
-  ].filter((part): part is string => part !== null);
-
-  return (
-    <svg
-      className="dsb-bp-svg"
-      viewBox="0 0 720 600"
-      role="img"
-      aria-label={`Schematic layout blueprint (anchors key each measurement to its rule row): ${ariaFacts.join(
-        "; "
-      )}`}
-      data-testid="ds-layout-blueprint-svg"
-      data-active-anchor={wiring.activeAnchor ?? undefined}
-      style={{ display: "block", width: "100%", height: "auto" }}
-    >
-      {/* Reference viewport — presentation scaffold. */}
-      <rect
-        x={BP_VP.x}
-        y={BP_VP.y}
-        width={BP_VP.w}
-        height={BP_VP.h}
-        fill="none"
-        stroke="rgb(0 0 0 / 22%)"
-        strokeDasharray="4 4"
-        rx={6}
+      <img
+        className="dsb-lightbox-img"
+        src={`/api/evidence-screenshot?id=${encodeURIComponent(
+          surfaceId
+        )}&session=${encodeURIComponent(session)}`}
+        alt={`Full source frame for ${title}`}
       />
-      <text x={BP_VP.x + BP_VP.w - 2} y={BP_VP.y - 8} textAnchor="end" fontSize={10}>
-        {toScale ? "nominal 1440 viewport" : "viewport"}
-      </text>
-
-      {/* Container frame: solid when its width is declared, dashed scaffold
-          otherwise. */}
-      <rect
-        x={containerX}
-        y={BP_BODY.y}
-        width={containerW}
-        height={BP_BODY.h}
-        fill="none"
-        stroke={
-          containerEntry ? "rgb(0 0 0 / 20%)" : "rgb(0 0 0 / 14%)"
-        }
-        strokeDasharray={containerEntry ? undefined : "3 3"}
-        rx={4}
-      />
-
-      {/* Container dimension. */}
-      {containerEntry ? (
-        <LayoutAnchorGroup
-          anchor={containerEntry.rule.anchor}
-          status={containerEntry.rule.row.status}
-          wiring={wiring}
-        >
-          <line className="dsb-bp-dim" x1={containerX} y1={26} x2={containerRight} y2={26} />
-          <line className="dsb-bp-dim" x1={containerX} y1={22} x2={containerX} y2={30} />
-          <line className="dsb-bp-dim" x1={containerRight} y1={22} x2={containerRight} y2={30} />
-          <text x={BP_VP.x + BP_VP.w / 2} y={18} textAnchor="middle" fontSize={10.5}>
-            {containerEntry.fact.label}
-          </text>
-          {!toScale ? (
-            <text x={containerRight} y={36} textAnchor="end" fontSize={9} className="dsb-bp-note">
-              not to scale
-            </text>
-          ) : null}
-          <AnchorDot
-            n={containerEntry.rule.anchor}
-            cx={containerX - 16}
-            cy={26}
-            label={`${containerEntry.rule.concern} — ${containerEntry.fact.label}`}
-            wiring={wiring}
-          />
-        </LayoutAnchorGroup>
-      ) : null}
-
-      {/* Shell regions, or the scaffold content field. */}
-      {regions && regionsEntry ? (
-        <LayoutAnchorGroup
-          anchor={regionsEntry.rule.anchor}
-          status={regionsEntry.rule.row.status}
-          wiring={wiring}
-        >
-          {regions.map((name, index) => {
-            const rect = regionRect(index);
-            return (
-              <g key={name}>
-                <rect
-                  x={rect.x}
-                  y={rect.y}
-                  width={rect.w}
-                  height={rect.h}
-                  className="dsb-bp-block"
-                  rx={4}
-                />
-                <text
-                  x={rect.x + rect.w / 2}
-                  y={rect.y + rect.h / 2 + 3}
-                  textAnchor="middle"
-                  fontSize={10}
-                >
-                  {name}
-                </text>
-              </g>
-            );
-          })}
-          <AnchorDot
-            n={regionsEntry.rule.anchor}
-            cx={containerX - 10}
-            cy={BP_BODY.y + BP_BODY.h / 2}
-            label={`${regionsEntry.rule.concern} — ${regions.join(", ")}`}
-            wiring={wiring}
-          />
-        </LayoutAnchorGroup>
-      ) : null}
-      {!regions && !rhythmSections && (columnsEntry || gutterEntry) ? (
-        <rect
-          x={containerX + 16}
-          y={BP_BODY.y + 40}
-          width={containerW - 32}
-          height={BP_BODY.h - 80}
-          className="dsb-bp-scaffold"
-          rx={4}
-        />
-      ) : null}
-      {rhythmSections?.map((rect, index) => (
-        <rect
-          key={index}
-          x={rect.x}
-          y={rect.y}
-          width={rect.w}
-          height={rect.h}
-          className="dsb-bp-scaffold"
-          rx={4}
-        />
-      ))}
-
-      {/* Grid columns. */}
-      {columnsEntry && columnsZone ? (
-        <LayoutAnchorGroup
-          anchor={columnsEntry.rule.anchor}
-          status={columnsEntry.rule.row.status}
-          wiring={wiring}
-        >
-          {Array.from({ length: colCount }).map((_, index) => (
-            <rect
-              key={index}
-              x={columnsZone.x + index * (colW + schematicGap)}
-              y={colY}
-              width={colW}
-              height={colH}
-              className="dsb-bp-block-accent"
-              rx={2}
-            />
-          ))}
-          <text
-            x={columnsZone.x + columnsZone.w / 2 - 40}
-            y={colY + colH + 13}
-            textAnchor="middle"
-            fontSize={10}
-          >
-            {columnsEntry.fact.label} columns
-          </text>
-          <AnchorDot
-            n={columnsEntry.rule.anchor}
-            cx={columnsZone.x + columnsZone.w / 2 - 86}
-            cy={colY + colH + 10}
-            label={`${columnsEntry.rule.concern} — ${columnsEntry.fact.label} columns`}
-            wiring={wiring}
-          />
-        </LayoutAnchorGroup>
-      ) : null}
-
-      {/* Gutter measure: inside the grid when both exist, else between two
-          neutral blocks. */}
-      {gutterEntry && columnsZone ? (
-        <LayoutAnchorGroup
-          anchor={gutterEntry.rule.anchor}
-          status={gutterEntry.rule.row.status}
-          wiring={wiring}
-        >
-          <line
-            className="dsb-bp-dim"
-            x1={columnsZone.x + colW}
-            y1={colY + colH + 10}
-            x2={columnsZone.x + colW + schematicGap}
-            y2={colY + colH + 10}
-          />
-          <text
-            x={columnsZone.x + columnsZone.w / 2 + 44}
-            y={colY + colH + 13}
-            textAnchor="middle"
-            fontSize={10}
-          >
-            gap {gutterEntry.fact.label}
-          </text>
-          <AnchorDot
-            n={gutterEntry.rule.anchor}
-            cx={columnsZone.x + columnsZone.w / 2 + 4}
-            cy={colY + colH + 10}
-            label={`${gutterEntry.rule.concern} — ${gutterEntry.fact.label}`}
-            wiring={wiring}
-          />
-        </LayoutAnchorGroup>
-      ) : null}
-      {gutterOnly && gutterEntry ? (
-        <LayoutAnchorGroup
-          anchor={gutterEntry.rule.anchor}
-          status={gutterEntry.rule.row.status}
-          wiring={wiring}
-        >
-          <rect x={gutterOnlyX} y={gutterOnlyY - 12} width={84} height={24} className="dsb-bp-block" rx={4} />
-          <line
-            className="dsb-bp-dim"
-            x1={gutterOnlyX + 84}
-            y1={gutterOnlyY}
-            x2={gutterOnlyX + 132}
-            y2={gutterOnlyY}
-          />
-          <rect x={gutterOnlyX + 132} y={gutterOnlyY - 12} width={84} height={24} className="dsb-bp-block" rx={4} />
-          <text x={gutterOnlyX + 108} y={gutterOnlyY + 22} textAnchor="middle" fontSize={10}>
-            {gutterEntry.fact.label}
-          </text>
-          <AnchorDot
-            n={gutterEntry.rule.anchor}
-            cx={gutterOnlyX + 108}
-            cy={gutterOnlyY - 22}
-            label={`${gutterEntry.rule.concern} — ${gutterEntry.fact.label}`}
-            wiring={wiring}
-          />
-        </LayoutAnchorGroup>
-      ) : null}
-
-      {/* Section rhythm. */}
-      {rhythmEntry && rhythmBracket ? (
-        <LayoutAnchorGroup
-          anchor={rhythmEntry.rule.anchor}
-          status={rhythmEntry.rule.row.status}
-          wiring={wiring}
-        >
-          <line
-            className="dsb-bp-dim"
-            x1={rhythmBracket.x}
-            y1={rhythmBracket.top}
-            x2={rhythmBracket.x}
-            y2={rhythmBracket.bottom}
-          />
-          <line
-            className="dsb-bp-dim"
-            x1={rhythmBracket.x - 3}
-            y1={rhythmBracket.top}
-            x2={rhythmBracket.x + 3}
-            y2={rhythmBracket.top}
-          />
-          <line
-            className="dsb-bp-dim"
-            x1={rhythmBracket.x - 3}
-            y1={rhythmBracket.bottom}
-            x2={rhythmBracket.x + 3}
-            y2={rhythmBracket.bottom}
-          />
-          <text
-            x={rhythmBracket.x - 8}
-            y={(rhythmBracket.top + rhythmBracket.bottom) / 2 + 3}
-            textAnchor="end"
-            fontSize={10.5}
-          >
-            {rhythmEntry.fact.label}
-          </text>
-          <AnchorDot
-            n={rhythmEntry.rule.anchor}
-            cx={rhythmBracket.x}
-            cy={rhythmBracket.top - 18}
-            label={`${rhythmEntry.rule.concern} — ${rhythmEntry.fact.label}`}
-            wiring={wiring}
-          />
-        </LayoutAnchorGroup>
-      ) : null}
-
-      {/* Undrawable rules: honest dashed unknowns docked in the frame, never
-          placed where the source did not put them. */}
-      {model.unavailable.slice(0, 3).map((rule, index) => {
-        const text = `${rule.concern} ?`;
-        const width = Math.min(170, 16 + text.length * 5.4);
-        const x = containerRight - 8 - width;
-        const y = 56 + index * 26;
-        return (
-          <LayoutAnchorGroup
-            key={rule.row.key}
-            anchor={rule.anchor}
-            status={rule.row.status}
-            wiring={wiring}
-          >
-            <rect
-              x={x}
-              y={y}
-              width={width}
-              height={20}
-              rx={4}
-              className="dsb-bp-unknown"
-            />
-            <text x={x + width / 2} y={y + 13.5} textAnchor="middle" fontSize={9}>
-              {text}
-            </text>
-            <AnchorDot
-              n={rule.anchor}
-              cx={x - 12}
-              cy={y + 10}
-              label={`${rule.concern} — no drawable spatial values`}
-              wiring={wiring}
-            />
-          </LayoutAnchorGroup>
-        );
-      })}
-      {model.unavailable.length > 3 ? (
-        <text
-          x={containerRight - 8}
-          y={56 + 3 * 26 + 6}
-          textAnchor="end"
-          fontSize={9}
-          className="dsb-bp-note"
-        >
-          +{model.unavailable.length - 3} more unknowns
-        </text>
-      ) : null}
-
-      {/* Breakpoint ruler. */}
-      {breakpointsEntry ? (
-        <LayoutAnchorGroup
-          anchor={breakpointsEntry.rule.anchor}
-          status={breakpointsEntry.rule.row.status}
-          wiring={wiring}
-        >
-          <line className="dsb-bp-dim" x1={BP_VP.x} y1={bpRulerY} x2={BP_VP.x + BP_VP.w} y2={bpRulerY} />
-          {breakpointsEntry.fact.breakpoints!.map((mark, index, marks) => {
-            const x = bpTickX(mark, index, marks.length);
-            return (
-              <g key={`${mark.label}-${index}`}>
-                <line className="dsb-bp-dim" x1={x} y1={bpRulerY - 4} x2={x} y2={bpRulerY + 4} />
-                <text x={x} y={bpRulerY + 19} textAnchor="middle" fontSize={9.5}>
-                  {mark.label}
-                </text>
-              </g>
-            );
-          })}
-          <AnchorDot
-            n={breakpointsEntry.rule.anchor}
-            cx={BP_VP.x - 12}
-            cy={bpRulerY}
-            label={`${breakpointsEntry.rule.concern} — ${breakpointsEntry.fact.label}`}
-            wiring={wiring}
-          />
-        </LayoutAnchorGroup>
-      ) : null}
-    </svg>
+      <span className="dsb-lightbox-hint">
+        Full frame · click anywhere to close
+      </span>
+    </div>,
+    document.body
   );
 }
 
-function unavailableReason(rule: LayoutRuleProjection): string {
-  return rule.row.meaning.trim() !== ""
-    ? rule.row.meaning
-    : "The source declares no drawable spatial values for this rule.";
-}
-
-/** Which rule set the right pane is drawing: the whole leaf by default, one
- * hover-isolated rule, or the explicitly composed selection (09C-B Checklist). */
-type LayoutSamplesView =
-  | { kind: "all" }
-  | { kind: "isolated"; anchor: number }
-  | { kind: "composed"; count: number };
-
-/** Right pane for the Layout leaf: the composed blueprint plus one explicit
- * unavailable sample per undrawable rule. */
-function LayoutSamples({
-  blueprint,
-  wiring,
-  view
+function LayoutPlacardBlock({
+  rule,
+  index,
+  session,
+  rows
 }: {
-  blueprint: LayoutBlueprintModel;
-  wiring: LayoutAnchorWiring;
-  view: LayoutSamplesView;
+  rule: LayoutRuleProjection;
+  index: number;
+  session: string;
+  rows: RowSharedProps;
 }) {
-  if (blueprint.rules.length === 0) return <VisualSamplesEmpty />;
-  const toScale = blueprint.drawable.some((rule) =>
-    rule.facts.some(
-      (fact) => fact.kind === "container" && containerDrawsToScale(fact.maxWidthPx)
-    )
-  );
-  const hasContainer = blueprint.drawable.some((rule) =>
-    rule.facts.some((fact) => fact.kind === "container")
-  );
-  const scaleNote = hasContainer && !toScale ? " · container not to scale" : "";
-  const caption =
-    view.kind === "isolated"
-      ? `Isolated scene — only anchor ${view.anchor}'s facts are drawn${scaleNote}`
-      : view.kind === "composed"
-        ? `Composed from ${view.count} rule${
-            view.count === 1 ? "" : "s"
-          } — first fact per kind claims the drawing${scaleNote}`
-        : `One schematic drawing per rule set — anchors key each measurement to its rule row${scaleNote}`;
+  const [activeCapture, setActiveCapture] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  // The thumbnail strip may reference a capture index beyond the current
+  // capture list; clamp instead of trusting the state.
+  const activeIndex = Math.min(activeCapture, rule.captures.length - 1);
+  const capture = rule.captures[activeIndex];
+  const approval = rows.approvals[rule.row.key] ?? { kind: "idle" as const };
+  // "View in frame" only makes sense when the capture itself is linked to an
+  // evidence surface — never fall back to an unrelated entry-level frame.
+  const frameSurfaceId = capture?.surfaceId ?? null;
   return (
-    <div className="dsb-samples" data-testid="ds-layout-samples">
-      <GroupLabel>Visual samples</GroupLabel>
-      {blueprint.drawable.length > 0 ? (
-        <div className="dsb-sample" data-testid="ds-layout-blueprint">
-          <div className="dsb-sample-stage">
-            <LayoutBlueprintSvg model={blueprint} wiring={wiring} />
-          </div>
-          <div className="dsb-sample-caption">
-            <span>{caption}</span>
-            <OriginTag origin="schematic" />
-          </div>
-        </div>
-      ) : null}
-      {blueprint.unavailable.map((rule) => (
+    <article
+      className="dsb-placard dsb-placard-enter"
+      style={{ "--i": index } as CSSProperties}
+      data-testid={`ds-layout-placard-${rule.row.entryId}`}
+    >
+      {capture ? (
+        <figure className="dsb-placard-figure">
+          <img
+            src={artifactScreenshotUrl(capture.artifactPath, session)}
+            alt={`Source capture of ${capture.nodeName}`}
+          />
+        </figure>
+      ) : (
         <div
-          key={rule.row.key}
-          className="dsb-sample"
+          className="dsb-placard-unavailable"
+          role="img"
+          aria-label={`No source capture for ${rule.headline}: this rule has no linked Figma node`}
           data-testid={`ds-layout-unavailable-${rule.row.entryId}`}
         >
-          <div
-            className="dsb-sample-stage"
-            role="img"
-            aria-label={`No visual sample for ${rule.concern}: the source declares no drawable spatial values`}
-          >
-            <div className="dsb-sample-unavailable">
-              <span aria-hidden className="dsb-sample-unavailable-mark">
-                ⌀
-              </span>
-              <span>
-                No visual sample — the source declares no drawable spatial
-                values for this rule.
-              </span>
-            </div>
-          </div>
-          <div className="dsb-sample-caption">
-            <span>
-              <span aria-hidden className="dsb-anchor-num">
-                {rule.anchor}
-              </span>{" "}
-              {rule.concern} — {unavailableReason(rule)}
-            </span>
-            <OriginTag origin="unavailable" />
-            <StatusChip
-              status={rule.row.status}
-              testId={`ds-layout-unavailable-status-${rule.row.entryId}`}
-            />
-          </div>
+          <span className="dsb-placard-unavailable-title">No source capture</span>
+          <span className="dsb-placard-unavailable-note">
+            This rule has no linked Figma node — nothing to show honestly.
+          </span>
         </div>
-      ))}
-    </div>
+      )}
+      {rule.captures.length > 1 ? (
+        <span className="dsb-placard-thumbs" role="group" aria-label="Other source nodes">
+          {rule.captures.map((item, itemIndex) => (
+            <button
+              key={`${item.nodeName}-${itemIndex}`}
+              type="button"
+              className="dsb-placard-thumb"
+              data-active={item === capture || undefined}
+              aria-label={`Show ${item.nodeName}`}
+              aria-pressed={item === capture}
+              onClick={() => setActiveCapture(itemIndex)}
+            >
+              <img src={artifactScreenshotUrl(item.artifactPath, session)} alt="" />
+            </button>
+          ))}
+        </span>
+      ) : null}
+      <div className="dsb-placard-body">
+        <div className="dsb-placard-head">
+          <span className="dsb-placard-statement">{rule.headline}</span>
+          <StatusChip
+            status={rule.row.status}
+            testId={`ds-layout-status-${rule.row.entryId}`}
+          />
+          <InfoPopover
+            entry={rule.row.entry}
+            approval={approval}
+            infoOpen={rows.infoKey === rule.row.key}
+            popoverInstant={rows.popoverInstant(rule.row.key)}
+            portalContainer={rows.portalContainer}
+            ariaLabel={`Evidence for layout rule ${rule.row.entryId}`}
+            onInfoOpenChange={(open) =>
+              rows.onInfoKey(open ? rule.row.key : null)
+            }
+            onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.row.key)}
+            onInfoHoverClose={rows.onInfoHoverClose}
+            onApprove={() => rows.onApprove(rule.row)}
+          />
+        </div>
+        {rule.facts.length > 0 ? (
+          <p className="dsb-placard-facts">
+            {rule.facts.map((fact) => fact.label).join("  ·  ")}
+          </p>
+        ) : null}
+        <div className="dsb-placard-caption">
+          {capture ? (
+            <>
+              <OriginTag origin="source-capture" />
+              <span>{capture.nodeName}</span>
+              <span data-stale={capture.stale || undefined}>
+                captured {formatCapturedAt(capture.capturedAt)}
+                {capture.stale ? " · stale" : ""}
+              </span>
+              {frameSurfaceId ? (
+                <button
+                  type="button"
+                  className="dsb-placard-frame-link"
+                  onClick={() => setLightboxOpen(true)}
+                >
+                  View in frame
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <OriginTag origin="unavailable" />
+          )}
+        </div>
+        {approval.kind === "error" ? (
+          <span className="dsb-row-error" role="alert">
+            Approval failed: {approval.message}
+          </span>
+        ) : null}
+      </div>
+      {frameSurfaceId ? (
+        <LayoutFrameLightbox
+          surfaceId={frameSurfaceId}
+          session={session}
+          title={rule.headline}
+          open={lightboxOpen}
+          onClose={() => setLightboxOpen(false)}
+        />
+      ) : null}
+    </article>
   );
 }
 
-/** Layout leaf (09C-B): standard Browser heading + anchored rule rows on the
- * left, the Blueprint visual sample on the right; the 09C-A resizable split
- * stays. Anchor hover/focus state lives here because it spans both panes.
- * Checklist composition: the whole row (or its check control) toggles the
- * rule into the composed drawing; with nothing checked, hovering a row
- * isolates that rule's scene and the default stage draws every rule. */
+/** Layout leaf (09C-D02): standard Browser heading, then the placard stream.
+ * Full-width page (no split) — the capture needs the whole reading column. */
 export function LayoutLeafPage({
   leaf,
   rows,
-  split
+  session
 }: {
   leaf: { rows: DsRow[]; chips: string[] };
   rows: RowSharedProps;
-  split: LeafSplitRatioProps;
+  session: string;
 }) {
-  const [activeAnchor, setActiveAnchor] = useState<number | null>(null);
-  const [selectedAnchors, setSelectedAnchors] = useState<ReadonlySet<number>>(
-    () => new Set()
-  );
-  const blueprint = useMemo(() => projectLayoutBlueprint(leaf.rows), [leaf.rows]);
-  const displayed = useMemo(() => {
-    if (selectedAnchors.size > 0) {
-      return sliceLayoutBlueprint(blueprint, selectedAnchors);
-    }
-    if (activeAnchor !== null) {
-      return sliceLayoutBlueprint(blueprint, new Set([activeAnchor]));
-    }
-    return blueprint;
-  }, [blueprint, selectedAnchors, activeAnchor]);
-  const view: LayoutSamplesView =
-    selectedAnchors.size > 0
-      ? { kind: "composed", count: selectedAnchors.size }
-      : activeAnchor !== null
-        ? { kind: "isolated", anchor: activeAnchor }
-        : { kind: "all" };
-  const toggleAnchor = (anchor: number) =>
-    setSelectedAnchors((prev) => {
-      const next = new Set(prev);
-      if (next.has(anchor)) {
-        next.delete(anchor);
-      } else {
-        next.add(anchor);
-      }
-      return next;
-    });
+  const model = useMemo(() => projectLayoutLeaf(leaf.rows), [leaf.rows]);
   return (
-    <LeafSplit
-      {...split}
-      left={
-        <>
-          <PageHeading
-            title="Layout"
-            meta={`${leaf.rows.length} rules`}
-            chips={leaf.chips}
-          />
-          {leaf.rows.length > 0 ? (
-            <RowList
-              rows={leaf.rows}
-              {...rows}
-              anchorState={{ active: activeAnchor, onHover: setActiveAnchor }}
-              selectState={{ selected: selectedAnchors, onToggle: toggleAnchor }}
+    <>
+      <PageHeading
+        title="Layout"
+        meta={`${leaf.rows.length} rules`}
+        chips={leaf.chips}
+      />
+      {model.rules.length > 0 ? (
+        <div className="dsb-placard-list" data-testid="ds-layout-placards">
+          {model.rules.map((rule, index) => (
+            <LayoutPlacardBlock
+              key={rule.row.key}
+              rule={rule}
+              index={index}
+              session={session}
+              rows={rows}
             />
-          ) : (
-            <p className="dsb-empty-body dsb-page-note">
-              No rules declared yet.
-            </p>
-          )}
-        </>
-      }
-      right={
-        <LayoutSamples
-          blueprint={displayed}
-          wiring={{ activeAnchor, onActiveAnchor: setActiveAnchor }}
-          view={view}
-        />
-      }
-    />
+          ))}
+        </div>
+      ) : (
+        <p className="dsb-empty-body dsb-page-note">No rules declared yet.</p>
+      )}
+    </>
   );
 }
 
@@ -2533,15 +1970,15 @@ export function DesignSystemBrowser({
 
     if (route.section === "foundations") {
       if (route.leaf === "layout") {
-        // 09C-B: the Blueprint visual grammar replaces the empty samples
-        // pane; the split itself stays.
+        // 09C-D02: Source Capture placards replace the Blueprint schematic —
+        // a full-width page stream, no split.
         return {
-          layout: "leaf",
+          layout: "page",
           node: (
             <LayoutLeafPage
               leaf={model.foundations.layout}
               rows={rowListProps}
-              split={splitProps}
+              session={session}
             />
           )
         };

@@ -1,6 +1,6 @@
 # Layout Source Capture：原设计截图作为视觉 Anchor
 
-Status: ready-for-agent
+Status: ready-for-human
 
 ## Parent
 
@@ -91,3 +91,44 @@ Layout 规则有强烈的视觉 anchor——它们本来就来自设计中的视
 Layout 因强视觉 anchor 采用此方案；Interaction 因无 anchor 且策略为高概念散文，
 走纯文本（09C-D01）。原 09C-B 文件已删除，2026-07-31 页面化 schematic 决策
 移至本文件继续生效（约束 Blueprint 层）。
+
+### 2026-08-01 — Placard 晋升，Blueprint 整体退役（取代上文「Blueprint 保留」）
+
+原型探索（Placard / Spec Sheet / Overlay 三方向）后设计师选定 **Placard**：纵向
+区块流，每规则一区块——截图挂 hairline 框，其下 statement、一行 facts、来源
+caption。据此修订上文「Blueprint 保留」条款：**Blueprint 层不保留**——解析值
+组合的 schematic 永远无法呈现布局真实样貌，而 capture 可以；Anchor wiring /
+Isolate / Compose / LayoutSamples 随 Blueprint 一并退役。Layout leaf 改为整页
+page 流（不再是 split leaf）；split/divider 行为由 Color 等 token leaf 承接，
+e2e 的 split 回归已迁移至 Color leaf。
+
+**图片限高**：capture 以 `max-height: 340px`（`max-width: 100%`）约束，不同比例
+截图不会把 placard 体部顶出阅读节奏；多条 capture 时提供缩略条切换。
+
+**截图获取策略（契约，不经 Runtime 抓取）**：Agent 在抽取时用宿主的 Figma MCP
+对规则对应 node 截屏，PNG 存至 `design-system/captures/`，并在
+`layout-rules.json` 的规则 value 里声明 `sourceCaptures`——`nodeName` /
+`artifactPath`（项目相对路径）/ `capturedAt` 必填，`nodeId` / `surfaceId`
+有 provenance 时填。该字段已进 schema 校验（`validateLayoutRulesFile`）与
+`source_contract.layout_rule_capture_field` 指引；无真实 capture 的规则不写
+该字段，Browser 呈现 honest unavailable，绝不伪造。
+
+**Runtime 装饰与陈旧判定**：view 把合法 `sourceCaptures` 装饰为
+`layoutCaptures`；`surfaceId` 指向的 surface 被 supersede 或已不存在时标记
+`stale`（caption 显示 `· stale`）。「View in frame」经新端点
+`/api/evidence-screenshot?id=<surfaceId>` 打开整帧 lightbox（portal 到
+document.body，capture 相位 Esc 不关闭 sheet）。
+
+真实 Browser 已在 `ikran test 7`（未声明 captures）核对：四条规则全部呈现
+虚线 honest unavailable 占位，statement / facts / origin / 审批入口无回归。
+capture 渲染、限高、缩略条、stale、lightbox 由 unit 与 reader e2e 确定性覆盖，
+全量 `npm run check` 通过。
+
+**覆盖率验证记录（范围声明）**：验收项「规则 → node provenance 覆盖率验证」
+本次未落地——`nodeId` / `surfaceId` 定为可选（有 provenance 才填），当前测试
+项目（`ikran test 7`）尚无任何真实 capture，覆盖率无从统计。该验证随下次真实
+抽取（Agent 走 Figma MCP 按上文契约生成 captures）时一并记录。
+
+**Review 修订（2026-08-01）**：lightbox 的「View in frame」仅在 capture 自带
+`surfaceId` 时出现——去掉了回退到 entry 首个 evidence version 的逻辑，避免
+展示与 capture node 无关的对齐期整帧。

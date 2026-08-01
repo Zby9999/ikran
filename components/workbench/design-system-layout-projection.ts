@@ -1,26 +1,24 @@
-// Design System Layout Blueprint projection (Issue 09C-B).
+// Design System Layout Source Capture projection (Issue 09C-D02).
 //
-// A deterministic derivation from DB-backed layout rule rows into the spatial
-// facts the Blueprint visual sample draws: container width, shell regions,
-// column count, gutter measure, section rhythm and breakpoints — plus the
-// honest set of rules nothing can be drawn for. It never invents a design
-// fact: labels are verbatim source values (alias-aware), geometry derived
-// from unrecognized values stays undrawn, and undrawable rules surface as
-// explicit unavailable samples instead of fabricated visuals.
+// A deterministic derivation from DB-backed layout rule rows into the pieces
+// the Source Capture placard stream renders: a human-readable headline, the
+// spatial measurements recognized from the rule value (verbatim source
+// labels, alias-aware — never invented facts), and the Figma node captures
+// the Runtime view decorated onto the entry. Rules with no captures surface
+// as honest unavailable blocks instead of fabricated visuals.
 //
 // Every projected rule keeps its canonical `row` so status, the ⓘ evidence
-// popover and candidate approval stay wired to the DB entry. Anchor numbers
-// (1-based, rule order) key each rule row to its measurements in the
-// drawing — the "逐项对应" reading path.
+// popover and candidate approval stay wired to the DB entry.
 
 import {
   aliasTargetOf,
   formatValueField,
   pxOf
 } from "./design-system-reader-projection";
+import type { DesignSystemLayoutCapture } from "@/lib/runtime/design-system-view";
 import type { DsRow } from "./design-system-view-model";
 
-/* --------------------------------- facts --------------------------------- */
+/* --------------------------------- model --------------------------------- */
 
 export type LayoutFactKind =
   | "container"
@@ -30,43 +28,26 @@ export type LayoutFactKind =
   | "rhythm"
   | "breakpoints";
 
-export interface LayoutBreakpointMark {
-  /** Declared breakpoint name ("md"), when the source names one. */
-  name: string | null;
-  /** Pixel position when declared; null keeps the mark unpositioned. */
-  px: number | null;
-  /** Verbatim display: "768", or "md 768" when named. */
-  label: string;
-}
-
 export interface LayoutSpatialFact {
   kind: LayoutFactKind;
   /** Verbatim source display ("1120px", "→ spacing.200", "96 → 56px"). */
   label: string;
-  /** Parsed column count for grid drawing. */
-  columns?: number;
-  /** Parsed container px for proportional drawing; null when aliased or
-   * unparseable — the drawing then normalizes and says "not to scale". */
-  maxWidthPx?: number | null;
-  /** Declared region names, top to bottom. */
-  regions?: string[];
-  breakpoints?: LayoutBreakpointMark[];
 }
 
 export interface LayoutRuleProjection {
   row: DsRow;
-  /** Stable 1-based anchor keying rule row ↔ drawing. */
-  anchor: number;
+  /** Display headline: the rule's human-readable claim (meaning), with the
+   * concern name as the fallback when no meaning was written. */
+  headline: string;
+  /** The rule's source key ("grid.page") — identity, not display. */
   concern: string;
   facts: LayoutSpatialFact[];
+  /** Node captures decorated by the Runtime view ([] when undeclared). */
+  captures: DesignSystemLayoutCapture[];
 }
 
-export interface LayoutBlueprintModel {
+export interface LayoutLeafModel {
   rules: LayoutRuleProjection[];
-  /** Rules with at least one drawable spatial fact. */
-  drawable: LayoutRuleProjection[];
-  /** Rules nothing can be drawn for — shown as unavailable samples. */
-  unavailable: LayoutRuleProjection[];
 }
 
 /* ------------------------------- recognition ------------------------------ */
@@ -75,13 +56,15 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-/** Rich metadata fields (schema RICH_LAYOUT_RULE_FIELDS) describe the rule's
- * lineage, not its geometry — never interpreted as spatial values. */
+/** Rich metadata fields (schema RICH_LAYOUT_RULE_FIELDS) plus the capture
+ * provenance list (09C-D02) describe the rule's lineage, not its geometry —
+ * never interpreted as spatial values. */
 const RICH_METADATA_KEYS = new Set([
   "relationship",
   "responsiveBehavior",
   "tokenLinks",
-  "acceptanceChecks"
+  "acceptanceChecks",
+  "sourceCaptures"
 ]);
 
 const CONTAINER_KEYS = [
@@ -133,45 +116,37 @@ function regionListOf(value: unknown): string[] {
   return [];
 }
 
-function breakpointMarksOf(value: unknown): LayoutBreakpointMark[] | null {
+/** Internal breakpoint reading — marks exist only to build a readable label;
+ * the projection exposes no parsed geometry. */
+function breakpointLabelsOf(value: unknown): string[] | null {
   if (Array.isArray(value)) {
-    const marks: LayoutBreakpointMark[] = [];
+    const labels: string[] = [];
     for (const item of value) {
       if (typeof item === "string" || typeof item === "number") {
-        marks.push({ name: null, px: pxOf(item), label: formatValueField(item) });
+        labels.push(formatValueField(item));
       } else if (isPlainObject(item)) {
         const name = typeof item.name === "string" ? item.name : null;
         const raw = item.px ?? item.value ?? item.width;
         if (raw === undefined) return null;
-        marks.push({
-          name,
-          px: pxOf(raw),
-          label: name
-            ? `${name} ${formatValueField(raw)}`
-            : formatValueField(raw)
-        });
+        labels.push(name ? `${name} ${formatValueField(raw)}` : formatValueField(raw));
       } else {
         return null;
       }
     }
-    return marks.length > 0 ? marks : null;
+    return labels.length > 0 ? labels : null;
   }
   if (isPlainObject(value) && aliasTargetOf(value) === null) {
     const entries = Object.entries(value);
     if (entries.length === 0) return null;
-    return entries.map(([name, raw]) => ({
-      name,
-      px: pxOf(raw),
-      label: `${name} ${formatValueField(raw)}`
-    }));
+    return entries.map(([name, raw]) => `${name} ${formatValueField(raw)}`);
   }
   return null;
 }
 
 /**
  * Key-driven recognition inside a composite rule value. First fact per kind
- * wins; unrecognized keys stay visible as field lines on the rule row and in
- * Technical details — the drawing only claims what it understands.
+ * wins; unrecognized keys stay visible in Technical details — the projection
+ * only claims what it understands.
  */
 function factsFromValue(value: Record<string, unknown>): LayoutSpatialFact[] {
   const facts: LayoutSpatialFact[] = [];
@@ -185,25 +160,21 @@ function factsFromValue(value: Record<string, unknown>): LayoutSpatialFact[] {
   for (const [key, field] of Object.entries(value)) {
     if (RICH_METADATA_KEYS.has(key)) continue;
     if (CONTAINER_KEYS.includes(key)) {
-      push(isScalarOrAlias(field)
-        ? {
-            kind: "container",
-            label: formatValueField(field),
-            maxWidthPx: pxOf(field)
-          }
-        : null);
-    } else if (REGIONS_KEYS.includes(key)) {
-      const regions = regionListOf(field);
       push(
-        regions.length > 0
-          ? { kind: "regions", label: formatValueField(field), regions }
+        isScalarOrAlias(field)
+          ? { kind: "container", label: formatValueField(field) }
+          : null
+      );
+    } else if (REGIONS_KEYS.includes(key)) {
+      push(
+        regionListOf(field).length > 0
+          ? { kind: "regions", label: formatValueField(field) }
           : null
       );
     } else if (COLUMNS_KEYS.includes(key)) {
-      const columns = columnCountOf(field);
       push(
-        columns !== null
-          ? { kind: "columns", label: formatValueField(field), columns }
+        columnCountOf(field) !== null
+          ? { kind: "columns", label: formatValueField(field) }
           : null
       );
     } else if (GUTTER_KEYS.includes(key)) {
@@ -219,10 +190,10 @@ function factsFromValue(value: Record<string, unknown>): LayoutSpatialFact[] {
           : null
       );
     } else if (BREAKPOINT_KEYS.includes(key)) {
-      const breakpoints = breakpointMarksOf(field);
+      const labels = breakpointLabelsOf(field);
       push(
-        breakpoints !== null
-          ? { kind: "breakpoints", label: formatValueField(field), breakpoints }
+        labels !== null
+          ? { kind: "breakpoints", label: labels.join(", ") }
           : null
       );
     }
@@ -261,45 +232,33 @@ function fallbackFact(
     .map(([, field]) => formatValueField(field))
     .join(" / ");
   switch (kind) {
-    case "container": {
-      if (!fields.every(([, field]) => isScalarOrAlias(field))) return null;
-      const px = fields.map(([, field]) => pxOf(field)).find((n) => n !== null);
-      return {
-        kind,
-        label: joinedLabel,
-        maxWidthPx: px ?? null
-      };
-    }
-    case "columns": {
-      if (fields.length !== 1) return null;
-      const columns = columnCountOf(fields[0]![1]);
-      return columns !== null
-        ? { kind, label: joinedLabel, columns }
-        : null;
-    }
+    case "container":
     case "gutter":
     case "rhythm": {
       if (!fields.every(([, field]) => isScalarOrAlias(field))) return null;
       return { kind, label: joinedLabel };
     }
+    case "columns": {
+      if (fields.length !== 1) return null;
+      return columnCountOf(fields[0]![1]) !== null
+        ? { kind, label: joinedLabel }
+        : null;
+    }
     case "regions": {
       if (fields.length !== 1) return null;
-      const regions = regionListOf(fields[0]![1]);
-      return regions.length > 0
-        ? { kind, label: joinedLabel, regions }
+      return regionListOf(fields[0]![1]).length > 0
+        ? { kind, label: joinedLabel }
         : null;
     }
     case "breakpoints": {
       if (fields.length !== 1) return null;
-      const breakpoints = breakpointMarksOf(fields[0]![1]);
-      return breakpoints !== null
-        ? { kind, label: joinedLabel, breakpoints }
-        : null;
+      const labels = breakpointLabelsOf(fields[0]![1]);
+      return labels !== null ? { kind, label: labels.join(", ") } : null;
     }
   }
 }
 
-function projectRule(row: DsRow, anchor: number): LayoutRuleProjection {
+function projectRule(row: DsRow): LayoutRuleProjection {
   let facts: LayoutSpatialFact[] = [];
   const value = row.entry.value;
   if (isPlainObject(value) && row.entry.alias === null) {
@@ -317,67 +276,19 @@ function projectRule(row: DsRow, anchor: number): LayoutRuleProjection {
       }
     }
   }
-  return { row, anchor, concern: row.name, facts };
-}
-
-/**
- * Whole-leaf derivation. Rules keep source order; anchors are 1-based
- * positions, so row N in the left pane and anchor N in the drawing always
- * refer to the same rule — including undrawable ones.
- */
-function toModel(rules: LayoutRuleProjection[]): LayoutBlueprintModel {
   return {
-    rules,
-    drawable: rules.filter((rule) => rule.facts.length > 0),
-    unavailable: rules.filter((rule) => rule.facts.length === 0)
+    row,
+    headline: row.meaning.trim() !== "" ? row.meaning : row.name,
+    concern: row.name,
+    facts,
+    captures: row.entry.layoutCaptures ?? []
   };
 }
 
-export function projectLayoutBlueprint(
-  rows: readonly DsRow[]
-): LayoutBlueprintModel {
-  return toModel(rows.map((row, index) => projectRule(row, index + 1)));
-}
-
-/** First fact of a kind across drawable rules, in rule order — the fact the
- * composed drawing claims. Same-kind facts on later rules stay readable as
- * field lines on their rows. */
-export function firstFactOfKind(
-  model: LayoutBlueprintModel,
-  kind: LayoutFactKind
-): { rule: LayoutRuleProjection; fact: LayoutSpatialFact } | null {
-  for (const rule of model.drawable) {
-    const fact = rule.facts.find((candidate) => candidate.kind === kind);
-    if (fact) return { rule, fact };
-  }
-  return null;
-}
-
 /**
- * Isolate/compose slice (09C-B Checklist): narrows a whole-leaf blueprint to
- * the rules behind the given anchors — one anchor for a hover-isolated scene,
- * several for an explicit composition. Anchors are never renumbered: row N in
- * the left pane still keys anchor N in the sliced drawing.
+ * Whole-leaf derivation. Rules keep source order; each rule's own `captures`
+ * decides whether it shows a source visual or the honest unavailable block.
  */
-export function sliceLayoutBlueprint(
-  model: LayoutBlueprintModel,
-  anchors: ReadonlySet<number>
-): LayoutBlueprintModel {
-  return toModel(model.rules.filter((rule) => anchors.has(rule.anchor)));
-}
-
-/** Reference viewport for proportional container drawing. Presentation
- * scaffold, never a source claim — the drawing labels it "nominal". */
-export const BLUEPRINT_SCALE_REFERENCE_PX = 1440;
-
-/** Scale eligibility shared by the drawing and the caption's scale note. */
-export function containerDrawsToScale(
-  maxWidthPx: number | null | undefined
-): boolean {
-  return (
-    maxWidthPx !== null &&
-    maxWidthPx !== undefined &&
-    maxWidthPx > 0 &&
-    maxWidthPx <= BLUEPRINT_SCALE_REFERENCE_PX
-  );
+export function projectLayoutLeaf(rows: readonly DsRow[]): LayoutLeafModel {
+  return { rules: rows.map((row) => projectRule(row)) };
 }

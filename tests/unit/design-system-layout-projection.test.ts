@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { DesignSystemEntryView } from "@/lib/runtime/design-system-view";
-import {
-  firstFactOfKind,
-  projectLayoutBlueprint,
-  sliceLayoutBlueprint
-} from "@/components/workbench/design-system-layout-projection";
+import type {
+  DesignSystemEntryView,
+  DesignSystemLayoutCapture
+} from "@/lib/runtime/design-system-view";
+import { projectLayoutLeaf } from "@/components/workbench/design-system-layout-projection";
 import { toRow, type DsRow } from "@/components/workbench/design-system-view-model";
 
 function entry(
@@ -43,31 +42,38 @@ function layoutRow(
   return toRow(entry({ entry_id: entryId, name, value, ...extra }));
 }
 
+function capture(partial: Partial<DesignSystemLayoutCapture> = {}) {
+  return {
+    nodeId: null,
+    nodeName: "Work grid",
+    artifactPath: "design-system/captures/grid-page-work-grid.png",
+    capturedAt: "2026-08-01T04:00:00.000Z",
+    surfaceId: null,
+    stale: false,
+    ...partial
+  };
+}
+
 /* --------------------------- composite recognition -------------------------- */
 
-describe("projectLayoutBlueprint key-driven recognition", () => {
+describe("projectLayoutLeaf key-driven fact recognition", () => {
   it("derives container + columns + gutter facts from one composite grid rule", () => {
-    // The 09C-A e2e fixture shape: one rule carrying three spatial facts.
-    const model = projectLayoutBlueprint([
+    const model = projectLayoutLeaf([
       layoutRow("grid-page", "grid.page", {
         columns: "12",
         gutter: { alias: "spacing.200" },
         maxWidth: "1120px"
       })
     ]);
-    expect(model.drawable).toHaveLength(1);
-    expect(model.unavailable).toHaveLength(0);
-    const rule = model.rules[0]!;
-    expect(rule.anchor).toBe(1);
-    expect(rule.facts).toEqual([
-      { kind: "columns", label: "12", columns: 12 },
+    expect(model.rules[0]!.facts).toEqual([
+      { kind: "columns", label: "12" },
       { kind: "gutter", label: "→ spacing.200" },
-      { kind: "container", label: "1120px", maxWidthPx: 1120 }
+      { kind: "container", label: "1120px" }
     ]);
   });
 
   it("reads declared region arrays and separator-joined region strings", () => {
-    const model = projectLayoutBlueprint([
+    const model = projectLayoutLeaf([
       layoutRow("shell-regions", "shell.regions", {
         regions: ["header", "hero", "content", "footer"]
       }),
@@ -77,18 +83,16 @@ describe("projectLayoutBlueprint key-driven recognition", () => {
     ]);
     expect(model.rules[0]!.facts[0]).toEqual({
       kind: "regions",
-      label: "header, hero, content, footer",
-      regions: ["header", "hero", "content", "footer"]
+      label: "header, hero, content, footer"
     });
     expect(model.rules[1]!.facts[0]).toEqual({
       kind: "regions",
-      label: "header · content · footer",
-      regions: ["header", "content", "footer"]
+      label: "header · content · footer"
     });
   });
 
-  it("reads breakpoints as px arrays, named entries, and name→px maps", () => {
-    const model = projectLayoutBlueprint([
+  it("labels breakpoints from px arrays, named entries, and name→px maps", () => {
+    const model = projectLayoutLeaf([
       layoutRow("bp-array", "breakpoints", {
         breakpoints: ["640", "768", "1024", "1280"]
       }),
@@ -102,24 +106,22 @@ describe("projectLayoutBlueprint key-driven recognition", () => {
         breakpoints: { sm: 640, md: 768 }
       })
     ]);
-    expect(model.rules[0]!.facts[0]!.breakpoints).toEqual([
-      { name: null, px: 640, label: "640" },
-      { name: null, px: 768, label: "768" },
-      { name: null, px: 1024, label: "1024" },
-      { name: null, px: 1280, label: "1280" }
-    ]);
-    expect(model.rules[1]!.facts[0]!.breakpoints).toEqual([
-      { name: "md", px: 768, label: "md 768px" },
-      { name: "lg", px: 1024, label: "lg 1024" }
-    ]);
-    expect(model.rules[2]!.facts[0]!.breakpoints).toEqual([
-      { name: "sm", px: 640, label: "sm 640" },
-      { name: "md", px: 768, label: "md 768" }
-    ]);
+    expect(model.rules[0]!.facts[0]).toEqual({
+      kind: "breakpoints",
+      label: "640, 768, 1024, 1280"
+    });
+    expect(model.rules[1]!.facts[0]).toEqual({
+      kind: "breakpoints",
+      label: "md 768px, lg 1024"
+    });
+    expect(model.rules[2]!.facts[0]).toEqual({
+      kind: "breakpoints",
+      label: "sm 640, md 768"
+    });
   });
 
   it("reads section rhythm values verbatim, arrows included", () => {
-    const model = projectLayoutBlueprint([
+    const model = projectLayoutLeaf([
       layoutRow("section-rhythm", "section.heroToNext", {
         heroToNext: "96 → 56px"
       })
@@ -130,44 +132,43 @@ describe("projectLayoutBlueprint key-driven recognition", () => {
     });
   });
 
-  it("ignores rich metadata fields — lineage is not geometry", () => {
-    const model = projectLayoutBlueprint([
+  it("ignores rich metadata and capture provenance — lineage is not a measurement", () => {
+    const model = projectLayoutLeaf([
       layoutRow("container-max", "container.maxWidth", {
         maxWidth: "1200px",
         responsiveBehavior: ["24px page padding below 768px"],
         tokenLinks: ["spacing.300"],
-        acceptanceChecks: ["Verified against page-shell code"]
+        acceptanceChecks: ["Verified against page-shell code"],
+        sourceCaptures: [capture({ stale: true })]
       })
     ]);
     expect(model.rules[0]!.facts).toEqual([
-      { kind: "container", label: "1200px", maxWidthPx: 1200 }
+      { kind: "container", label: "1200px" }
     ]);
   });
 
   it("keeps the first fact per kind when a value repeats one", () => {
-    const model = projectLayoutBlueprint([
+    const model = projectLayoutLeaf([
       layoutRow("grid-two", "grid", { columns: "12", gridColumns: "6" })
     ]);
-    expect(model.rules[0]!.facts).toEqual([
-      { kind: "columns", label: "12", columns: 12 }
-    ]);
+    expect(model.rules[0]!.facts).toEqual([{ kind: "columns", label: "12" }]);
   });
 });
 
 /* ----------------------------- name-driven fallback ----------------------------- */
 
-describe("projectLayoutBlueprint name-driven fallback", () => {
+describe("projectLayoutLeaf name-driven fallback", () => {
   it("classifies single-field objects by their concern name", () => {
-    const model = projectLayoutBlueprint([
+    const model = projectLayoutLeaf([
       layoutRow("container-max", "container.maxWidth", { width: "1200px" })
     ]);
     expect(model.rules[0]!.facts).toEqual([
-      { kind: "container", label: "1200px", maxWidthPx: 1200 }
+      { kind: "container", label: "1200px" }
     ]);
   });
 
   it("joins responsive pairs verbatim for gutter and rhythm concerns", () => {
-    const model = projectLayoutBlueprint([
+    const model = projectLayoutLeaf([
       layoutRow("grid-gap", "grid.gap", { desktop: "24px", mobile: "16px" }),
       layoutRow("rhythm", "section.heroToNext", { desktop: "96px", below768: "56px" })
     ]);
@@ -179,108 +180,87 @@ describe("projectLayoutBlueprint name-driven fallback", () => {
     ]);
   });
 
-  it("keeps aliased containers drawable but unscaled", () => {
-    const model = projectLayoutBlueprint([
+  it("keeps aliased containers readable without inventing a pixel value", () => {
+    const model = projectLayoutLeaf([
       layoutRow("container-max", "container.maxWidth", {
         width: { alias: "spacing.900" }
       })
     ]);
     expect(model.rules[0]!.facts).toEqual([
-      { kind: "container", label: "→ spacing.900", maxWidthPx: null }
+      { kind: "container", label: "→ spacing.900" }
     ]);
-    expect(model.drawable).toHaveLength(1);
-  });
-});
-
-/* ------------------------------- honest gaps ------------------------------- */
-
-describe("projectLayoutBlueprint honest unavailable partition", () => {
-  it("leaves rules with unrecognized values undrawn", () => {
-    const model = projectLayoutBlueprint([
-      layoutRow("nav-mobile", "nav.mobile", { layout: "—" }, { status: "gap" })
-    ]);
-    expect(model.drawable).toHaveLength(0);
-    expect(model.unavailable).toHaveLength(1);
-    expect(model.unavailable[0]!.row.status).toBe("gap");
-    expect(model.unavailable[0]!.anchor).toBe(1);
   });
 
-  it("does not guess geometry from non-composite values", () => {
-    const model = projectLayoutBlueprint([
+  it("does not guess measurements from non-composite values", () => {
+    const model = projectLayoutLeaf([
       layoutRow("odd-scalar", "container.maxWidth", "1200px"),
       layoutRow("odd-alias", "grid.gap", { alias: "spacing.200" }, {
         alias: "spacing.200",
         value: { alias: "spacing.200" }
       } as Partial<DesignSystemEntryView>)
     ]);
-    expect(model.unavailable.map((rule) => rule.row.entryId)).toEqual([
-      "odd-scalar",
-      "odd-alias"
-    ]);
+    expect(model.rules[0]!.facts).toEqual([]);
+    expect(model.rules[1]!.facts).toEqual([]);
   });
+});
 
-  it("anchors every rule in source order, drawable or not", () => {
-    const model = projectLayoutBlueprint([
+/* ------------------------------ capture provenance ------------------------------ */
+
+describe("projectLayoutLeaf captures", () => {
+  it("keeps source order and carries captures per rule, not by measurements", () => {
+    const model = projectLayoutLeaf([
       layoutRow("grid-page", "grid.page", { columns: "12" }),
-      layoutRow("nav-mobile", "nav.mobile", { layout: "—" }, { status: "gap" }),
+      layoutRow(
+        "nav-mobile",
+        "nav.mobile",
+        { layout: "—" },
+        { status: "gap", layoutCaptures: [capture()] }
+      ),
       layoutRow("bp", "breakpoints", { breakpoints: ["768"] })
     ]);
-    expect(model.rules.map((rule) => rule.anchor)).toEqual([1, 2, 3]);
-    expect(model.drawable.map((rule) => rule.anchor)).toEqual([1, 3]);
-    expect(model.unavailable.map((rule) => rule.anchor)).toEqual([2]);
+    expect(model.rules.map((rule) => rule.row.entryId)).toEqual([
+      "grid-page",
+      "nav-mobile",
+      "bp"
+    ]);
+    expect(model.rules.map((rule) => rule.captures.length)).toEqual([0, 1, 0]);
+  });
+
+  it("passes the decorated captures through verbatim", () => {
+    const captures = [
+      capture({ nodeName: "Hero", stale: true, surfaceId: "surface-1" }),
+      capture({ nodeName: "Grid", nodeId: "1:99" })
+    ];
+    const model = projectLayoutLeaf([
+      layoutRow("grid-page", "grid.page", { columns: "12" }, {
+        layoutCaptures: captures
+      })
+    ]);
+    expect(model.rules[0]!.captures).toEqual(captures);
+  });
+
+  it("treats a missing decoration as no captures", () => {
+    const model = projectLayoutLeaf([
+      layoutRow("grid-page", "grid.page", { columns: "12" })
+    ]);
+    expect(model.rules[0]!.captures).toEqual([]);
   });
 });
 
-/* ------------------------------ drawing lookup ------------------------------ */
+/* --------------------------------- headline --------------------------------- */
 
-describe("firstFactOfKind", () => {
-  it("returns the first drawable fact of a kind in rule order", () => {
-    const model = projectLayoutBlueprint([
-      layoutRow("grid-a", "grid.a", { columns: "12" }),
-      layoutRow("container", "container.maxWidth", { maxWidth: "1200px" }),
-      layoutRow("grid-b", "grid.b", { columns: "6" })
+describe("projectLayoutLeaf headline", () => {
+  it("prefers the rule's meaning, falling back to its name", () => {
+    const model = projectLayoutLeaf([
+      layoutRow("grid-page", "grid.page", { columns: "12" }, {
+        meaning: "Page grid — 12 columns with 24px gutters"
+      }),
+      layoutRow("nav-mobile", "nav.mobile", { layout: "—" })
     ]);
-    expect(firstFactOfKind(model, "columns")!.rule.row.entryId).toBe("grid-a");
-    expect(firstFactOfKind(model, "container")!.fact.maxWidthPx).toBe(1200);
-    expect(firstFactOfKind(model, "rhythm")).toBeNull();
-  });
-});
-
-/* --------------------------- isolate / compose slice --------------------------- */
-
-describe("sliceLayoutBlueprint", () => {
-  function fixture() {
-    return projectLayoutBlueprint([
-      layoutRow("grid-page", "grid.page", { columns: "12" }),
-      layoutRow("nav-mobile", "nav.mobile", { layout: "—" }, { status: "gap" }),
-      layoutRow("shell", "shell.regions", { regions: ["header", "footer"] })
-    ]);
-  }
-
-  it("keeps only the requested anchors across every rule list", () => {
-    const sliced = sliceLayoutBlueprint(fixture(), new Set([1, 3]));
-    expect(sliced.rules.map((rule) => rule.anchor)).toEqual([1, 3]);
-    expect(sliced.drawable.map((rule) => rule.anchor)).toEqual([1, 3]);
-    expect(sliced.unavailable).toEqual([]);
-  });
-
-  it("preserves original anchor numbers instead of renumbering the slice", () => {
-    const sliced = sliceLayoutBlueprint(fixture(), new Set([3]));
-    expect(sliced.rules.map((rule) => rule.anchor)).toEqual([3]);
-    expect(sliced.rules[0]!.row.entryId).toBe("shell");
-  });
-
-  it("slicing to an undrawable rule yields an honest unavailable-only model", () => {
-    const sliced = sliceLayoutBlueprint(fixture(), new Set([2]));
-    expect(sliced.drawable).toEqual([]);
-    expect(sliced.unavailable.map((rule) => rule.row.entryId)).toEqual([
-      "nav-mobile"
-    ]);
-  });
-
-  it("unknown anchors and an empty set both produce an empty model", () => {
-    const model = fixture();
-    expect(sliceLayoutBlueprint(model, new Set([99])).rules).toEqual([]);
-    expect(sliceLayoutBlueprint(model, new Set()).rules).toEqual([]);
+    expect(model.rules[0]!.headline).toBe(
+      "Page grid — 12 columns with 24px gutters"
+    );
+    expect(model.rules[0]!.concern).toBe("grid.page");
+    expect(model.rules[1]!.headline).toBe("nav.mobile");
   });
 });

@@ -668,6 +668,128 @@ test.describe("layout-rules.json / interaction-rules.json", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Layout source captures (09C-D02): rule → Figma node screenshot provenance
+// ---------------------------------------------------------------------------
+
+test.describe("layout-rules.json sourceCaptures", () => {
+  function capture(overrides: Record<string, unknown> = {}) {
+    return {
+      nodeId: "1:23",
+      nodeName: "Work grid",
+      artifactPath: "design-system/captures/grid-page-work-grid.png",
+      capturedAt: "2026-08-01T04:00:00.000Z",
+      surfaceId: "surface-1",
+      ...overrides
+    };
+  }
+
+  function rulesWith(captures: unknown) {
+    return {
+      rules: [entry({ value: { columns: "12", sourceCaptures: captures } })]
+    };
+  }
+
+  test("accepts a valid capture list, optional nodeId/surfaceId omitted", () => {
+    expect(
+      validateDesignSystemJson("layout-rules.json", rulesWith([capture()]))
+    ).toMatchObject({ ok: true });
+    const minimal = capture();
+    delete (minimal as Record<string, unknown>).nodeId;
+    delete (minimal as Record<string, unknown>).surfaceId;
+    expect(
+      validateDesignSystemJson("layout-rules.json", rulesWith([minimal]))
+    ).toMatchObject({ ok: true });
+  });
+
+  test("sourceCaptures must be an array when present", () => {
+    expect(
+      validateDesignSystemJson("layout-rules.json", rulesWith("work-grid"))
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: { field: "value.sourceCaptures", expected: "array" }
+    });
+  });
+
+  test("each capture requires nodeName / artifactPath / capturedAt", () => {
+    for (const field of ["nodeName", "artifactPath", "capturedAt"] as const) {
+      const broken = capture();
+      delete (broken as Record<string, unknown>)[field];
+      expect(
+        validateDesignSystemJson("layout-rules.json", rulesWith([broken]))
+      ).toMatchObject({
+        ok: false,
+        reason: "invalid_field_type",
+        details: {
+          field: `value.sourceCaptures[0].${field}`,
+          expected: "non-empty string"
+        }
+      });
+      expect(
+        validateDesignSystemJson(
+          "layout-rules.json",
+          rulesWith([capture({ [field]: "  " })])
+        )
+      ).toMatchObject({
+        ok: false,
+        reason: "invalid_field_type",
+        details: {
+          field: `value.sourceCaptures[0].${field}`,
+          expected: "non-empty string"
+        }
+      });
+    }
+  });
+
+  test("optional nodeId / surfaceId must be non-empty strings when present", () => {
+    for (const field of ["nodeId", "surfaceId"] as const) {
+      expect(
+        validateDesignSystemJson(
+          "layout-rules.json",
+          rulesWith([capture({ [field]: 42 })])
+        )
+      ).toMatchObject({
+        ok: false,
+        reason: "invalid_field_type",
+        details: {
+          field: `value.sourceCaptures[0].${field}`,
+          expected: "non-empty string"
+        }
+      });
+    }
+  });
+
+  test("capture items must be plain objects", () => {
+    expect(
+      validateDesignSystemJson("layout-rules.json", rulesWith(["work-grid"]))
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: { field: "value.sourceCaptures[0]", expected: "object" }
+    });
+  });
+
+  test("interaction rules still reject sourceCaptures (component-bound whitelist)", () => {
+    expect(
+      validateDesignSystemJson("interaction-rules.json", {
+        rules: [
+          entry({
+            value: {
+              statement: "Motion stays quiet",
+              sourceCaptures: [capture()]
+            }
+          })
+        ]
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: { field: "value.sourceCaptures" }
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // collectStatusEntries (Task C ingest seam)
 // ---------------------------------------------------------------------------
 

@@ -80,6 +80,22 @@ export interface DesignSystemEntryEvidence {
   unresolved_links: string[];
 }
 
+/** One Figma node screenshot backing a layout rule (09C-D02). The Agent
+ * captures the node via Figma MCP, stores the image as a project artifact,
+ * and records the provenance in the rule's `value.sourceCaptures`; the view
+ * layers the freshness verdict (`stale`) on top from evidence lineage. */
+export interface DesignSystemLayoutCapture {
+  nodeId: string | null;
+  nodeName: string;
+  /** Project-relative image path, served via /api/artifacts. */
+  artifactPath: string;
+  capturedAt: string;
+  surfaceId: string | null;
+  /** True when the linked surface was superseded or no longer exists —
+   * the capture may not match the current source anymore. */
+  stale: boolean;
+}
+
 export interface DesignSystemEntryView {
   /**
    * DB row id (uuid) — volatile across re-ingests (replace-by-source deletes
@@ -103,6 +119,10 @@ export interface DesignSystemEntryView {
   links: string[];
   source_artifact_path: string;
   evidence: DesignSystemEntryEvidence;
+  /** Layout section only: parsed `value.sourceCaptures` with the freshness
+   * verdict joined from evidence lineage. Undefined for other sections and
+   * for layout rules that declare no captures. */
+  layoutCaptures?: DesignSystemLayoutCapture[];
 }
 
 export interface DesignSystemView {
@@ -161,6 +181,44 @@ function aliasOf(value: unknown): string | null {
   const keys = Object.keys(value);
   if (keys.length !== 1 || keys[0] !== "alias") return null;
   return typeof value.alias === "string" ? value.alias : null;
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+/** Parse a layout rule's `value.sourceCaptures` into view captures (09C-D02).
+ * Ingest schema already enforces the item shape; the view still guards item
+ * by item so a hand-edited legacy row degrades to "no captures" instead of
+ * breaking the whole view. */
+function layoutCapturesOfValue(
+  value: unknown,
+  staleOf: (surfaceId: string) => boolean
+): DesignSystemLayoutCapture[] | undefined {
+  if (!isPlainObject(value)) return undefined;
+  const raw = value.sourceCaptures;
+  if (!Array.isArray(raw)) return undefined;
+  const captures: DesignSystemLayoutCapture[] = [];
+  for (const item of raw) {
+    if (!isPlainObject(item)) continue;
+    if (
+      !nonEmptyString(item.nodeName) ||
+      !nonEmptyString(item.artifactPath) ||
+      !nonEmptyString(item.capturedAt)
+    ) {
+      continue;
+    }
+    const surfaceId = nonEmptyString(item.surfaceId) ? item.surfaceId : null;
+    captures.push({
+      nodeId: nonEmptyString(item.nodeId) ? item.nodeId : null,
+      nodeName: item.nodeName,
+      artifactPath: item.artifactPath,
+      capturedAt: item.capturedAt,
+      surfaceId,
+      stale: surfaceId !== null ? staleOf(surfaceId) : false
+    });
+  }
+  return captures.length > 0 ? captures : undefined;
 }
 
 /** evidenceVersionIds referenced by a stored alignment anchor (anchor_json).
@@ -265,6 +323,17 @@ export function getDesignSystemView(
       `SELECT id, frame_node_id, frame_name, created_at
        FROM figma_evidence_surfaces WHERE id = ?`
     );
+    // Capture freshness (09C-D02): a linked surface is stale once superseded
+    // (lineage tip moved on) or when it no longer exists at all.
+    const captureStaleStmt = db.prepare(
+      `SELECT superseded_by FROM figma_evidence_surfaces WHERE id = ?`
+    );
+    const captureStaleOf = (surfaceId: string): boolean => {
+      const surface = captureStaleStmt.get(surfaceId) as
+        | { superseded_by: string | null }
+        | undefined;
+      return surface === undefined || surface.superseded_by !== null;
+    };
 
     for (const row of rows) {
       const value = JSON.parse(row.value_json) as unknown;
@@ -358,7 +427,10 @@ export function getDesignSystemView(
           status: row.status as DesignSystemStatus,
           links,
           source_artifact_path: row.source_artifact_path,
-          evidence
+          evidence,
+          ...(row.section === "layout"
+            ? { layoutCaptures: layoutCapturesOfValue(value, captureStaleOf) }
+            : {})
         },
         versionIds: [...new Set(versionIds)]
       });

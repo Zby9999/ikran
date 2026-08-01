@@ -824,7 +824,7 @@ describe("FoundationsHomePage rich principles (09B shapes, 09C-A reading)", () =
   });
 });
 
-/* ---------------------- Layout leaf: Blueprint (09C-B) ---------------------- */
+/* ------------------- Layout leaf: Source Capture (09C-D02) ------------------- */
 
 function layoutEntry(
   entryId: string,
@@ -847,14 +847,56 @@ function layoutEntry(
 
 function layoutLeafRows(): DsRow[] {
   return [
-    layoutEntry("grid-page", "grid.page", {
-      columns: "12",
-      gutter: { alias: "spacing.200" },
-      maxWidth: "1120px"
-    }),
-    layoutEntry("shell-regions", "shell.regions", {
-      regions: ["header", "hero", "content", "footer"]
-    }),
+    layoutEntry(
+      "grid-page",
+      "grid.page",
+      {
+        columns: "12",
+        gutter: { alias: "spacing.200" },
+        maxWidth: "1120px"
+      },
+      {
+        meaning: "Page grid: 12 columns",
+        layoutCaptures: [
+          {
+            nodeId: "11:20",
+            nodeName: "Landing / Grid",
+            artifactPath: "design-system/captures/grid-page.png",
+            capturedAt: "2026-07-30T14:05:22Z",
+            surfaceId: "surf-grid",
+            stale: false
+          },
+          {
+            nodeId: "11:21",
+            nodeName: "Landing / Grid Detail",
+            artifactPath: "design-system/captures/grid-page-detail.png",
+            capturedAt: "2026-07-30T14:06:01Z",
+            surfaceId: null,
+            stale: false
+          }
+        ]
+      }
+    ),
+    layoutEntry(
+      "shell-regions",
+      "shell.regions",
+      {
+        regions: ["header", "hero", "content", "footer"]
+      },
+      {
+        meaning: "Shell stacks four regions",
+        layoutCaptures: [
+          {
+            nodeId: "11:30",
+            nodeName: "Landing / Shell",
+            artifactPath: "design-system/captures/shell.png",
+            capturedAt: "2026-07-28T09:12:00Z",
+            surfaceId: "surf-shell",
+            stale: true
+          }
+        ]
+      }
+    ),
     layoutEntry("section-rhythm", "section.heroToNext", {
       heroToNext: "96 → 56px"
     }),
@@ -873,9 +915,8 @@ function layoutLeafRows(): DsRow[] {
   ];
 }
 
-describe("LayoutLeafPage Blueprint (09C-B)", () => {
-  function renderLayoutLeaf() {
-    const rows = layoutLeafRows();
+describe("LayoutLeafPage Source Capture (09C-D02)", () => {
+  function renderLayoutLeaf(rows: DsRow[] = layoutLeafRows()) {
     return renderToStaticMarkup(
       createElement(LayoutLeafPage, {
         leaf: {
@@ -883,96 +924,90 @@ describe("LayoutLeafPage Blueprint (09C-B)", () => {
           chips: ["1 formalized", "3 candidate", "1 open gap"]
         },
         rows: rowSharedProps(),
-        split: {
-          ratio: 0.42,
-          onRatioChange: vi.fn(),
-          onRatioCommit: vi.fn()
-        }
+        session: "test-session"
       })
     );
   }
 
-  test("keeps the standard Browser heading and anchored rule rows", () => {
+  test("keeps the standard Browser heading and renders one placard per rule", () => {
     const html = renderLayoutLeaf();
     expect(html).toContain('class="dsb-h1">Layout</h1>');
     expect(html).toContain("5 rules");
     expect(html).toContain("1 formalized");
     expect(html).toContain("3 candidate");
     expect(html).toContain("1 open gap");
-    // Every rule row carries its 1-based anchor number.
-    expect(html.match(/dsb-anchor-num/g)!.length).toBeGreaterThanOrEqual(5);
-    expect(html).toContain('data-testid="ds-row-grid-page"');
-    expect(html).toContain('data-testid="ds-row-nav-mobile"');
-    // Object values stay field lines; aliases render through, never raw JSON.
+    expect(html).toContain('data-testid="ds-layout-placards"');
+    expect(html).toContain('data-testid="ds-layout-placard-grid-page"');
+    expect(html).toContain('data-testid="ds-layout-placard-shell-regions"');
+    expect(html).toContain('data-testid="ds-layout-placard-section-rhythm"');
+    expect(html).toContain('data-testid="ds-layout-placard-breakpoints"');
+    expect(html).toContain('data-testid="ds-layout-placard-nav-mobile"');
+    // Every placard keeps the status chip + ⓘ evidence wiring of a row.
+    expect(html).toContain('data-testid="ds-layout-status-grid-page"');
+    expect(html).toContain('aria-label="Evidence for layout rule grid-page"');
+    // The headline is the rule's human-readable claim.
+    expect(html).toContain("Page grid: 12 columns");
+    expect(html).toContain("Mobile navigation layout");
+  });
+
+  test("rules with captures render the capture image and provenance caption", () => {
+    const html = renderLayoutLeaf();
+    // The capture image is served via /api/artifacts with the session.
+    expect(html).toContain(
+      "/api/artifacts/design-system/captures/grid-page.png?session=test-session"
+    );
+    expect(html).toContain('alt="Source capture of Landing / Grid"');
+    // Provenance caption: origin tag, node name, formatted capture time.
+    expect(html).toContain('data-origin="source-capture"');
+    expect(html).toContain("Source capture");
+    expect(html).toContain("Landing / Grid");
+    expect(html).toContain("captured 2026-07-30 14:05");
+    // Recognized spatial facts render as one quiet line — never raw JSON.
+    expect(html).toContain('class="dsb-placard-facts"');
+    expect(html).toContain("1120px");
     expect(html).toContain("→ spacing.200");
     expect(html).not.toContain("{&quot;columns&quot;");
+    // A linked surface offers the full-frame lightbox (closed by default).
+    expect(html).toContain("View in frame");
+    expect(html).not.toContain("dsb-lightbox-img");
   });
 
-  test("draws one schematic blueprint with anchors, origins, and status dots", () => {
+  test("a rule with several captures renders a thumbnail strip", () => {
     const html = renderLayoutLeaf();
-    expect(html).toContain('data-testid="ds-layout-blueprint"');
-    expect(html).toContain('data-testid="ds-layout-blueprint-svg"');
-    expect(html).toContain('role="img"');
-    expect(html).toContain("Schematic layout blueprint");
-    // grid.page contributes three facts under one anchor.
-    expect(html.match(/data-anchor="1"/g)!.length).toBe(3);
-    expect(html).toContain('data-anchor="2"');
-    expect(html).toContain('data-anchor="3"');
-    expect(html).toContain('data-anchor="4"');
-    // Anchor dots carry status into the visual module.
-    expect(html).toContain('data-anchor="4" data-status="formalized"');
-    // Source values label the measurements.
-    expect(html).toContain(">1120px</text>");
-    expect(html).toContain("12 columns");
-    expect(html).toContain("96 → 56px");
-    expect(html).toContain(">1024</text>");
-    // The drawing declares its origin; keyboard path exists via focusable dots.
-    expect(html).toContain('data-origin="schematic"');
-    expect(html).toContain("Schematic");
-    expect(html).toContain('tabindex="0"');
-    expect(html).toContain("Anchor 1: grid.page");
+    expect(html.match(/class="dsb-placard-thumb"/g)!.length).toBe(2);
+    expect(html).toContain('aria-label="Show Landing / Grid"');
+    expect(html).toContain('aria-label="Show Landing / Grid Detail"');
+    expect(html).toContain('aria-pressed="true"');
+    // Single-capture rules get no strip.
+    expect(html).not.toContain('aria-label="Show Landing / Shell"');
   });
 
-  test("undrawable rules surface as explicit unavailable samples", () => {
+  test("a stale capture is marked in the caption", () => {
+    const html = renderLayoutLeaf();
+    expect(html).toContain("Landing / Shell");
+    expect(html).toContain("captured 2026-07-28 09:12");
+    expect(html).toContain('data-stale="true"');
+    expect(html).toContain("· stale");
+  });
+
+  test("rules without captures render an honest unavailable block", () => {
     const html = renderLayoutLeaf();
     expect(html).toContain('data-testid="ds-layout-unavailable-nav-mobile"');
-    expect(html).toContain("No visual sample");
-    expect(html).toContain('data-origin="unavailable"');
-    expect(html).toContain("nav.mobile");
-    expect(html).toContain("Mobile navigation layout");
-    expect(html).toContain("open gap");
-    // The honest unknown is also docked in the drawing as a dashed marker.
-    expect(html).toContain('data-anchor="5"');
-    expect(html).toContain("nav.mobile ?");
-    // The empty-samples fallback is gone once the blueprint exists.
-    expect(html).not.toContain('data-testid="ds-samples-empty"');
-  });
-
-  test("every rule row carries a checklist control for composition", () => {
-    const html = renderLayoutLeaf();
-    // One check control per row, all unchecked by default.
-    expect(html.match(/dsb-row-check/g)!.length).toBeGreaterThanOrEqual(5);
-    expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('aria-label="Include grid.page in the drawing"');
-    expect(html).toContain('aria-label="Include nav.mobile in the drawing"');
-    // The whole row is the pointer toggle target.
-    expect(html.match(/data-selectable/g)!.length).toBeGreaterThanOrEqual(5);
-    // Nothing selected, nothing hovered: the full-leaf caption holds.
-    expect(html).toContain("One schematic drawing per rule set");
-  });
-
-  test("empty leaf keeps the honest empty states on both panes", () => {    const html = renderToStaticMarkup(
-      createElement(LayoutLeafPage, {
-        leaf: { rows: [], chips: [] },
-        rows: rowSharedProps(),
-        split: {
-          ratio: 0.42,
-          onRatioChange: vi.fn(),
-          onRatioCommit: vi.fn()
-        }
-      })
+    expect(html).toContain("No source capture");
+    expect(html).toContain(
+      "This rule has no linked Figma node — nothing to show honestly."
     );
+    expect(html).toContain('data-origin="unavailable"');
+    // section-rhythm and breakpoints have no captures either.
+    expect(html).toContain('data-testid="ds-layout-unavailable-section-rhythm"');
+    expect(html).toContain('data-testid="ds-layout-unavailable-breakpoints"');
+    // Facts still show under the unavailable block.
+    expect(html).toContain("96 → 56px");
+  });
+
+  test("empty leaf keeps the honest empty state", () => {
+    const html = renderLayoutLeaf([]);
     expect(html).toContain("No rules declared yet.");
-    expect(html).toContain('data-testid="ds-samples-empty"');
+    expect(html).not.toContain('data-testid="ds-layout-placards"');
   });
 });
