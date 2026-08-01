@@ -620,6 +620,17 @@ test.describe("layout-rules.json / interaction-rules.json", () => {
       details: { field: "value.accessibility", expected: "array" }
     });
   });
+
+  test("keeps rich-field writing style as a soft contract", () => {
+    const layout = validRulesJson();
+    Object.assign(layout.rules[0].value, {
+      relationship: [
+        "This remains structurally valid. The schema does not judge prose style."
+      ]
+    });
+
+    expect(validateDesignSystemJson("layout-rules.json", layout).ok).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

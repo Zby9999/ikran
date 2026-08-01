@@ -38,6 +38,83 @@ const REQUIRED_ARTIFACT_TYPES = {
   "design-system/interaction-rules.json": "interaction-rules.json"
 } as const;
 
+const RICH_FIELD_WRITING_STYLE = {
+  applies_to: {
+    layout: ["relationship", "responsiveBehavior", "acceptanceChecks"],
+    interaction: [
+      "appliesTo",
+      "stateBehavior",
+      "motion",
+      "layoutInvariants",
+      "accessibility",
+      "acceptanceChecks"
+    ],
+    component: [
+      "anatomy",
+      "variants",
+      "sizes",
+      "usageRules",
+      "contentRules",
+      "responsiveBehavior",
+      "verificationTargets",
+      "openGaps"
+    ]
+  },
+  rules: [
+    "Each array item is one short constraint sentence: one sentence, one rule; never multi-sentence prose.",
+    "Put spatial and numeric facts in structured values, such as a dedicated key or the compact value '96 → 56px', instead of burying them in prose.",
+    "Put interpretation, rationale, and design intent in meaning, using one sentence only.",
+    "Use the language of the designer's source text; if the designer writes Chinese, write the extracted rules in Chinese.",
+    "Do not restate existing rules, add padding, or generalize beyond the evidence; unsupported ideas belong in open questions, not source rules."
+  ],
+  examples: {
+    layout: {
+      good: {
+        value: {
+          gap: "20px",
+          imageSize: "461.25 × 446px",
+          responsiveBehavior: ["窄屏支持触控横向滚动。"],
+          acceptanceChecks: ["右侧裁切提示仍可见。"]
+        },
+        meaning: "横向画廊用于连续浏览项目。"
+      },
+      bad: {
+        relationship: [
+          "Project images form a horizontal track with 461.25 × 446px images and 20px gaps. The clipped edge creates a dynamic sense of discovery and should inspire future galleries."
+        ]
+      }
+    },
+    interaction: {
+      good: {
+        value: {
+          motion: ["悬停时箭头向右移动。"],
+          distance: "0 → 4px"
+        },
+        meaning: "轻微位移用于确认链接可交互。"
+      },
+      bad: {
+        motion: [
+          "The arrow glides elegantly to the right on hover. This delightful motion makes every action feel premium and engaging."
+        ]
+      }
+    },
+    component: {
+      good: {
+        value: {
+          anatomy: ["CTA 由文字标签和右箭头组成。"],
+          contentRules: ["标签使用动词短语。"]
+        },
+        meaning: "文字链接保持行动入口轻量。"
+      },
+      bad: {
+        usageRules: [
+          "Use this sophisticated CTA throughout the product wherever a strong action is needed. It should feel bold, polished, and memorable."
+        ]
+      }
+    }
+  }
+} as const;
+
 export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
   schema_version: 2,
   source_root: "design-system",
@@ -59,7 +136,8 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
     collections: RICH_PRINCIPLE_COLLECTION_FIELDS
   },
   layout_rule_value_fields: RICH_LAYOUT_RULE_FIELDS,
-  interaction_rule_value_fields: RICH_INTERACTION_RULE_FIELDS
+  interaction_rule_value_fields: RICH_INTERACTION_RULE_FIELDS,
+  rich_field_writing_style: RICH_FIELD_WRITING_STYLE
 } as const;
 
 type InitialDesignSystemCommandFailureReason =

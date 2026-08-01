@@ -9,6 +9,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, test } from "vitest";
 
+import { IKRAN_MCP_INSTRUCTIONS } from "../../lib/mcp/shared";
 import {
   claimAlignmentPreparationCommand,
   finalizeAlignmentPreparation
@@ -348,6 +349,30 @@ afterEach(() => {
 });
 
 describe("Initial Design System preparation", () => {
+  test("publishes the rich-field writing style through MCP instructions", () => {
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
+      "Each array item is one short constraint sentence"
+    );
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
+      "Put spatial and numeric facts in structured values"
+    );
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
+      "Put interpretation, rationale, and design intent in meaning"
+    );
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
+      "Use the language of the designer's source text"
+    );
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
+      "Do not restate existing rules, add padding, or generalize beyond the evidence"
+    );
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain("Layout good:");
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain("Layout bad:");
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain("Interaction good:");
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain("Interaction bad:");
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain("Component good:");
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain("Component bad:");
+  });
+
   test("claims the durable command idempotently with the complete immutable context", () => {
     const fixture = createCompletedAlignmentFixture();
 
@@ -422,7 +447,48 @@ describe("Initial Design System preparation", () => {
           "motion",
           "accessibility",
           "acceptanceChecks"
-        ])
+        ]),
+        rich_field_writing_style: {
+          applies_to: {
+            layout: expect.arrayContaining([
+              "relationship",
+              "responsiveBehavior",
+              "acceptanceChecks"
+            ]),
+            interaction: expect.arrayContaining([
+              "stateBehavior",
+              "motion",
+              "accessibility"
+            ]),
+            component: expect.arrayContaining([
+              "anatomy",
+              "usageRules",
+              "contentRules",
+              "responsiveBehavior"
+            ])
+          },
+          rules: expect.arrayContaining([
+            expect.stringContaining("one sentence, one rule"),
+            expect.stringContaining("structured values"),
+            expect.stringContaining("design intent in meaning"),
+            expect.stringContaining("language of the designer's source text"),
+            expect.stringContaining("add padding")
+          ]),
+          examples: {
+            layout: {
+              good: expect.any(Object),
+              bad: expect.any(Object)
+            },
+            interaction: {
+              good: expect.any(Object),
+              bad: expect.any(Object)
+            },
+            component: {
+              good: expect.any(Object),
+              bad: expect.any(Object)
+            }
+          }
+        }
       },
       declared_artifacts: []
     });

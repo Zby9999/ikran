@@ -187,6 +187,70 @@ Agent fixture 验证；Runtime 必须保存足够的 claim/excerpt/target lineag
 
 只抽取 evidence 支持且对系统可复用的类别。不存在的产品状态或组件不是 gap。
 
+### Rich 字段写作风格（soft contract）
+
+以下规则适用于 layout 的 `relationship` / `responsiveBehavior` /
+`acceptanceChecks`，interaction 的 `appliesTo` / `stateBehavior` / `motion` /
+`layoutInvariants` / `accessibility` / `acceptanceChecks`，以及 component 的
+`anatomy` / `variants` / `sizes` / `usageRules` / `contentRules` /
+`responsiveBehavior` / `verificationTargets` / `openGaps`：
+
+- 每条数组项只写一个短约束句：一句一条，禁止多句散文；
+- 可结构化的空间和数值事实写入独立 key，或使用 `"96 → 56px"` 这类紧凑值，
+  不埋进散文；
+- 解读、理由和设计意图写入 `meaning`，且只写一句；
+- 语言跟随设计师原文；设计师写中文，抽取规则也写中文；
+- 禁止重述已有规则、禁止 padding、禁止超出 evidence 推广；无证据想法进入
+  open questions，不进入 source rules。
+
+Good / bad 对照（bad 同时违反一句一条、事实结构化、原文语言或证据边界）：
+
+```json
+{
+  "layoutGood": {
+    "value": {
+      "gap": "20px",
+      "imageSize": "461.25 × 446px",
+      "responsiveBehavior": ["窄屏支持触控横向滚动。"],
+      "acceptanceChecks": ["右侧裁切提示仍可见。"]
+    },
+    "meaning": "横向画廊用于连续浏览项目。"
+  },
+  "layoutBad": {
+    "relationship": [
+      "Project images form a horizontal track with 461.25 × 446px images and 20px gaps. The clipped edge creates a dynamic sense of discovery and should inspire future galleries."
+    ]
+  },
+  "interactionGood": {
+    "value": {
+      "motion": ["悬停时箭头向右移动。"],
+      "distance": "0 → 4px"
+    },
+    "meaning": "轻微位移用于确认链接可交互。"
+  },
+  "interactionBad": {
+    "motion": [
+      "The arrow glides elegantly to the right on hover. This delightful motion makes every action feel premium and engaging."
+    ]
+  },
+  "componentGood": {
+    "value": {
+      "anatomy": ["CTA 由文字标签和右箭头组成。"],
+      "contentRules": ["标签使用动词短语。"]
+    },
+    "meaning": "文字链接保持行动入口轻量。"
+  },
+  "componentBad": {
+    "usageRules": [
+      "Use this sophisticated CTA throughout the product wherever a strong action is needed. It should feel bold, polished, and memorable."
+    ]
+  }
+}
+```
+
+这是 instruction / source contract 层的写作纪律，不新增自然语言 schema 硬校验；
+`validateRulesFile` 继续只检查 rich 字段存在时是否为数组。
+
 ## JSON schema extensions
 
 在保持 09A 文件布局和 entry envelope
