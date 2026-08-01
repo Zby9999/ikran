@@ -4,11 +4,12 @@ Status: needs-info
 
 ## Parent
 
-- `09C-B-visual-grammar-component-preview-framework.md`
+- `09C-D03-component-reader-presentation-framework.md`（原 `09C-B`，已拆分为
+  09C-D01 / D02 / D03）
 
 ## What to build
 
-把 09C-A / 09C-B 已验证的 Reader 与 Visual Grammar 扩展到 Draft Design System 的
+把 09C-A 已验证的 Reader 与各 section 呈现契约扩展到 Draft Design System 的
 全部适用 foundation domains 和当前 component inventory，并建立可审计的 visual
 coverage 结果。
 
@@ -45,7 +46,9 @@ System 内容都能得到一致、诚实、可维护的阅读与视觉结果”�
 
 ## Locked product decisions
 
-- 继续复用 09C-A 的可拖拽双栏和 09C-B 的 Visual Grammar / Component Framework。
+- 继续复用 09C-A 的可拖拽双栏和 09C-D03 的 Component Framework（原 09C-B 的
+  Visual Grammar 目标已按 section 拆分：Interaction 纯文本见 09C-D01，Layout
+  source capture 见 09C-D02）。
 - Color、Materials 与 Components 仍从 DB-backed view 派生；不新增平行事实源。
 - visual coverage 以适用性和可追溯性为标准，不设固定截图数量。
 - 每个 Visual Sample 记录所消费的 entry / component identities 和 origin。
@@ -105,12 +108,12 @@ System 内容都能得到一致、诚实、可维护的阅读与视觉结果”�
 - 完整覆盖 Figma reference 尚未提供。
 - Curated override 的持久化位置、authoring 入口和版本策略尚未锁定；实现不得在这些
   决策明确前新增 source file 或旁路事实源。
-- 真实项目中哪些 code links 可以安全进入 Code-backed preview 需要在 09C-B 技术验证
-  后确定。
+- 真实项目中哪些 code links 可以安全进入 Code-backed preview 需要在 09C-D03
+  技术验证后确定。
 
 ## Blocked by
 
-- `09C-B-visual-grammar-component-preview-framework.md`
+- `09C-D03-component-reader-presentation-framework.md`
 - 设计师确认的 Design System Browser Figma reference
 
 ## Out of scope

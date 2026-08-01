@@ -1,11 +1,12 @@
 # Layout Atlas 视图与 meaning-first 默认态
 
-Status: ready-for-agent
+Status: needs-info（2026-08-01：待 09C-D02 的 capture 形态下重新评估）
 
 ## Parent
 
 - `09C-A-design-system-reader-projection-resizable-split.md`
-- `09C-B-visual-grammar-component-preview-framework.md`
+- `09C-D02-layout-source-capture-visual-anchor.md`（原 `09C-B`，已拆分为
+  09C-D01 / D02 / D03）
 
 ## What to build
 
@@ -64,6 +65,11 @@ Projection 仍为确定性、可测试的 derived presentation model：不在运
 - 09C-B02（按约定顺序最后实施：先有风格契约与重写后的数据，再改前端 UI）
 
 ## Comments
+
+- 2026-08-01：原 09C-B 已按设计师决策拆分为 09C-D01 / D02 / D03。Layout 的
+  视觉主方向改为 Source capture（09C-D02）；本 ticket 的 Atlas 卡片流方向
+  保持回退状态，其「展示分层与 meaning-first」动机若仍成立，需在 D02 的
+  capture 形态下重新评估后再决定是否保留本 ticket。
 
 - 2026-08-01（撤回）：Atlas 实现（3e81b13）已应要求回退，工作区恢复到
   c92ab34 的 Layout 形态（split panel + Blueprint）。09C-B01 / 09C-B02 的
