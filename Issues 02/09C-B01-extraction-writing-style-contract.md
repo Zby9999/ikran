@@ -24,6 +24,8 @@ rich 字段保持 soft contract。需要落在 Agent 抽取时一定会读到的
 
 - MCP server instructions：为 layout / interaction / component 的 rich 字段
   各加写作风格约束与一组 good / bad 对照示例；
+- Interaction 抽取边界：`interaction-rules.json` 只写跨组件策略；组件绑定的
+  状态与动效必须写入对应 component spec 的 `states` / `motion`；
 - 09B source contract 的字段说明同步补充（Agent 通过
   `claim_initial_design_system_preparation` 拿到）；
 - 09B issue 文档补充风格条款，保持三处一致。
@@ -69,5 +71,7 @@ None — can start immediately（执行顺序第一棒：先立契约，再重�
   禁止 padding / 重述 / 无证据推广的 soft contract，并补齐 layout、interaction、
   component 的 good / bad 示例。
 - `validateRulesFile` 未增加内容硬校验；回归测试明确保留原有 schema 行为。
+- D01 后续将 Interaction 边界升级为 schema 契约：策略值只接受 `statement`、
+  `description`、`behavior`、`accessibility`，组件字段无法绕过抽取边界。
 - `npm run typecheck` 通过；相关 unit tests 共 13 个文件、269 项全部通过。
 - 实施 commit：`39fccf6eced4a774778c68fa342932506574dcea`。

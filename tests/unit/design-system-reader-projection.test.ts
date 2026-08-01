@@ -141,8 +141,7 @@ describe("Interaction Reader Projection (09C-D01)", () => {
           "Use motion to explain a state change.",
           "Avoid decorative loops."
         ],
-        accessibility: ["Preserve the same state information without motion."],
-        extraFields: null
+        accessibility: ["Preserve the same state information without motion."]
       })
     ]);
   });

@@ -1539,23 +1539,23 @@
 }
 
 .dsb-interaction-ledger-row {
+  width: 100%;
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto 14px;
   align-items: start;
   gap: 12px;
   padding: 16px 4px;
-}
-
-.dsb-interaction-ledger-main {
-  min-width: 0;
   border: 0;
   outline: none;
   background: transparent;
-  padding: 0;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.dsb-interaction-ledger-main {
+  min-width: 0;
 }
 
 .dsb-interaction-ledger-main .dsb-card-title,
@@ -1567,13 +1567,13 @@
   margin-top: 3px;
 }
 
-.dsb-interaction-ledger-main:focus-visible {
+.dsb-interaction-ledger-row:focus-visible {
   border-radius: 4px;
   box-shadow: 0 0 0 2px rgb(58 147 255 / 45%);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .dsb-interaction-ledger-row:has(.dsb-interaction-ledger-main:hover) {
+  .dsb-interaction-ledger-row:hover {
     background: rgb(0 0 0 / 2%);
   }
 }

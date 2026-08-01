@@ -227,7 +227,7 @@ function declareInitialDesignSystemArtifacts(
     rules: [
       {
         id: "interaction-quiet-hover",
-        value: { rule: "Hover feedback remains quiet." },
+        value: { statement: "Hover feedback remains quiet." },
         meaning: "Quiet hover",
         status: "candidate",
         links: [card("interaction").id]

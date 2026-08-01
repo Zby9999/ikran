@@ -258,7 +258,7 @@ function writeSixFiles(dir: string) {
     rules: [
       {
         id: "ix-1",
-        value: { rule: "150ms ease-out" },
+        value: { statement: "Transitions use 150ms ease-out." },
         meaning: "标准过渡",
         status: "gap",
         links: []

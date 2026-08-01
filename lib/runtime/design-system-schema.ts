@@ -605,21 +605,22 @@ function validateRulesFile(
   json: Record<string, unknown>,
   collectionFields: readonly string[],
   stringFields: readonly string[] = [],
-  forbiddenFields: readonly string[] = []
+  allowedFields: readonly string[] | null = null
 ): DesignSystemSchemaResult {
   return (
     checkEntryArray(json.rules, "rules", (value, ctx) => {
-      // Rule payloads are structured objects; concrete keys are up to the
-      // rule category and Task C persists them verbatim.
       if (!isPlainObject(value)) {
         return fail("invalid_field_type", { ...ctx, field: "value", expected: "object" });
       }
-      for (const field of forbiddenFields) {
-        if (Object.prototype.hasOwnProperty.call(value, field)) {
+      if (allowedFields) {
+        const allowed = new Set(allowedFields);
+        for (const field of Object.keys(value)) {
+          if (allowed.has(field)) continue;
           return fail("invalid_field_type", {
             ...ctx,
             field: `value.${field}`,
-            expected: "component-bound interaction fields belong in a component spec"
+            expected:
+              "interaction rules only support cross-component strategy fields; component-bound fields belong in a component spec"
           });
         }
       }
@@ -665,7 +666,7 @@ const FILE_KIND_VALIDATORS: Record<
       json,
       RICH_INTERACTION_RULE_COLLECTION_FIELDS,
       RICH_INTERACTION_RULE_STRING_FIELDS,
-      ["appliesTo", "stateBehavior", "motion", "layoutInvariants"]
+      RICH_INTERACTION_RULE_FIELDS
     )
 };
 

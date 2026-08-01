@@ -1,6 +1,6 @@
 # Interaction Section 纯文本策略规则与抽取契约拆分
 
-Status: completed
+Status: ready-for-human
 
 ## Parent
 
@@ -95,3 +95,13 @@ interaction-rules.json 混住了两个物种：
 真实 Browser 已在 `ikran test 7` 核对：Interaction 默认呈现折叠 Ledger 行，点击
 后即时展开三组详情与 evidence 入口；页面不再包含 split pane、rig 或 unavailable
 占位。自动验收单独由 unit、reader e2e 与全量 `npm run check` 覆盖。
+
+### 2026-08-01 — `ikran test 7` 迁移复核记录
+
+真实项目 `/Users/bingyizhang/Desktop/ikran test 7/design-system/` 已按拆分契约迁移：
+`interaction-rules.json` 只保留 `interaction.restrainedMotion` 跨组件策略；
+`components/text-link.json`、`components/sticky-navigation.json` 与
+`components/project-strip.json` 承接各自 `states` / `motion`。四份文件均通过当前
+schema，并经 `recordSourceArtifact` 重新声明、入库；随后在真实 Workbench 完成默认
+折叠、整行展开、详情与 evidence 入口核对。该外部项目不是本仓库的一部分，故以此
+路径与迁移清单作为版本化复核记录。

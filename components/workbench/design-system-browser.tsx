@@ -38,6 +38,11 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
 import { subscribeRuntimeEvents } from "@/components/runtime/runtime-client";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from "@/components/ui/collapsible";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
 import { LeafSplit } from "./ds-split-pane";
@@ -908,82 +913,78 @@ function InteractionRuleCard({
       data-expanded={expanded || undefined}
       data-approve-error={approval.kind === "error" || undefined}
     >
-      <div className="dsb-interaction-ledger-row">
-        <span className="dsb-interaction-anchor" aria-hidden>
-          {rule.anchor}
-        </span>
-        <button
-          type="button"
-          className="dsb-interaction-ledger-main"
-          aria-label={rule.statement}
-          aria-expanded={expanded}
-          aria-controls={detailsId}
-          onClick={() => setExpanded((value) => !value)}
-        >
-          <span className="dsb-card-title">{rule.statement}</span>
-          {rule.meaning ? (
-            <span className="dsb-card-desc">{rule.meaning}</span>
-          ) : null}
-        </button>
-        <StatusChip status={rule.status} testId="ds-interaction-status" />
-        <HugeiconsIcon
-          icon={ArrowDown01Icon}
-          size={14}
-          className="dsb-interaction-ledger-chevron"
-          aria-hidden
-        />
-      </div>
-      {expanded ? (
-        <div className="dsb-interaction-ledger-details" id={detailsId}>
-          {rule.isRich ? (
-            <div className="dsb-principle-fields">
-              {rule.description ? (
-                <span className="dsb-principle-field">
-                  <span className="dsb-principle-field-label">Description</span>
-                  <p className="dsb-principle-field-text">{rule.description}</p>
-                </span>
-              ) : null}
-              {(["behavior", "accessibility"] as const).map((field) =>
-                rule[field].length > 0 ? (
-                  <span className="dsb-principle-field" key={field}>
-                    <span className="dsb-principle-field-label">
-                      {field[0]!.toUpperCase() + field.slice(1)}
-                    </span>
-                    <ul className="dsb-principle-list">
-                      {rule[field].map((item) => <li key={item}>{item}</li>)}
-                    </ul>
-                  </span>
-                ) : null
-              )}
-              {rule.extraFields?.map((field) => (
-                <span className="dsb-principle-field" key={field.label}>
-                  <span className="dsb-principle-field-label">{field.label}</span>
-                  <p className="dsb-principle-field-text">{field.text}</p>
-                </span>
-              ))}
-            </div>
-          ) : null}
-          <div className="dsb-principle-footer">
-            <InfoPopover
-              entry={rule.row.entry}
-              approval={approval}
-              infoOpen={rows.infoKey === rule.key}
-              popoverInstant={rows.popoverInstant(rule.key)}
-              portalContainer={rows.portalContainer}
-              ariaLabel={`Evidence for interaction rule ${rule.row.entryId}`}
-              onInfoOpenChange={(open) => rows.onInfoKey(open ? rule.key : null)}
-              onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.key)}
-              onInfoHoverClose={rows.onInfoHoverClose}
-              onApprove={() => rows.onApprove(rule.row)}
-            />
-          </div>
-          {approval.kind === "error" ? (
-            <span className="dsb-row-error" role="alert">
-              Approval failed: {approval.message}
+      <Collapsible open={expanded} onOpenChange={setExpanded}>
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="dsb-interaction-ledger-row"
+            aria-label={rule.statement}
+            aria-controls={detailsId}
+          >
+            <span className="dsb-interaction-anchor" aria-hidden>
+              {rule.anchor}
             </span>
-          ) : null}
-        </div>
-      ) : null}
+            <span className="dsb-interaction-ledger-main">
+              <span className="dsb-card-title">{rule.statement}</span>
+              {rule.meaning ? (
+                <span className="dsb-card-desc">{rule.meaning}</span>
+              ) : null}
+            </span>
+            <StatusChip status={rule.status} testId="ds-interaction-status" />
+            <HugeiconsIcon
+              icon={ArrowDown01Icon}
+              size={14}
+              className="dsb-interaction-ledger-chevron"
+              aria-hidden
+            />
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent asChild>
+          <div className="dsb-interaction-ledger-details" id={detailsId}>
+            {rule.isRich ? (
+              <div className="dsb-principle-fields">
+                {rule.description ? (
+                  <span className="dsb-principle-field">
+                    <span className="dsb-principle-field-label">Description</span>
+                    <p className="dsb-principle-field-text">{rule.description}</p>
+                  </span>
+                ) : null}
+                {(["behavior", "accessibility"] as const).map((field) =>
+                  rule[field].length > 0 ? (
+                    <span className="dsb-principle-field" key={field}>
+                      <span className="dsb-principle-field-label">
+                        {field[0]!.toUpperCase() + field.slice(1)}
+                      </span>
+                      <ul className="dsb-principle-list">
+                        {rule[field].map((item) => <li key={item}>{item}</li>)}
+                      </ul>
+                    </span>
+                  ) : null
+                )}
+              </div>
+            ) : null}
+            <div className="dsb-principle-footer">
+              <InfoPopover
+                entry={rule.row.entry}
+                approval={approval}
+                infoOpen={rows.infoKey === rule.key}
+                popoverInstant={rows.popoverInstant(rule.key)}
+                portalContainer={rows.portalContainer}
+                ariaLabel={`Evidence for interaction rule ${rule.row.entryId}`}
+                onInfoOpenChange={(open) => rows.onInfoKey(open ? rule.key : null)}
+                onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.key)}
+                onInfoHoverClose={rows.onInfoHoverClose}
+                onApprove={() => rows.onApprove(rule.row)}
+              />
+            </div>
+            {approval.kind === "error" ? (
+              <span className="dsb-row-error" role="alert">
+                Approval failed: {approval.message}
+              </span>
+            ) : null}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
     </li>
   );
 }
@@ -991,11 +992,9 @@ function InteractionRuleCard({
 /** Interaction leaf: cross-component strategies in the same text-card
  * language as Foundations principles. */
 export function RulesLeafPage({
-  kind,
   leaf,
   rows
 }: {
-  kind: "interaction";
   leaf: { rows: DsRow[]; chips: string[] };
   rows: RowSharedProps;
 }) {
@@ -2552,7 +2551,6 @@ export function DesignSystemBrowser({
           layout: "page",
           node: (
             <RulesLeafPage
-              kind="interaction"
               leaf={model.foundations.interaction}
               rows={rowListProps}
             />

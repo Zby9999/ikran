@@ -275,14 +275,14 @@ function writeApprovalFixtures(dir: string) {
     rules: [
       {
         id: "ix-1",
-        value: { rule: "待定" },
+        value: { statement: "待定" },
         meaning: "显式缺口",
         status: "gap",
         links: []
       },
       {
         id: "ix-2",
-        value: { rule: "150ms ease-out" },
+        value: { statement: "Transitions use 150ms ease-out." },
         meaning: "标准过渡",
         status: "candidate",
         links: ["card-edited"]

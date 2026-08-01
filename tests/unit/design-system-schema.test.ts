@@ -568,10 +568,14 @@ test.describe("component-spec", () => {
 
 test.describe("layout-rules.json / interaction-rules.json", () => {
   test("valid files", () => {
-    for (const kind of ["layout-rules.json", "interaction-rules.json"] as const) {
-      const res = validateDesignSystemJson(kind, validRulesJson());
-      expect(res.ok, kind).toBe(true);
-    }
+    expect(
+      validateDesignSystemJson("layout-rules.json", validRulesJson()).ok
+    ).toBe(true);
+    expect(
+      validateDesignSystemJson("interaction-rules.json", {
+        rules: [entry({ value: { statement: "Motion stays quiet" } })]
+      }).ok
+    ).toBe(true);
   });
 
   test("rule value must be a plain object", () => {
@@ -595,21 +599,32 @@ test.describe("layout-rules.json / interaction-rules.json", () => {
     });
     expect(validateDesignSystemJson("layout-rules.json", layout).ok).toBe(true);
 
-    const interaction = validRulesJson();
-    Object.assign(interaction.rules[0].value, {
-      statement: "Motion stays quiet",
-      description: "Feedback explains change without competing with content.",
-      behavior: ["Use short state feedback."],
-      accessibility: ["Preserve the same information without motion."]
-    });
+    const interaction = {
+      rules: [
+        entry({
+          value: {
+            statement: "Motion stays quiet",
+            description: "Feedback explains change without competing with content.",
+            behavior: ["Use short state feedback."],
+            accessibility: ["Preserve the same information without motion."]
+          }
+        })
+      ]
+    };
     expect(
       validateDesignSystemJson("interaction-rules.json", interaction).ok
     ).toBe(true);
 
-    const invalid = validRulesJson();
-    Object.assign(invalid.rules[0].value, {
-      accessibility: "visible focus"
-    });
+    const invalid = {
+      rules: [
+        entry({
+          value: {
+            statement: "Keep focus visible",
+            accessibility: "visible focus"
+          }
+        })
+      ]
+    };
     expect(
       validateDesignSystemJson("interaction-rules.json", invalid)
     ).toMatchObject({
@@ -618,19 +633,24 @@ test.describe("layout-rules.json / interaction-rules.json", () => {
       details: { field: "value.accessibility", expected: "array" }
     });
 
-    const componentBound = validRulesJson();
-    Object.assign(componentBound.rules[0].value, {
-      appliesTo: ["TextLink"],
-      stateBehavior: [{ state: "hover", behavior: "Underline" }]
-    });
+    const componentBound = {
+      rules: [
+        entry({
+          value: {
+            statement: "Underline TextLink on hover",
+            states: [{ state: "hover", behavior: "Underline" }]
+          }
+        })
+      ]
+    };
     expect(
       validateDesignSystemJson("interaction-rules.json", componentBound)
     ).toMatchObject({
       ok: false,
       reason: "invalid_field_type",
       details: {
-        field: "value.appliesTo",
-        expected: "component-bound interaction fields belong in a component spec"
+        field: "value.states",
+        expected: "interaction rules only support cross-component strategy fields; component-bound fields belong in a component spec"
       }
     });
   });
@@ -699,7 +719,11 @@ test.describe("declaration wiring (deep checkFile seam)", () => {
         ["design-system/component-list.json", "component-list.json", validComponentListJson()],
         ["design-system/components/button.json", "component-spec", validComponentSpec()],
         ["design-system/layout-rules.json", "layout-rules.json", validRulesJson()],
-        ["design-system/interaction-rules.json", "interaction-rules.json", validRulesJson()]
+        [
+          "design-system/interaction-rules.json",
+          "interaction-rules.json",
+          { rules: [entry({ value: { statement: "Motion stays quiet" } })] }
+        ]
       ];
       for (const [rel, artifactType, content] of files) {
         writeProjectFile(dir, rel, content);

@@ -417,7 +417,6 @@ describe("RulesLeafPage interaction ledger (09C-D01)", () => {
 
     const html = renderToStaticMarkup(
       createElement(RulesLeafPage, {
-        kind: "interaction",
         leaf: { rows: [rule], chips: ["1 candidate"] },
         rows: rowSharedProps()
       })

@@ -110,18 +110,10 @@ export interface InteractionRuleProjection {
   description: string | null;
   behavior: string[];
   accessibility: string[];
-  extraFields: { label: string; text: string }[] | null;
   isRich: boolean;
   status: DsStatus;
   row: DsRow;
 }
-
-const INTERACTION_KNOWN_KEYS = new Set([
-  "statement",
-  "description",
-  "behavior",
-  "accessibility"
-]);
 
 export function projectInteractionLeaf(
   rows: readonly DsRow[]
@@ -129,11 +121,6 @@ export function projectInteractionLeaf(
   return rows.map((row, index) => {
     const value = row.entry.value;
     const rich = isPlainObject(value) && row.entry.alias === null;
-    const extras = rich
-      ? Object.keys(value)
-          .filter((key) => !INTERACTION_KNOWN_KEYS.has(key))
-          .map((key) => ({ label: key, text: formatValueField(value[key]) }))
-      : [];
     return {
       key: row.key,
       anchor: index + 1,
@@ -148,7 +135,6 @@ export function projectInteractionLeaf(
           : null,
       behavior: rich ? stringArrayOf(value.behavior) : [],
       accessibility: rich ? stringArrayOf(value.accessibility) : [],
-      extraFields: extras.length > 0 ? extras : null,
       isRich: rich,
       status: row.status,
       row
