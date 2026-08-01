@@ -2146,7 +2146,7 @@
 @media (max-width: 920px) {
   .dsb-type-columns,
   .dsb-type-row {
-    grid-template-columns: minmax(220px, 1.1fr) minmax(160px, 0.8fr) 32px;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.8fr) 32px;
     column-gap: 18px;
   }
 }
