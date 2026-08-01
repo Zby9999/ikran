@@ -1821,7 +1821,7 @@
   }
 }
 
-/* -------------------------- 09C-A: Type Atlas ----------------------------- */
+/* -------------------------- Typography Ledger ----------------------------- */
 
 .dsb-typography-page {
   display: flex;
@@ -1830,263 +1830,149 @@
   padding: 28px 32px;
 }
 
-.dsb-atlas-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.dsb-atlas-summary .dsb-intro {
-  align-items: center;
-  flex-direction: row;
-  gap: 14px;
-}
-
-.dsb-atlas-order {
-  position: relative;
-  display: inline-grid;
-  width: 108px;
-  flex: 0 0 auto;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-radius: 8px;
-  background: rgb(0 0 0 / 5%);
-  padding: 2px;
-}
-
-.dsb-atlas-order-indicator {
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  left: 2px;
-  width: calc(50% - 2px);
-  border-radius: 6px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
-  pointer-events: none;
-  transform: translateX(0);
-  transition: transform 160ms var(--motion-ease-in-out);
-}
-
-.dsb-atlas-order[data-order="role"] .dsb-atlas-order-indicator {
-  transform: translateX(100%);
-}
-
-.dsb-atlas-order[data-motion="instant"] .dsb-atlas-order-indicator {
-  transition-duration: 0ms;
-}
-
-.dsb-atlas-order button {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  height: 26px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  padding: 0;
+.dsb-type-count {
+  margin: 0 0 16px;
   color: var(--dsc-ink-3);
-  cursor: pointer;
   font-size: 11.5px;
-  transition:
-    color 120ms ease,
-    transform 150ms var(--motion-ease-out);
 }
 
-.dsb-atlas-order button[data-active] {
-  color: var(--dsc-ink);
-}
-
-.dsb-atlas-order button:active {
-  transform: scale(0.97);
-}
-
-.dsb-atlas-order button:focus-visible {
-  outline: 2px solid rgb(58 147 255 / 45%);
-  outline-offset: 2px;
-}
-
-.dsb-atlas-grid {
+.dsb-type-columns,
+.dsb-type-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: minmax(320px, 1.25fr) minmax(220px, 0.8fr) 36px;
+  align-items: center;
+  column-gap: 28px;
 }
 
-.dsb-atlas-card {
+.dsb-type-columns {
+  min-height: 34px;
+  border-bottom: 1px solid rgb(0 0 0 / 10%);
+  color: var(--dsc-ink-3);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dsb-type-list {
   display: flex;
-  min-width: 0;
-  min-height: 280px;
-  overflow: hidden;
   flex-direction: column;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 7%);
+}
+
+.dsb-type-item {
+  border-bottom: 1px solid rgb(0 0 0 / 7%);
+}
+
+.dsb-type-row {
+  min-height: 96px;
   container-type: inline-size;
 }
 
-.dsb-atlas-card[data-wide] {
-  grid-column: 1 / -1;
-  min-height: 320px;
-}
-
-.dsb-atlas-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 16px 0;
-}
-
-.dsb-atlas-card-title {
-  display: flex;
+.dsb-type-name,
+.dsb-type-usage {
   min-width: 0;
-  flex-direction: column;
-  gap: 2px;
 }
 
-.dsb-atlas-role {
-  overflow: hidden;
-  font-size: 11.5px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dsb-atlas-data-label {
-  color: var(--dsc-ink-3);
-  font-size: 9.5px;
-  font-weight: 500;
-  letter-spacing: 0.03em;
-  text-transform: none;
-}
-
-.dsb-atlas-sample-wrap {
-  display: flex;
-  min-height: 150px;
-  flex: 1;
-  align-items: center;
-  padding: 22px;
-}
-
-.dsb-atlas-card[data-wide] .dsb-atlas-sample-wrap {
-  padding: 32px;
-}
-
-.dsb-atlas-sample {
-  min-width: 0;
+.dsb-type-specimen {
+  max-width: 100%;
   margin: 0;
-  color: var(--dsc-ink);
+  color: #202020;
+  font-size: min(var(--dsb-type-size, 15px), 7.25cqi);
+  line-height: 0.98;
   overflow-wrap: anywhere;
 }
 
-.dsb-atlas-unresolved {
+.dsb-type-unresolved {
   display: flex;
-  max-width: 360px;
   flex-direction: column;
-  gap: 5px;
-  color: var(--dsc-ink-2);
+  gap: 3px;
 }
 
-.dsb-atlas-unresolved > span {
-  font-size: 12.5px;
+.dsb-type-unresolved > span {
+  color: var(--dsc-ink);
+  font-size: 14px;
   font-weight: 600;
 }
 
-.dsb-atlas-unresolved p {
+.dsb-type-unresolved small {
+  color: var(--dsc-ink-3);
+  font-size: 10.5px;
+}
+
+.dsb-type-usage {
   margin: 0;
-  color: var(--dsc-ink-3);
-  font-size: 11.5px;
-  line-height: 1.45;
+  color: var(--dsc-ink-2);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
-.dsb-atlas-caption {
-  display: grid;
-  grid-template-columns:
-    minmax(130px, 0.75fr)
-    minmax(220px, 1.15fr)
-    minmax(190px, 1fr);
-  gap: 16px;
-  border-top: 1px solid rgb(0 0 0 / 6%);
-  padding: 13px 16px;
-  color: var(--dsc-ink-3);
-  font-size: 10px;
-  line-height: 1.4;
-}
-
-.dsb-atlas-usage {
-  min-width: 0;
-}
-
-.dsb-atlas-usage p {
-  margin: 4px 0 0;
+.dsb-type-expand {
+  justify-self: end;
+  border-color: rgb(0 0 0 / 10%);
+  background: #fff;
   color: var(--dsc-ink-2);
 }
 
-.dsb-atlas-metrics {
+.dsb-type-expand:hover {
+  border-color: rgb(0 0 0 / 17%);
+  background: #fff;
+  color: var(--dsc-ink);
+}
+
+.dsb-type-expand svg {
+  transition: transform 200ms var(--dsc-ease);
+}
+
+.dsb-type-expand[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.dsb-type-details-shell {
+  animation: dsb-type-details-in 210ms var(--dsc-ease) both;
+  transform-origin: top center;
+}
+
+@keyframes dsb-type-details-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dsb-type-details {
   display: grid;
-  min-width: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px 12px;
-  margin: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+  margin: 0 0 18px;
+  border-radius: 10px;
+  background: rgb(0 0 0 / 4%);
+  padding: 14px 18px;
 }
 
-.dsb-atlas-metric {
-  display: flex;
+.dsb-type-detail {
   min-width: 0;
-  flex-direction: column;
-  gap: 1px;
 }
 
-.dsb-atlas-metric dt {
+.dsb-type-detail dt {
+  margin-bottom: 5px;
   color: var(--dsc-ink-3);
+  font-size: 9.5px;
 }
 
-.dsb-atlas-metric dd {
+.dsb-type-detail dd {
   margin: 0;
   overflow: hidden;
   color: var(--dsc-ink);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.dsb-atlas-sources {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.dsb-atlas-source {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 4px;
-}
-
-.dsb-atlas-source > span:first-child {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--dsc-ink-2);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dsb-atlas-source .dsb-info-trigger {
-  opacity: 0.55;
-}
-
-/* Two-column cards have less caption room than the page viewport suggests.
-   Respond to the card itself so usage, metrics and source ids never compete
-   for one compressed row. */
-@container (max-width: 600px) {
-  .dsb-atlas-caption {
-    grid-template-columns: 1fr;
-  }
-
-  .dsb-atlas-metrics {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 
 /* Object field lines — structured values rendered as labeled lines instead
@@ -2258,20 +2144,10 @@
 }
 
 @media (max-width: 920px) {
-  .dsb-atlas-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .dsb-atlas-card[data-wide] {
-    grid-column: auto;
-  }
-
-  .dsb-atlas-caption {
-    grid-template-columns: 1fr;
-  }
-
-  .dsb-atlas-metrics {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .dsb-type-columns,
+  .dsb-type-row {
+    grid-template-columns: minmax(220px, 1.1fr) minmax(160px, 0.8fr) 32px;
+    column-gap: 18px;
   }
 }
 
@@ -2280,23 +2156,16 @@
     padding: 24px 20px;
   }
 
-  .dsb-atlas-toolbar {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .dsb-atlas-metrics {
+  .dsb-type-details {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dsb-atlas-order-indicator {
-    transition-duration: 0ms;
-  }
-
-  .dsb-atlas-order button {
+  .dsb-type-expand svg,
+  .dsb-type-details-shell {
     transition-duration: 1ms;
+    animation-duration: 1ms;
   }
 
   .dsb-interaction-live-link,

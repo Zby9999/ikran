@@ -596,7 +596,24 @@ function typographyLayers() {
 }
 
 describe("TypographyLeafPage (09C-A Type Atlas)", () => {
-  test("keeps the standard section heading and renders a full-width visual atlas", () => {
+  test("renders a quiet three-column ledger without evidence or status chrome", () => {
+    const html = renderToStaticMarkup(
+      createElement(TypographyLeafPage, {
+        layers: typographyLayers(),
+        rows: rowSharedProps()
+      })
+    );
+
+    expect(html).toContain('data-testid="ds-typography-ledger"');
+    expect(html).toContain("Typeface");
+    expect(html).toContain("Used for");
+    expect(html).toContain("Show details for display.large");
+    expect(html).not.toContain("Source-backed");
+    expect(html).not.toContain('data-testid="ds-atlas-status"');
+    expect(html).not.toContain('aria-label="Order type atlas"');
+  });
+
+  test("keeps the standard heading and orders the ledger from largest to smallest", () => {
     const html = renderToStaticMarkup(
       createElement(TypographyLeafPage, {
         layers: typographyLayers(),
@@ -604,36 +621,21 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
       })
     );
     expect(html).toContain('<h1 class="dsb-h1">Typography</h1>');
-    expect(html).toContain("6 tokens");
-    expect(html).toContain('data-testid="ds-typography-atlas"');
+    expect(html).toContain("3 type styles");
+    expect(html).toContain('data-testid="ds-typography-ledger"');
     expect(html).toContain('data-testid="ds-typography-summary"');
-    expect(html).toContain('data-testid="ds-atlas-order-indicator"');
-    expect(html).toContain('data-order="scale"');
-    expect(html).not.toContain("Type specimens");
     expect(html).not.toContain('data-testid="ds-leaf-split"');
-    expect(html).not.toContain("Eight forms, one family");
-    expect(html).not.toContain("Typography · Comparative atlas");
-    expect(html.indexOf(">Scale</button>")).toBeLessThan(
-      html.indexOf(">Role</button>")
+    expect(
+      html.indexOf('data-testid="ds-atlas-semantic.display-large"')
+    ).toBeLessThan(
+      html.indexOf('data-testid="ds-atlas-primitive.font-size-700"')
     );
-    expect(html).toMatch(
-      /<button[^>]*aria-pressed="true"[^>]*>Scale<\/button>/
-    );
-    expect(html).toMatch(
-      /<button[^>]*aria-pressed="false"[^>]*>Role<\/button>/
-    );
-    expect(html).not.toContain(">By scale</button>");
-    expect(html).not.toContain(">By role</button>");
-    expect(html).not.toContain("Scale token");
-    expect(html).not.toContain("Text style");
     expect(
       html.indexOf('data-testid="ds-atlas-primitive.font-size-700"')
-    ).toBeLessThan(
-      html.indexOf('data-testid="ds-atlas-semantic.body"')
-    );
+    ).toBeLessThan(html.indexOf('data-testid="ds-atlas-semantic.body"'));
   });
 
-  test("keeps each specimen's usage, construction data and evidence attached", () => {
+  test("renders each style name in its declared typeface and hides construction details", () => {
     const html = renderToStaticMarkup(
       createElement(TypographyLeafPage, {
         layers: typographyLayers(),
@@ -641,35 +643,30 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
       })
     );
     expect(html).toContain('data-testid="ds-atlas-semantic.display-large"');
-    expect(html).toContain("We shape clear stories for ambitious ideas.");
+    expect(html).toContain(">display.large</h2>");
     expect(html).toContain(
       "font-family:&quot;Instrument Sans&quot;, system-ui, sans-serif"
     );
-    expect(html).toContain("Family");
-    expect(html).toContain("Size");
-    expect(html).toContain(">64px<");
-    expect(html).toContain("Weight");
-    expect(html).toContain(">700<");
-    expect(html).toContain("Line height");
-    expect(html).toContain(">1.05<");
-    expect(html).toContain("Tracking");
-    expect(html).toContain(">0.01em<");
-    expect(html).toContain("Source-backed");
-    expect(html).toContain("primitive.font-family-sans");
-    expect(html).toContain("Evidence for display.large");
-    expect(html).toContain('data-testid="ds-atlas-status"');
-    expect(html).toContain('data-status="formalized"');
+    expect(html).toContain("Primary readable text");
+    expect(html).toContain('aria-label="Show details for display.large"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain("Letter spacing");
+    expect(html).not.toContain("Line height");
+    expect(html).not.toContain("Source-backed");
+    expect(html).not.toContain("Evidence for display.large");
+    expect(html).not.toContain('data-testid="ds-atlas-status"');
   });
 
-  test("keeps raw source and technical audit panels out of the user surface", () => {
+  test("keeps raw source, status and technical audit content out of the surface", () => {
     const html = renderToStaticMarkup(
       createElement(TypographyLeafPage, {
         layers: typographyLayers(),
         rows: rowSharedProps()
       })
     );
-    expect(html).toContain("semantic.display-large");
     expect(html).not.toContain("Source tokens");
+    expect(html).not.toContain("Source-backed");
+    expect(html).not.toContain("formalized");
     expect(html).not.toContain("Tokens · Primitive");
     expect(html).not.toContain('data-testid="ds-row-primitive.font-size-400"');
     expect(html).not.toContain('data-testid="ds-technical-details"');
@@ -688,7 +685,7 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
       })
     );
     expect(html).toContain("No typography tokens classified here yet.");
-    expect(html).not.toContain('data-testid="ds-typography-atlas"');
+    expect(html).not.toContain('data-testid="ds-typography-ledger"');
     expect(html).not.toContain('data-testid="ds-atlas-status"');
   });
 
@@ -715,10 +712,9 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
       })
     );
     expect(html).toContain("Typeface unresolved");
-    expect(html).toContain(
-      "No source-backed font family is declared for this form."
-    );
-    expect(html).not.toContain('class="dsb-atlas-sample"');
+    expect(html).toContain("Primary readable text");
+    expect(html).not.toContain("Source-backed");
+    expect(html).not.toContain('class="dsb-type-specimen"');
   });
 
   test("applies terminal values from metric alias chains to the specimen", () => {
@@ -775,10 +771,10 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
         rows: rowSharedProps()
       })
     );
-    expect(html).toContain("font-size:min(72px, 12cqi)");
+    expect(html).toContain("--dsb-type-size:64px");
     expect(html).toContain("font-weight:600");
     expect(html).toContain("line-height:1.1");
-    expect(html).toContain("→ semantic.font-size-hero · 72px");
+    expect(html).toContain('aria-label="Show details for hero.title"');
   });
 });
 

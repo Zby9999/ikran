@@ -1306,31 +1306,6 @@ export function InteractionSamples({ rows }: { rows: DsRow[] }) {
   );
 }
 
-/** Fixed sample copy per role kind — presentation literals, never
- * model-written and never treated as design-system facts. */
-function atlasSpecimenText(item: TypographyAtlasItem): string {
-  const role = `${item.label} ${item.usage}`.toLowerCase();
-  if (/statistic|statistical|number/.test(role)) {
-    return "128";
-  }
-  if (
-    (item.fontSizePx !== null && item.fontSizePx >= 48) ||
-    /display|heading|title|hero/.test(role)
-  ) {
-    return "We shape clear stories for ambitious ideas.";
-  }
-  if (
-    (item.fontSizePx !== null && item.fontSizePx <= 14) ||
-    /label|caption|meta|button|overline/.test(role)
-  ) {
-    return "Navigation · Projects · About";
-  }
-  if (item.fontSizePx !== null && item.fontSizePx >= 28) {
-    return "Typography with a clear point of view.";
-  }
-  return "Thoughtful structure gives every idea room to breathe.";
-}
-
 function numericWeight(text: string | undefined): number | undefined {
   if (!text) return undefined;
   const parsed = Number.parseInt(text, 10);
@@ -1361,18 +1336,15 @@ const CSS_TEXT_TRANSFORMS = new Set([
   "capitalize"
 ]);
 
-/** The specimen's own style, verbatim from the source-backed atlas item.
- * Fields that don't parse as CSS are skipped while their literal source value
- * remains visible in the attached data. Display sizes cap in container units
- * on narrow cards; the data row always states the declared size. */
-function atlasSpecimenCss(item: TypographyAtlasItem): React.CSSProperties {
-  const css: React.CSSProperties = {};
+/** Render the style name in its declared type treatment. Invalid CSS values
+ * stay out of the specimen while their source text remains available in the
+ * disclosure below. Large sizes cap against the row container so a long role
+ * name never truncates. */
+function typographySpecimenCss(item: TypographyAtlasItem): React.CSSProperties {
+  const css: React.CSSProperties & { "--dsb-type-size"?: string } = {};
   if (item.specimenFamily) css.fontFamily = item.specimenFamily;
   if (item.fontSizePx !== null) {
-    css.fontSize =
-      item.fontSizePx >= 40
-        ? `min(${item.fontSizePx}px, 12cqi)`
-        : `${item.fontSizePx}px`;
+    css["--dsb-type-size"] = `${Math.min(item.fontSizePx, 64)}px`;
   }
   const weight = numericWeight(item.specimenFontWeight ?? undefined);
   if (weight !== undefined) css.fontWeight = weight;
@@ -1387,111 +1359,105 @@ function atlasSpecimenCss(item: TypographyAtlasItem): React.CSSProperties {
   return css;
 }
 
-function atlasMetrics(
+function typographyLedgerValue(value: string | null): string {
+  if (!value) return "—";
+  return value.split(" · ").at(-1)?.trim() || value;
+}
+
+function typographyLedgerMetrics(
   item: TypographyAtlasItem
 ): { label: string; value: string }[] {
   return [
-    { label: "Family", value: item.fontFamily ?? "" },
-    { label: "Size", value: item.fontSize ?? "" },
-    { label: "Weight", value: item.fontWeight ?? "" },
-    { label: "Line height", value: item.lineHeight ?? "" },
-    { label: "Tracking", value: item.letterSpacing ?? "" },
-    { label: "Transform", value: item.textTransform ?? "" }
-  ].filter((metric) => metric.value.length > 0);
+    {
+      label: "Weight",
+      value: typographyLedgerValue(
+        item.specimenFontWeight ?? item.fontWeight
+      )
+    },
+    {
+      label: "Letter spacing",
+      value: typographyLedgerValue(
+        item.specimenLetterSpacing ?? item.letterSpacing
+      )
+    },
+    { label: "Size", value: typographyLedgerValue(item.fontSize) },
+    { label: "Typeface", value: typographyLedgerValue(item.fontFamily) }
+  ];
 }
 
-function TypographyAtlasCard({
+function TypographyLedgerRow({
   item,
-  rows
+  expanded,
+  onToggle
 }: {
   item: TypographyAtlasItem;
-  rows: RowSharedProps;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
-  const metrics = atlasMetrics(item);
+  const metrics = typographyLedgerMetrics(item);
+  const detailsId = `dsb-type-details-${item.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+
   return (
     <article
-      className="dsb-atlas-card"
-      data-wide={
-        item.fontSizePx !== null && item.fontSizePx >= 48 ? "" : undefined
-      }
+      className="dsb-type-item"
+      data-expanded={expanded || undefined}
       data-testid={`ds-atlas-${item.sourceRows[0]?.entryId ?? item.key}`}
     >
-      <header className="dsb-atlas-card-head">
-        <div className="dsb-atlas-card-title">
-          <span className="dsb-atlas-role">{item.label}</span>
-        </div>
-        <StatusChip status={item.status} testId="ds-atlas-status" />
-      </header>
-      <div className="dsb-atlas-sample-wrap">
-        {item.specimenFamily ? (
-          <p className="dsb-atlas-sample" style={atlasSpecimenCss(item)}>
-            {atlasSpecimenText(item)}
-          </p>
-        ) : (
-          <div className="dsb-atlas-unresolved" role="note">
-            <span>Typeface unresolved</span>
-            <p>No source-backed font family is declared for this form.</p>
-          </div>
-        )}
-      </div>
-      <footer className="dsb-atlas-caption">
-        <div className="dsb-atlas-usage">
-          <span className="dsb-atlas-data-label">Used for</span>
-          <p>{item.usage || "No usage note declared"}</p>
-        </div>
-        <dl className="dsb-atlas-metrics">
-          {metrics.map((metric) => (
-            <div key={metric.label} className="dsb-atlas-metric">
-              <dt>{metric.label}</dt>
-              <dd>{metric.value}</dd>
+      <div className="dsb-type-row">
+        <div className="dsb-type-name">
+          {item.specimenFamily ? (
+            <h2 className="dsb-type-specimen" style={typographySpecimenCss(item)}>
+              {item.label}
+            </h2>
+          ) : (
+            <div className="dsb-type-unresolved" role="note">
+              <span>{item.label}</span>
+              <small>Typeface unresolved</small>
             </div>
-          ))}
-        </dl>
-        <div className="dsb-atlas-sources">
-          <span className="dsb-atlas-data-label">Source-backed</span>
-          {item.sourceRows.map((sourceRow) => {
-            const approval =
-              rows.approvals[sourceRow.key] ?? ({ kind: "idle" } as const);
-            return (
-              <div key={sourceRow.key} className="dsb-atlas-source">
-                <span title={sourceRow.entryId}>{sourceRow.entryId}</span>
-                <InfoPopover
-                  entry={sourceRow.entry}
-                  approval={approval}
-                  infoOpen={rows.infoKey === sourceRow.key}
-                  popoverInstant={rows.popoverInstant(sourceRow.key)}
-                  portalContainer={rows.portalContainer}
-                  ariaLabel={`Evidence for ${sourceRow.name}`}
-                  onInfoOpenChange={(open) =>
-                    rows.onInfoKey(open ? sourceRow.key : null)
-                  }
-                  onInfoHoverOpen={() =>
-                    rows.onInfoHoverOpen(sourceRow.key)
-                  }
-                  onInfoHoverClose={rows.onInfoHoverClose}
-                  onApprove={() => rows.onApprove(sourceRow)}
-                />
-                {approval.kind === "error" ? (
-                  <span className="dsb-row-error" role="alert">
-                    Approval failed: {approval.message}
-                  </span>
-                ) : null}
-              </div>
-            );
-          })}
+          )}
         </div>
-      </footer>
+        <p className="dsb-type-usage">
+          {item.usage || "No usage note declared"}
+        </p>
+        <Button
+          className="dsb-type-expand"
+          variant="outline"
+          size="icon-sm"
+          aria-label={`${expanded ? "Hide" : "Show"} details for ${item.label}`}
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+          onClick={onToggle}
+        >
+          <HugeiconsIcon
+            icon={ArrowDown01Icon}
+            size={14}
+            color="currentColor"
+            strokeWidth={2}
+          />
+        </Button>
+      </div>
+      {expanded ? (
+        <div className="dsb-type-details-shell" id={detailsId}>
+          <dl className="dsb-type-details">
+            {metrics.map((metric) => (
+              <div key={metric.label} className="dsb-type-detail">
+                <dt>{metric.label}</dt>
+                <dd>{metric.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ) : null}
     </article>
   );
 }
 
-/** Typography leaf (09C-A): standard Browser page heading followed by a
- * visual atlas. Each source-backed form keeps its construction data,
- * evidence and approval action attached to the specimen it describes. Raw
- * source-token and technical audit panels stay out of the user surface. */
+/** Typography leaf: a quiet, visual-first ledger. Each row shows the style
+ * name in its declared type treatment, its intended use, and one disclosure
+ * for construction details. Evidence, approval state and source ids remain
+ * outside this interaction surface. */
 export function TypographyLeafPage({
-  layers,
-  rows
+  layers
 }: {
   layers: {
     layer: TokenLayerKey;
@@ -1499,8 +1465,7 @@ export function TypographyLeafPage({
   }[];
   rows: RowSharedProps;
 }) {
-  const [order, setOrder] = useState<"role" | "scale">("scale");
-  const [animateOrder, setAnimateOrder] = useState(true);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const projection = useMemo(() => projectTypographyLeaf(layers), [layers]);
   const atlasItems = useMemo(
     () => typographyAtlasItems(projection),
@@ -1508,25 +1473,16 @@ export function TypographyLeafPage({
   );
   const orderedItems = useMemo(
     () =>
-      order === "role"
-        ? atlasItems
-        : [...atlasItems].sort((a, b) => {
-            if (a.fontSizePx === null && b.fontSizePx === null) {
-              return a.label.localeCompare(b.label);
-            }
-            if (a.fontSizePx === null) return 1;
-            if (b.fontSizePx === null) return -1;
-            return b.fontSizePx - a.fontSizePx;
-          }),
-    [atlasItems, order]
+      [...atlasItems].sort((a, b) => {
+        if (a.fontSizePx === null && b.fontSizePx === null) {
+          return a.label.localeCompare(b.label);
+        }
+        if (a.fontSizePx === null) return 1;
+        if (b.fontSizePx === null) return -1;
+        return b.fontSizePx - a.fontSizePx;
+      }),
+    [atlasItems]
   );
-  const tokenCount =
-    projection.families.length +
-    projection.styles.length +
-    projection.metricGroups.reduce(
-      (total, group) => total + group.rows.length,
-      0
-    );
 
   return (
     <div className="dsb-typography-page">
@@ -1534,58 +1490,28 @@ export function TypographyLeafPage({
       {orderedItems.length > 0 ? (
         <section
           className="dsb-section dsb-typography-atlas"
-          data-testid="ds-typography-atlas"
+          data-testid="ds-typography-ledger"
         >
-          <div className="dsb-atlas-toolbar">
-            <div
-              className="dsb-atlas-summary"
-              data-testid="ds-typography-summary"
-            >
-              <PageSummary
-                meta={`${tokenCount} tokens`}
-                chips={projection.chips}
-              />
-            </div>
-            <div
-              className="dsb-atlas-order"
-              aria-label="Order type atlas"
-              data-motion={animateOrder ? "slide" : "instant"}
-              data-order={order}
-            >
-              <span
-                aria-hidden
-                className="dsb-atlas-order-indicator"
-                data-testid="ds-atlas-order-indicator"
-              />
-              <Button
-                variant="ghost"
-                size="xs"
-                aria-pressed={order === "scale"}
-                data-active={order === "scale" || undefined}
-                onClick={(event) => {
-                  setAnimateOrder(event.detail > 0);
-                  setOrder("scale");
-                }}
-              >
-                Scale
-              </Button>
-              <Button
-                variant="ghost"
-                size="xs"
-                aria-pressed={order === "role"}
-                data-active={order === "role" || undefined}
-                onClick={(event) => {
-                  setAnimateOrder(event.detail > 0);
-                  setOrder("role");
-                }}
-              >
-                Role
-              </Button>
-            </div>
+          <p className="dsb-type-count" data-testid="ds-typography-summary">
+            {orderedItems.length} type styles
+          </p>
+          <div className="dsb-type-columns" aria-hidden="true">
+            <span>Typeface</span>
+            <span>Used for</span>
+            <span />
           </div>
-          <div className="dsb-atlas-grid" aria-live="polite">
+          <div className="dsb-type-list">
             {orderedItems.map((item) => (
-              <TypographyAtlasCard key={item.key} item={item} rows={rows} />
+              <TypographyLedgerRow
+                key={item.key}
+                item={item}
+                expanded={expandedKey === item.key}
+                onToggle={() =>
+                  setExpandedKey((current) =>
+                    current === item.key ? null : item.key
+                  )
+                }
+              />
             ))}
           </div>
         </section>

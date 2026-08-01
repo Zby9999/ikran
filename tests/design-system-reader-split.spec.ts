@@ -398,140 +398,73 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(richPrinciple).toContainText("Every choice needs a reason");
     await expect(richPrinciple).toContainText("Marketing one-offs");
 
-    // ---- Typography leaf: standard heading + source-backed Type Atlas. ----
+    // ---- Typography leaf: quiet three-column ledger + one disclosure. ----
     await page.getByRole("button", { name: "Typography", exact: true }).click();
     await expect(
       page.locator(".dsb-typography-page > .dsb-h1")
     ).toHaveText("Typography");
     await expect(page.getByTestId("ds-leaf-split")).toHaveCount(0);
-    const atlas = page.getByTestId("ds-typography-atlas");
-    await expect(atlas).toBeVisible();
-    await expect(
-      atlas.getByText("Type specimens", { exact: true })
-    ).toHaveCount(0);
+    const ledger = page.getByTestId("ds-typography-ledger");
+    await expect(ledger).toBeVisible();
+    await expect(ledger.getByText("Typeface", { exact: true })).toBeVisible();
+    await expect(ledger.getByText("Used for", { exact: true })).toBeVisible();
     const typographySummary = page.getByTestId("ds-typography-summary");
-    await expect(typographySummary).toContainText("tokens");
-    await expect(typographySummary).toContainText("formalized");
-    await expect
-      .poll(() =>
-        typographySummary.locator(".dsb-intro").evaluate(
-          (element) => getComputedStyle(element).flexDirection
-        )
-      )
-      .toBe("row");
-    await expect(atlas.getByText("Scale token", { exact: true })).toHaveCount(0);
-    await expect(atlas.getByText("Text style", { exact: true })).toHaveCount(0);
-    const scaleOrder = page.getByRole("button", {
-      name: "Scale",
-      exact: true
-    });
-    const roleOrder = page.getByRole("button", {
-      name: "Role",
-      exact: true
-    });
-    await expect(scaleOrder).toHaveAttribute("aria-pressed", "true");
-    await expect(roleOrder).toHaveAttribute("aria-pressed", "false");
-    expect((await scaleOrder.boundingBox())!.x).toBeLessThan(
-      (await roleOrder.boundingBox())!.x
-    );
-    const orderControl = page.locator('[aria-label="Order type atlas"]');
-    const orderIndicator = page.getByTestId("ds-atlas-order-indicator");
-    const scaleTransform = await orderIndicator.evaluate(
-      (element) => getComputedStyle(element).transform
-    );
-    const atlasCardIds = await atlas.locator(".dsb-atlas-card").evaluateAll(
-      (cards) => cards.map((card) => card.getAttribute("data-testid"))
-    );
-    expect(
-      atlasCardIds.indexOf("ds-atlas-primitive.font.size.700")
-    ).toBeLessThan(
-      atlasCardIds.indexOf("ds-atlas-semantic.body")
-    );
-    await roleOrder.click();
-    await expect(roleOrder).toHaveAttribute("aria-pressed", "true");
-    await expect(orderControl).toHaveAttribute("data-motion", "slide");
-    await expect
-      .poll(() =>
-        orderIndicator.evaluate(
-          (element) => getComputedStyle(element).transform
-        )
-      )
-      .not.toBe(scaleTransform);
-    await scaleOrder.focus();
-    await scaleOrder.press("Enter");
-    await expect(scaleOrder).toHaveAttribute("aria-pressed", "true");
-    await expect(orderControl).toHaveAttribute("data-motion", "instant");
-    await expect
-      .poll(() =>
-        orderIndicator.evaluate(
-          (element) => getComputedStyle(element).transitionDuration
-        )
-      )
-      .toBe("0s");
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await roleOrder.click();
-    await expect(orderControl).toHaveAttribute("data-motion", "slide");
-    await expect
-      .poll(() =>
-        orderIndicator.evaluate(
-          (element) => getComputedStyle(element).transitionDuration
-        )
-      )
-      .toBe("0s");
-    await page.emulateMedia({ reducedMotion: "no-preference" });
-    await scaleOrder.click();
-    await expect(scaleOrder).toHaveAttribute("aria-pressed", "true");
+    await expect(typographySummary).toContainText("type styles");
+    await expect(ledger.getByText("formalized", { exact: true })).toHaveCount(0);
+    await expect(ledger.getByText("Source-backed", { exact: true })).toHaveCount(0);
+    await expect(page.locator('[aria-label="Order type atlas"]')).toHaveCount(0);
+
     const atomicHeroCard = page.getByTestId(
       "ds-atlas-primitive.font.size.700"
     );
-    await expect(atomicHeroCard).toContainText("Tracking");
-    await expect(atomicHeroCard).toContainText("-0.04em");
-    await expect(atomicHeroCard).toContainText(
-      "primitive.letterSpacing.hero"
-    );
+    await expect(atomicHeroCard.getByText("Letter spacing", { exact: true })).toHaveCount(0);
     await expect
       .poll(() =>
-        atomicHeroCard.locator(".dsb-atlas-sample").evaluate(
+        atomicHeroCard.locator(".dsb-type-specimen").evaluate(
           (element) => getComputedStyle(element).letterSpacing
         )
       )
       .toBe("-1.28px");
+
     const displayCard = page.getByTestId(
       "ds-atlas-semantic.display.large"
     );
     await expect(displayCard).toBeVisible();
     await expect(displayCard).toContainText("Hero display role");
+    await expect(displayCard.getByText("Weight", { exact: true })).toHaveCount(0);
+    const displayDisclosure = displayCard.getByRole("button", {
+      name: "Show details for display.large",
+      exact: true
+    });
+    await expect(displayDisclosure).toHaveAttribute("aria-expanded", "false");
+    await displayDisclosure.click();
+    await expect(displayDisclosure).toHaveAttribute("aria-expanded", "true");
+    await expect(displayCard.getByText("Weight", { exact: true })).toBeVisible();
+    await expect(displayCard.getByText("Letter spacing", { exact: true })).toBeVisible();
+    await expect(displayCard.getByText("Size", { exact: true })).toBeVisible();
+    await expect(displayCard.getByText("Typeface", { exact: true })).toBeVisible();
     await expect(displayCard).toContainText("64px");
     await expect(displayCard).toContainText("700");
-    await expect(displayCard).toContainText("1.05");
-    await expect(displayCard).toContainText("semantic.display.large");
-    await expect(displayCard).toContainText("primitive.font.family.sans");
-    const usedForLabel = displayCard.getByText("Used for", { exact: true });
-    const sourceBackedLabel = displayCard.getByText("Source-backed", {
-      exact: true,
+    await expect(displayCard).toContainText("Instrument Sans");
+    await expect(displayCard.getByText("Line height", { exact: true })).toHaveCount(0);
+    await expect(displayCard).not.toContainText("semantic.display.large");
+    await expect(displayCard).not.toContainText("primitive.font.family.sans");
+
+    const atomicDisclosure = atomicHeroCard.getByRole("button", {
+      name: /details for/
     });
-    await expect(usedForLabel).toBeVisible();
-    await expect(sourceBackedLabel).toBeVisible();
-    await expect
-      .poll(() =>
-        usedForLabel.evaluate(
-          (element) => getComputedStyle(element).textTransform
-        )
-      )
-      .toBe("none");
-    await expect
-      .poll(() =>
-        sourceBackedLabel.evaluate(
-          (element) => getComputedStyle(element).textTransform
-        )
-      )
-      .toBe("none");
+    await atomicDisclosure.click();
+    await expect(atomicHeroCard.getByText("Letter spacing", { exact: true })).toBeVisible();
+    await expect(atomicHeroCard).toContainText("-0.04em");
+    await expect(displayCard.getByText("Weight", { exact: true })).toHaveCount(0);
+    await expect(displayDisclosure).toHaveAttribute("aria-expanded", "false");
+
     await expect(page.getByTestId("ds-technical-details")).toHaveCount(0);
     await expect(
       page.getByText("Source tokens", { exact: true })
     ).toHaveCount(0);
 
-    const displaySample = displayCard.locator(".dsb-atlas-sample");
+    const displaySample = displayCard.locator(".dsb-type-specimen");
     await expect(displaySample).toBeVisible();
     // The specimen renders in the typeface the source declares (resolved
     // through the family alias) — computed, not just annotated.
@@ -571,24 +504,6 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
       (el) => Number.parseFloat(getComputedStyle(el).fontSize)
     );
     expect(specimenSize).toBeGreaterThan(24);
-
-    // User-confirmed shared Browser status treatment: 4px rounded rectangle
-    // with no border/stroke.
-    const atlasStatus = displayCard.getByTestId("ds-atlas-status");
-    await expect(atlasStatus).toHaveText("formalized");
-    const statusStyle = await atlasStatus.evaluate((el) => {
-      const style = getComputedStyle(el);
-      return {
-        borderRadius: style.borderRadius,
-        borderStyle: style.borderStyle,
-        boxShadow: style.boxShadow
-      };
-    });
-    expect(statusStyle).toEqual({
-      borderRadius: "4px",
-      borderStyle: "none",
-      boxShadow: "none"
-    });
 
     // ---- Layout leaf: object values + persisted resizable split. ----
     await page.getByRole("button", { name: "Layout", exact: true }).click();
