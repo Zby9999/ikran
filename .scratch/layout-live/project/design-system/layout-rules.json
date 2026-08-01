@@ -1,0 +1,71 @@
+{
+  "rules": [
+    {
+      "id": "grid-page",
+      "value": {
+        "columns": "12",
+        "gutter": {
+          "alias": "spacing.200"
+        },
+        "maxWidth": "1120px"
+      },
+      "meaning": "Default page grid",
+      "status": "candidate",
+      "links": [
+        "4c008ecf-858f-4a3c-971e-feb2ebbd33b0"
+      ]
+    },
+    {
+      "id": "shell-regions",
+      "value": {
+        "regions": [
+          "header",
+          "hero",
+          "content",
+          "footer"
+        ]
+      },
+      "meaning": "Page shell vertical stack",
+      "status": "candidate",
+      "links": [
+        "4c008ecf-858f-4a3c-971e-feb2ebbd33b0"
+      ]
+    },
+    {
+      "id": "section-rhythm",
+      "value": {
+        "heroToNext": "96 → 56px"
+      },
+      "meaning": "Scroll rhythm, desktop → mobile",
+      "status": "candidate",
+      "links": [
+        "4c008ecf-858f-4a3c-971e-feb2ebbd33b0"
+      ]
+    },
+    {
+      "id": "breakpoints",
+      "value": {
+        "breakpoints": [
+          "640",
+          "768",
+          "1024",
+          "1280"
+        ]
+      },
+      "meaning": "Same source as code",
+      "status": "formalized",
+      "links": [
+        "4c008ecf-858f-4a3c-971e-feb2ebbd33b0"
+      ]
+    },
+    {
+      "id": "nav-mobile",
+      "value": {
+        "layout": "—"
+      },
+      "meaning": "Mobile navigation layout — open state missing",
+      "status": "gap",
+      "links": []
+    }
+  ]
+}

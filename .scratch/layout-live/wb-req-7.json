@@ -1,0 +1,1 @@
+{"action":"evaluate","args":{"code":"(() => { const rows = Array.from(document.querySelectorAll('.lic-row')); const r = rows[0]; r.dispatchEvent(new MouseEvent('mouseover',{bubbles:true})); return JSON.stringify({rows: rows.length, first: r.querySelector('.lic-row-name')?.textContent}); })()"},"session":"layout-ic-prototypes"}

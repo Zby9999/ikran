@@ -1,0 +1,7 @@
+{
+  "action": "evaluate",
+  "args": {
+    "code": "(() => { const sheet = document.querySelector('[data-testid=\"ds-sheet\"]'); if (!sheet) return 'no sheet'; const r = sheet.getBoundingClientRect(); const cs = getComputedStyle(sheet); return JSON.stringify({ open: sheet.getAttribute('data-open'), rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }, opacity: cs.opacity, visibility: cs.visibility, transform: cs.transform, pointerEvents: cs.pointerEvents, vw: innerWidth, vh: innerHeight }); })()"
+  },
+  "session": "09cb-layout-verify"
+}

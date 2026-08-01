@@ -428,6 +428,46 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(ledger).toBeVisible();
     await expect(ledger.getByText("Typeface", { exact: true })).toBeVisible();
     await expect(ledger.getByText("Used for", { exact: true })).toBeVisible();
+    const columnHeaderStyle = await ledger
+      .locator(".dsb-type-columns")
+      .evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          fontSize: style.fontSize,
+          fontWeight: style.fontWeight,
+          letterSpacing: style.letterSpacing,
+          textTransform: style.textTransform
+        };
+      });
+    expect(columnHeaderStyle).toEqual({
+      fontSize: "12px",
+      fontWeight: "400",
+      letterSpacing: "normal",
+      textTransform: "none"
+    });
+    const firstRow = ledger.locator(".dsb-type-row").first();
+    await expect
+      .poll(() =>
+        firstRow.evaluate((element) => getComputedStyle(element).paddingTop)
+      )
+      .toBe("0px");
+    const compactRow = ledger.locator(".dsb-type-row").last();
+    await expect
+      .poll(() =>
+        compactRow.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            paddingTop: style.paddingTop,
+            paddingBottom: style.paddingBottom,
+            minHeight: style.minHeight
+          };
+        })
+      )
+      .toEqual({
+        paddingTop: "16px",
+        paddingBottom: "16px",
+        minHeight: "0px"
+      });
     const typographySummary = page.getByTestId("ds-typography-summary");
     await expect(typographySummary).toContainText("type styles");
     await expect(ledger.getByText("formalized", { exact: true })).toHaveCount(0);
@@ -465,6 +505,18 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(displayCard).toContainText("64px");
     await expect(displayCard).toContainText("700");
     await expect(displayCard).toContainText("Instrument Sans");
+    const typefaceDetailStyle = await displayCard
+      .locator(".dsb-type-detail dd")
+      .last()
+      .evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          fontFamily: style.fontFamily,
+          letterSpacing: style.letterSpacing
+        };
+      });
+    expect(typefaceDetailStyle.fontFamily).toContain("Inter");
+    expect(typefaceDetailStyle.letterSpacing).toBe("-0.22px");
     await expect(displayCard.getByText("Line height", { exact: true })).toHaveCount(0);
     await expect(displayCard).not.toContainText("semantic.display.large");
     await expect(displayCard).not.toContainText("primitive.font.family.sans");

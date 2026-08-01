@@ -1,0 +1,7 @@
+{
+  "action": "evaluate",
+  "args": {
+    "code": "(() => { const row = document.querySelector('[data-testid=\"ds-row-layout.statsDualColumn\"]'); row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); row.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false })); return new Promise((resolve) => setTimeout(() => { const svg = document.querySelector('[data-testid=\"ds-layout-blueprint-svg\"]'); const active = svg ? svg.getAttribute('data-active-anchor') : null; const marked = document.querySelector('.dsb-row-anchor[data-anchor-active]'); resolve(JSON.stringify({ active, marked: marked ? marked.textContent.slice(0, 40) : null })); }, 300)); })()"
+  },
+  "session": "09cb-layout-verify"
+}

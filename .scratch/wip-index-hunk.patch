@@ -1,0 +1,12 @@
+diff --git a/lib/runtime/commands/index.ts b/lib/runtime/commands/index.ts
+index a8da02f..684ddd4 100644
+--- a/lib/runtime/commands/index.ts
++++ b/lib/runtime/commands/index.ts
+@@ -52,6 +52,7 @@ export {
+   confirmAnnotationPrimaryNodeCommand,
+   listRegionAnnotationsCommand,
+   deleteRegionAnnotationCommand,
++  restoreRegionAnnotationCommand,
+   updateRegionAnnotationBodyCommand
+ } from "./region-annotation";
+ 

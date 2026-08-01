@@ -1,0 +1,1 @@
+{"action":"evaluate","args":{"code":"(() => { window.dispatchEvent(new KeyboardEvent('keydown',{key:'3',bubbles:true})); return JSON.stringify({search: location.search}); })()"},"session":"layout-ic-prototypes"}

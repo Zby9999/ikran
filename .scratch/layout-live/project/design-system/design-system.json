@@ -1,0 +1,38 @@
+{
+  "name": "Ikran Reader System",
+  "visualLanguage": {
+    "id": "visual-language",
+    "value": {
+      "description": "Calm, precise product language."
+    },
+    "meaning": "Overall visual tone",
+    "status": "formalized",
+    "links": [
+      "4c008ecf-858f-4a3c-971e-feb2ebbd33b0"
+    ]
+  },
+  "principles": [
+    {
+      "id": "principle-intent",
+      "value": {
+        "statement": "Design with intent.",
+        "rationale": "Every choice needs a reason the designer can repeat.",
+        "scope": "All product surfaces",
+        "use": [
+          "State the reason next to the choice"
+        ],
+        "avoid": [
+          "Decoration without a job"
+        ],
+        "exceptions": [
+          "Marketing one-offs"
+        ]
+      },
+      "meaning": "Intent over decoration",
+      "status": "candidate",
+      "links": [
+        "4c008ecf-858f-4a3c-971e-feb2ebbd33b0"
+      ]
+    }
+  ]
+}

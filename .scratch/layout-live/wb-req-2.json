@@ -1,0 +1,7 @@
+{
+  "action": "evaluate",
+  "args": {
+    "code": "(() => { const sheet = document.querySelector('[data-testid=\"ds-sheet\"]'); const open = sheet ? sheet.getAttribute('data-open') : null; if (open !== 'true') { document.querySelector('[data-testid=\"open-design-system-browser\"]')?.click(); return 'was ' + open + ' → clicked open'; } return 'already open'; })()"
+  },
+  "session": "09cb-layout-verify"
+}

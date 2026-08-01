@@ -1,0 +1,7 @@
+{
+  "action": "evaluate",
+  "args": {
+    "code": "(() => { const q = (s) => document.querySelector(s); const card = q('[data-testid=\"ds-layout-blueprint\"]'); const svg = q('[data-testid=\"ds-layout-blueprint-svg\"]'); return JSON.stringify({ blueprint: !!card, aria: svg ? svg.getAttribute('aria-label') : null, anchors: document.querySelectorAll('.dsb-row-anchor > .dsb-anchor-num').length, dots: svg ? svg.querySelectorAll('[data-anchor]').length : 0, unavailable: document.querySelectorAll('[data-testid^=\"ds-layout-unavailable-\"]:not([data-testid*=\"-status-\"])').length, svgText: svg ? svg.textContent.slice(0, 400) : null, schematic: !!q('.dsb-origin[data-origin=\"schematic\"]') }); })()"
+  },
+  "session": "09cb-layout-verify"
+}

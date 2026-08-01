@@ -1,0 +1,9 @@
+file:///Users/bingyizhang/Desktop/recursive-design-agent/.scratch/layout-live/open-desktop.mjs:97
+  throw new Error(`create_or_open_project failed: ${JSON.stringify(opened)}`);
+        ^
+
+Error: create_or_open_project failed: {"ok":false,"error":"project_mismatch","expected":"/Users/bingyizhang/Desktop/ikran test 7","active":"/Users/bingyizhang/Desktop/recursive-design-agent/.scratch/layout-live/project","session":"c1c2c9cb140abb0d01b25b409142a9235ca72b4213531046e585f1128b8366af","workbench_url":"http://127.0.0.1:63892/?session=c1c2c9cb140abb0d01b25b409142a9235ca72b4213531046e585f1128b8366af&view=workbench"}
+    at file:///Users/bingyizhang/Desktop/recursive-design-agent/.scratch/layout-live/open-desktop.mjs:97:9
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+Node.js v24.13.0

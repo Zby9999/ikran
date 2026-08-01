@@ -1,0 +1,1 @@
+{"action":"evaluate","args":{"code":"(() => { const rows = Array.from(document.querySelectorAll('.dsb-row-anchor')); const r = rows[3]; r.dispatchEvent(new MouseEvent('mouseover',{bubbles:true})); return JSON.stringify({hoveredName: r.querySelector('.dsb-row-name')?.textContent}); })()"},"session":"layout-ic-prototypes"}

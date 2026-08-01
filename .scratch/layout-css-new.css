@@ -1,0 +1,198 @@
+/* ----------------------- 09C-D02: layout source capture ---------------------- */
+
+/* Placard stream: whitespace plus one hairline between rule blocks. */
+.dsb-placard {
+  padding: 26px 0;
+  border-bottom: 1px solid rgb(0 0 0 / 7%);
+}
+
+.dsb-placard:first-child {
+  padding-top: 4px;
+}
+
+.dsb-placard:last-child {
+  border-bottom: 0;
+}
+
+/* The capture hangs in a hairline frame. Images are height-capped so a tall
+ * node capture can never push the placard body out of the reading column. */
+.dsb-placard-figure {
+  margin: 0;
+  display: flex;
+  justify-content: center;
+  border: 1px solid rgb(0 0 0 / 8%);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.dsb-placard-figure img {
+  display: block;
+  max-width: 100%;
+  max-height: 340px;
+}
+
+.dsb-placard-thumbs {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.dsb-placard-thumb {
+  width: 56px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid rgb(0 0 0 / 10%);
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.dsb-placard-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dsb-placard-thumb[data-active] {
+  border-color: var(--dsc-accent);
+  box-shadow: 0 0 0 1px var(--dsc-accent);
+}
+
+.dsb-placard-body {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dsb-placard-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dsb-placard-statement {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.dsb-placard-facts {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsc-ink-3);
+}
+
+.dsb-placard-caption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10.5px;
+  color: var(--dsc-ink-3);
+}
+
+.dsb-placard-caption [data-stale] {
+  color: #9a6a00;
+}
+
+.dsb-placard-frame-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--dsc-ink-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.dsb-placard-frame-link:hover {
+  color: var(--dsc-ink);
+}
+
+/* Honest unavailable — no fabricated visual. */
+.dsb-placard-unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 40px 20px;
+  border: 1.5px dashed rgb(0 0 0 / 14%);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.dsb-placard-unavailable-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--dsc-ink-2);
+}
+
+.dsb-placard-unavailable-note {
+  font-size: 11.5px;
+  color: var(--dsc-ink-3);
+}
+
+/* Full-frame lightbox. z-index must beat the sheet root (60) and its header
+ * (61); the overlay is portaled to document.body. */
+.dsb-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgb(0 0 0 / 55%);
+  animation: dsb-lightbox-in 180ms var(--dsc-ease) both;
+  cursor: zoom-out;
+}
+
+@keyframes dsb-lightbox-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.dsb-lightbox-img {
+  max-width: min(920px, 92vw);
+  max-height: 80vh;
+  border-radius: 10px;
+  box-shadow: 0 24px 64px rgb(0 0 0 / 35%);
+}
+
+.dsb-lightbox-hint {
+  font-size: 11px;
+  color: rgb(255 255 255 / 75%);
+}
+
+/* Placard entrance: sub-300ms, transform/opacity only, staggered per block. */
+.dsb-placard-enter {
+  animation: dsb-placard-enter 240ms var(--dsc-ease) both;
+  animation-delay: calc(var(--i, 0) * 35ms);
+}
+
+@keyframes dsb-placard-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsb-lightbox,
+  .dsb-placard-enter {
+    animation: none;
+  }
+}

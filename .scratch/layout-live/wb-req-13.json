@@ -1,0 +1,1 @@
+{"action":"evaluate","args":{"code":"(() => { const overlay = !!document.querySelector('nextjs-portal'); const rows = Array.from(document.querySelectorAll('.lic-row')); rows[1].dispatchEvent(new MouseEvent('mouseover',{bubbles:true})); return JSON.stringify({nextjsOverlay: overlay}); })()"},"session":"layout-ic-prototypes"}

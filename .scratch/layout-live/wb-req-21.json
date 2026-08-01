@@ -1,0 +1,1 @@
+{"action":"evaluate","args":{"code":"(() => { const checks = Array.from(document.querySelectorAll('.dsb-row-check')); checks[0].click(); return JSON.stringify({caption: document.querySelector('.dsb-sample-caption span')?.textContent}); })()"},"session":"layout-ic-prototypes"}

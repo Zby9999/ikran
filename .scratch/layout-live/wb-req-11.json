@@ -1,0 +1,1 @@
+{"action":"evaluate","args":{"code":"(() => { const rows = Array.from(document.querySelectorAll('.lic-row')); if (rows[0]) rows[0].click(); if (rows[3]) rows[3].click(); return JSON.stringify({rows: rows.length}); })()"},"session":"layout-ic-prototypes"}

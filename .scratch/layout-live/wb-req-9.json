@@ -1,0 +1,1 @@
+{"action":"evaluate","args":{"code":"(() => { document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'2',bubbles:true})); window.dispatchEvent(new KeyboardEvent('keydown',{key:'2',bubbles:true})); return JSON.stringify({url: location.search}); })()"},"session":"layout-ic-prototypes"}

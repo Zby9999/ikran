@@ -1,0 +1,1 @@
+{"action":"evaluate","args":{"code":"(() => { const btns = Array.from(document.querySelectorAll('button')); const ds = btns.find(b => b.textContent.trim() === 'Draft Design System'); if (!ds) return JSON.stringify({err:'gone'}); ds.click(); return JSON.stringify({clicked: true}); })()"},"session":"layout-ic-prototypes"}

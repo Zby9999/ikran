@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layout Visual Grammar — DSB-based prototypes</title>
+<style>
+/* ===== tokens: components/workbench/design-system-browser.css ===== */
+:root {
+  --dsc-canvas: #dcdcdc;
+  --dsc-surface: #f1f1f1;
+  --dsc-card: #ffffff;
+  --dsc-ink: #3d3d3d;
+  --dsc-ink-2: #636363;
+  --dsc-ink-3: #949494;
+  --dsc-accent: #3a93ff;
+  --dsc-nav-hover: rgb(0 0 0 / 4.5%);
+  --dsc-nav-active: #e3e3e3;
+  --dsc-green: #11c514;
+  --dsc-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  /* selected-fact highlight — deliberately not a status color */
+  --hl: #7468f9;
+  --hl-soft: rgba(116, 104, 249, 0.13);
+  --hl-mid: rgba(116, 104, 249, 0.30);
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; height: 100%; }
+body {
+  background: var(--dsc-canvas);
+  color: var(--dsc-ink);
+  font: 13px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ===== real DSB chrome (values lifted from design-system-browser.css) ===== */
+.dsb-scrim { position: fixed; inset: 0; background: rgb(0 0 0 / 16%); }
+.dsb-sheet {
+  position: fixed; left: 24px; right: 24px; bottom: 0; top: 24px;
+  display: flex; flex-direction: column;
+  border-radius: 14px 14px 0 0; background: var(--dsc-card);
+  box-shadow: 0 -24px 64px rgb(0 0 0 / 18%), 0 -2px 8px rgb(0 0 0 / 8%), 0 0 0 1px rgb(0 0 0 / 10%);
+  overflow: hidden;
+}
+.dsb-header {
+  display: flex; height: 44px; flex-shrink: 0; align-items: center; gap: 8px;
+  border-bottom: 1px solid rgb(0 0 0 / 6%); padding: 0 12px 0 20px;
+}
+.dsb-title { font-size: 13px; font-weight: 600; }
+.dsb-header-divider { width: 1px; height: 16px; margin: 0 4px; background: rgb(0 0 0 / 10%); }
+.dsb-breadcrumb { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--dsc-ink-3); }
+.dsb-breadcrumb-current { color: var(--dsc-ink); }
+.dsb-icon-button {
+  display: flex; width: 24px; height: 24px; align-items: center; justify-content: center;
+  border: 0; border-radius: 6px; background: transparent; color: var(--dsc-ink-2); cursor: pointer;
+}
+.dsb-header-close { margin-left: auto; }
+.dsb-body { display: flex; min-height: 0; flex: 1; }
+.dsb-sidebar {
+  width: 224px; flex-shrink: 0; overflow-y: auto;
+  border-right: 1px solid rgb(0 0 0 / 6%); background: var(--dsc-surface); padding: 8px;
+}
+.dsb-tabs {
+  position: relative; display: flex; height: 26px; margin: 4px 4px 8px;
+  border-radius: 8px; background: rgb(0 0 0 / 5%); padding: 2px;
+}
+.dsb-tab-indicator {
+  position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc(50% - 2px);
+  border-radius: 6px; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 10%);
+}
+.dsb-tab {
+  position: relative; z-index: 1; flex: 1; border: 0; border-radius: 6px;
+  background: transparent; color: var(--dsc-ink-3); font-size: 12.5px; font-weight: 500; cursor: pointer;
+}
+.dsb-tab[aria-selected="true"] { color: var(--dsc-ink); }
+.dsb-navrow {
+  display: flex; width: 100%; height: 28px; align-items: center; gap: 6px;
+  border: 0; border-radius: 6px; background: transparent; padding: 0 8px;
+  color: var(--dsc-ink-2); font-size: 13px; text-align: left; cursor: pointer;
+  transition: background-color 150ms ease-out, color 150ms ease-out;
+}
+.dsb-navrow:hover { background: var(--dsc-nav-hover); }
+.dsb-navrow[data-active] { background: var(--dsc-nav-active); color: var(--dsc-ink); font-weight: 500; }
+.dsb-navrow svg { flex-shrink: 0; opacity: 0.7; }
+.dsb-main { min-width: 0; flex: 1; overflow: hidden; background: #fafafa; display: flex; flex-direction: column; }
+.dsb-leaf { display: flex; height: 100%; min-height: 0; flex-direction: column; }
+
+/* split */
+.dsb-split { display: grid; height: 100%; min-height: 0; flex: 1; }
+.dsb-split[data-dragging] { cursor: col-resize; user-select: none; }
+.dsb-split[data-dragging] * { transition-duration: 0s !important; }
+.dsb-split-pane { min-width: 0; min-height: 0; overflow-y: auto; padding: 24px 24px 24px 28px; }
+.dsb-split-right { padding: 24px 28px 24px 24px; }
+.dsb-split-divider { position: relative; cursor: col-resize; outline: none; touch-action: none; }
+.dsb-split-divider-line {
+  position: absolute; top: 0; bottom: 0; left: 50%; width: 1px;
+  background: rgb(0 0 0 / 8%); transition: background-color 150ms ease-out, width 150ms ease-out;
+}
+.dsb-split-divider::after {
+  position: absolute; top: 50%; left: 50%; width: 4px; height: 24px; border-radius: 2px;
+  background: rgb(0 0 0 / 12%); content: ""; transform: translate(-50%, -50%);
+}
+.dsb-split-divider:hover .dsb-split-divider-line { width: 2px; background: rgb(0 0 0 / 20%); }
+.dsb-split[data-dragging] .dsb-split-divider-line { width: 2px; background: var(--dsc-accent); }
+
+/* page heading + statdots */
+.dsb-h1 { margin: 0; font-size: 13px; font-weight: 500; letter-spacing: -0.02em; line-height: 16px; color: #000; }
+.dsb-intro { display: flex; flex-direction: column; gap: 6px; width: fit-content; margin: 8px 0 20px; }
+.dsb-meta { margin: 0; font-size: 12px; letter-spacing: -0.02em; line-height: 16px; color: var(--dsc-ink-2); }
+.dsb-statdots { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--dsc-ink-3); }
+.dsb-statdot { display: flex; align-items: center; gap: 6px; }
+.dsb-statdot-dot { width: 10px; height: 10px; flex-shrink: 0; border-radius: 4px; }
+.dsb-group-label { margin: 0; font-size: 12px; font-weight: 500; letter-spacing: -0.02em; line-height: 16px; color: var(--dsc-ink-2); }
+
+/* spec rows — real structure; rows become selectable to drive the scene */
+.dsb-rows { border-top: 1px solid rgb(0 0 0 / 6%); border-bottom: 1px solid rgb(0 0 0 / 6%); }
+.dsb-row {
+  display: flex; flex-wrap: wrap; align-items: center; row-gap: 2px; column-gap: 16px;
+  width: 100%; border: 0; border-bottom: 1px solid rgb(0 0 0 / 5%);
+  padding: 9px 6px; margin: 0 -6px; width: calc(100% + 12px);
+  background: transparent; font: inherit; text-align: left; cursor: pointer;
+  border-radius: 6px;
+  transition: background-color 150ms ease-out;
+}
+.dsb-row:hover { background: var(--dsc-nav-hover); }
+.dsb-row[data-active] { background: var(--dsc-nav-active); }
+.dsb-row-name { width: 150px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+.dsb-row-value { width: 140px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--dsc-ink-3); white-space: nowrap; }
+.dsb-row-meaning { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; color: var(--dsc-ink-2); white-space: nowrap; }
+.dsb-chip { flex-shrink: 0; border: 0; border-radius: 4px; background: rgb(0 0 0 / 5%); padding: 3px 7px; color: var(--dsc-ink-3); font-size: 9.5px; line-height: 14px; }
+.dsb-chip[data-status="formalized"] { background: rgb(17 197 20 / 9%); color: #0f8f11; }
+.dsb-chip[data-status="candidate"] { background: rgb(58 147 255 / 10%); color: #2473cc; }
+.dsb-info-trigger {
+  display: flex; width: 18px; height: 18px; align-items: center; justify-content: center;
+  border: 0; border-radius: 999px; background: transparent; color: var(--dsc-ink-3);
+  font-size: 11px; cursor: pointer; opacity: 0.6;
+}
+
+/* ===== right pane: visual samples conventions ===== */
+.vs-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.vs-marks { display: flex; align-items: center; gap: 6px; }
+.vs-chip {
+  border-radius: 4px; padding: 3px 7px; font-size: 9.5px; line-height: 14px;
+  background: rgb(0 0 0 / 5%); color: var(--dsc-ink-2);
+}
+.vs-chip.origin { background: transparent; border: 1px dashed rgb(0 0 0 / 22%); color: var(--dsc-ink-2); }
+.vs-scale { font-size: 10px; color: var(--dsc-ink-3); font-family: var(--mono); }
+.vs-stage { display: flex; flex-direction: column; gap: 8px; }
+
+/* entrance — matches dsb-enter */
+.anim-in { animation: vs-in 250ms var(--dsc-ease) both; }
+@keyframes vs-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .anim-in { animation: none; } }
+
+.sdot { display: inline-block; width: 5px; height: 5px; border-radius: 999px; margin-right: 4px; vertical-align: 1px; }
+.sdot[data-status="formalized"] { background: var(--dsc-green); }
+.sdot[data-status="candidate"] { background: var(--dsc-accent); }
+
+/* unavailable (gap) — right pane explicit state */
+.vs-unavailable {
+  border: 1px dashed rgb(0 0 0 / 14%); border-radius: 10px; background: rgb(0 0 0 / 2%);
+  padding: 24px; text-align: center;
+}
+.vs-unavailable h3 { margin: 0 0 4px; font-size: 12.5px; font-weight: 500; color: var(--dsc-ink-2); }
+.vs-unavailable p { margin: 0; font-size: 11.5px; color: var(--dsc-ink-3); }
+.vs-unavailable .missing { margin-top: 10px; font-family: var(--mono); font-size: 10.5px; }
+
+/* ===== V1 Blueprint ===== */
+.bp-svg { width: 100%; max-width: 520px; height: auto; display: block; margin: 0 auto; }
+.bp-frame { fill: #ffffff; stroke: #a8a8a8; stroke-width: 1; }
+.bp-scaffold { fill: none; stroke: #c8c8c8; stroke-width: 1; stroke-dasharray: 4 4; }
+.bp-scaffold-label { fill: var(--dsc-ink-3); font-size: 9px; font-family: Inter, sans-serif; }
+.bp-dim { stroke: var(--hl); stroke-width: 1.25; fill: none; }
+.bp-dim-text { fill: var(--hl); font-size: 10px; font-family: var(--mono); }
+.bp-ext { stroke: var(--hl); stroke-width: 0.75; opacity: 0.55; }
+.bp-col { fill: none; stroke: #b9b9b9; stroke-width: 1; }
+
+/* ===== V2 Bands ===== */
+.band-scene { position: relative; width: 100%; max-width: 520px; height: 340px; margin: 0 auto; }
+.band-page {
+  position: absolute; left: 50%; top: 8px; transform: translateX(-50%);
+  width: 460px; max-width: 100%; height: 300px;
+  background: #fff; border-radius: 6px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.10), 0 6px 20px rgba(0,0,0,0.06);
+  overflow: hidden;
+}
+.band-fill { position: absolute; top: 0; bottom: 0; background: var(--hl-soft); }
+.band-field {
+  position: absolute; background: var(--dsc-surface);
+  border: 1px dashed rgba(0,0,0,0.16);
+  display: flex; align-items: flex-start; justify-content: center;
+}
+.scaffold-label { margin-top: 8px; font-size: 9px; color: var(--dsc-ink-3); white-space: nowrap; }
+.pill {
+  position: absolute; display: inline-flex; align-items: center; z-index: 2;
+  background: #fff; border: 1px solid rgba(0,0,0,0.12); border-radius: 999px;
+  padding: 2px 6px; font-size: 9px; line-height: 13px;
+  color: var(--hl); font-family: var(--mono); font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08); white-space: nowrap;
+}
+.pill.ghost { color: var(--dsc-ink-3); }
+.band-caption {
+  position: absolute; font-size: 10px; color: var(--hl); font-family: var(--mono);
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.band-section {
+  position: absolute; border: 1px dashed rgba(0,0,0,0.16); background: var(--dsc-surface);
+  border-radius: 6px; display: flex; align-items: flex-start; justify-content: center;
+}
+
+/* ===== V3 Ruler ===== */
+.rl-svg { width: 100%; max-width: 560px; height: auto; display: block; margin: 0 auto; }
+.rl-ruler { fill: #ececec; }
+.rl-ruler-edge { stroke: rgba(0,0,0,0.10); stroke-width: 1; }
+.rl-tick { stroke: var(--dsc-ink-3); stroke-width: 1; opacity: 0.6; }
+.rl-tick-label { fill: var(--dsc-ink-3); font-size: 8px; font-family: var(--mono); }
+.rl-hl-tick { stroke: var(--hl); stroke-width: 1.5; }
+.rl-hl-label { fill: var(--hl); font-size: 9px; font-family: var(--mono); font-weight: 500; }
+.rl-guide { stroke: var(--hl); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.45; }
+
+/* ===== V4 Layers ===== */
+.layer-wrap { position: relative; width: 100%; max-width: 520px; height: 340px; margin: 0 auto; }
+.legend {
+  position: absolute; top: 14px; right: 8px; z-index: 3;
+  width: 208px; border-radius: 10px; background: #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.10), 0 8px 24px rgba(0,0,0,0.10);
+  padding: 8px; display: flex; flex-direction: column; gap: 2px;
+}
+.legend-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 4px 6px; font-size: 10px; font-weight: 600; color: var(--dsc-ink-2);
+}
+.legend-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 6px; border-radius: 6px; color: var(--dsc-ink); font-size: 11px;
+}
+.legend-row[data-focus] { background: rgba(116,104,249,0.10); }
+.legend-main {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  border: 0; background: transparent; padding: 0; font: inherit; font-size: 11px;
+  text-align: left; cursor: pointer; color: inherit; border-radius: 6px;
+}
+.legend-row:hover { background: rgba(0,0,0,0.045); }
+.legend-row[data-focus]:hover { background: rgba(116,104,249,0.14); }
+.lname { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lval { font-size: 9px; color: var(--dsc-ink-3); font-family: var(--mono); }
+.legend-sep { margin: 5px 4px 3px; font-size: 9px; color: var(--dsc-ink-3); }
+.switch {
+  position: relative; width: 22px; height: 14px; flex: 0 0 auto;
+  border: 0; border-radius: 999px; background: rgba(0,0,0,0.16); padding: 0; cursor: pointer;
+  transition: background-color 150ms ease-out;
+}
+.switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 10px; height: 10px; border-radius: 999px; background: #fff;
+  transition: transform 150ms var(--dsc-ease);
+}
+.switch[aria-checked="true"] { background: var(--hl); }
+.switch[aria-checked="true"]::after { transform: translateX(8px); }
+@media (prefers-reduced-motion: reduce) { .switch, .switch::after { transition: none; } }
+.ghost-band { position: absolute; top: 0; bottom: 0; background: rgba(0,0,0,0.03); border-left: 1px dashed #b9b9b9; border-right: 1px dashed #b9b9b9; }
+.ghost-field { border: 1px dashed #b9b9b9 !important; background: rgba(0,0,0,0.02) !important; }
+.ghost-note {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+  font-size: 11px; color: var(--dsc-ink-3); white-space: nowrap;
+}
+.back-link {
+  position: absolute; top: 14px; left: 8px; z-index: 3;
+  border: 0; border-radius: 6px; background: #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.10);
+  padding: 5px 10px; font: inherit; font-size: 11px; color: var(--dsc-ink-2); cursor: pointer;
+}
+.back-link:hover { color: var(--dsc-ink); }
+</style>
+
+<style>
+/* ===== picker (verbatim spec — harness chrome, not a design decision) ===== */
+.proto-picker {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  z-index: 2147483647; display: flex; align-items: center; gap: 2px; padding: 4px;
+  border-radius: 999px; background: rgba(10, 10, 10, 0.82);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset, 0 8px 24px rgba(0, 0, 0, 0.24), 0 2px 6px rgba(0, 0, 0, 0.12);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px; line-height: 1; -webkit-font-smoothing: antialiased;
+  user-select: none; -webkit-user-select: none;
+}
+.proto-picker-highlight {
+  position: absolute; top: 4px; left: 0; height: 28px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12); will-change: transform;
+}
+.proto-picker[data-ready] .proto-picker-highlight {
+  transition: transform 250ms cubic-bezier(0.23, 1, 0.32, 1), width 250ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .proto-picker[data-ready] .proto-picker-highlight { transition: none; }
+}
+.proto-picker-item {
+  position: relative; display: flex; align-items: center; height: 28px; padding: 0 12px;
+  border: 0; border-radius: 999px; background: transparent;
+  color: rgba(255, 255, 255, 0.55); font: inherit; cursor: pointer;
+  transition: color 150ms ease-out;
+}
+.proto-picker-item:hover { color: rgba(255, 255, 255, 0.85); }
+.proto-picker-item:active { transform: scale(0.97); }
+.proto-picker-item:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.4); outline-offset: 2px; }
+.proto-picker-item[data-active] { color: #fff; }
+.proto-picker-divider { width: 1px; height: 16px; margin: 0 4px; background: rgba(255, 255, 255, 0.12); }
+.proto-picker-replay { padding: 0 10px; font-size: 14px; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<nav class="proto-picker" aria-label="Prototype variants">
+  <span class="proto-picker-highlight" aria-hidden="true"></span>
+  <button class="proto-picker-item" data-active aria-current="true">Blueprint</button>
+  <button class="proto-picker-item">Bands</button>
+  <button class="proto-picker-item">Ruler</button>
+  <button class="proto-picker-item">Layers</button>
+  <span class="proto-picker-divider" aria-hidden="true"></span>
+  <button class="proto-picker-item proto-picker-replay" aria-label="Replay animation (R)">↻</button>
+</nav>
+
+<script>
+/* ============================ shared fixture ============================
+   One fragmented Layout source, expressed as real spec rows
+   (name / value / meaning / status chip / ⓘ). */
+const RULES = [
+  { id: 'inset',    name: 'Page inset',        value: '80px · L / R',      status: 'formalized',
+    meaning: 'Left and right page padding at 1440px viewport', scale: '1440px viewport · proportional' },
+  { id: 'maxwidth', name: 'Content max width', value: '1200px',            status: 'formalized',
+    meaning: 'Centered content column cap',                    scale: '1440px viewport · proportional' },
+  { id: 'grid',     name: 'Grid',              value: '12 col · 24px',     status: 'formalized',
+    meaning: 'Section grid tracks and gutter',                 scale: 'Not to scale' },
+  { id: 'gap',      name: 'Section gap',       value: '96px',              status: 'candidate',
+    meaning: 'Vertical rhythm between sections — inferred from 3 occurrences', scale: 'Not to scale' },
+  { id: 'sticky',   name: 'Sticky header',     value: '—',                 status: 'gap',
+    meaning: 'Open gap: attachment behavior not declared',     scale: null },
+];
+const S = { selected: 'inset', applied: { inset: true, maxwidth: true }, focus: 'inset', isolate: null, ratio: 0.42 };
+const ruleById = (id) => RULES.find((r) => r.id === id);
+const isPageScope = (id) => id === 'inset' || id === 'maxwidth' || id === 'sticky';
+
+function chip(status) { return `<span class="dsb-chip" data-status="${status}">${status === 'gap' ? 'gap' : status}</span>`; }
+function sdot(status) { return status === 'gap' ? '' : `<span class="sdot" data-status="${status}"></span>`; }
+
+/* ============================ real DSB shell ============================ */
+const ICONS = {
+  home: '<path d="M2 7l5-4 5 4v5H8V9H6v3H2z"/><path d="M2 7h10"/>',
+  color: '<circle cx="7" cy="7" r="5"/><path d="M7 2v10M2 7h10"/>',
+  type: '<path d="M2 3h10M7 3v9M5 12h4"/>',
+  materials: '<path d="M7 1l6 3-6 3-6-3z"/><path d="M1 7l6 3 6-3M1 10l6 3 6-3"/>',
+  layout: '<rect x="1" y="1" width="12" height="12" rx="2"/><path d="M1 5h12M5 5v8"/>',
+  interaction: '<circle cx="3" cy="3" r="2"/><circle cx="11" cy="11" r="2"/><path d="M5 3h5v6"/>',
+};
+const icon = (n) => `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round">${ICONS[n]}</svg>`;
+
+function sidebar() {
+  const leaves = [
+    ['color', 'Color'], ['type', 'Typography'], ['materials', 'Materials'],
+    ['layout', 'Layout'], ['interaction', 'Interaction'],
+  ];
+  return `
+    <aside class="dsb-sidebar">
+      <div role="tablist" aria-label="Sections" class="dsb-tabs">
+        <span aria-hidden class="dsb-tab-indicator"></span>
+        <button type="button" role="tab" aria-selected="true" class="dsb-tab">Foundations</button>
+        <button type="button" role="tab" aria-selected="false" class="dsb-tab">Components</button>
+      </div>
+      <button type="button" class="dsb-navrow">${icon('home')}<span>Home</span></button>
+      ${leaves.map(([ic, name]) => `
+        <button type="button" class="dsb-navrow" ${name === 'Layout' ? 'data-active' : ''}>
+          ${icon(ic)}<span>${name}</span>
+        </button>`).join('')}
+    </aside>`;
+}
+
+function rulesLeft() {
+  const stat = [['3 formalized', 'var(--dsc-green)'], ['1 candidate', 'var(--dsc-accent)'], ['1 open gap', 'var(--dsc-ink-3)']];
+  return `
+    <h1 class="dsb-h1">Layout</h1>
+    <div class="dsb-intro">
+      <p class="dsb-meta">5 rules</p>
+      <div class="dsb-statdots">
+        ${stat.map(([l, c]) => `<span class="dsb-statdot"><span aria-hidden class="dsb-statdot-dot" style="background:${c}"></span>${l}</span>`).join('')}
+      </div>
+    </div>
+    <div class="dsb-rows">
+      ${RULES.map((r) => `
+        <button class="dsb-row" data-rule="${r.id}" ${r.id === S.selected ? 'data-active' : ''}
+          aria-label="${r.name}, ${r.value}, ${r.status}">
+          <span class="dsb-row-name" title="${r.name}">${r.name}</span>
+          <span class="dsb-row-value" title="${r.value}">${r.value}</span>
+          <span class="dsb-row-meaning" title="${r.meaning}">${r.meaning}</span>
+          ${chip(r.status)}
+          <span class="dsb-info-trigger" title="Evidence">ⓘ</span>
+        </button>`).join('')}
+    </div>`;
+}
+
+function vsHead(mode, scale, status, origin) {
+  return `
+    <div class="vs-head">
+      <h2 class="dsb-group-label">Visual samples</h2>
+      <div class="vs-marks">
+        <span class="vs-chip">${mode}</span>
+        <span class="vs-chip origin">${origin || 'Schematic'}</span>
+        ${status ? chip(status) : ''}
+        ${scale ? `<span class="vs-scale">${scale}</span>` : ''}
+      </div>
+    </div>`;
+}
+
+function shell(variantName, rightHTML, mode) {
+  return `
+    <div class="dsb-scrim"></div>
+    <div role="dialog" aria-modal="true" aria-label="Design System" class="dsb-sheet">
+      <header class="dsb-header">
+        <span class="dsb-title">Design System</span>
+        <span aria-hidden class="dsb-header-divider"></span>
+        <nav aria-label="Breadcrumb" class="dsb-breadcrumb">
+          <span>Foundations</span><span aria-hidden> / </span>
+          <span class="dsb-breadcrumb-current">Layout</span>
+        </nav>
+        <span class="vs-scale" style="margin-left:12px">${variantName} — prototype</span>
+        <button type="button" aria-label="Close Design System" class="dsb-icon-button dsb-header-close">
+          <svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="2"><path d="M2 2l10 10M12 2L2 12"/></svg>
+        </button>
+      </header>
+      <div class="dsb-body">
+        ${sidebar()}
+        <main class="dsb-main">
+          <div class="dsb-leaf">
+            <div class="dsb-split" id="split">
+              <div class="dsb-split-pane dsb-split-left">${rulesLeft()}</div>
+              <div role="separator" aria-orientation="vertical" aria-label="Resize reading and visual sample panels"
+                tabindex="0" class="dsb-split-divider" id="divider">
+                <span aria-hidden class="dsb-split-divider-line"></span>
+              </div>
+              <div class="dsb-split-pane dsb-split-right">
+                <div class="vs-stage anim-in">${rightHTML}</div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>`;
+}
+
+function unavailableScene(rule) {
+  return `
+    ${vsHead('Isolate', '', 'gap', 'Unavailable')}
+    <div class="vs-unavailable" role="img"
+      aria-label="No source-backed visual for ${rule.name}. The renderer does not guess appearance without evidence.">
+      <h3>No source-backed visual</h3>
+      <p>“${rule.name}” appears in source only as an open question. The renderer does not guess appearance without evidence.</p>
+      <p class="missing">missing: offset · z-order · scroll behavior</p>
+    </div>`;
+}
+
+/* ============================ V1 — Blueprint ============================ */
+function bpScene(rule) {
+  if (rule.status === 'gap') return unavailableScene(rule);
+  let inner = '';
+  if (rule.id === 'inset') {
+    inner = `
+      <rect class="bp-frame" x="30" y="44" width="460" height="300"/>
+      <rect class="bp-scaffold" x="56" y="44" width="408" height="300"/>
+      <text class="bp-scaffold-label" x="260" y="336" text-anchor="middle">Content field — scaffold</text>
+      <line class="bp-ext" x1="30" y1="38" x2="30" y2="26"/><line class="bp-ext" x1="56" y1="38" x2="56" y2="26"/>
+      <line class="bp-dim" x1="30" y1="32" x2="56" y2="32"/>
+      <line class="bp-ext" x1="464" y1="38" x2="464" y2="26"/><line class="bp-ext" x1="490" y1="38" x2="490" y2="26"/>
+      <line class="bp-dim" x1="464" y1="32" x2="490" y2="32"/>
+      <text class="bp-dim-text" x="43" y="18" text-anchor="middle">80px</text>
+      <text class="bp-dim-text" x="477" y="18" text-anchor="middle">80px</text>`;
+  } else if (rule.id === 'maxwidth') {
+    inner = `
+      <rect class="bp-frame" x="30" y="44" width="460" height="300"/>
+      <rect class="bp-scaffold" x="68" y="44" width="384" height="300"/>
+      <text class="bp-scaffold-label" x="260" y="336" text-anchor="middle">Content field — scaffold</text>
+      <line class="bp-dim" x1="68" y1="66" x2="452" y2="66"/>
+      <line class="bp-ext" x1="68" y1="60" x2="68" y2="72"/><line class="bp-ext" x1="452" y1="60" x2="452" y2="72"/>
+      <text class="bp-dim-text" x="260" y="58" text-anchor="middle">1200px</text>`;
+  } else if (rule.id === 'grid') {
+    let cols = '';
+    for (let i = 0; i < 12; i++) cols += `<rect class="bp-col" x="${(68 + i * 32.67).toFixed(1)}" y="136" width="24.6" height="160"/>`;
+    inner = `
+      <rect class="bp-frame" x="60" y="110" width="400" height="220"/>
+      <text class="bp-scaffold-label" x="68" y="126">Section — scaffold</text>
+      ${cols}
+      <line class="bp-dim" x1="92.7" y1="104" x2="100.7" y2="104"/>
+      <line class="bp-ext" x1="92.7" y1="98" x2="92.7" y2="110"/><line class="bp-ext" x1="100.7" y1="98" x2="100.7" y2="110"/>
+      <text class="bp-dim-text" x="96.7" y="92" text-anchor="middle">24px</text>
+      <text class="bp-dim-text" x="260" y="356" text-anchor="middle">12 columns</text>`;
+  } else if (rule.id === 'gap') {
+    inner = `
+      <rect class="bp-frame" x="100" y="60" width="320" height="90"/>
+      <text class="bp-scaffold-label" x="108" y="76">Section — scaffold</text>
+      <rect class="bp-frame" x="100" y="236" width="320" height="90"/>
+      <text class="bp-scaffold-label" x="108" y="252">Section — scaffold</text>
+      <line class="bp-ext" x1="420" y1="150" x2="448" y2="150"/><line class="bp-ext" x1="420" y1="236" x2="448" y2="236"/>
+      <line class="bp-dim" x1="444" y1="150" x2="444" y2="236"/>
+      <text class="bp-dim-text" x="454" y="197">96px</text>`;
+  }
+  return `
+    ${vsHead('Isolate', rule.scale, rule.status)}
+    <svg class="bp-svg" viewBox="0 0 520 380" role="img"
+      aria-label="Schematic blueprint. Source-backed fact: ${rule.name}, ${rule.value}, ${rule.status}. Frame and placeholders are neutral scaffolds.">${inner}</svg>`;
+}
+
+/* ============================ V2 — Bands ============================ */
+function bandsScene(rule, opts) {
+  opts = opts || {};
+  if (rule.status === 'gap') return unavailableScene(rule);
+  let inner = '';
+  if (rule.id === 'inset') {
+    inner = `
+      <div class="band-page">
+        <div class="band-fill" style="left:0;width:26px"></div>
+        <div class="band-fill" style="right:0;width:26px"></div>
+        <div class="band-field" style="left:26px;right:26px;top:0;bottom:0;border-top:0;border-bottom:0">
+          <span class="scaffold-label">Content field — scaffold</span>
+        </div>
+        <span class="pill" style="left:13px;top:50%;transform:translate(-50%,-50%)">${sdot('formalized')}80px</span>
+        <span class="pill" style="right:13px;top:50%;transform:translate(50%,-50%)">${sdot('formalized')}80px</span>
+      </div>`;
+  } else if (rule.id === 'maxwidth') {
+    inner = `
+      <div class="band-page">
+        <div class="band-field" style="left:38px;width:384px;top:0;bottom:0;border-top:0;border-bottom:0">
+          <span class="scaffold-label">Content field — scaffold</span>
+        </div>
+        <span class="pill" style="left:50%;top:12px;transform:translateX(-50%)">${sdot('formalized')}1200px</span>
+      </div>`;
+  } else if (rule.id === 'grid') {
+    let cols = '';
+    for (let i = 0; i < 12; i++)
+      cols += `<div style="flex:1;border-radius:3px;background:${i === 0 ? 'var(--hl-mid)' : 'var(--hl-soft)'}"></div>`;
+    inner = `
+      <div class="band-page" style="background:transparent;box-shadow:none;overflow:visible">
+        <div class="band-section" style="left:30px;width:400px;top:90px;height:220px">
+          <span class="scaffold-label">Section — scaffold</span>
+          <div style="position:absolute;inset:26px 8px 8px;display:flex;gap:8px">${cols}</div>
+        </div>
+        <span class="band-caption" style="left:230px;top:322px;transform:translateX(-50%)">${sdot('formalized')}12 columns · 24px gutter</span>
+      </div>`;
+  } else if (rule.id === 'gap') {
+    inner = `
+      <div class="band-page" style="background:transparent;box-shadow:none;overflow:visible">
+        <div class="band-section" style="left:70px;width:320px;top:36px;height:90px">
+          <span class="scaffold-label">Section — scaffold</span>
+        </div>
+        <div class="band-fill" style="left:70px;width:320px;top:126px;height:44px;bottom:auto"></div>
+        <span class="pill" style="left:230px;top:141px;transform:translateX(-50%)">${sdot('candidate')}96px</span>
+        <div class="band-section" style="left:70px;width:320px;top:170px;height:90px">
+          <span class="scaffold-label">Section — scaffold</span>
+        </div>
+      </div>`;
+  }
+  const label = `Schematic preview. Source-backed fact: ${rule.name}, ${rule.value}, ${rule.status}. Frame and placeholders are neutral scaffolds.`;
+  return `
+    ${vsHead(opts.mode || 'Isolate', rule.scale, rule.status)}
+    <div class="band-scene" role="img" aria-label="${label}">${opts.lead || ''}${inner}</div>`;
+}
+
+/* ============================ V3 — Ruler ============================ */
+function rulerScene(rule) {
+  if (rule.status === 'gap') return unavailableScene(rule);
+  const OX = 54, OY = 44, PW = 460, PH = 300;
+  const numbered = rule.id === 'inset' || rule.id === 'maxwidth';
+  let ticks = '';
+  for (let i = 0; i <= 36; i++) {
+    const x = OX + i * 12.78, major = i % 2 === 0;
+    ticks += `<line class="rl-tick" x1="${x.toFixed(1)}" y1="${major ? 19 : 23}" x2="${x.toFixed(1)}" y2="28"/>`;
+    if (major && numbered && !(rule.id === 'inset' && (i === 2 || i === 34)))
+      ticks += `<text class="rl-tick-label" x="${x.toFixed(1)}" y="13" text-anchor="middle">${i * 40}</text>`;
+  }
+  for (let i = 0; i <= 15; i++) ticks += `<line class="rl-tick" x1="19" y1="${OY + i * 20}" x2="28" y2="${OY + i * 20}"/>`;
+  let inner = '';
+  if (rule.id === 'inset') {
+    inner = `
+      <line class="rl-guide" x1="80" y1="28" x2="80" y2="344"/><line class="rl-guide" x1="488" y1="28" x2="488" y2="344"/>
+      <line class="rl-hl-tick" x1="80" y1="15" x2="80" y2="28"/><line class="rl-hl-tick" x1="488" y1="15" x2="488" y2="28"/>
+      <text class="rl-hl-label" x="80" y="11" text-anchor="middle">80</text>
+      <text class="rl-hl-label" x="488" y="11" text-anchor="middle">1360</text>
+      <rect class="bp-scaffold" x="80" y="44" width="408" height="300"/>
+      <text class="bp-scaffold-label" x="284" y="336" text-anchor="middle">Content field — scaffold</text>`;
+  } else if (rule.id === 'maxwidth') {
+    inner = `
+      <line class="rl-guide" x1="92" y1="28" x2="92" y2="344"/><line class="rl-guide" x1="476" y1="28" x2="476" y2="344"/>
+      <line class="rl-hl-tick" x1="92" y1="17" x2="476" y2="17"/>
+      <line class="rl-hl-tick" x1="92" y1="13" x2="92" y2="21"/><line class="rl-hl-tick" x1="476" y1="13" x2="476" y2="21"/>
+      <text class="rl-hl-label" x="284" y="12" text-anchor="middle">1200px</text>
+      <rect class="bp-scaffold" x="92" y="44" width="384" height="300"/>
+      <text class="bp-scaffold-label" x="284" y="336" text-anchor="middle">Content field — scaffold</text>`;
+  } else if (rule.id === 'grid') {
+    let colTicks = '', cols = '';
+    for (let i = 0; i <= 12; i++) colTicks += `<line class="rl-hl-tick" x1="${(92 + i * 32.67).toFixed(1)}" y1="17" x2="${(92 + i * 32.67).toFixed(1)}" y2="28"/>`;
+    for (let i = 0; i < 12; i++) cols += `<rect class="bp-col" x="${(94 + i * 32.67).toFixed(1)}" y="136" width="24.6" height="150"/>`;
+    inner = `
+      <rect class="bp-frame" x="84" y="110" width="400" height="200"/>
+      <text class="bp-scaffold-label" x="92" y="126">Section — scaffold</text>
+      ${cols}
+      ${colTicks}
+      <text class="rl-hl-label" x="104" y="11">24px gutter · ×12</text>`;
+  } else if (rule.id === 'gap') {
+    inner = `
+      <rect class="bp-frame" x="124" y="60" width="320" height="90"/>
+      <text class="bp-scaffold-label" x="132" y="76">Section — scaffold</text>
+      <rect class="bp-frame" x="124" y="236" width="320" height="90"/>
+      <text class="bp-scaffold-label" x="132" y="252">Section — scaffold</text>
+      <line class="rl-guide" x1="28" y1="150" x2="514" y2="150"/><line class="rl-guide" x1="28" y1="236" x2="514" y2="236"/>
+      <line class="rl-hl-tick" x1="15" y1="150" x2="28" y2="150"/><line class="rl-hl-tick" x1="15" y1="236" x2="28" y2="236"/>
+      <line class="rl-hl-tick" x1="21" y1="150" x2="21" y2="236"/>
+      <text class="rl-hl-label" x="4" y="146">96px</text>`;
+  }
+  return `
+    ${vsHead('Isolate', rule.scale, rule.status)}
+    <svg class="rl-svg" viewBox="0 0 560 360" role="img"
+      aria-label="Schematic preview with measurement rulers. Source-backed fact: ${rule.name}, ${rule.value}, ${rule.status}. Scene content is a neutral scaffold.">
+      <rect class="rl-ruler" x="0" y="0" width="560" height="28"/>
+      <rect class="rl-ruler" x="0" y="0" width="28" height="360"/>
+      <line class="rl-ruler-edge" x1="0" y1="28" x2="560" y2="28"/>
+      <line class="rl-ruler-edge" x1="28" y1="0" x2="28" y2="360"/>
+      ${ticks}
+      ${rule.id === 'inset' || rule.id === 'maxwidth' ? `<rect class="bp-frame" x="${OX}" y="${OY}" width="${PW}" height="${PH}"/>` : ''}
+      ${inner}
+    </svg>`;
+}
+
+/* ============================ V4 — Layers ============================ */
+function legend() {
+  const effFocus = S.applied[S.focus] ? S.focus : (S.applied.inset ? 'inset' : S.applied.maxwidth ? 'maxwidth' : null);
+  const pageRows = ['inset', 'maxwidth'].map((id) => {
+    const r = ruleById(id), on = !!S.applied[id];
+    return `
+      <div class="legend-row" ${effFocus === id ? 'data-focus' : ''}>
+        <button class="switch" role="switch" aria-checked="${on}" data-toggle="${id}" aria-label="Apply ${r.name}"></button>
+        <button class="legend-main" data-focus="${id}">
+          ${sdot(r.status)}<span class="lname">${r.name}</span><span class="lval">${r.value.split(' ')[0]}</span>
+        </button>
+      </div>`;
+  }).join('');
+  const sectionRows = ['grid', 'gap'].map((id) => {
+    const r = ruleById(id);
+    return `
+      <div class="legend-row">
+        <button class="legend-main" data-rule="${id}" style="padding-left:30px">
+          ${sdot(r.status)}<span class="lname">${r.name}</span><span class="lval">→</span>
+        </button>
+      </div>`;
+  }).join('');
+  return `
+    <div class="legend" role="group" aria-label="Applied source rules">
+      <div class="legend-head"><span>Applied source rules</span><span class="vs-chip">Compose</span></div>
+      ${pageRows}
+      <div class="legend-sep">Section scope — separate scenes</div>
+      ${sectionRows}
+      <div class="legend-sep">Open gap</div>
+      <div class="legend-row" style="opacity:0.6">
+        <span class="legend-main" style="padding-left:30px;cursor:default">
+          <span class="lname">Sticky header</span><span class="lval">insufficient</span>
+        </span>
+      </div>
+    </div>`;
+}
+
+function layersScene() {
+  if (S.isolate) {
+    const r = ruleById(S.isolate);
+    if (r.status === 'gap') return unavailableScene(r);
+    return bandsScene(r, {
+      lead: '<button class="back-link" data-back>← Compose view</button>',
+      mode: 'Separate scene',
+    });
+  }
+  const focus = S.applied[S.focus] ? S.focus : (S.applied.inset ? 'inset' : S.applied.maxwidth ? 'maxwidth' : null);
+  const anyOn = S.applied.inset || S.applied.maxwidth;
+  let layers = '';
+  if (S.applied.inset) {
+    const f = focus === 'inset';
+    layers += `
+      <div class="${f ? 'band-fill' : 'ghost-band'}" style="left:0;width:26px"></div>
+      <div class="${f ? 'band-fill' : 'ghost-band'}" style="right:0;width:26px"></div>
+      <span class="pill ${f ? '' : 'ghost'}" style="left:13px;top:12px;transform:translateX(-50%)">${sdot('formalized')}80px</span>
+      <span class="pill ${f ? '' : 'ghost'}" style="right:13px;top:12px;transform:translateX(50%)">${sdot('formalized')}80px</span>`;
+  }
+  if (S.applied.maxwidth) {
+    const f = focus === 'maxwidth';
+    layers += `
+      <div class="band-field ${f ? '' : 'ghost-field'}" style="left:38px;width:384px;top:0;bottom:0;border-top:0;border-bottom:0;${f ? 'border:1.5px solid var(--hl);background:var(--hl-soft)' : ''}">
+        <span class="scaffold-label">Content field — scaffold</span>
+      </div>
+      <span class="pill ${f ? '' : 'ghost'}" style="left:50%;top:38px;transform:translateX(-50%)">${sdot('formalized')}1200px</span>`;
+  }
+  if (!anyOn) layers = `<span class="ghost-note">No rules applied — toggle rules in the legend to compose.</span>`;
+  const appliedList = ['inset', 'maxwidth'].filter((id) => S.applied[id]).map((id) => ruleById(id).name + ' (' + ruleById(id).value + ')');
+  return `
+    ${vsHead('Compose', '1440px viewport · proportional', null)}
+    <div class="layer-wrap" role="img"
+      aria-label="Composed schematic. Applied source rules: ${appliedList.join('; ') || 'none'}. The page frame is a neutral scaffold, not a declared page shell.">
+      <div class="band-page">${layers}</div>
+      ${legend()}
+    </div>`;
+}
+
+/* ============================ variants + wiring ============================ */
+const variants = [
+  function Blueprint() { return shell('Blueprint', bpScene(ruleById(S.selected)), 'Isolate'); },
+  function Bands()     { return shell('Bands', bandsScene(ruleById(S.selected)), 'Isolate'); },
+  function Ruler()     { return shell('Ruler', rulerScene(ruleById(S.selected)), 'Isolate'); },
+  function Layers()    { return shell('Layers', layersScene(), 'Compose'); },
+];
+
+const stage = document.getElementById('stage');
+const picker = document.querySelector('.proto-picker');
+const highlight = picker.querySelector('.proto-picker-highlight');
+const items = [...picker.querySelectorAll('.proto-picker-item:not(.proto-picker-replay)')];
+const replay = picker.querySelector('.proto-picker-replay');
+let current = 0;
+
+function moveHighlight() {
+  const el = items[current];
+  highlight.style.width = el.offsetWidth + 'px';
+  highlight.style.transform = `translateX(${el.offsetLeft}px)`;
+}
+
+function mount(i) {
+  stage.innerHTML = '';
+  requestAnimationFrame(() => {
+    stage.innerHTML = variants[i]();
+    wireSplit();
+  });
+}
+
+function setActive(i) {
+  if (i < 0 || i >= variants.length) return;
+  current = i;
+  items.forEach((el, j) => {
+    el.toggleAttribute('data-active', j === i);
+    if (j === i) el.setAttribute('aria-current', 'true');
+    else el.removeAttribute('aria-current');
+  });
+  moveHighlight();
+  const url = new URL(location);
+  url.searchParams.set('v', i + 1);
+  history.replaceState(null, '', url);
+  mount(i);
+}
+
+/* simplified LeafSplit drag: default 42%, min 340/420, double-click resets */
+function applyRatio() {
+  const split = document.getElementById('split');
+  if (!split) return;
+  const w = split.getBoundingClientRect().width;
+  const minL = Math.min(340 / w, 0.5), maxL = 1 - Math.min(420 / w, 0.5);
+  S.ratio = Math.max(minL, Math.min(maxL, S.ratio));
+  split.style.gridTemplateColumns = `minmax(340px, calc((100% - 20px) * ${S.ratio})) 20px minmax(420px, 1fr)`;
+}
+function wireSplit() {
+  const split = document.getElementById('split');
+  const divider = document.getElementById('divider');
+  if (!split || !divider) return;
+  applyRatio();
+  divider.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    divider.setPointerCapture(e.pointerId);
+    split.dataset.dragging = '';
+    const move = (ev) => {
+      const rect = split.getBoundingClientRect();
+      S.ratio = (ev.clientX - rect.left) / rect.width;
+      applyRatio();
+    };
+    const up = () => { delete split.dataset.dragging; divider.removeEventListener('pointermove', move); };
+    divider.addEventListener('pointermove', move);
+    divider.addEventListener('pointerup', up, { once: true });
+  });
+  divider.addEventListener('dblclick', () => { S.ratio = 0.42; applyRatio(); });
+}
+
+stage.addEventListener('click', (e) => {
+  const toggle = e.target.closest('[data-toggle]');
+  if (toggle) {
+    const id = toggle.dataset.toggle;
+    S.applied[id] = !S.applied[id];
+    if (!S.applied[id] && S.focus === id) S.focus = S.applied.inset ? 'inset' : 'maxwidth';
+    if (S.applied[id]) S.focus = id;
+    S.selected = id;
+    mount(current);
+    return;
+  }
+  const focus = e.target.closest('[data-focus]');
+  if (focus) { S.focus = focus.dataset.focus; S.selected = S.focus; mount(current); return; }
+  const back = e.target.closest('[data-back]');
+  if (back) { S.isolate = null; mount(current); return; }
+  const rule = e.target.closest('[data-rule]');
+  if (rule) {
+    const id = rule.dataset.rule;
+    S.selected = id;
+    if (current === 3) {
+      if (!isPageScope(id)) S.isolate = id;
+      else if (ruleById(id).status !== 'gap') { S.applied[id] = true; S.focus = id; S.isolate = null; }
+      else S.isolate = id;
+    }
+    mount(current);
+  }
+});
+
+items.forEach((el, i) => el.addEventListener('click', () => setActive(i)));
+replay?.addEventListener('click', () => mount(current));
+window.addEventListener('resize', () => { moveHighlight(); applyRatio(); });
+
+document.addEventListener('keydown', (e) => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const num = parseInt(e.key, 10);
+  if (num >= 1 && num <= variants.length) setActive(num - 1);
+  else if (e.key === 'ArrowRight') setActive((current + 1) % variants.length);
+  else if (e.key === 'ArrowLeft') setActive((current - 1 + variants.length) % variants.length);
+  else if (e.key === 'r' || e.key === 'R') mount(current);
+});
+
+setActive((parseInt(new URLSearchParams(location.search).get('v'), 10) || 1) - 1);
+requestAnimationFrame(() => requestAnimationFrame(() => picker.setAttribute('data-ready', '')));
+</script>
+</body>
+</html>

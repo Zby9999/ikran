@@ -1,0 +1,1 @@
+{"action":"evaluate","args":{"code":"(() => { const nav = Array.from(document.querySelectorAll('.dsb-sheet button')).find(b => b.textContent.trim() === 'Layout'); if (!nav) return JSON.stringify({err:'no layout nav'}); nav.click(); return JSON.stringify({clicked: true}); })()"},"session":"layout-ic-prototypes"}
