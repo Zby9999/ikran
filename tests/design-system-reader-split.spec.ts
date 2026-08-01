@@ -282,64 +282,50 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     writeSource("design-system/interaction-rules.json", {
       rules: [
         {
-          id: "primary-button",
-          name: "Primary button",
+          id: "quiet-motion",
+          name: "Quiet motion",
           value: {
-            appliesTo: ["Buttons", "Icon buttons"],
-            stateBehavior: [
-              { state: "default", behavior: "Filled ink surface" },
-              { state: "hover", behavior: "Surface darkens 4%" },
-              { state: "active", behavior: "Scale 0.97 press" },
-              { state: "disabled", behavior: "35% opacity, no pointer" }
+            statement: "Motion stays quiet",
+            description: "Routine feedback never competes with content.",
+            behavior: [
+              "Use short feedback to explain a state change.",
+              "Avoid decorative loops."
             ],
-            motion: [
-              {
-                duration: "160ms",
-                easing: "ease-out",
-                target: "background-color"
-              }
-            ],
-            layoutInvariants: ["Press never shifts layout"]
+            accessibility: [
+              "Preserve the same information when motion is reduced."
+            ]
           },
-          meaning: "Commit actions across the workbench",
+          meaning: "Animation supports comprehension.",
           status: "candidate",
           links: [designerEditedCardId]
         },
         {
-          id: "sheet-drawer",
-          name: "Sheet drawer",
+          id: "frequent-actions",
+          name: "Frequent actions",
           value: {
-            appliesTo: ["Browser sheet", "Overlays"],
-            stateBehavior: [
-              { state: "open", behavior: "Resting at 94vh, rounded top" },
-              {
-                state: "closed",
-                behavior: "Translated 102% down, hidden"
-              }
+            statement: "Frequent actions switch instantly",
+            description: "Repeated actions should never accumulate animation cost.",
+            behavior: [
+              "Switch tabs and sibling views without transitional movement."
             ],
-            motion: [
-              {
-                duration: "350ms",
-                easing: "cubic-bezier(0.32, 0.72, 0, 1)",
-                target: "transform"
-              }
-            ],
-            layoutInvariants: ["Sheet never covers the sidebar nav"]
+            accessibility: [
+              "Keep keyboard-initiated actions free of motion."
+            ]
           },
-          meaning: "Bottom sheet enter and exit",
+          meaning: "Frequency determines whether motion belongs.",
           status: "candidate",
           links: [designerEditedCardId]
         },
         {
-          id: "loading-state",
-          name: "Loading behavior",
+          id: "keyboard-parity",
+          name: "Keyboard parity",
           value: {
-            appliesTo: ["Buttons", "Panels"],
-            stateBehavior: [],
-            motion: [],
-            layoutInvariants: []
+            statement: "Keyboard parity",
+            description: "Every pointer action needs an equivalent keyboard path.",
+            behavior: [],
+            accessibility: []
           },
-          meaning: "Async wait feedback",
+          meaning: "Input method does not limit capability.",
           status: "gap",
           links: []
         }
@@ -720,85 +706,40 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     expect(splitOverflow).toBeLessThanOrEqual(1);
     await page.setViewportSize({ width: 1280, height: 720 });
 
-    // ---- 09C-B Interaction Rig: source-backed live states + honest gaps. ----
+    // ---- 09C-D01 Interaction ledger: strategy text, no inferred samples. ----
     await page.getByRole("button", { name: "Interaction", exact: true }).click();
-    const rig = page.getByTestId("ds-interaction-rig");
-    await expect(rig).toBeVisible();
+    await expect(page.getByTestId("ds-interaction-rig")).toHaveCount(0);
+    await expect(page.getByTestId("ds-leaf-split")).toHaveCount(0);
 
-    const buttonRule = page.getByTestId("ds-interaction-rule-1");
-    await expect(buttonRule).toContainText("Primary button");
-    await expect(buttonRule.getByTestId("ds-interaction-status")).toHaveText(
+    const quietMotion = page.getByTestId("ds-interaction-rule-1");
+    await expect(quietMotion).toContainText("Motion stays quiet");
+    await expect(quietMotion).not.toContainText("Description");
+    const quietMotionToggle = quietMotion.getByRole("button", {
+      name: "Motion stays quiet"
+    });
+    await expect(quietMotionToggle).toHaveAttribute("aria-expanded", "false");
+    await quietMotionToggle.click();
+    await expect(quietMotionToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(quietMotion).toContainText("Description");
+    await expect(quietMotion).toContainText("Behavior");
+    await expect(quietMotion).toContainText("Accessibility");
+    await expect(quietMotion).toContainText(
+      "Use short feedback to explain a state change."
+    );
+    await expect(quietMotion.getByTestId("ds-interaction-status")).toHaveText(
       "candidate"
     );
-    await expect(buttonRule).toContainText("Source-generated");
-    await expect(buttonRule.getByLabel("Declared states")).toContainText(
-      "default"
+    const info = quietMotion.getByLabel(
+      "Evidence for interaction rule quiet-motion"
     );
-    await expect(buttonRule.getByLabel("Declared states")).toContainText(
-      "disabled"
+    await info.hover();
+    const interactionEvidence = page.getByTestId("ds-evidence-quiet-motion");
+    await expect(interactionEvidence).toBeVisible();
+    await expect(interactionEvidence).toContainText("设计师改写后的回答");
+    await expect(page.getByTestId("ds-interaction-rule-3")).toContainText(
+      "Keyboard parity"
     );
-    await expect(buttonRule.getByLabel("Declared states")).not.toContainText(
-      "focus-visible"
-    );
-    const liveButton = buttonRule.getByRole("button", {
-      name: "Save changes"
-    });
-    await liveButton.hover();
-    await expect(buttonRule.locator(".dsb-interaction-readout-state")).toHaveText(
-      "hover"
-    );
-    await expect(
-      buttonRule.locator(".dsb-interaction-readout-behavior")
-    ).toHaveText("Surface darkens 4%");
-    const liveButtonBox = await liveButton.boundingBox();
-    expect(liveButtonBox).not.toBeNull();
-    await page.mouse.move(
-      liveButtonBox!.x + liveButtonBox!.width / 2,
-      liveButtonBox!.y + liveButtonBox!.height / 2
-    );
-    await page.mouse.down();
-    await expect(buttonRule.locator(".dsb-interaction-readout-state")).toHaveText(
-      "active"
-    );
-    await page.mouse.up();
-
-    const sheetRule = page.getByTestId("ds-interaction-rule-2");
-    await expect(sheetRule).toContainText("Schematic");
-    const specimenStage = sheetRule.locator(".dsb-interaction-stage");
-    await sheetRule.getByRole("button", { name: "Open sheet" }).click();
-    await expect(specimenStage).toHaveAttribute("data-sheet-open", "");
-    await sheetRule.getByRole("button", {
-      name: "Close Sheet drawer specimen"
-    }).focus();
-    await page.keyboard.press("Escape");
-    await expect(specimenStage).not.toHaveAttribute("data-sheet-open");
-    await expect(sheet).toHaveAttribute("data-open", "true");
-    await expect(sheetRule.locator(".dsb-interaction-readout-state")).toHaveText(
-      "closed"
-    );
-
-    const loadingRule = page.getByTestId("ds-interaction-rule-3");
-    await expect(loadingRule).toHaveAttribute("data-unavailable", "true");
-    await expect(loadingRule).toContainText("Unavailable");
-    await expect(loadingRule).toContainText(
-      "No states are declared for this interaction rule."
-    );
-    await expect(rig.getByText(/spinner/i)).toHaveCount(0);
-
-    const interactionRow = page.getByTestId("ds-row-primary-button");
-    await expect(interactionRow.locator(".dsb-interaction-anchor")).toHaveText(
-      "1"
-    );
-
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await sheetRule.getByRole("button", { name: "Open sheet" }).click();
-    await expect
-      .poll(() =>
-        sheetRule
-          .locator(".dsb-interaction-sheet-panel")
-          .evaluate((element) => getComputedStyle(element).transitionDuration)
-      )
-      .toBe("0.001s");
+    await expect(page.getByText("No visual sample", { exact: true })).toHaveCount(0);
   } finally {
     try {
       await client?.close();

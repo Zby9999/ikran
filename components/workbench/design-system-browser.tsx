@@ -54,7 +54,6 @@ import {
   typographyAtlasItems,
   typographyLayersFromView,
   type PrincipleProjection,
-  type InteractionRuleProjection,
   type TokenLayerKey,
   type TypographyAtlasItem
 } from "./design-system-reader-projection";
@@ -888,7 +887,109 @@ export function ComponentsHomePage({
 
 /* ------------------------------- leaf pages ------------------------------- */
 
-/** Interaction leaf: flat rule rows (Layout has its own Blueprint page). */
+function InteractionRuleCard({
+  rule,
+  approval,
+  rows
+}: {
+  rule: ReturnType<typeof projectInteractionLeaf>[number];
+  approval: ApprovalState;
+  rows: RowSharedProps;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = `ds-interaction-details-${rule.row.entryId.replace(
+    /[^a-zA-Z0-9_-]/g,
+    "-"
+  )}`;
+  return (
+    <li
+      className="dsb-interaction-rule"
+      data-testid={`ds-interaction-rule-${rule.anchor}`}
+      data-expanded={expanded || undefined}
+      data-approve-error={approval.kind === "error" || undefined}
+    >
+      <div className="dsb-interaction-ledger-row">
+        <span className="dsb-interaction-anchor" aria-hidden>
+          {rule.anchor}
+        </span>
+        <button
+          type="button"
+          className="dsb-interaction-ledger-main"
+          aria-label={rule.statement}
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <span className="dsb-card-title">{rule.statement}</span>
+          {rule.meaning ? (
+            <span className="dsb-card-desc">{rule.meaning}</span>
+          ) : null}
+        </button>
+        <StatusChip status={rule.status} testId="ds-interaction-status" />
+        <HugeiconsIcon
+          icon={ArrowDown01Icon}
+          size={14}
+          className="dsb-interaction-ledger-chevron"
+          aria-hidden
+        />
+      </div>
+      {expanded ? (
+        <div className="dsb-interaction-ledger-details" id={detailsId}>
+          {rule.isRich ? (
+            <div className="dsb-principle-fields">
+              {rule.description ? (
+                <span className="dsb-principle-field">
+                  <span className="dsb-principle-field-label">Description</span>
+                  <p className="dsb-principle-field-text">{rule.description}</p>
+                </span>
+              ) : null}
+              {(["behavior", "accessibility"] as const).map((field) =>
+                rule[field].length > 0 ? (
+                  <span className="dsb-principle-field" key={field}>
+                    <span className="dsb-principle-field-label">
+                      {field[0]!.toUpperCase() + field.slice(1)}
+                    </span>
+                    <ul className="dsb-principle-list">
+                      {rule[field].map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                  </span>
+                ) : null
+              )}
+              {rule.extraFields?.map((field) => (
+                <span className="dsb-principle-field" key={field.label}>
+                  <span className="dsb-principle-field-label">{field.label}</span>
+                  <p className="dsb-principle-field-text">{field.text}</p>
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <div className="dsb-principle-footer">
+            <InfoPopover
+              entry={rule.row.entry}
+              approval={approval}
+              infoOpen={rows.infoKey === rule.key}
+              popoverInstant={rows.popoverInstant(rule.key)}
+              portalContainer={rows.portalContainer}
+              ariaLabel={`Evidence for interaction rule ${rule.row.entryId}`}
+              onInfoOpenChange={(open) => rows.onInfoKey(open ? rule.key : null)}
+              onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.key)}
+              onInfoHoverClose={rows.onInfoHoverClose}
+              onApprove={() => rows.onApprove(rule.row)}
+            />
+          </div>
+          {approval.kind === "error" ? (
+            <span className="dsb-row-error" role="alert">
+              Approval failed: {approval.message}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+/** Interaction leaf: cross-component strategies in the same text-card
+ * language as Foundations principles. */
 export function RulesLeafPage({
   kind,
   leaf,
@@ -898,6 +999,7 @@ export function RulesLeafPage({
   leaf: { rows: DsRow[]; chips: string[] };
   rows: RowSharedProps;
 }) {
+  const rules = useMemo(() => projectInteractionLeaf(leaf.rows), [leaf.rows]);
   return (
     <>
       <PageHeading
@@ -906,11 +1008,16 @@ export function RulesLeafPage({
         chips={leaf.chips}
       />
       {leaf.rows.length > 0 ? (
-        <RowList
-          rows={leaf.rows}
-          numbered={kind === "interaction"}
-          {...rows}
-        />
+        <ol className="dsb-interaction-ledger">
+          {rules.map((rule) => (
+            <InteractionRuleCard
+              key={rule.key}
+              rule={rule}
+              approval={rows.approvals[rule.key] ?? { kind: "idle" }}
+              rows={rows}
+            />
+          ))}
+        </ol>
       ) : (
         <p className="dsb-empty-body dsb-page-note">No rules declared yet.</p>
       )}
@@ -979,329 +1086,6 @@ function VisualSamplesEmpty() {
       <div className="dsb-samples-empty">
         <p className="dsb-samples-empty-title">No visual samples yet</p>
       </div>
-    </div>
-  );
-}
-
-function InteractionMiniSpecimen({
-  rule,
-  state
-}: {
-  rule: InteractionRuleProjection;
-  state: string;
-}) {
-  if (rule.control === "link") {
-    return (
-      <span className="dsb-interaction-mini-link" data-state={state}>
-        Projects
-      </span>
-    );
-  }
-  if (rule.control === "button") {
-    return (
-      <span className="dsb-interaction-mini-button" data-state={state}>
-        Save changes
-      </span>
-    );
-  }
-  if (rule.control === "field") {
-    return (
-      <span className="dsb-interaction-mini-field" data-state={state}>
-        <span>Search tokens…</span>
-      </span>
-    );
-  }
-  if (rule.control === "sheet") {
-    return (
-      <span className="dsb-interaction-mini-sheet" data-state={state}>
-        <span className="dsb-interaction-mini-sheet-scrim" />
-        <span className="dsb-interaction-mini-sheet-panel">
-          <span />
-        </span>
-      </span>
-    );
-  }
-  return null;
-}
-
-function InteractionRigHeader({
-  rule
-}: {
-  rule: InteractionRuleProjection;
-}) {
-  return (
-    <header className="dsb-interaction-block-head">
-      <span className="dsb-interaction-anchor" aria-hidden>
-        {rule.anchor}
-      </span>
-      <span className="dsb-interaction-block-name">{rule.name}</span>
-      <StatusChip status={rule.status} testId="ds-interaction-status" />
-      <OriginTag origin={rule.origin} />
-    </header>
-  );
-}
-
-function InteractionUnavailable({
-  rule
-}: {
-  rule: InteractionRuleProjection;
-}) {
-  return (
-    <section
-      className="dsb-interaction-block"
-      data-testid={`ds-interaction-rule-${rule.anchor}`}
-      data-unavailable
-    >
-      <InteractionRigHeader rule={rule} />
-      <div className="dsb-interaction-unavailable" role="note">
-        <p className="dsb-interaction-unavailable-title">No visual sample</p>
-        <p className="dsb-interaction-unavailable-reason">
-          {rule.unavailableReason}
-        </p>
-      </div>
-    </section>
-  );
-}
-
-function InteractionRigBlock({
-  rule
-}: {
-  rule: InteractionRuleProjection;
-}) {
-  const fallbackState =
-    rule.states.find((state) => state.state === "default")?.state ??
-    rule.states.find((state) => state.state === "closed")?.state ??
-    rule.states[0]!.state;
-  const [liveState, setLiveState] = useState(fallbackState);
-  const [focusVisible, setFocusVisible] = useState(false);
-  const pointerDown = useRef(false);
-  const hasState = useCallback(
-    (state: string) => rule.states.some((item) => item.state === state),
-    [rule.states]
-  );
-  const requestedState =
-    focusVisible && hasState("focus-visible") ? "focus-visible" : liveState;
-  const behavior =
-    rule.states.find((state) => state.state === requestedState) ??
-    rule.states.find((state) => state.state === fallbackState) ??
-    rule.states[0]!;
-  const current = behavior.state;
-  const motion = rule.motion[0];
-  const isSheet = rule.control === "sheet";
-  const sheetOpen = isSheet && current === "open";
-  const genericMotion = rule.motion.find((item) => item.target === undefined);
-  const motionFor = (targets: readonly string[]) =>
-    rule.motion.find((item) => {
-      const target = item.target?.toLowerCase();
-      return target
-        ? targets.some((candidate) => target.includes(candidate))
-        : false;
-    }) ?? genericMotion;
-  const colorMotion = motionFor(["color", "background"]);
-  const transformMotion = motionFor(["transform"]);
-  const borderMotion = motionFor(["border", "ring"]);
-  const scrimMotion = motionFor(["scrim"]);
-  const motionStyle = {
-    "--dsb-interaction-color-duration": colorMotion?.duration ?? "0ms",
-    "--dsb-interaction-color-easing": colorMotion?.easing ?? "linear",
-    "--dsb-interaction-transform-duration":
-      transformMotion?.duration ?? "0ms",
-    "--dsb-interaction-transform-easing":
-      transformMotion?.easing ?? "linear",
-    "--dsb-interaction-border-duration": borderMotion?.duration ?? "0ms",
-    "--dsb-interaction-border-easing": borderMotion?.easing ?? "linear",
-    "--dsb-interaction-scrim-duration": scrimMotion?.duration ?? "0ms",
-    "--dsb-interaction-scrim-easing": scrimMotion?.easing ?? "linear"
-  } as React.CSSProperties;
-
-  const setDeclaredState = (state: string, fallback = fallbackState) => {
-    setLiveState(hasState(state) ? state : fallback);
-  };
-  const pointerHandlers = {
-    onPointerEnter: () => setDeclaredState("hover"),
-    onPointerLeave: () => {
-      pointerDown.current = false;
-      setLiveState(fallbackState);
-    },
-    onPointerDown: () => {
-      setFocusVisible(false);
-      pointerDown.current = true;
-      setDeclaredState("active", hasState("hover") ? "hover" : fallbackState);
-    },
-    onPointerUp: () => {
-      if (pointerDown.current) {
-        setDeclaredState("hover");
-      }
-      pointerDown.current = false;
-    }
-  };
-
-  return (
-    <section
-      className="dsb-interaction-block"
-      data-testid={`ds-interaction-rule-${rule.anchor}`}
-      style={motionStyle}
-    >
-      <InteractionRigHeader rule={rule} />
-      <div className="dsb-interaction-stage-row">
-        <div
-          className="dsb-interaction-stage"
-          data-sheet-open={sheetOpen ? "" : undefined}
-          onKeyDown={(event) => {
-            if (
-              sheetOpen &&
-              hasState("closed") &&
-              event.key === "Escape"
-            ) {
-              event.preventDefault();
-              event.stopPropagation();
-              setLiveState("closed");
-            }
-          }}
-        >
-          {rule.control === "link" ? (
-            <button
-              type="button"
-              className="dsb-interaction-live-link"
-              data-has-hover={hasState("hover") || undefined}
-              data-has-focus-visible={
-                hasState("focus-visible") || undefined
-              }
-              {...pointerHandlers}
-              onFocus={(event) =>
-                setFocusVisible(event.currentTarget.matches(":focus-visible"))
-              }
-              onBlur={() => setFocusVisible(false)}
-            >
-              Projects
-            </button>
-          ) : null}
-          {rule.control === "button" ? (
-            <button
-              type="button"
-              className="dsb-interaction-live-button"
-              data-has-hover={hasState("hover") || undefined}
-              data-has-active={hasState("active") || undefined}
-              data-has-focus-visible={
-                hasState("focus-visible") || undefined
-              }
-              {...pointerHandlers}
-              onFocus={(event) =>
-                setFocusVisible(event.currentTarget.matches(":focus-visible"))
-              }
-              onBlur={() => setFocusVisible(false)}
-            >
-              Save changes
-            </button>
-          ) : null}
-          {rule.control === "field" ? (
-            <input
-              className="dsb-interaction-live-field"
-              placeholder="Search tokens…"
-              aria-label="Search tokens"
-              data-has-hover={hasState("hover") || undefined}
-              data-has-focus-visible={
-                hasState("focus-visible") || undefined
-              }
-              {...pointerHandlers}
-              onFocus={(event) =>
-                setFocusVisible(event.currentTarget.matches(":focus-visible"))
-              }
-              onBlur={() => setFocusVisible(false)}
-            />
-          ) : null}
-          {rule.control === "sheet" ? (
-            <>
-              <button
-                type="button"
-                className="dsb-interaction-sheet-scrim"
-                aria-label={`Close ${rule.name} specimen`}
-                aria-hidden={!sheetOpen}
-                tabIndex={sheetOpen ? 0 : -1}
-                onClick={() => setDeclaredState("closed")}
-              />
-              <span className="dsb-interaction-sheet-panel" aria-hidden>
-                <span className="dsb-interaction-sheet-grabber" />
-                <span className="dsb-interaction-sheet-lines">
-                  <span />
-                  <span />
-                  <span />
-                </span>
-              </span>
-              {liveState !== "open" ? (
-                <button
-                  type="button"
-                  className="dsb-interaction-live-button"
-                  onClick={() => setDeclaredState("open")}
-                >
-                  Open sheet
-                </button>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-
-        <div className="dsb-interaction-readout" aria-live="polite">
-          <p className="dsb-interaction-readout-label">Current state</p>
-          <p className="dsb-interaction-readout-state">{current}</p>
-          <p className="dsb-interaction-readout-behavior">
-            {behavior.behavior}
-          </p>
-          {motion ? (
-            <p className="dsb-interaction-readout-motion">
-              {motion.duration} · {motion.easing}
-              {motion.target ? ` · ${motion.target}` : ""}
-            </p>
-          ) : null}
-          {rule.layoutInvariants[0] ? (
-            <p className="dsb-interaction-readout-invariant">
-              {rule.layoutInvariants[0]}
-            </p>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="dsb-interaction-strip" aria-label="Declared states">
-        {rule.states.map((state) => (
-          <span
-            className="dsb-interaction-strip-item"
-            data-current={state.state === current ? "" : undefined}
-            key={state.state}
-          >
-            <InteractionMiniSpecimen rule={rule} state={state.state} />
-            <span className="dsb-interaction-strip-label">{state.state}</span>
-          </span>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-export function InteractionSamples({ rows }: { rows: DsRow[] }) {
-  const rules = useMemo(() => projectInteractionLeaf(rows), [rows]);
-  return (
-    <div
-      className="dsb-samples dsb-interaction-rig"
-      data-testid="ds-interaction-rig"
-    >
-      <div className="dsb-interaction-toolbar">
-        <GroupLabel>Live specimens</GroupLabel>
-        <p>Hover, press, and focus each control</p>
-      </div>
-      {rules.map((rule) =>
-        rule.control === null ? (
-          <InteractionUnavailable key={rule.key} rule={rule} />
-        ) : (
-          <InteractionRigBlock
-            // SSE can replace the declared states while preserving the entry
-            // key. Remount the local interaction state for that new contract.
-            key={`${rule.key}:${rule.states
-              .map((state) => state.state)
-              .join("|")}`}
-            rule={rule}
-          />
-        )
-      )}
     </div>
   );
 }
@@ -2765,18 +2549,12 @@ export function DesignSystemBrowser({
       }
       if (route.leaf === "interaction") {
         return {
-          layout: "leaf",
+          layout: "page",
           node: (
-            <LeafSplit
-              {...splitProps}
-              left={
-                <RulesLeafPage
-                  kind="interaction"
-                  leaf={model.foundations.interaction}
-                  rows={rowListProps}
-                />
-              }
-              right={<InteractionSamples rows={model.foundations.interaction.rows} />}
+            <RulesLeafPage
+              kind="interaction"
+              leaf={model.foundations.interaction}
+              rows={rowListProps}
             />
           )
         };

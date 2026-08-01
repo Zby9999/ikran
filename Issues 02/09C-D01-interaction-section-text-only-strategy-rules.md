@@ -1,6 +1,6 @@
 # Interaction Section 纯文本策略规则与抽取契约拆分
 
-Status: ready-for-agent
+Status: completed
 
 ## Parent
 
@@ -35,7 +35,8 @@ interaction-rules.json 混住了两个物种：
 
 **B. Interaction section 纯文本化**
 
-- 页面形态与 foundations/principles 一致：meaning、rationale、use / avoid、
+- 页面形态与 foundations/principles 同属纯文本规则语言：meaning、Description、
+  Behavior、Accessibility、
   status chip、candidate 审批与 evidence popover 在原路径上保持可用；
 - 退役 `InteractionRigBlock` / `InteractionMiniSpecimen` / `InteractionUnavailable`
   与 `appliesTo → control` adapter 推断（`INTERACTION_ADAPTER_STATES` /
@@ -56,13 +57,13 @@ interaction-rules.json 混住了两个物种：
 
 ## Acceptance criteria
 
-- [ ] 抽取契约（含 09C-B01 写作风格契约）明确 interaction-rules 只承载跨组件
+- [x] 抽取契约（含 09C-B01 写作风格契约）明确 interaction-rules 只承载跨组件
       策略，组件绑定状态规格归入 component spec 的 states / motion
-- [ ] ikran test 7 已有抽取产物按新契约重写，两类 entry 各归其位
-- [ ] Interaction leaf 渲染为纯文本规则流，与 principles 页面形态一致
-- [ ] interaction rig、control adapter 推断及相关 CSS 全部移除，无残留引用
-- [ ] status、approval、evidence popover、Technical details 行为无回归
-- [ ] 新 projection 与契约拆分有确定性 unit tests；e2e 与真实 Browser 核对
+- [x] ikran test 7 已有抽取产物按新契约重写，两类 entry 各归其位
+- [x] Interaction leaf 渲染为纯文本 Ledger 规则流，点击行展开详细信息
+- [x] interaction rig、control adapter 推断及相关 CSS 全部移除，无残留引用
+- [x] status、approval、evidence popover、Technical details 行为无回归
+- [x] 新 projection 与契约拆分有确定性 unit tests；e2e 与真实 Browser 核对
       与 09C-A 既有验证分开记录
 
 ## Blocked by
@@ -84,3 +85,13 @@ interaction-rules.json 混住了两个物种：
 ——问题不是被解决而是被解散。Interaction 数据分为组件绑定规格（归组件页）与
 高概念策略（纯文本）两类；分类在抽取契约层完成（方案 A）。原 09C-B 文件已删除，
 完整讨论与验收历史可从 git 历史取回。
+
+### 2026-08-01 — Ledger 晋升与字段定名
+
+设计师确认采用 Ledger 方向，并将原型中语义含混的 Rationale / Use / Avoid
+定名为 Description / Behavior / Accessibility。生产投影与抽取契约使用这三个
+字段；Behavior 与 Accessibility 为短约束句列表，Description 为一段简短说明。
+
+真实 Browser 已在 `ikran test 7` 核对：Interaction 默认呈现折叠 Ledger 行，点击
+后即时展开三组详情与 evidence 入口；页面不再包含 split pane、rig 或 unavailable
+占位。自动验收单独由 unit、reader e2e 与全量 `npm run check` 覆盖。

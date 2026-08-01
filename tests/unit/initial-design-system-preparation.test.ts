@@ -423,6 +423,8 @@ describe("Initial Design System preparation", () => {
           "anatomy",
           "variants",
           "stateMatrix",
+          "states",
+          "motion",
           "tokenLinks",
           "responsiveBehavior",
           "openGaps"
@@ -442,12 +444,17 @@ describe("Initial Design System preparation", () => {
           "acceptanceChecks"
         ]),
         interaction_rule_value_fields: expect.arrayContaining([
-          "appliesTo",
-          "stateBehavior",
-          "motion",
-          "accessibility",
-          "acceptanceChecks"
+          "statement",
+          "description",
+          "behavior",
+          "accessibility"
         ]),
+        interaction_entry_split: {
+          interaction_rules:
+            "Cross-component interaction and motion strategies only.",
+          component_specs:
+            "Component-bound states and motion belong in the matching component spec."
+        },
         rich_field_writing_style: {
           applies_to: {
             layout: expect.arrayContaining([
@@ -456,8 +463,8 @@ describe("Initial Design System preparation", () => {
               "acceptanceChecks"
             ]),
             interaction: expect.arrayContaining([
-              "stateBehavior",
-              "motion",
+              "description",
+              "behavior",
               "accessibility"
             ]),
             component: expect.arrayContaining([
@@ -1499,6 +1506,8 @@ describe("Initial Design System preparation", () => {
           anatomy: [{ part: "label" }, { part: "arrow" }],
           variants: [{ name: "text-link" }],
           sizes: [{ name: "default" }],
+          states: ["hover: translate the arrow without shifting layout."],
+          motion: ["transform 160ms ease-out."],
           tokenLinks: ["semantic.text.action"],
           usageRules: ["Use for inline calls to action."],
           contentRules: ["Keep labels concise."],
@@ -1718,6 +1727,12 @@ describe("Initial Design System preparation", () => {
       anatomy: [{ part: "label" }, { part: "arrow" }],
       variants: [{ name: "text-link" }],
       sizes: [{ name: "default" }],
+      states: [
+        contradictory
+          ? "hover: keep the filled surface."
+          : "hover: translate the arrow without shifting layout."
+      ],
+      motion: ["transform 160ms ease-out."],
       tokenLinks: ["semantic.text.action"],
       usageRules: ["Use for inline calls to action."],
       contentRules: ["Keep the label concise."],

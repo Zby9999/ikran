@@ -42,12 +42,9 @@ const RICH_FIELD_WRITING_STYLE = {
   applies_to: {
     layout: ["relationship", "responsiveBehavior", "acceptanceChecks"],
     interaction: [
-      "appliesTo",
-      "stateBehavior",
-      "motion",
-      "layoutInvariants",
-      "accessibility",
-      "acceptanceChecks"
+      "description",
+      "behavior",
+      "accessibility"
     ],
     component: [
       "anatomy",
@@ -56,6 +53,8 @@ const RICH_FIELD_WRITING_STYLE = {
       "usageRules",
       "contentRules",
       "responsiveBehavior",
+      "states",
+      "motion",
       "verificationTargets",
       "openGaps"
     ]
@@ -87,15 +86,17 @@ const RICH_FIELD_WRITING_STYLE = {
     interaction: {
       good: {
         value: {
-          motion: ["悬停时箭头向右移动。"],
-          distance: "0 → 4px"
+          statement: "动效保持克制。",
+          description: "高频工具中的动效只用于解释状态变化。",
+          behavior: ["使用短促反馈确认系统已响应。", "避免循环或装饰性动效。"],
+          accessibility: ["减少动态效果时保留等价的状态信息。"]
         },
-        meaning: "轻微位移用于确认链接可交互。"
+        meaning: "动效服务理解，不争夺注意力。"
       },
       bad: {
-        motion: [
-          "The arrow glides elegantly to the right on hover. This delightful motion makes every action feel premium and engaging."
-        ]
+        appliesTo: ["Text Link"],
+        stateBehavior: [{ state: "hover", behavior: "箭头右移 4px。" }],
+        motion: ["160ms ease-out"]
       }
     },
     component: {
@@ -137,6 +138,11 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
   },
   layout_rule_value_fields: RICH_LAYOUT_RULE_FIELDS,
   interaction_rule_value_fields: RICH_INTERACTION_RULE_FIELDS,
+  interaction_entry_split: {
+    interaction_rules: "Cross-component interaction and motion strategies only.",
+    component_specs:
+      "Component-bound states and motion belong in the matching component spec."
+  },
   rich_field_writing_style: RICH_FIELD_WRITING_STYLE
 } as const;
 

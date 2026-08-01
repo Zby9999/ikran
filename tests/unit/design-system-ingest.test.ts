@@ -702,13 +702,10 @@ describe("design-system-view.json derived export", () => {
         acceptanceChecks: ["Title remains the strongest layer."]
       };
       const interactionValue = {
-        rule: "Text links underline on hover.",
-        appliesTo: ["TextLink"],
-        stateBehavior: [{ state: "hover", behavior: "Underline" }],
-        motion: [{ duration: "120ms", easing: "ease-out" }],
-        layoutInvariants: ["No layout shift"],
-        accessibility: ["Visible focus"],
-        acceptanceChecks: ["Keyboard activation works"]
+        statement: "Motion stays quiet.",
+        description: "Feedback explains change without competing with content.",
+        behavior: ["Use short state feedback."],
+        accessibility: ["Preserve the same information without motion."]
       };
       writeProjectFile(dir, "design-system/design-system.json", {
         name: "Rich rules",

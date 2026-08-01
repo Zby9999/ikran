@@ -9,8 +9,8 @@ import {
   DesignSystemEntryButton,
   EvidenceInfoContent,
   FoundationsHomePage,
-  InteractionSamples,
   LayoutLeafPage,
+  RulesLeafPage,
   SpecRowView,
   StatusChip,
   TokenLeafPage,
@@ -392,116 +392,47 @@ describe("TokenLeafPage", () => {
   });
 });
 
-describe("InteractionSamples (09C-B Rig)", () => {
-  test("renders source-backed live state and only the declared state strip", () => {
+describe("RulesLeafPage interaction ledger (09C-D01)", () => {
+  test("renders a collapsed source-backed strategy ledger without a visual specimen", () => {
     const rule = toRow(
       entry({
-        entry_id: "primary-button",
+        entry_id: "quiet-motion",
         file_kind: "interaction-rules.json",
         section: "interaction",
-        name: "Primary button",
+        name: "Quiet motion",
         value: {
-          appliesTo: ["Buttons", "Icon buttons"],
-          stateBehavior: [
-            { state: "default", behavior: "Filled ink surface" },
-            { state: "hover", behavior: "Surface darkens 4%" },
-            { state: "disabled", behavior: "35% opacity, no pointer" }
+          statement: "Motion stays quiet",
+          description: "Motion explains a change without becoming the subject.",
+          behavior: [
+            "Use short feedback for state changes.",
+            "Avoid decorative loops."
           ],
-          motion: [
-            {
-              duration: "160ms",
-              easing: "ease-out",
-              target: "background-color"
-            }
-          ],
-          layoutInvariants: ["Press never shifts layout"]
+          accessibility: ["Preserve the same information with reduced motion."]
         },
-        meaning: "Commit actions across the workbench",
+        meaning: "Animation supports comprehension.",
         status: "candidate",
         source_artifact_path: "design-system/interaction-rules.json"
       })
     );
 
     const html = renderToStaticMarkup(
-      createElement(InteractionSamples, { rows: [rule] })
+      createElement(RulesLeafPage, {
+        kind: "interaction",
+        leaf: { rows: [rule], chips: ["1 candidate"] },
+        rows: rowSharedProps()
+      })
     );
 
-    expect(html).toContain('data-testid="ds-interaction-rig"');
     expect(html).toContain('data-testid="ds-interaction-rule-1"');
-    expect(html).toContain(">1<");
-    expect(html).toContain("Primary button");
+    expect(html).toContain("Motion stays quiet");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('aria-controls="ds-interaction-details-quiet-motion"');
+    expect(html).not.toContain("Description");
+    expect(html).not.toContain("Use short feedback for state changes.");
     expect(html).toContain('data-status="candidate"');
-    expect(html).toContain("Source-generated");
-    expect(html).toContain('aria-live="polite"');
-    expect(html).toContain("Filled ink surface");
-    expect(html).toContain("160ms · ease-out · background-color");
-    expect(html).toContain("Press never shifts layout");
-    expect(html).toContain('aria-label="Declared states"');
-    expect(html).toContain(">default<");
-    expect(html).toContain(">hover<");
-    expect(html).toContain(">disabled<");
-    expect(html).not.toContain(">active<");
-    expect(html).toContain('data-has-hover="true"');
-    expect(html).not.toContain("data-has-active");
-    expect(html).toContain("--dsb-interaction-color-duration:160ms");
-    expect(html).toContain("--dsb-interaction-color-easing:ease-out");
-    expect(html).toContain("--dsb-interaction-transform-duration:0ms");
-  });
-
-  test("keeps the closed sheet scrim outside keyboard and accessibility navigation", () => {
-    const rule = toRow(
-      entry({
-        entry_id: "sheet-drawer",
-        file_kind: "interaction-rules.json",
-        section: "interaction",
-        name: "Sheet drawer",
-        value: {
-          appliesTo: ["Browser sheet"],
-          stateBehavior: [
-            { state: "open", behavior: "Visible" },
-            { state: "closed", behavior: "Off canvas" }
-          ]
-        },
-        status: "candidate",
-        source_artifact_path: "design-system/interaction-rules.json"
-      })
-    );
-
-    const html = renderToStaticMarkup(
-      createElement(InteractionSamples, { rows: [rule] })
-    );
-
-    expect(html).toMatch(
-      /<button(?=[^>]*class="dsb-interaction-sheet-scrim")(?=[^>]*aria-hidden="true")(?=[^>]*tabindex="-1")[^>]*>/
-    );
-    expect(html).toContain("Open sheet");
-  });
-
-  test("renders a gap as unavailable without inventing loading UI", () => {
-    const rule = toRow(
-      entry({
-        entry_id: "loading-state",
-        file_kind: "interaction-rules.json",
-        section: "interaction",
-        name: "Loading behavior",
-        value: {
-          appliesTo: ["Buttons", "Panels"],
-          stateBehavior: [],
-          motion: []
-        },
-        status: "gap",
-        source_artifact_path: "design-system/interaction-rules.json"
-      })
-    );
-
-    const html = renderToStaticMarkup(
-      createElement(InteractionSamples, { rows: [rule] })
-    );
-
-    expect(html).toContain('data-unavailable="true"');
-    expect(html).toContain("Unavailable");
-    expect(html).toContain("No states are declared for this interaction rule.");
-    expect(html).not.toMatch(/spinner/i);
+    expect(html).not.toContain('aria-label="Evidence for interaction rule quiet-motion"');
+    expect(html).not.toContain("Live specimens");
+    expect(html).not.toContain("No visual sample");
   });
 });
 

@@ -585,7 +585,7 @@ test.describe("layout-rules.json / interaction-rules.json", () => {
     }
   });
 
-  test("09B layout and interaction detail groups use collection shapes", () => {
+  test("D01 interaction strategies use description, behavior, and accessibility", () => {
     const layout = validRulesJson();
     Object.assign(layout.rules[0].value, {
       relationship: [{ from: "title", to: "content" }],
@@ -597,12 +597,10 @@ test.describe("layout-rules.json / interaction-rules.json", () => {
 
     const interaction = validRulesJson();
     Object.assign(interaction.rules[0].value, {
-      appliesTo: ["TextLink"],
-      stateBehavior: [{ state: "hover", behavior: "Underline" }],
-      motion: [{ duration: "120ms", easing: "ease-out" }],
-      layoutInvariants: ["No layout shift"],
-      accessibility: ["Visible focus"],
-      acceptanceChecks: ["Keyboard activation works"]
+      statement: "Motion stays quiet",
+      description: "Feedback explains change without competing with content.",
+      behavior: ["Use short state feedback."],
+      accessibility: ["Preserve the same information without motion."]
     });
     expect(
       validateDesignSystemJson("interaction-rules.json", interaction).ok
@@ -618,6 +616,22 @@ test.describe("layout-rules.json / interaction-rules.json", () => {
       ok: false,
       reason: "invalid_field_type",
       details: { field: "value.accessibility", expected: "array" }
+    });
+
+    const componentBound = validRulesJson();
+    Object.assign(componentBound.rules[0].value, {
+      appliesTo: ["TextLink"],
+      stateBehavior: [{ state: "hover", behavior: "Underline" }]
+    });
+    expect(
+      validateDesignSystemJson("interaction-rules.json", componentBound)
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: {
+        field: "value.appliesTo",
+        expected: "component-bound interaction fields belong in a component spec"
+      }
     });
   });
 

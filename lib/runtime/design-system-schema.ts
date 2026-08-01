@@ -253,6 +253,8 @@ export const RICH_COMPONENT_SPEC_FIELDS = [
   "anatomy",
   "variants",
   "sizes",
+  "states",
+  "motion",
   "tokenLinks",
   "usageRules",
   "contentRules",
@@ -277,13 +279,17 @@ export const RICH_LAYOUT_RULE_FIELDS = [
   "tokenLinks",
   "acceptanceChecks"
 ] as const;
+export const RICH_INTERACTION_RULE_STRING_FIELDS = [
+  "statement",
+  "description"
+] as const;
+export const RICH_INTERACTION_RULE_COLLECTION_FIELDS = [
+  "behavior",
+  "accessibility"
+] as const;
 export const RICH_INTERACTION_RULE_FIELDS = [
-  "appliesTo",
-  "stateBehavior",
-  "motion",
-  "layoutInvariants",
-  "accessibility",
-  "acceptanceChecks"
+  ...RICH_INTERACTION_RULE_STRING_FIELDS,
+  ...RICH_INTERACTION_RULE_COLLECTION_FIELDS
 ] as const;
 
 const ALLOWED_ALIAS_TARGET_LAYERS: Record<TokenLayer, readonly TokenLayer[]> =
@@ -597,7 +603,9 @@ function validateComponentSpec(
 
 function validateRulesFile(
   json: Record<string, unknown>,
-  richFields: readonly string[]
+  collectionFields: readonly string[],
+  stringFields: readonly string[] = [],
+  forbiddenFields: readonly string[] = []
 ): DesignSystemSchemaResult {
   return (
     checkEntryArray(json.rules, "rules", (value, ctx) => {
@@ -606,7 +614,25 @@ function validateRulesFile(
       if (!isPlainObject(value)) {
         return fail("invalid_field_type", { ...ctx, field: "value", expected: "object" });
       }
-      for (const field of richFields) {
+      for (const field of forbiddenFields) {
+        if (Object.prototype.hasOwnProperty.call(value, field)) {
+          return fail("invalid_field_type", {
+            ...ctx,
+            field: `value.${field}`,
+            expected: "component-bound interaction fields belong in a component spec"
+          });
+        }
+      }
+      for (const field of stringFields) {
+        if (value[field] !== undefined && !isNonEmptyString(value[field])) {
+          return fail("invalid_field_type", {
+            ...ctx,
+            field: `value.${field}`,
+            expected: "non-empty string"
+          });
+        }
+      }
+      for (const field of collectionFields) {
         if (value[field] !== undefined && !Array.isArray(value[field])) {
           return fail("invalid_field_type", {
             ...ctx,
@@ -635,7 +661,12 @@ const FILE_KIND_VALIDATORS: Record<
   "layout-rules.json": (json) =>
     validateRulesFile(json, RICH_LAYOUT_RULE_FIELDS),
   "interaction-rules.json": (json) =>
-    validateRulesFile(json, RICH_INTERACTION_RULE_FIELDS)
+    validateRulesFile(
+      json,
+      RICH_INTERACTION_RULE_COLLECTION_FIELDS,
+      RICH_INTERACTION_RULE_STRING_FIELDS,
+      ["appliesTo", "stateBehavior", "motion", "layoutInvariants"]
+    )
 };
 
 export function validateDesignSystemJson(

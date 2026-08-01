@@ -1326,501 +1326,6 @@
   }
 }
 
-/* -------------------------- 09C-B: Interaction Rig ------------------------- */
-
-.dsb-interaction-rig {
-  gap: 14px;
-}
-
-.dsb-interaction-toolbar {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 2px;
-}
-
-.dsb-interaction-toolbar p {
-  margin: 0;
-  font-size: 11.5px;
-  color: var(--dsc-ink-3);
-}
-
-.dsb-interaction-block {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  border-radius: 12px;
-  background: var(--dsc-card);
-  padding: 14px 16px 16px;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 5%);
-}
-
-.dsb-interaction-block-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dsb-interaction-anchor {
-  display: flex;
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 5px;
-  background: rgb(0 0 0 / 5%);
-  color: var(--dsc-ink-3);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
-
-.dsb-interaction-block-name {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--dsc-ink);
-  font-size: 12.5px;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dsb-interaction-unavailable {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  border: 1px dashed rgb(0 0 0 / 14%);
-  border-radius: 8px;
-  padding: 22px 16px;
-  text-align: center;
-}
-
-.dsb-interaction-unavailable-title,
-.dsb-interaction-unavailable-reason {
-  margin: 0;
-  letter-spacing: -0.02em;
-}
-
-.dsb-interaction-unavailable-title {
-  color: var(--dsc-ink-2);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.dsb-interaction-unavailable-reason {
-  color: var(--dsc-ink-3);
-  font-size: 11.5px;
-}
-
-.dsb-interaction-stage-row {
-  display: flex;
-  gap: 16px;
-}
-
-.dsb-interaction-stage,
-.dsb-interaction-readout {
-  border-radius: 10px;
-  background: var(--dsc-surface);
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 5%) inset;
-}
-
-.dsb-interaction-stage {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  min-height: 148px;
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.dsb-interaction-readout {
-  display: flex;
-  width: 220px;
-  flex-shrink: 0;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px 14px;
-}
-
-.dsb-interaction-readout p {
-  margin: 0;
-}
-
-.dsb-interaction-readout-label {
-  color: var(--dsc-ink-3);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.dsb-interaction-readout-state {
-  color: var(--dsc-ink);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.dsb-interaction-readout-behavior {
-  color: var(--dsc-ink-2);
-  font-size: 11.5px;
-  letter-spacing: -0.02em;
-}
-
-.dsb-interaction-readout-motion {
-  padding-top: 4px;
-  color: var(--dsc-ink-3);
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
-}
-
-.dsb-interaction-readout-invariant {
-  color: var(--dsc-ink-3);
-  font-size: 10.5px;
-}
-
-.dsb-interaction-live-link,
-.dsb-interaction-live-button,
-.dsb-interaction-live-field {
-  font-family: inherit;
-  letter-spacing: -0.02em;
-}
-
-.dsb-interaction-live-link {
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  padding: 4px 6px;
-  color: var(--dsc-ink-2);
-  font-size: 14px;
-  text-underline-offset: 3px;
-  transition: color
-    var(--dsb-interaction-color-duration, 0ms)
-    var(--dsb-interaction-color-easing, linear);
-}
-
-.dsb-interaction-live-link[data-has-hover]:hover {
-  color: var(--dsc-ink);
-  text-decoration: underline;
-}
-
-.dsb-interaction-live-link[data-has-focus-visible]:focus-visible {
-  outline: none;
-  color: var(--dsc-ink);
-  box-shadow: 0 0 0 2px rgb(58 147 255 / 55%);
-}
-
-.dsb-interaction-live-button {
-  border: 0;
-  border-radius: 8px;
-  background: var(--dsc-ink);
-  padding: 8px 16px;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 500;
-  transition:
-    background-color
-      var(--dsb-interaction-color-duration, 0ms)
-      var(--dsb-interaction-color-easing, linear),
-    transform
-      var(--dsb-interaction-transform-duration, 0ms)
-      var(--dsb-interaction-transform-easing, linear);
-}
-
-.dsb-interaction-live-button[data-has-hover]:hover {
-  background: #2e2e2e;
-}
-
-.dsb-interaction-live-button[data-has-active]:active {
-  transform: scale(0.97);
-}
-
-.dsb-interaction-live-button[data-has-focus-visible]:focus-visible {
-  outline: none;
-  box-shadow:
-    0 0 0 2px var(--dsc-card),
-    0 0 0 4px rgb(58 147 255 / 55%);
-}
-
-.dsb-interaction-live-field {
-  width: min(220px, calc(100% - 32px));
-  height: 34px;
-  border: 1px solid rgb(0 0 0 / 12%);
-  border-radius: 8px;
-  outline: none;
-  background: var(--dsc-card);
-  padding: 0 12px;
-  color: var(--dsc-ink);
-  font-size: 13px;
-  transition:
-    border-color
-      var(--dsb-interaction-border-duration, 0ms)
-      var(--dsb-interaction-border-easing, linear),
-    box-shadow
-      var(--dsb-interaction-border-duration, 0ms)
-      var(--dsb-interaction-border-easing, linear);
-}
-
-.dsb-interaction-live-field::placeholder {
-  color: var(--dsc-ink-3);
-}
-
-.dsb-interaction-live-field[data-has-hover]:hover {
-  border-color: rgb(0 0 0 / 26%);
-}
-
-.dsb-interaction-live-field[data-has-focus-visible]:focus-visible {
-  border-color: var(--dsc-accent);
-  box-shadow: 0 0 0 3px rgb(58 147 255 / 16%);
-}
-
-.dsb-interaction-sheet-scrim {
-  position: absolute;
-  inset: 0;
-  border: 0;
-  background: rgb(0 0 0 / 16%);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity
-    var(--dsb-interaction-scrim-duration, 0ms)
-    var(--dsb-interaction-scrim-easing, linear);
-}
-
-.dsb-interaction-sheet-panel {
-  position: absolute;
-  right: 16px;
-  bottom: 0;
-  left: 16px;
-  display: flex;
-  height: 72%;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  border-radius: 10px 10px 0 0;
-  background: var(--dsc-card);
-  padding-top: 6px;
-  box-shadow: 0 -8px 24px rgb(0 0 0 / 14%);
-  transform: translateY(105%);
-  transition: transform
-    var(--dsb-interaction-transform-duration, 0ms)
-    var(--dsb-interaction-transform-easing, linear);
-}
-
-.dsb-interaction-sheet-grabber {
-  width: 28px;
-  height: 3px;
-  border-radius: 2px;
-  background: rgb(0 0 0 / 14%);
-}
-
-.dsb-interaction-sheet-lines {
-  display: flex;
-  width: 60%;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.dsb-interaction-sheet-lines span {
-  height: 5px;
-  border-radius: 3px;
-  background: rgb(0 0 0 / 7%);
-}
-
-.dsb-interaction-sheet-lines span:nth-child(2) {
-  width: 80%;
-}
-
-.dsb-interaction-sheet-lines span:nth-child(3) {
-  width: 55%;
-}
-
-.dsb-interaction-stage[data-sheet-open] .dsb-interaction-sheet-scrim {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.dsb-interaction-stage[data-sheet-open] .dsb-interaction-sheet-panel {
-  transform: translateY(0);
-}
-
-.dsb-interaction-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.dsb-interaction-strip-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-radius: 8px;
-  background: var(--dsc-card);
-  padding: 7px 10px;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
-  transition: box-shadow 150ms ease-out;
-}
-
-.dsb-interaction-strip-item[data-current] {
-  box-shadow:
-    0 0 0 1px rgb(58 147 255 / 45%),
-    0 0 0 3px rgb(58 147 255 / 12%);
-}
-
-.dsb-interaction-strip-label {
-  color: var(--dsc-ink-3);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.dsb-interaction-mini-link {
-  border-radius: 4px;
-  color: var(--dsc-ink-2);
-  font-size: 12.5px;
-  text-underline-offset: 3px;
-}
-
-.dsb-interaction-mini-link[data-state="hover"] {
-  color: var(--dsc-ink);
-  text-decoration: underline;
-}
-
-.dsb-interaction-mini-link[data-state="focus-visible"] {
-  color: var(--dsc-ink);
-  box-shadow: 0 0 0 2px rgb(58 147 255 / 55%);
-}
-
-.dsb-interaction-mini-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 7px;
-  background: var(--dsc-ink);
-  padding: 6px 12px;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.dsb-interaction-mini-button[data-state="hover"],
-.dsb-interaction-mini-button[data-state="active"] {
-  background: #2e2e2e;
-}
-
-.dsb-interaction-mini-button[data-state="active"] {
-  transform: scale(0.97);
-}
-
-.dsb-interaction-mini-button[data-state="focus-visible"] {
-  box-shadow:
-    0 0 0 2px var(--dsc-card),
-    0 0 0 4px rgb(58 147 255 / 55%);
-}
-
-.dsb-interaction-mini-button[data-state="disabled"] {
-  opacity: 0.35;
-}
-
-.dsb-interaction-mini-field {
-  display: inline-flex;
-  width: 118px;
-  max-width: 100%;
-  height: 28px;
-  align-items: center;
-  border: 1px solid rgb(0 0 0 / 12%);
-  border-radius: 7px;
-  background: var(--dsc-card);
-  padding: 0 10px;
-}
-
-.dsb-interaction-mini-field > span {
-  color: var(--dsc-ink-3);
-  font-size: 12px;
-}
-
-.dsb-interaction-mini-field[data-state="hover"] {
-  border-color: rgb(0 0 0 / 26%);
-}
-
-.dsb-interaction-mini-field[data-state="focus-visible"] {
-  border-color: var(--dsc-accent);
-  box-shadow: 0 0 0 3px rgb(58 147 255 / 16%);
-}
-
-.dsb-interaction-mini-field[data-state="disabled"] {
-  background: var(--dsc-surface);
-}
-
-.dsb-interaction-mini-sheet {
-  position: relative;
-  display: block;
-  width: 120px;
-  height: 64px;
-  overflow: hidden;
-  border-radius: 6px;
-  background: var(--dsc-canvas);
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
-}
-
-.dsb-interaction-mini-sheet-scrim {
-  position: absolute;
-  inset: 0;
-  background: rgb(0 0 0 / 16%);
-}
-
-.dsb-interaction-mini-sheet-panel {
-  position: absolute;
-  right: 8px;
-  bottom: 0;
-  left: 8px;
-  display: flex;
-  height: 74%;
-  justify-content: center;
-  border-radius: 8px 8px 0 0;
-  background: var(--dsc-card);
-  padding-top: 5px;
-  box-shadow: 0 -4px 16px rgb(0 0 0 / 12%);
-}
-
-.dsb-interaction-mini-sheet-panel > span {
-  width: 24px;
-  height: 3px;
-  border-radius: 2px;
-  background: rgb(0 0 0 / 14%);
-}
-
-.dsb-interaction-mini-sheet[data-state="closed"]
-  .dsb-interaction-mini-sheet-scrim {
-  opacity: 0;
-}
-
-.dsb-interaction-mini-sheet[data-state="closed"]
-  .dsb-interaction-mini-sheet-panel {
-  transform: translateY(105%);
-}
-
-@container (max-width: 600px) {
-  .dsb-interaction-toolbar {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .dsb-interaction-stage-row {
-    flex-direction: column;
-  }
-
-  .dsb-interaction-readout {
-    width: auto;
-  }
-}
-
 /* -------------------------- Typography Ledger ----------------------------- */
 
 .dsb-typography-page {
@@ -2020,81 +1525,96 @@
   overflow-wrap: break-word;
 }
 
-/* Interaction rules carry rich object payloads and live inside the 42% reader
-   pane. Keep the anchor, status and evidence action on one compact header;
-   source fields then wrap as readable label/value rows instead of inheriting
-   the generic wide one-line token layout. */
-.dsb-row--interaction {
+/* Interaction strategies use a quiet ledger: summary first, source detail on
+   explicit disclosure. Keyboard activation is intentionally instantaneous. */
+.dsb-interaction-ledger {
+  margin: 20px 0 0;
+  padding: 0;
+  border-top: 1px solid rgb(0 0 0 / 10%);
+  list-style: none;
+}
+
+.dsb-interaction-rule {
+  border-bottom: 1px solid rgb(0 0 0 / 10%);
+}
+
+.dsb-interaction-ledger-row {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto 14px;
   align-items: start;
-  gap: 7px 8px;
-  padding: 12px 0;
+  gap: 12px;
+  padding: 16px 4px;
 }
 
-.dsb-row--interaction .dsb-interaction-anchor {
-  grid-column: 1;
-  grid-row: 1;
+.dsb-interaction-ledger-main {
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.dsb-row--interaction .dsb-row-name {
-  width: auto;
-  grid-column: 2;
-  grid-row: 1;
-  white-space: normal;
-  overflow-wrap: anywhere;
+.dsb-interaction-ledger-main .dsb-card-title,
+.dsb-interaction-ledger-main .dsb-card-desc {
+  display: block;
 }
 
-.dsb-row--interaction .dsb-chip {
-  grid-column: 3;
-  grid-row: 1;
+.dsb-interaction-ledger-main .dsb-card-desc {
+  margin-top: 3px;
 }
 
-.dsb-row--interaction .dsb-info-trigger {
-  grid-column: 4;
-  grid-row: 1;
+.dsb-interaction-ledger-main:focus-visible {
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px rgb(58 147 255 / 45%);
 }
 
-.dsb-row--interaction .dsb-fields {
-  width: 100%;
-  grid-column: 2 / -1;
-  grid-row: 2;
-  gap: 5px;
-  padding: 2px 0 0;
+@media (hover: hover) and (pointer: fine) {
+  .dsb-interaction-ledger-row:has(.dsb-interaction-ledger-main:hover) {
+    background: rgb(0 0 0 / 2%);
+  }
 }
 
-.dsb-row--interaction .dsb-field {
-  display: grid;
-  grid-template-columns: minmax(96px, 108px) minmax(0, 1fr);
-  gap: 8px;
+.dsb-interaction-anchor {
+  display: flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  background: rgb(0 0 0 / 5%);
+  color: var(--dsc-ink-3);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
 }
 
-.dsb-row--interaction .dsb-field-label {
-  width: auto;
-  white-space: normal;
-  overflow-wrap: normal;
+.dsb-interaction-ledger-row > .dsb-chip {
+  margin-top: 1px;
 }
 
-.dsb-row--interaction .dsb-field-text {
-  line-height: 1.45;
-  overflow-wrap: anywhere;
+.dsb-interaction-ledger-chevron {
+  margin-top: 2px;
+  color: var(--dsc-ink-3);
 }
 
-.dsb-row--interaction .dsb-row-meaning {
-  grid-column: 2 / -1;
-  grid-row: 3;
-  overflow: visible;
-  line-height: 1.45;
-  text-overflow: clip;
-  white-space: normal;
+.dsb-interaction-rule[data-expanded] .dsb-interaction-ledger-chevron {
+  transform: rotate(180deg);
 }
 
-.dsb-row--interaction .dsb-row-error {
-  grid-column: 2 / -1;
+.dsb-interaction-ledger-details {
+  margin-left: 30px;
+  padding: 0 32px 18px 0;
 }
 
-/* Rich principle fields (statement card gets rationale / scope / use /
-   avoid / exceptions when the source value carries them). */
+.dsb-interaction-ledger-details .dsb-principle-footer {
+  margin-top: 14px;
+}
+
+/* Rich source fields shared by principles and Interaction strategies. */
 .dsb-principle-fields {
   display: flex;
   flex-direction: column;
@@ -2166,15 +1686,6 @@
   .dsb-type-details-shell {
     transition-duration: 1ms;
     animation-duration: 1ms;
-  }
-
-  .dsb-interaction-live-link,
-  .dsb-interaction-live-button,
-  .dsb-interaction-live-field,
-  .dsb-interaction-sheet-scrim,
-  .dsb-interaction-sheet-panel,
-  .dsb-interaction-strip-item {
-    transition-duration: 1ms;
   }
 
 }
