@@ -1,6 +1,6 @@
 # Layout Atlas 视图与 meaning-first 默认态
 
-Status: resolved
+Status: ready-for-agent
 
 ## Parent
 
@@ -65,13 +65,10 @@ Projection 仍为确定性、可测试的 derived presentation model：不在运
 
 ## Comments
 
-- 2026-08-01：实施完成，commit 3e81b13。Layout 叶子页 split panel 已移除，
-  改为 Atlas 卡片流；Open Questions 居中大面板可真实回答并持久化（源文件
-  + DB round-trip，含 LWW 并发防护）；typecheck + 887 unit + 相关 e2e 全绿。
-  经 code review 修复：并发分叉 blocker、Rule details 全条目可用、容器查询
-  窄宽堆叠、>12 列抽象绘制、dialog 焦点/aria、注释与 HTTP 语义清理。
-  已知后续：stickyTopBar 的 height/inset 等真实空间值暂不在封闭词汇内
-  （诚实降级为占位），词汇扩展（size/inset 类别）留给下一轮语法迭代。
+- 2026-08-01（撤回）：Atlas 实现（3e81b13）已应要求回退，工作区恢复到
+  c92ab34 的 Layout 形态（split panel + Blueprint）。09C-B01 / 09C-B02 的
+  改动保留。本 ticket 重新开放；原型产物与 review 记录仍可在 git 历史
+  （3e81b13）中完整取回。
 
 - 2026-08-01：原型评审（两轮发散）锁定：OQ 为屏幕居中大面板（Quiet 的
   列表式交互 + Interview 的留白密度）；relationship 以安静约束句形式留在

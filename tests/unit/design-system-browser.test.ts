@@ -902,7 +902,7 @@ describe("FoundationsHomePage rich principles (09B shapes, 09C-A reading)", () =
 
 function layoutEntry(
   entryId: string,
-  name: string | null,
+  name: string,
   value: Record<string, unknown>,
   extra: Partial<DesignSystemEntryView> = {}
 ): DsRow {
@@ -947,8 +947,9 @@ function layoutLeafRows(): DsRow[] {
   ];
 }
 
-describe("LayoutLeafPage Atlas (09C-B03)", () => {
-  function renderLayoutLeaf(rows: DsRow[] = layoutLeafRows()) {
+describe("LayoutLeafPage Blueprint (09C-B)", () => {
+  function renderLayoutLeaf() {
+    const rows = layoutLeafRows();
     return renderToStaticMarkup(
       createElement(LayoutLeafPage, {
         leaf: {
@@ -956,100 +957,96 @@ describe("LayoutLeafPage Atlas (09C-B03)", () => {
           chips: ["1 formalized", "3 candidate", "1 open gap"]
         },
         rows: rowSharedProps(),
-        onAnswerOpenQuestion: vi.fn()
+        split: {
+          ratio: 0.42,
+          onRatioChange: vi.fn(),
+          onRatioCommit: vi.fn()
+        }
       })
     );
   }
 
-  test("renders one card per rule instead of the split panes", () => {
+  test("keeps the standard Browser heading and anchored rule rows", () => {
     const html = renderLayoutLeaf();
     expect(html).toContain('class="dsb-h1">Layout</h1>');
     expect(html).toContain("5 rules");
-    expect(html).toContain('data-testid="ds-layout-atlas"');
-    expect(html).toContain('data-testid="ds-atlas-card-grid-page"');
-    expect(html).toContain('data-testid="ds-atlas-card-nav-mobile"');
-    // The 09C-A split / 09C-B composed blueprint are gone.
-    expect(html).not.toContain('data-testid="ds-layout-samples"');
-    expect(html).not.toContain('data-testid="ds-layout-blueprint"');
-    expect(html).not.toContain("Visual samples");
-  });
-
-  test("the default card state shows meaning, fact badges and the constraint line", () => {
-    const html = renderLayoutLeaf();
-    // Meaning leads at display size.
-    expect(html).toContain("Mobile navigation layout");
-    // Structured facts render as badges with verbatim source values.
-    expect(html).toContain('class="dsb-atlas-badge"');
-    expect(html).toContain("1120px");
+    expect(html).toContain("1 formalized");
+    expect(html).toContain("3 candidate");
+    expect(html).toContain("1 open gap");
+    // Every rule row carries its 1-based anchor number.
+    expect(html.match(/dsb-anchor-num/g)!.length).toBeGreaterThanOrEqual(5);
+    expect(html).toContain('data-testid="ds-row-grid-page"');
+    expect(html).toContain('data-testid="ds-row-nav-mobile"');
+    // Object values stay field lines; aliases render through, never raw JSON.
     expect(html).toContain("→ spacing.200");
-    expect(html).toContain("96 → 56px");
-    // Rich fields never become badges; raw JSON stays out of the default layer.
     expect(html).not.toContain("{&quot;columns&quot;");
   });
 
-  test("every drawable rule gets its own schematic; undrawable rules degrade honestly", () => {
+  test("draws one schematic blueprint with anchors, origins, and status dots", () => {
     const html = renderLayoutLeaf();
-    expect(html).toContain('data-testid="ds-atlas-schematic-grid.page"');
-    expect(html).toContain('data-testid="ds-atlas-schematic-shell.regions"');
-    // Regions stack with declared names; breakpoint ruler labels verbatim.
-    expect(html).toContain("header");
+    expect(html).toContain('data-testid="ds-layout-blueprint"');
+    expect(html).toContain('data-testid="ds-layout-blueprint-svg"');
+    expect(html).toContain('role="img"');
+    expect(html).toContain("Schematic layout blueprint");
+    // grid.page contributes three facts under one anchor.
+    expect(html.match(/data-anchor="1"/g)!.length).toBe(3);
+    expect(html).toContain('data-anchor="2"');
+    expect(html).toContain('data-anchor="3"');
+    expect(html).toContain('data-anchor="4"');
+    // Anchor dots carry status into the visual module.
+    expect(html).toContain('data-anchor="4" data-status="formalized"');
+    // Source values label the measurements.
+    expect(html).toContain(">1120px</text>");
+    expect(html).toContain("12 columns");
+    expect(html).toContain("96 → 56px");
     expect(html).toContain(">1024</text>");
-    // The undrawable rule says so instead of fabricating a drawing.
-    expect(html).toContain("No drawable spatial values");
+    // The drawing declares its origin; keyboard path exists via focusable dots.
+    expect(html).toContain('data-origin="schematic"');
+    expect(html).toContain("Schematic");
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain("Anchor 1: grid.page");
   });
 
-  test("rich fields and raw JSON collapse into Rule details", () => {
-    const rows = [
-      layoutEntry("layout.gallery", null, {
-        gap: "20px",
-        relationship: ["项目图片组成横向溢出画廊。"],
-        responsiveBehavior: ["窄屏支持触控横向滚动。"],
-        acceptanceChecks: ["保持横向溢出浏览。"],
-        tokenLinks: ["semantic.color.canvas"]
-      })
-    ];
-    const html = renderLayoutLeaf(rows);
-    expect(html).toContain("Rule details");
-    expect(html).toContain("窄屏支持触控横向滚动。");
-    expect(html).toContain("semantic.color.canvas");
-    // The short name strips the layout. prefix; the constraint line shows.
-    expect(html).toContain('class="dsb-atlas-name"');
-    expect(html).toContain("gallery");
-    expect(html).toContain("项目图片组成横向溢出画廊。");
-  });
-
-  test("Open questions button carries the remaining count", () => {
-    const rows = [
-      layoutEntry("layout.gallery", null, {
-        gap: "20px",
-        openQuestions: ["问题一？", "问题二？"],
-        openQuestionAnswers: [{ question: "旧问题？", answer: "已回答" }]
-      })
-    ];
-    const html = renderLayoutLeaf(rows);
-    expect(html).toContain('data-testid="ds-atlas-oq-open-layout.gallery"');
-    expect(html).toContain('class="dsb-atlas-oq-count"');
-    expect(html).toContain(">2</span>");
-  });
-
-  test("approval lives at the card bottom; formalized and gap states render honestly", () => {
+  test("undrawable rules surface as explicit unavailable samples", () => {
     const html = renderLayoutLeaf();
-    expect(html).toContain('data-testid="ds-atlas-approve-grid-page"');
-    expect(html).toContain("Approve as formalized");
-    // The formalized rule shows a quiet done state, not a button.
-    expect(html).toContain("Formalized");
-    // The gap rule explains the Agent must fill it first.
-    expect(html).toContain("Gap — the Agent fills this entry before approval.");
+    expect(html).toContain('data-testid="ds-layout-unavailable-nav-mobile"');
+    expect(html).toContain("No visual sample");
+    expect(html).toContain('data-origin="unavailable"');
+    expect(html).toContain("nav.mobile");
+    expect(html).toContain("Mobile navigation layout");
+    expect(html).toContain("open gap");
+    // The honest unknown is also docked in the drawing as a dashed marker.
+    expect(html).toContain('data-anchor="5"');
+    expect(html).toContain("nav.mobile ?");
+    // The empty-samples fallback is gone once the blueprint exists.
+    expect(html).not.toContain('data-testid="ds-samples-empty"');
   });
 
-  test("empty leaf keeps the honest empty state", () => {
-    const html = renderToStaticMarkup(
+  test("every rule row carries a checklist control for composition", () => {
+    const html = renderLayoutLeaf();
+    // One check control per row, all unchecked by default.
+    expect(html.match(/dsb-row-check/g)!.length).toBeGreaterThanOrEqual(5);
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain('aria-label="Include grid.page in the drawing"');
+    expect(html).toContain('aria-label="Include nav.mobile in the drawing"');
+    // The whole row is the pointer toggle target.
+    expect(html.match(/data-selectable/g)!.length).toBeGreaterThanOrEqual(5);
+    // Nothing selected, nothing hovered: the full-leaf caption holds.
+    expect(html).toContain("One schematic drawing per rule set");
+  });
+
+  test("empty leaf keeps the honest empty states on both panes", () => {    const html = renderToStaticMarkup(
       createElement(LayoutLeafPage, {
         leaf: { rows: [], chips: [] },
         rows: rowSharedProps(),
-        onAnswerOpenQuestion: vi.fn()
+        split: {
+          ratio: 0.42,
+          onRatioChange: vi.fn(),
+          onRatioCommit: vi.fn()
+        }
       })
     );
     expect(html).toContain("No rules declared yet.");
+    expect(html).toContain('data-testid="ds-samples-empty"');
   });
 });
