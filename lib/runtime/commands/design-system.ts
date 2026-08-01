@@ -15,18 +15,37 @@ import {
   type ApproveDesignSystemEntryInput,
   type DesignSystemApprovalResult
 } from "../design-system-approval";
+import {
+  answerDesignSystemOpenQuestion,
+  type AnswerDesignSystemOpenQuestionInput,
+  type DesignSystemOpenQuestionAnswerResult
+} from "../design-system-open-question";
 
 /**
- * The Browser's only write operation in v1 (09A decision 5): candidate →
- * formalized approval — flips the DB row and writes the JSON source file
- * back canonically, logs design_system_entry_approved, then invalidates the
- * Browser and regenerates the derived export.
+ * Candidate → formalized approval (09A decision 5): flips the DB row and
+ * writes the JSON source file back canonically, logs
+ * design_system_entry_approved, then invalidates the Browser and
+ * regenerates the derived export.
  */
 export function approveDesignSystemEntryCommand(
   projectPath: string,
   input: ApproveDesignSystemEntryInput
 ): DesignSystemApprovalResult {
   return approveDesignSystemEntry(projectPath, input);
+}
+
+/**
+ * Open Questions write (09C-B03): the designer answers one open question
+ * from the Atlas card's panel — the question moves from openQuestions to
+ * openQuestionAnswers in BOTH the JSON source file (canonical write-back)
+ * and the DB row, logs design_system_open_question_answered, then
+ * invalidates the Browser and regenerates the derived export.
+ */
+export function answerDesignSystemOpenQuestionCommand(
+  projectPath: string,
+  input: AnswerDesignSystemOpenQuestionInput
+): DesignSystemOpenQuestionAnswerResult {
+  return answerDesignSystemOpenQuestion(projectPath, input);
 }
 
 export function getDesignSystemViewCommand(

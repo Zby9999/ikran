@@ -132,8 +132,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 /**
  * Locate the mutable entry object for `entryId` inside a parsed source file.
  * Returns null when the file no longer contains the entry (DB/file drift).
+ * Exported for the sibling write-back modules (open-question answers) that
+ * must find exactly the entry the ingest flattened.
  */
-function locateEntryObject(
+export function locateEntryObject(
   fileKind: DesignSystemFileKind,
   json: Record<string, unknown>,
   entryId: string

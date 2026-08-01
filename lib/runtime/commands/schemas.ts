@@ -225,6 +225,21 @@ export const approveDesignSystemEntryInputSchema = z.object(
   approveDesignSystemEntryInputShape
 );
 
+export const answerDesignSystemOpenQuestionInputShape = {
+  /** Project-relative source artifact path holding the entry. */
+  sourceArtifactPath: z.string(),
+  /** Entry identity inside the file. */
+  entryId: z.string(),
+  /** Exact verbatim question string from value.openQuestions. */
+  question: z.string(),
+  /** The designer's answer (trimmed; must be non-empty). */
+  answer: z.string()
+} as const;
+
+export const answerDesignSystemOpenQuestionInputSchema = z.object(
+  answerDesignSystemOpenQuestionInputShape
+);
+
 const alignmentEvidenceLinkShape = {
   seedReferenceId: z.string(),
   evidenceSurfaceId: z.string(),

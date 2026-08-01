@@ -13,7 +13,7 @@
 //
 // Staging mirrors tests/design-system-browser.spec.ts.
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -251,7 +251,10 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
         },
         {
           id: "shell-regions",
-          value: { regions: ["header", "hero", "content", "footer"] },
+          value: {
+            regions: ["header", "hero", "content", "footer"],
+            openQuestions: ["窄屏页脚是否保持可见？"]
+          },
           meaning: "Page shell vertical stack",
           status: "candidate",
           links: [designerEditedCardId]
@@ -590,124 +593,95 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
       boxShadow: "none"
     });
 
-    // ---- Layout leaf: object values + persisted resizable split. ----
+    // ---- Layout Atlas (09C-B03): one card per rule, no split panes. ----
     await page.getByRole("button", { name: "Layout", exact: true }).click();
-    const gridRow = page.getByTestId("ds-row-grid-page");
-    await expect(gridRow).toBeVisible();
-    const layoutStatus = gridRow.getByTestId("ds-status-chip");
-    await expect(layoutStatus).toHaveText("candidate");
-    await expect
-      .poll(() =>
-        layoutStatus.evaluate((element) => {
-          const style = getComputedStyle(element);
-          return {
-            borderRadius: style.borderRadius,
-            borderStyle: style.borderStyle,
-            boxShadow: style.boxShadow
-          };
-        })
+    const layoutAtlas = page.getByTestId("ds-layout-atlas");
+    await expect(layoutAtlas).toBeVisible();
+    // The 09C-A split and the 09C-B composed blueprint are gone from this leaf.
+    await expect(page.getByTestId("ds-leaf-split")).toHaveCount(0);
+    await expect(page.getByTestId("ds-layout-samples")).toHaveCount(0);
+
+    // Five cards in source order; status chips keep the shared treatment.
+    const gridCard = page.getByTestId("ds-atlas-card-grid-page");
+    await expect(gridCard).toBeVisible();
+    await expect(gridCard.getByTestId("ds-status-chip")).toHaveText("candidate");
+    // Meaning leads; structured facts render as verbatim badges.
+    await expect(gridCard).toContainText("Default page grid");
+    await expect(gridCard.locator(".dsb-atlas-badge")).toHaveCount(3);
+    await expect(gridCard).toContainText("1120px");
+    await expect(gridCard).toContainText("→ spacing.200");
+    await expect(gridCard).not.toContainText("{\"columns\"");
+    // Each drawable rule gets its own schematic (single-rule granularity,
+    // generative grammar — never bespoke per-rule drawings).
+    await expect(page.getByTestId("ds-atlas-schematic-grid-page")).toBeVisible();
+    const regionsSchematic = page.getByTestId(
+      "ds-atlas-schematic-shell-regions"
+    );
+    await expect(regionsSchematic).toBeVisible();
+    await expect(regionsSchematic).toContainText("header");
+    await expect(regionsSchematic).toContainText("footer");
+    await expect(
+      page.getByTestId("ds-atlas-schematic-breakpoints")
+    ).toContainText("1024");
+    // The gap rule degrades honestly — placeholder + gap note, no button.
+    const navCard = page.getByTestId("ds-atlas-card-nav-mobile");
+    await expect(navCard).toContainText("No drawable spatial values");
+    await expect(navCard).toContainText(
+      "Gap — the Agent fills this entry before approval."
+    );
+    // Approval at the card bottom: candidates get the button, the formalized
+    // rule a quiet done state.
+    await expect(
+      gridCard.getByTestId("ds-atlas-approve-grid-page")
+    ).toBeVisible();
+    await expect(page.getByTestId("ds-atlas-card-breakpoints")).toContainText(
+      "Formalized"
+    );
+
+    // ---- Open Questions: centered dialog; the answer persists to the
+    // source file AND the DB (09C-B03 write-back). ----
+    const oqOpen = page.getByTestId("ds-atlas-oq-open-shell-regions");
+    await expect(oqOpen).toBeVisible();
+    await expect(oqOpen.locator(".dsb-atlas-oq-count")).toHaveText("1");
+    await oqOpen.click();
+    const oqDialog = page.getByTestId("ds-atlas-oq-shell-regions");
+    await expect(oqDialog).toBeVisible();
+    await expect(oqDialog).toContainText("窄屏页脚是否保持可见？");
+    await oqDialog
+      .getByPlaceholder("Designer's answer…")
+      .fill("保持可见，页脚是品牌签名。");
+    await oqDialog.getByRole("button", { name: "Answer", exact: true }).click();
+    // The answered question shows the ✓ answer; the count reaches zero once
+    // the SSE reload lands.
+    await expect(oqDialog.locator(".dsb-atlas-oq-answer")).toContainText(
+      "保持可见，页脚是品牌签名。"
+    );
+    await expect(oqOpen.locator(".dsb-atlas-oq-count")).toHaveText("0");
+    // Esc closes the dialog without closing the sheet.
+    await page.keyboard.press("Escape");
+    await expect(oqDialog).toHaveCount(0);
+    await expect(sheet).toHaveAttribute("data-open", "true");
+    // Round-trip: the answer landed in the JSON source file.
+    const layoutSource = JSON.parse(
+      readFileSync(
+        path.join(projectDir, "design-system/layout-rules.json"),
+        "utf-8"
       )
-      .toEqual({
-        borderRadius: "4px",
-        borderStyle: "none",
-        boxShadow: "none"
-      });
-    await expect(gridRow).toContainText("columns");
-    await expect(gridRow).toContainText("→ spacing.200");
-    await expect(gridRow).not.toContainText("{\"columns\"");
-
-    // ---- Layout Blueprint (09C-B): anchored rows ↔ one schematic drawing. ----
-    await expect(page.getByTestId("ds-samples-empty")).toHaveCount(0);
-    const blueprint = page.getByTestId("ds-layout-blueprint");
-    await expect(blueprint).toBeVisible();
-    const blueprintSvg = page.getByTestId("ds-layout-blueprint-svg");
-    await expect(blueprintSvg).toHaveAttribute("role", "img");
-    await expect(blueprintSvg).toHaveAttribute(
-      "aria-label",
-      /Schematic layout blueprint/
     );
-    // Five anchored rule rows; grid.page draws three facts under anchor 1.
-    await expect(page.locator(".dsb-row-anchor > .dsb-anchor-num")).toHaveCount(
-      5
+    const regionsRule = layoutSource.rules.find(
+      (rule: { id: string }) => rule.id === "shell-regions"
     );
-    await expect(blueprintSvg.locator('[data-anchor="1"]')).toHaveCount(3);
-    await expect(blueprintSvg.locator('[data-anchor="2"]')).toHaveCount(1);
-    await expect(blueprintSvg.locator('[data-anchor="4"]')).toHaveCount(1);
-    // Status stays recognizable inside the visual module.
-    await expect(
-      blueprintSvg.locator('[data-anchor="4"][data-status="formalized"]')
-    ).toHaveCount(1);
-    await expect(
-      blueprintSvg.locator('[data-anchor="5"][data-status="gap"]')
-    ).toHaveCount(1);
-    // Source values label the measurements; the nav.mobile gap docks as an
-    // honest dashed unknown.
-    await expect(blueprintSvg).toContainText("1120px");
-    await expect(blueprintSvg).toContainText("12 columns");
-    await expect(blueprintSvg).toContainText("96 → 56px");
-    await expect(blueprintSvg).toContainText("1024");
-    await expect(blueprintSvg).toContainText("nav-mobile ?");
-    // Origin outcomes are distinguishable in the UI and accessibility tree.
-    await expect(
-      blueprint.locator('.dsb-origin[data-origin="schematic"]')
-    ).toBeVisible();
-    const unavailable = page.getByTestId("ds-layout-unavailable-nav-mobile");
-    await expect(unavailable).toBeVisible();
-    await expect(unavailable).toContainText("No visual sample");
-    await expect(unavailable).toContainText("Mobile navigation layout");
-    await expect(
-      unavailable.locator('.dsb-origin[data-origin="unavailable"]')
-    ).toBeVisible();
-    await expect(
-      unavailable.getByTestId("ds-layout-unavailable-status-nav-mobile")
-    ).toHaveText("open gap");
+    expect(regionsRule.value.openQuestions).toEqual([]);
+    expect(regionsRule.value.openQuestionAnswers).toEqual([
+      {
+        question: "窄屏页脚是否保持可见？",
+        answer: "保持可见，页脚是品牌签名。"
+      }
+    ]);
 
-    // ---- Row ↔ drawing isolation works by pointer and by keyboard. ----
-    await page.getByTestId("ds-row-shell-regions").hover();
-    await expect(blueprintSvg).toHaveAttribute("data-active-anchor", "2");
-    await expect(
-      page.locator(".dsb-row-anchor[data-anchor-active]")
-    ).toContainText("shell-regions");
-    await page.getByRole("heading", { name: "Layout", exact: true }).hover();
-    await expect(blueprintSvg).not.toHaveAttribute("data-active-anchor");
-    await blueprintSvg.locator('[data-anchor="3"] .dsb-bp-dot-focus').focus();
-    await expect(blueprintSvg).toHaveAttribute("data-active-anchor", "3");
-    await expect(
-      page.locator(".dsb-row-anchor[data-anchor-active]")
-    ).toContainText("section-rhythm");
-    await page.evaluate(() =>
-      (document.activeElement as HTMLElement | null)?.blur()
-    );
-    await expect(blueprintSvg).not.toHaveAttribute("data-active-anchor");
-
-    // ---- Checklist composition: every row carries a check control; the whole
-    // row toggles membership; the drawing slices to the checked rules. ----
-    const checks = page.locator(".dsb-row-anchor > .dsb-row-check");
-    await expect(checks).toHaveCount(5);
-    await expect(checks.first()).toHaveAttribute("aria-pressed", "false");
-    // Whole-row click on the field text selects the rule (no checkbox-only
-    // hit target); the caption names the composition.
-    await page.getByTestId("ds-row-shell-regions").click();
-    await expect(
-      page.locator(".dsb-row-anchor[data-selected]")
-    ).toHaveCount(1);
-    await expect(blueprint).toContainText("Composed from 1 rule");
-    await expect(blueprintSvg.locator("[data-anchor]")).toHaveCount(1);
-    // A second rule joins through its check control; original anchor numbers
-    // survive the slice.
-    await checks.first().click();
-    await expect(blueprint).toContainText("Composed from 2 rules");
-    await expect(blueprintSvg.locator('[data-anchor="1"]')).toHaveCount(3);
-    await expect(blueprintSvg.locator('[data-anchor="2"]')).toHaveCount(1);
-    await expect(blueprintSvg.locator('[data-anchor="3"]')).toHaveCount(0);
-    // Undo both; once nothing is checked and the pointer leaves the rows, the
-    // full-leaf drawing and its caption return.
-    await checks.first().click();
-    await page.getByTestId("ds-row-shell-regions").click();
-    await page.getByRole("heading", { name: "Layout", exact: true }).hover();
-    await expect(blueprint).toContainText("One schematic drawing per rule set");
-    await expect(blueprintSvg.locator('[data-anchor="3"]')).toHaveCount(1);
-
+    // ---- Resizable split (09C-A): the Layout leaf no longer splits, so the
+    // persistence contract is exercised on the Interaction leaf. ----
+    await page.getByRole("button", { name: "Interaction", exact: true }).click();
     const split = page.getByTestId("ds-leaf-split");
     await expect(split).toBeVisible();
     await expect(split).not.toHaveAttribute("data-stacked", "true");
@@ -787,7 +761,7 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(page.getByTestId("design-system-browser")).toHaveCount(0);
     await entryButton.click();
     await expect(sheet).toHaveAttribute("data-open", "true");
-    await page.getByRole("button", { name: "Layout", exact: true }).click();
+    await page.getByRole("button", { name: "Interaction", exact: true }).click();
     await expect(page.getByTestId("ds-split-divider")).toHaveAttribute(
       "aria-valuenow",
       "46"
@@ -798,7 +772,6 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(split).toHaveAttribute("data-stacked", "true");
     await expect(page.getByTestId("ds-split-divider")).toHaveCount(0);
     await expect(page.getByTestId("ds-split-right")).toBeVisible();
-    await expect(blueprintSvg).toBeVisible();
     const splitOverflow = await split.evaluate(
       (el) => el.scrollWidth - el.clientWidth
     );

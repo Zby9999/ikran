@@ -44,7 +44,8 @@ export { recordArtifactWrittenCommand } from "./artifact";
 export {
   getDesignSystemViewCommand,
   getDesignSystemComponentCommand,
-  approveDesignSystemEntryCommand
+  approveDesignSystemEntryCommand,
+  answerDesignSystemOpenQuestionCommand
 } from "./design-system";
 
 export {
@@ -120,6 +121,8 @@ export {
   getDesignSystemComponentInputShape,
   approveDesignSystemEntryInputSchema,
   approveDesignSystemEntryInputShape,
+  answerDesignSystemOpenQuestionInputSchema,
+  answerDesignSystemOpenQuestionInputShape,
   createOrOpenProjectInputShape,
   setupWorkspaceInputShape
 } from "./schemas";

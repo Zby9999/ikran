@@ -1,6 +1,6 @@
 # 抽取写作风格契约（rich 字段反散文约束）
 
-Status: ready-for-agent
+Status: resolved
 
 ## Parent
 
@@ -52,6 +52,10 @@ rich 字段保持 soft contract。需要落在 Agent 抽取时一定会读到的
 None — can start immediately（执行顺序第一棒：先立契约，再重写数据，最后改 UI）。
 
 ## Comments
+
+- 2026-08-01：由子代理（gpt-5.6-sol）实施完成，commit 39fccf6。三处契约面
+  （MCP instructions、source contract、09B 文档）已同步；typecheck + 269 项相关
+  测试全绿；validateRulesFile 行为不变（soft contract）。摘要：/tmp/09C-B01-summary.md。
 
 - 2026-08-01：结论来自对旧版 workflow（Skill Test）与当前 repo 消费链路
   的双边探索：rich 字段的拆分本身有意义（09B 覆盖校验与未来 Issue 10/13
