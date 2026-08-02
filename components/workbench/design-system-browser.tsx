@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import { getSvgPath } from "figma-squircle";
 import {
   ArrowDown01Icon,
   ArrowRight01Icon,
@@ -105,10 +106,50 @@ import "./design-system-browser.css";
 export const DESIGN_SYSTEM_SHEET_EXIT_MS = 400;
 export const DESIGN_SYSTEM_SHEET_REDUCED_MOTION_EXIT_MS = 150;
 
+/** Figma sheet top corners — radius 24 + cornerSmoothing 60%. */
+export const DESIGN_SYSTEM_SHEET_TOP_RADIUS = 24;
+export const DESIGN_SYSTEM_SHEET_CORNER_SMOOTHING = 0.6;
+
 export function designSystemSheetExitMs(prefersReducedMotion: boolean): number {
   return prefersReducedMotion
     ? DESIGN_SYSTEM_SHEET_REDUCED_MOTION_EXIT_MS
     : DESIGN_SYSTEM_SHEET_EXIT_MS;
+}
+
+/** Top-only Figma squircle clip. drop-shadow (CSS) replaces box-shadow so the
+ *  clip does not erase the sheet elevation. */
+function useTopSquircleSheet(
+  cornerRadius: number,
+  cornerSmoothing: number,
+  enabled: boolean
+) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !enabled || typeof ResizeObserver === "undefined") return;
+    const update = () => {
+      const width = el.offsetWidth;
+      const height = el.offsetHeight;
+      if (!width || !height) return;
+      el.style.clipPath = `path('${getSvgPath({
+        width,
+        height,
+        topLeftCornerRadius: cornerRadius,
+        topRightCornerRadius: cornerRadius,
+        bottomLeftCornerRadius: 0,
+        bottomRightCornerRadius: 0,
+        cornerSmoothing
+      })}')`;
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      el.style.clipPath = "";
+    };
+  }, [cornerRadius, cornerSmoothing, enabled]);
+  return ref;
 }
 
 /**
@@ -1668,6 +1709,11 @@ export function DesignSystemBrowser({
   const popoverSeenRef = useRef(false);
   const hoverCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useTopSquircleSheet(
+    DESIGN_SYSTEM_SHEET_TOP_RADIUS,
+    DESIGN_SYSTEM_SHEET_CORNER_SMOOTHING,
+    mounted
+  );
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(
     null
   );
@@ -2076,44 +2122,10 @@ export function DesignSystemBrowser({
         tabIndex={-1}
         onKeyDown={onSheetKeyDown}
       >
-        <header className="dsb-header">
-          <span className="dsb-title">Design System</span>
-          <span aria-hidden className="dsb-header-divider" />
-          <nav aria-label="Breadcrumb" className="dsb-breadcrumb">
-            {model
-              ? breadcrumbFor(route, model).map((segment, index, segments) => (
-                  <span key={`${segment}-${index}`}>
-                    {index > 0 ? <span aria-hidden> / </span> : null}
-                    <span
-                      className={
-                        index === segments.length - 1
-                          ? "dsb-breadcrumb-current"
-                          : undefined
-                      }
-                    >
-                      {segment}
-                    </span>
-                  </span>
-                ))
-              : null}
-          </nav>
-          <button
-            type="button"
-            aria-label="Close Design System"
-            className="dsb-icon-button dsb-header-close"
-            data-testid="ds-close"
-            onClick={() => onClose("button")}
-          >
-            <HugeiconsIcon
-              icon={MultiplicationSignIcon}
-              size={14}
-              color="currentColor"
-              strokeWidth={2}
-            />
-          </button>
-        </header>
+        <div className="dsb-sheet-surface" ref={surfaceRef}>
         <div className="dsb-body">
           <aside className="dsb-sidebar">
+            <div className="dsb-sidebar-title">Design System</div>
             <div role="tablist" aria-label="Sections" className="dsb-tabs">
               <span
                 aria-hidden
@@ -2134,7 +2146,7 @@ export function DesignSystemBrowser({
                 </button>
               ))}
             </div>
-            <div key={section} className="dsb-enter">
+            <div key={section} className="dsb-enter dsb-nav-list">
               <button
                 type="button"
                 className="dsb-navrow"
@@ -2174,6 +2186,42 @@ export function DesignSystemBrowser({
             </div>
           </aside>
           <main className="dsb-main">
+            <button
+              type="button"
+              aria-label="Close Design System"
+              className="dsb-icon-button dsb-main-close"
+              data-testid="ds-close"
+              onClick={() => onClose("button")}
+            >
+              <HugeiconsIcon
+                icon={MultiplicationSignIcon}
+                size={14}
+                color="currentColor"
+                strokeWidth={2}
+              />
+            </button>
+            <div className="dsb-main-top">
+              <nav aria-label="Breadcrumb" className="dsb-breadcrumb">
+                {model
+                  ? breadcrumbFor(route, model).map(
+                      (segment, index, segments) => (
+                        <span key={`${segment}-${index}`}>
+                          {index > 0 ? <span aria-hidden> / </span> : null}
+                          <span
+                            className={
+                              index === segments.length - 1
+                                ? "dsb-breadcrumb-current"
+                                : undefined
+                            }
+                          >
+                            {segment}
+                          </span>
+                        </span>
+                      )
+                    )
+                  : null}
+              </nav>
+            </div>
             <div
               key={`${route.kind}-${route.kind === "leaf" ? route.leaf : route.section}`}
               className={
@@ -2185,6 +2233,7 @@ export function DesignSystemBrowser({
               {mainContent.node}
             </div>
           </main>
+        </div>
         </div>
       </div>
     </div>
