@@ -180,6 +180,35 @@ describe("Domain Rule Reader Projection (09C-D04)", () => {
       })
     ]);
   });
+
+  it("keeps every non-empty nested fact visible with a stable source path", () => {
+    const source = entry({
+      entry_id: "semantic.responsive-spacing",
+      kind: "domain-rule",
+      domain: "spacing",
+      value: {
+        statement: "Spacing contracts on narrow screens.",
+        constraints: {
+          desktop: { min: "32px", max: "64px" },
+          mobile: "20px"
+        },
+        examples: [
+          { surface: "hero", gap: "48px" },
+          { surface: "card", gap: "24px" }
+        ]
+      }
+    });
+
+    expect(projectDomainRuleLeaf([toRow(source)])[0]!.fields).toEqual([
+      { label: "constraints.desktop.min", text: "32px" },
+      { label: "constraints.desktop.max", text: "64px" },
+      { label: "constraints.mobile", text: "20px" },
+      { label: "examples[0].surface", text: "hero" },
+      { label: "examples[0].gap", text: "48px" },
+      { label: "examples[1].surface", text: "card" },
+      { label: "examples[1].gap", text: "24px" }
+    ]);
+  });
 });
 
 function projectedEntryIds(projection: TypographyProjection): string[] {

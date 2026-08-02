@@ -163,6 +163,34 @@ function hasDisplayContent(value: unknown): boolean {
   return true;
 }
 
+function projectDomainRuleField(
+  label: string,
+  value: unknown
+): DomainRuleProjection["fields"] {
+  if (!hasDisplayContent(value)) return [];
+  if (aliasTargetOf(value) !== null) {
+    return [{ label, text: formatValueField(value) }];
+  }
+  if (Array.isArray(value)) {
+    const scalarOnly = value.every(
+      (item) =>
+        typeof item === "string" ||
+        typeof item === "number" ||
+        typeof item === "boolean"
+    );
+    if (scalarOnly) return [{ label, text: value.map(String).join(", ") }];
+    return value.flatMap((item, index) =>
+      projectDomainRuleField(`${label}[${index}]`, item)
+    );
+  }
+  if (isPlainObject(value)) {
+    return Object.entries(value).flatMap(([key, fieldValue]) =>
+      projectDomainRuleField(`${label}.${key}`, fieldValue)
+    );
+  }
+  return [{ label, text: formatValueField(value) }];
+}
+
 /** Data-driven rule-card projection for Color / Typography / Materials.
  * The source statement owns the headline; every other non-empty value field
  * remains visible without inventing a domain-specific presentation schema. */
@@ -189,10 +217,9 @@ export function projectDomainRuleLeaf(
               ([key, fieldValue]) =>
                 key !== "statement" && hasDisplayContent(fieldValue)
             )
-            .map(([label, fieldValue]) => ({
-              label,
-              text: formatValueField(fieldValue)
-            }))
+            .flatMap(([label, fieldValue]) =>
+              projectDomainRuleField(label, fieldValue)
+            )
         : [],
       status: row.status,
       row

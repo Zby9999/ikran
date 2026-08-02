@@ -859,6 +859,10 @@ export function ComponentsHomePage({
 
 /* ------------------------------- leaf pages ------------------------------- */
 
+function safeDomId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "-");
+}
+
 function RuleLedgerCardShell({
   rule,
   approval,
@@ -955,7 +959,7 @@ function InteractionRuleCard({
   approval: ApprovalState;
   rows: RowSharedProps;
 }) {
-  const safeId = rule.row.entryId.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const safeId = safeDomId(rule.row.entryId);
   const details = rule.isRich ? (
     <div className="dsb-principle-fields">
       {rule.description ? (
@@ -1007,7 +1011,7 @@ function DomainRulesZone({
       <GroupLabel>Rules</GroupLabel>
       <ol className="dsb-interaction-ledger">
         {rules.map((rule) => {
-          const safeId = rule.row.entryId.replace(/[^a-zA-Z0-9_-]/g, "-");
+          const safeId = safeDomId(rule.row.entryId);
           const details = rule.fields.length > 0 ? (
             <div className="dsb-principle-fields">
               {rule.fields.map((field) => (
@@ -1233,7 +1237,7 @@ function TypographyLedgerRow({
   onToggle: () => void;
 }) {
   const metrics = typographyLedgerMetrics(item);
-  const detailsId = `dsb-type-details-${item.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  const detailsId = `dsb-type-details-${safeDomId(item.key)}`;
 
   return (
     <article

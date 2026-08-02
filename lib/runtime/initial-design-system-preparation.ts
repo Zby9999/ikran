@@ -19,6 +19,7 @@ import {
   LAYOUT_RULE_CAPTURE_OPTIONAL_FIELDS,
   LAYOUT_RULE_CAPTURE_REQUIRED_FIELDS,
   DESIGN_SYSTEM_ENTRY_KINDS,
+  DESIGN_SYSTEM_ENTRY_KIND_FILE_OWNERSHIP,
   RICH_COMPONENT_SPEC_FIELDS,
   RICH_INTERACTION_RULE_FIELDS,
   RICH_LAYOUT_RULE_FIELDS,
@@ -165,15 +166,7 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
   ],
   entry_envelope: ["kind", "value", "meaning", "status", "links"],
   entry_kinds: DESIGN_SYSTEM_ENTRY_KINDS,
-  entry_kind_file_ownership: {
-    token: ["token.json"],
-    "domain-rule": [
-      "token.json",
-      "layout-rules.json",
-      "interaction-rules.json"
-    ],
-    "global-rule": ["design-system.json"]
-  },
+  entry_kind_file_ownership: DESIGN_SYSTEM_ENTRY_KIND_FILE_OWNERSHIP,
   token_domains: TOKEN_DOMAINS,
   component_spec_fields: [
     "description",

@@ -46,6 +46,28 @@ export type DesignSystemFileKind =
   | "layout-rules.json"
   | "interaction-rules.json";
 
+export const DESIGN_SYSTEM_ENTRY_KIND_FILE_OWNERSHIP = {
+  token: ["token.json"],
+  "domain-rule": [
+    "token.json",
+    "layout-rules.json",
+    "interaction-rules.json"
+  ],
+  "global-rule": ["design-system.json"]
+} as const satisfies Record<
+  DesignSystemEntryKind,
+  readonly DesignSystemFileKind[]
+>;
+
+function entryKindsAllowedIn(
+  fileKind: DesignSystemFileKind
+): DesignSystemEntryKind[] {
+  return DESIGN_SYSTEM_ENTRY_KINDS.filter((kind) =>
+    (DESIGN_SYSTEM_ENTRY_KIND_FILE_OWNERSHIP[kind] as readonly DesignSystemFileKind[])
+      .includes(fileKind)
+  );
+}
+
 export type DesignSystemSchemaReason =
   | "invalid_design_system_json"
   | "missing_required_field"
@@ -438,7 +460,7 @@ function validateTokenJson(json: Record<string, unknown>): DesignSystemSchemaRes
       const aliasRef = alias.alias;
       const entryFailure = checkEntry(raw, ctx, {
         withId: false,
-        allowedKinds: ["token", "domain-rule"],
+        allowedKinds: entryKindsAllowedIn("token.json"),
         domainRuleRequiresDomain: true,
         checkValue: (value) => {
           if (value === null) {
@@ -523,7 +545,7 @@ function validateDesignSystemMeta(
   }
   const visualFailure = checkEntry(json.visualLanguage, { entry: "visualLanguage" }, {
     withId: true,
-    allowedKinds: ["global-rule"],
+    allowedKinds: entryKindsAllowedIn("design-system.json"),
     checkValue: (value, ctx) => {
       if (!isPlainObject(value)) {
         return fail("invalid_field_type", { ...ctx, field: "value", expected: "object" });
@@ -654,6 +676,7 @@ function validateComponentSpec(
 
 function validateRulesFile(
   json: Record<string, unknown>,
+  fileKind: "layout-rules.json" | "interaction-rules.json",
   collectionFields: readonly string[],
   stringFields: readonly string[] = [],
   allowedFields: readonly string[] | null = null
@@ -694,7 +717,7 @@ function validateRulesFile(
         }
       }
       return null;
-    }, ["domain-rule"]) ?? { ok: true }
+    }, entryKindsAllowedIn(fileKind)) ?? { ok: true }
   );
 }
 
@@ -791,7 +814,11 @@ function validateCaptureNodeRect(
 function validateLayoutRulesFile(
   json: Record<string, unknown>
 ): DesignSystemSchemaResult {
-  const base = validateRulesFile(json, RICH_LAYOUT_RULE_FIELDS);
+  const base = validateRulesFile(
+    json,
+    "layout-rules.json",
+    RICH_LAYOUT_RULE_FIELDS
+  );
   if (!base.ok) return base;
   // Base validation passed: every rule is a plain object with a plain-object
   // value. Walk the capture lists for their item shape.
@@ -854,6 +881,7 @@ const FILE_KIND_VALIDATORS: Record<
   "interaction-rules.json": (json) =>
     validateRulesFile(
       json,
+      "interaction-rules.json",
       RICH_INTERACTION_RULE_COLLECTION_FIELDS,
       RICH_INTERACTION_RULE_STRING_FIELDS,
       RICH_INTERACTION_RULE_FIELDS
