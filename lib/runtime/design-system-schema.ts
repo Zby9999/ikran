@@ -682,6 +682,27 @@ export const LAYOUT_RULE_CAPTURE_NODE_RECT_KEYS = [
  * data error, not a truncation. */
 export const LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT = 4;
 
+/** Bounds check shared by the declaration gate and the view's defensive
+ * parse: x/y in [0, 1]; width/height in (0, MAX_EXTENT] — above 1 means the
+ * fixed-ratio crop truncates the node, which is expected. */
+export function isCaptureNodeRectBounds(
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): boolean {
+  return (
+    x >= 0 &&
+    y >= 0 &&
+    x <= 1 &&
+    y <= 1 &&
+    width > 0 &&
+    height > 0 &&
+    width <= LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT &&
+    height <= LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT
+  );
+}
+
 function validateCaptureNodeRect(
   item: Record<string, unknown>,
   itemField: string
@@ -707,20 +728,10 @@ function validateCaptureNodeRect(
     width: number;
     height: number;
   };
-  if (
-    x < 0 ||
-    y < 0 ||
-    x > 1 ||
-    y > 1 ||
-    width <= 0 ||
-    height <= 0 ||
-    width > LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT ||
-    height > LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT
-  ) {
+  if (!isCaptureNodeRectBounds(x, y, width, height)) {
     return fail("invalid_field_type", {
       field: rectField,
-      expected:
-        "x/y in [0, 1]; width/height in (0, 4] (may exceed 1 when the crop truncates the node)"
+      expected: `x/y in [0, 1]; width/height in (0, ${LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT}] (may exceed 1 when the crop truncates the node)`
     });
   }
   return { ok: true };

@@ -1305,7 +1305,7 @@ export function TypographyLeafPage({
 
 /**
  * Layout leaf (09C-D02, designer-selected Source Capture direction — Placard
- * variant, v2 定位视图): one vertical placard block per rule. A real Figma
+ * variant, v2 locator view): one vertical placard block per rule. A real Figma
  * node capture hangs in a fixed-ratio hairline frame — 3:2 landscape or 2:3
  * portrait by the node's own shape — with a hairline mark locating the node
  * inside the image when it doesn't nearly fill it. Below: the rule's

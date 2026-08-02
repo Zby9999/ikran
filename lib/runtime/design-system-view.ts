@@ -25,7 +25,7 @@ import {
   targetsFromAnchor
 } from "./design-intent-alignment";
 import {
-  LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT
+  isCaptureNodeRectBounds
 } from "./design-system-schema";
 import type {
   DesignSystemFileKind,
@@ -213,14 +213,7 @@ function nodeRectOfItem(item: Record<string, unknown>): LayoutCaptureNodeRect | 
     typeof y !== "number" ||
     typeof width !== "number" ||
     typeof height !== "number" ||
-    x < 0 ||
-    y < 0 ||
-    x > 1 ||
-    y > 1 ||
-    width <= 0 ||
-    height <= 0 ||
-    width > LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT ||
-    height > LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT
+    !isCaptureNodeRectBounds(x, y, width, height)
   ) {
     return null;
   }

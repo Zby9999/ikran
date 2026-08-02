@@ -1173,7 +1173,7 @@
   aspect-ratio: 3 / 2;
 }
 
-.dsb-placard-figure[data-orientation="landscape"] img {
+.dsb-placard-figure img {
   display: block;
   width: 100%;
   height: 100%;
@@ -1187,12 +1187,6 @@
   max-width: 100%;
   height: 480px;
   margin-inline: auto;
-}
-
-.dsb-placard-figure[data-orientation="portrait"] img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
 }
 
 /* Hairline node position mark. Dual-tone stroke stays visible on both light

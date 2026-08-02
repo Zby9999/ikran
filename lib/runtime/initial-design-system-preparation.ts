@@ -188,19 +188,25 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
       "Capture the node with the Figma MCP (get_screenshot on the rule's " +
       "frame/section node), then crop the PNG to a fixed-ratio region that " +
       "contains the node: 3:2 for landscape nodes, 2:3 for portrait ones. " +
-      "When the node is larger than the frame region, keep the top part and " +
-      "let the rest truncate — the figure is a locator, not a full view. " +
-      "Export at the exact ratio (the browser renders with object-fit " +
-      "contain). Save the PNG under design-system/captures/<entry>-<node>.png " +
-      "and reference the project-relative path as artifactPath. nodeName and " +
-      "capturedAt are required; add nodeId and surfaceId when the provenance " +
-      "is known so the browser can mark stale captures. Add nodeRect — the " +
-      "node's bounds inside the cropped PNG as 0–1 fractions {x, y, width, " +
-      "height}, computed deterministically from Figma node metadata — so the " +
-      "browser can draw a position mark (skipped when the node nearly fills " +
-      "the capture). Fractions are relative to the PNG; width/height may " +
-      "exceed 1 when the crop truncates the node. Rules without captures " +
-      "render an honest unavailable block — never fabricate one."
+      "Pick the crop orientation from the node's own shape so they agree — " +
+      "a near-square node (pixel aspect between 2:3 and 3:2) takes 3:2; " +
+      "the browser derives figure orientation from the nodeRect fraction " +
+      "aspect, and a mismatched crop letterboxes the image and drifts the " +
+      "position mark off the node. When the node is larger than the frame " +
+      "region, keep the top part and let the rest truncate — the figure is " +
+      "a locator, not a full view. Export at the exact ratio (the browser " +
+      "renders with object-fit contain). Save the PNG under " +
+      "design-system/captures/<entry>-<node>.png and reference the " +
+      "project-relative path as artifactPath. nodeName and capturedAt are " +
+      "required; add nodeId and surfaceId when the provenance is known so " +
+      "the browser can mark stale captures. Add nodeRect — the node's " +
+      "bounds inside the cropped PNG as fractions {x, y, width, height}, " +
+      "computed deterministically from Figma node metadata — so the browser " +
+      "can draw a position mark (skipped when the node nearly fills the " +
+      "capture). Schema bounds: x and y within [0, 1]; width and height " +
+      "within (0, 4] — values above 1 are expected when the crop truncates " +
+      "the node. Rules without captures render an honest unavailable " +
+      "block — never fabricate one."
   },
   interaction_rule_value_fields: RICH_INTERACTION_RULE_FIELDS,
   interaction_entry_split: {
