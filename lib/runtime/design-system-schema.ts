@@ -600,7 +600,7 @@ function validateComponentList(
         requireString(value, "name", { ...ctx, field: "value" }) ??
         requireString(value, "specPath", { ...ctx, field: "value" })
       );
-    }) ?? { ok: true }
+    }, entryKindsAllowedIn("component-list.json")) ?? { ok: true }
   );
 }
 
@@ -615,6 +615,7 @@ function validateComponentSpec(
   if (nameFailure) return nameFailure;
   return checkEntry(json, {}, {
     withId: true,
+    allowedKinds: entryKindsAllowedIn("component-spec"),
     checkValue: (value, ctx) => {
       if (!isPlainObject(value)) {
         return fail("invalid_field_type", { ...ctx, field: "value", expected: "object" });

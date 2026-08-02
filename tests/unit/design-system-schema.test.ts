@@ -564,6 +564,15 @@ test.describe("component-list.json", () => {
     if (res.ok) return;
     expect(res.reason).toBe("missing_required_field");
   });
+
+  test("rejects foundation entry kinds outside their owned files", () => {
+    const json = validComponentListJson();
+    Object.assign(json.components[0], { kind: "token" });
+    expect(validateDesignSystemJson("component-list.json", json)).toMatchObject({
+      ok: false,
+      reason: "entry_kind_file_mismatch"
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -574,6 +583,18 @@ test.describe("component-spec", () => {
   test("valid spec with boundaries + state matrix", () => {
     const res = validateDesignSystemJson("component-spec", validComponentSpec());
     expect(res.ok).toBe(true);
+  });
+
+  test("rejects foundation entry kinds outside their owned files", () => {
+    expect(
+      validateDesignSystemJson("component-spec", {
+        ...validComponentSpec(),
+        kind: "domain-rule"
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "entry_kind_file_mismatch"
+    });
   });
 
   test("missing boundaries / stateMatrix → missing_required_field", () => {
