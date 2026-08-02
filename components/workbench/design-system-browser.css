@@ -161,7 +161,9 @@
   flex-direction: column;
   gap: 16px;
   align-self: stretch;
-  margin: 10px 0 10px 10px;
+  /* All four sides need inset so the outer 1px ring (box-shadow) is not
+     covered by .dsb-main's opaque background on the right. */
+  margin: 10px;
   overflow-y: auto;
   overscroll-behavior-y: none;
   border: 1px solid #fff;
