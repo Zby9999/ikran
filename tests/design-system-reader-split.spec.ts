@@ -245,9 +245,34 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
           status: "formalized",
           links: [designerEditedCardId],
           domain: "typography"
+        },
+        "typography.statisticalDisplay": {
+          value: {
+            fontFamily: { alias: "primitive.font.family.sans" },
+            fontSize: "105px",
+            fontWeight: "400",
+            lineHeight: "1"
+          },
+          meaning: "Studio proof point",
+          status: "formalized",
+          links: [designerEditedCardId],
+          domain: "typography"
         }
       },
-      component: {}
+      component: {
+        "navigation.label": {
+          value: {
+            fontFamily: { alias: "primitive.font.family.sans" },
+            fontSize: "20px",
+            fontWeight: "400",
+            lineHeight: "1"
+          },
+          meaning: "Top navigation and footer information",
+          status: "formalized",
+          links: [designerEditedCardId],
+          domain: "typography"
+        }
+      }
     });
     writeSource("design-system/layout-rules.json", {
       rules: [
@@ -430,10 +455,16 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(page.getByTestId("ds-leaf-split")).toHaveCount(0);
     const ledger = page.getByTestId("ds-typography-ledger");
     await expect(ledger).toBeVisible();
-    await expect(ledger.getByText("Typeface", { exact: true })).toBeVisible();
-    await expect(ledger.getByText("Used for", { exact: true })).toBeVisible();
+    const typeGroup = page.getByTestId("ds-typography-group-type");
+    const componentGroup = page.getByTestId("ds-typography-group-component");
+    await expect(typeGroup.getByRole("heading", { name: "Type · 3" })).toBeVisible();
+    await expect(
+      componentGroup.getByRole("heading", { name: "Component · 1" })
+    ).toBeVisible();
+    await expect(ledger.getByText("Used for", { exact: true })).toHaveCount(2);
     const columnHeaderStyle = await ledger
       .locator(".dsb-type-columns")
+      .first()
       .evaluate((element) => {
         const style = getComputedStyle(element);
         return {
@@ -449,13 +480,13 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
       letterSpacing: "normal",
       textTransform: "none"
     });
-    const firstRow = ledger.locator(".dsb-type-row").first();
+    const firstRow = typeGroup.locator(".dsb-type-row").first();
     await expect
       .poll(() =>
         firstRow.evaluate((element) => getComputedStyle(element).paddingTop)
       )
       .toBe("0px");
-    const compactRow = ledger.locator(".dsb-type-row").last();
+    const compactRow = typeGroup.locator(".dsb-type-row").last();
     await expect
       .poll(() =>
         compactRow.evaluate((element) => {
@@ -473,7 +504,7 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
         minHeight: "0px"
       });
     const typographySummary = page.getByTestId("ds-typography-summary");
-    await expect(typographySummary).toHaveText("2 type styles");
+    await expect(typographySummary).toHaveText("4 type styles");
     await expect(ledger.getByText("formalized", { exact: true })).toHaveCount(0);
     await expect(ledger.getByText("Source-backed", { exact: true })).toHaveCount(0);
     await expect(page.locator('[aria-label="Order type atlas"]')).toHaveCount(0);
@@ -486,10 +517,11 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
       "ds-atlas-semantic.display.large"
     );
     await expect(displayCard).toBeVisible();
+    await expect(displayCard.getByRole("heading", { name: "Display Large" })).toBeVisible();
     await expect(displayCard).toContainText("Hero display role");
     await expect(displayCard.getByText("Weight", { exact: true })).toHaveCount(0);
     const displayDisclosure = displayCard.getByRole("button", {
-      name: /details for display.large/
+      name: /details for Display Large/
     });
     await expect(displayDisclosure).toHaveAttribute("aria-expanded", "false");
     await displayDisclosure.click();
@@ -514,7 +546,7 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     expect(typefaceDetailStyle.fontFamily).toContain("Inter");
     expect(typefaceDetailStyle.letterSpacing).toBe("-0.22px");
     await expect(displayCard.getByText("Line height", { exact: true })).toHaveCount(0);
-    await expect(displayCard).not.toContainText("semantic.display.large");
+    await expect(displayCard).toContainText("semantic.display.large");
     await expect(displayCard).not.toContainText("primitive.font.family.sans");
 
     await expect(page.getByTestId("ds-technical-details")).toHaveCount(0);
@@ -561,7 +593,21 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     const specimenSize = await displaySample.evaluate(
       (el) => Number.parseFloat(getComputedStyle(el).fontSize)
     );
-    expect(specimenSize).toBeGreaterThan(24);
+    expect(specimenSize).toBe(64);
+
+    const statisticalDisplay = page.getByTestId(
+      "ds-atlas-semantic.typography.statisticalDisplay"
+    );
+    await expect(
+      statisticalDisplay.getByRole("heading", { name: "Statistical Display" })
+    ).toBeVisible();
+    await expect(statisticalDisplay.locator(".dsb-type-specimen")).toHaveCSS(
+      "font-size",
+      "105px"
+    );
+    await expect(
+      componentGroup.getByRole("heading", { name: "Navigation Label" })
+    ).toBeVisible();
 
     // ---- Layout leaf (09C-D02): Source Capture placards, one per rule. ----
     await page.getByRole("button", { name: "Layout", exact: true }).click();
@@ -732,6 +778,22 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
       (el) => el.scrollWidth - el.clientWidth
     );
     expect(splitOverflow).toBeLessThanOrEqual(1);
+
+    await page.getByRole("button", { name: "Typography", exact: true }).click();
+    const narrowStatisticalDisplay = page.getByTestId(
+      "ds-atlas-semantic.typography.statisticalDisplay"
+    );
+    await expect(
+      narrowStatisticalDisplay.locator(".dsb-type-specimen")
+    ).toHaveCSS("font-size", "105px");
+    const narrowSpecimenOverflow = await narrowStatisticalDisplay
+      .locator(".dsb-type-name")
+      .evaluate((element) => element.scrollWidth - element.clientWidth);
+    expect(narrowSpecimenOverflow).toBeGreaterThan(0);
+    const typographyPageOverflow = await page
+      .locator(".dsb-typography-page")
+      .evaluate((element) => element.scrollWidth - element.clientWidth);
+    expect(typographyPageOverflow).toBeLessThanOrEqual(1);
     await page.setViewportSize({ width: 1280, height: 720 });
 
     // ---- 09C-D01 Interaction ledger: strategy text, no inferred samples. ----

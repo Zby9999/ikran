@@ -1084,15 +1084,14 @@ const CSS_TEXT_TRANSFORMS = new Set([
   "capitalize"
 ]);
 
-/** Render the style name in its declared type treatment. Invalid CSS values
- * stay out of the specimen while their source text remains available in the
- * disclosure below. Large sizes cap against the row container so a long role
- * name never truncates. */
+/** Render the readable role name in its declared type treatment. Invalid CSS
+ * values stay out of the specimen while their source text remains available
+ * in the disclosure below. */
 function typographySpecimenCss(item: TypographyAtlasItem): React.CSSProperties {
   const css: React.CSSProperties & { "--dsb-type-size"?: string } = {};
   if (item.specimenFamily) css.fontFamily = item.specimenFamily;
   if (item.fontSizePx !== null) {
-    css["--dsb-type-size"] = `${Math.min(item.fontSizePx, 64)}px`;
+    css["--dsb-type-size"] = `${item.fontSizePx}px`;
   }
   const weight = numericWeight(item.specimenFontWeight ?? undefined);
   if (weight !== undefined) css.fontWeight = weight;
@@ -1116,6 +1115,7 @@ function typographyLedgerMetrics(
   item: TypographyAtlasItem
 ): { label: string; value: string }[] {
   return [
+    { label: "Canonical identity", value: item.canonicalIdentity },
     {
       label: "Weight",
       value: typographyLedgerValue(
@@ -1154,9 +1154,9 @@ function TypographyLedgerRow({
       <div className="dsb-type-row">
         <div className="dsb-type-name">
           {item.specimenFamily ? (
-            <h2 className="dsb-type-specimen" style={typographySpecimenCss(item)}>
+            <h3 className="dsb-type-specimen" style={typographySpecimenCss(item)}>
               {item.label}
-            </h2>
+            </h3>
           ) : (
             <div className="dsb-type-unresolved" role="note">
               <span>{item.label}</span>
@@ -1231,6 +1231,22 @@ export function TypographyLeafPage({
       }),
     [atlasItems]
   );
+  const groups = useMemo(
+    () =>
+      ([
+        {
+          key: "type" as const,
+          label: "Type",
+          items: orderedItems.filter((item) => item.group === "type")
+        },
+        {
+          key: "component" as const,
+          label: "Component",
+          items: orderedItems.filter((item) => item.group === "component")
+        }
+      ]).filter((group) => group.items.length > 0),
+    [orderedItems]
+  );
 
   return (
     <div className="dsb-typography-page">
@@ -1243,23 +1259,35 @@ export function TypographyLeafPage({
           <p className="dsb-type-count" data-testid="ds-typography-summary">
             {orderedItems.length} type styles
           </p>
-          <div className="dsb-type-columns" aria-hidden="true">
-            <span>Typeface</span>
-            <span>Used for</span>
-            <span />
-          </div>
-          <div className="dsb-type-list">
-            {orderedItems.map((item) => (
-              <TypographyLedgerRow
-                key={item.key}
-                item={item}
-                expanded={expandedKey === item.key}
-                onToggle={() =>
-                  setExpandedKey((current) =>
-                    current === item.key ? null : item.key
-                  )
-                }
-              />
+          <div className="dsb-type-groups">
+            {groups.map((group) => (
+              <section
+                className="dsb-type-group"
+                data-testid={`ds-typography-group-${group.key}`}
+                key={group.key}
+              >
+                <div className="dsb-type-columns">
+                  <h2>
+                    {group.label} · {group.items.length}
+                  </h2>
+                  <span>Used for</span>
+                  <span />
+                </div>
+                <div className="dsb-type-list">
+                  {group.items.map((item) => (
+                    <TypographyLedgerRow
+                      key={item.key}
+                      item={item}
+                      expanded={expandedKey === item.key}
+                      onToggle={() =>
+                        setExpandedKey((current) =>
+                          current === item.key ? null : item.key
+                        )
+                      }
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         </section>

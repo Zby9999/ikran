@@ -366,6 +366,8 @@ export interface TypographyProjection {
 export interface TypographyAtlasItem {
   key: string;
   kind: "style";
+  group: "type" | "component";
+  canonicalIdentity: string;
   label: string;
   usage: string;
   fontFamily: string | null;
@@ -384,6 +386,20 @@ export interface TypographyAtlasItem {
   status: DsStatus;
   /** Every DB-backed row consumed by this visual form. */
   sourceRows: DsRow[];
+}
+
+function readableTypographyRole(role: string): string {
+  const withoutDomain = role.replace(/^typography[._-]/i, "");
+  return withoutDomain
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .split(/[._\s-]+/)
+    .filter(Boolean)
+    .map(
+      (word) =>
+        `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`
+    )
+    .join(" ");
 }
 
 const FAMILY_NAME_PATTERN = /font[-.]?family|typeface/i;
@@ -654,7 +670,10 @@ export function typographyAtlasItems(
     return {
       key: style.key,
       kind: "style",
-      label: style.role,
+      group:
+        style.row.entry.section === "token.component" ? "component" : "type",
+      canonicalIdentity: style.row.entryId,
+      label: readableTypographyRole(style.role),
       usage: style.meaning,
       fontFamily: atlasFieldDisplay(style.fontFamily),
       specimenFamily: style.specimenFamily,

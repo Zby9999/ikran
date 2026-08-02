@@ -507,6 +507,61 @@ describe("toTechnicalDetail", () => {
 /* ------------------------------- type atlas ------------------------------- */
 
 describe("typographyAtlasItems", () => {
+  it("projects readable names, Type/Component groups, and canonical identities", () => {
+    const typeRole = entry({
+      entry_id: "semantic.typography.statisticalDisplay",
+      section: "token.semantic",
+      name: "typography.statisticalDisplay",
+      value: { fontFamily: "Instrument Sans", fontSize: "105px" }
+    });
+    const componentRole = entry({
+      entry_id: "component.textLink.compact",
+      section: "token.component",
+      name: "textLink.compact",
+      value: { fontFamily: "Instrument Sans", fontSize: "16px" }
+    });
+
+    const atlas = typographyAtlasItems(
+      projectTypographyLeaf([
+        { layer: "semantic" as const, entries: [typeRole] },
+        { layer: "component" as const, entries: [componentRole] }
+      ])
+    );
+
+    expect(atlas).toEqual([
+      expect.objectContaining({
+        label: "Statistical Display",
+        group: "type",
+        canonicalIdentity: "semantic.typography.statisticalDisplay"
+      }),
+      expect.objectContaining({
+        label: "Text Link Compact",
+        group: "component",
+        canonicalIdentity: "component.textLink.compact"
+      })
+    ]);
+  });
+
+  it("title-cases uppercase role segments instead of guessing acronyms", () => {
+    const atlas = typographyAtlasItems(
+      projectTypographyLeaf([
+        {
+          layer: "semantic" as const,
+          entries: [
+            entry({
+              entry_id: "semantic.typography.STATISTICAL_DISPLAY",
+              section: "token.semantic",
+              name: "typography.STATISTICAL_DISPLAY",
+              value: { fontFamily: "Instrument Sans", fontSize: "105px" }
+            })
+          ]
+        }
+      ])
+    );
+
+    expect(atlas[0]?.label).toBe("Statistical Display");
+  });
+
   it("does not promote object-valued primitive construction facts to type styles", () => {
     const projection = projectTypographyLeaf([
       {
@@ -536,7 +591,9 @@ describe("typographyAtlasItems", () => {
       { layer: "semantic" as const, entries: [DISPLAY_LARGE] }
     ]);
     const atlas = typographyAtlasItems(projection);
-    const display = atlas.find((item) => item.label === "display.large");
+    const display = atlas.find(
+      (item) => item.canonicalIdentity === "semantic.display-large"
+    );
 
     expect(display).toMatchObject({
       kind: "style",
@@ -634,7 +691,7 @@ describe("typographyAtlasItems", () => {
       { layer: "component" as const, entries: [style] }
     ]);
     const atlasItem = typographyAtlasItems(projection).find(
-      (item) => item.label === "hero.title"
+      (item) => item.canonicalIdentity === "component.hero-title"
     );
 
     expect(atlasItem).toMatchObject({

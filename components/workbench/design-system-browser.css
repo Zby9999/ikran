@@ -1354,6 +1354,16 @@
   font-size: 11.5px;
 }
 
+.dsb-type-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.dsb-type-group {
+  min-width: 0;
+}
+
 .dsb-type-columns,
 .dsb-type-row {
   display: grid;
@@ -1370,6 +1380,11 @@
   font-weight: 400;
   letter-spacing: normal;
   text-transform: none;
+}
+
+.dsb-type-columns > h2 {
+  margin: 0;
+  font: inherit;
 }
 
 .dsb-type-list {
@@ -1395,13 +1410,19 @@
   min-width: 0;
 }
 
+.dsb-type-name {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
 .dsb-type-specimen {
-  max-width: 100%;
+  width: max-content;
+  max-width: none;
   margin: 0;
   color: #202020;
-  font-size: min(var(--dsb-type-size, 15px), 7.25cqi);
+  font-size: var(--dsb-type-size, 15px);
   line-height: 0.98;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 
 .dsb-type-unresolved {
