@@ -18,6 +18,7 @@ import {
   LAYOUT_RULE_CAPTURE_NODE_RECT_FIELD,
   LAYOUT_RULE_CAPTURE_OPTIONAL_FIELDS,
   LAYOUT_RULE_CAPTURE_REQUIRED_FIELDS,
+  DESIGN_SYSTEM_ENTRY_KINDS,
   RICH_COMPONENT_SPEC_FIELDS,
   RICH_INTERACTION_RULE_FIELDS,
   RICH_LAYOUT_RULE_FIELDS,
@@ -162,7 +163,17 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
     ...INITIAL_DESIGN_SYSTEM_REQUIRED_ARTIFACTS,
     "design-system/components/<name>.json"
   ],
-  entry_envelope: ["value", "meaning", "status", "links"],
+  entry_envelope: ["kind", "value", "meaning", "status", "links"],
+  entry_kinds: DESIGN_SYSTEM_ENTRY_KINDS,
+  entry_kind_file_ownership: {
+    token: ["token.json"],
+    "domain-rule": [
+      "token.json",
+      "layout-rules.json",
+      "interaction-rules.json"
+    ],
+    "global-rule": ["design-system.json"]
+  },
   token_domains: TOKEN_DOMAINS,
   component_spec_fields: [
     "description",
@@ -911,6 +922,7 @@ type FinalizeInitialDesignSystemFailure = {
     | "manifest_outcome_status_mismatch"
     | "entry_claim_lineage_mismatch"
     | "uncovered_design_system_entries"
+    | "entry_kind_missing"
     | "token_domain_missing"
     | "required_artifacts_not_ingested"
     | "component_specs_missing"
@@ -925,6 +937,7 @@ type DesignSystemEntryKeyRow = {
   entry_id: string;
   section: string;
   name: string | null;
+  kind: string | null;
   domain: string | null;
   status: string;
   links_json: string;
@@ -1140,7 +1153,7 @@ export function finalizeInitialDesignSystemPreparation(
 
       const entries = db
         .prepare(
-          `SELECT source_artifact_path, entry_id, section, name, domain,
+          `SELECT source_artifact_path, entry_id, section, name, kind, domain,
                   status, links_json, value_json, position
            FROM design_system_entries
            ORDER BY source_artifact_path ASC, entry_id ASC`
@@ -1332,6 +1345,28 @@ export function finalizeInitialDesignSystemPreparation(
           db,
           "uncovered_design_system_entries",
           { entries: uncoveredEntries },
+          context
+        );
+      }
+
+      const foundationEntriesWithoutKind = entries
+        .filter(
+          (entry) =>
+            (entry.section.startsWith("foundations.") ||
+              entry.section.startsWith("token.") ||
+              entry.section === "layout" ||
+              entry.section === "interaction") &&
+            entry.kind === null
+        )
+        .map((entry) => ({
+          source_artifact_path: entry.source_artifact_path,
+          entry_id: entry.entry_id
+        }));
+      if (foundationEntriesWithoutKind.length > 0) {
+        return finalizeFailure(
+          db,
+          "entry_kind_missing",
+          { entries: foundationEntriesWithoutKind },
           context
         );
       }

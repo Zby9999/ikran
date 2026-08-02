@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 18;
+export const CURRENT_SCHEMA_VERSION = 19;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1042,6 +1042,20 @@ CREATE TABLE IF NOT EXISTS region_annotation_delete_tombstones (
 CREATE INDEX IF NOT EXISTS idx_region_annotation_tombstones_deleted_at
   ON region_annotation_delete_tombstones(deleted_at);
       `);
+    }
+  },
+  {
+    version: 19,
+    up(db) {
+      // Issue 09B / 09C-D04: preserve the declared foundation entry kind
+      // independently from value_json so Browser projection can separate
+      // domain rules from tokens without inference. NULL is the legacy value.
+      const designSystemColumns = db
+        .prepare("PRAGMA table_info(design_system_entries)")
+        .all() as Array<{ name: string }>;
+      if (!designSystemColumns.some((column) => column.name === "kind")) {
+        db.exec("ALTER TABLE design_system_entries ADD COLUMN kind TEXT");
+      }
     }
   }
 ];

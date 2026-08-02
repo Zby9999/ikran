@@ -142,6 +142,64 @@ export function projectInteractionLeaf(
   });
 }
 
+/* ------------------------------ domain rules ----------------------------- */
+
+export interface DomainRuleProjection {
+  key: string;
+  anchor: number;
+  statement: string;
+  meaning: string;
+  /** Non-empty value fields other than the statement headline. */
+  fields: { label: string; text: string }[];
+  status: DsStatus;
+  row: DsRow;
+}
+
+function hasDisplayContent(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (isPlainObject(value)) return Object.keys(value).length > 0;
+  return true;
+}
+
+/** Data-driven rule-card projection for Color / Typography / Materials.
+ * The source statement owns the headline; every other non-empty value field
+ * remains visible without inventing a domain-specific presentation schema. */
+export function projectDomainRuleLeaf(
+  rows: readonly DsRow[]
+): DomainRuleProjection[] {
+  return rows.map((row, index) => {
+    const value = row.entry.value;
+    const objectValue =
+      isPlainObject(value) && row.entry.alias === null ? value : null;
+    return {
+      key: row.key,
+      anchor: index + 1,
+      statement:
+        objectValue &&
+        typeof objectValue.statement === "string" &&
+        objectValue.statement.trim().length > 0
+          ? objectValue.statement
+          : entryDisplayName(row.entry),
+      meaning: row.meaning,
+      fields: objectValue
+        ? Object.entries(objectValue)
+            .filter(
+              ([key, fieldValue]) =>
+                key !== "statement" && hasDisplayContent(fieldValue)
+            )
+            .map(([label, fieldValue]) => ({
+              label,
+              text: formatValueField(fieldValue)
+            }))
+        : [],
+      status: row.status,
+      row
+    };
+  });
+}
+
 /* ------------------------------ technical rows ---------------------------- */
 
 export interface TechnicalDetail {
@@ -594,6 +652,9 @@ export function typographyLayersFromView(
     layer,
     entries: view.tokens[layer].filter(
       (entry) =>
+        (entry.kind === undefined ||
+          entry.kind === null ||
+          entry.kind === "token") &&
         classifyToken(entryDisplayName(entry), entry.domain ?? null) ===
         "typography"
     )

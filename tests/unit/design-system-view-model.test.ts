@@ -229,6 +229,61 @@ describe("token leaf classification", () => {
 });
 
 describe("buildDesignSystemBrowserModel", () => {
+  test("09C-D04 splits domain rules from tokens while legacy entries keep their existing leaf classification", () => {
+    const view = emptyView();
+    view.tokens.primitive = [
+      entry({
+        entry_id: "primitive.ink.900",
+        name: "ink.900",
+        kind: "token",
+        domain: "color",
+        value: "#111111"
+      }),
+      entry({
+        entry_id: "primitive.font.body",
+        name: "font.body",
+        value: "16px"
+      })
+    ];
+    view.tokens.semantic = [
+      entry({
+        entry_id: "semantic.color.no-shadow",
+        name: "color.no-shadow",
+        kind: "domain-rule",
+        domain: "shadow",
+        value: { statement: "Do not use shadows to separate regions." },
+        meaning: "Prefer spacing and borders.",
+        status: "candidate"
+      })
+    ];
+
+    const model = buildDesignSystemBrowserModel(view);
+    const color = model.foundations.tokenLeaves.find(
+      (leaf) => leaf.id === "color"
+    )!;
+    const typography = model.foundations.tokenLeaves.find(
+      (leaf) => leaf.id === "typography"
+    )!;
+    const materials = model.foundations.tokenLeaves.find(
+      (leaf) => leaf.id === "materials"
+    )!;
+
+    expect(color.rules).toEqual([]);
+    expect(color.groups.flatMap((group) => group.rows).map((row) => row.name)).toEqual([
+      "ink.900"
+    ]);
+    expect(
+      typography.groups.flatMap((group) => group.rows).map((row) => row.name)
+    ).toEqual(["font.body"]);
+    expect(materials.rules).toHaveLength(1);
+    expect(materials.rules[0]).toMatchObject({
+      entryId: "semantic.color.no-shadow",
+      status: "candidate"
+    });
+    expect(materials.groups).toEqual([]);
+    expect(materials.chips).toEqual(["1 candidate"]);
+  });
+
   test("empty view → honest empty state", () => {
     const model = buildDesignSystemBrowserModel(emptyView());
     expect(model.empty).toBe(true);

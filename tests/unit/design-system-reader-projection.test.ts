@@ -5,6 +5,7 @@ import {
   cssFontStack,
   formatTextStyleSummary,
   formatValueField,
+  projectDomainRuleLeaf,
   projectObjectFields,
   projectInteractionLeaf,
   projectPrinciple,
@@ -145,6 +146,40 @@ describe("Interaction Reader Projection (09C-D01)", () => {
     ]);
   });
 
+});
+
+describe("Domain Rule Reader Projection (09C-D04)", () => {
+  it("uses statement as the headline and projects every other non-empty value field", () => {
+    const source = entry({
+      entry_id: "semantic.no-shadow-regions",
+      kind: "domain-rule",
+      domain: "shadow",
+      name: "no-shadow-regions",
+      value: {
+        statement: "Do not use shadows to separate regions.",
+        rationale: "Hierarchy should come from spacing.",
+        alternatives: ["spacing", "border"],
+        exception: "",
+        examples: [],
+        metadata: {}
+      },
+      meaning: "Keep material treatment flat.",
+      status: "candidate"
+    });
+
+    expect(projectDomainRuleLeaf([toRow(source)])).toEqual([
+      expect.objectContaining({
+        anchor: 1,
+        statement: "Do not use shadows to separate regions.",
+        meaning: "Keep material treatment flat.",
+        status: "candidate",
+        fields: [
+          { label: "rationale", text: "Hierarchy should come from spacing." },
+          { label: "alternatives", text: "spacing, border" }
+        ]
+      })
+    ]);
+  });
 });
 
 function projectedEntryIds(projection: TypographyProjection): string[] {
@@ -729,7 +764,14 @@ describe("typographyLayersFromView", () => {
         ],
         semantic: [
           entry({ entry_id: "s.display", name: "display.large", domain: null }),
-          entry({ entry_id: "s.text", name: "text.primary", domain: null })
+          entry({ entry_id: "s.text", name: "text.primary", domain: null }),
+          entry({
+            entry_id: "s.negative-tracking-rule",
+            name: "font.title.negative-tracking",
+            kind: "domain-rule",
+            domain: "typography",
+            value: { statement: "Titles use negative tracking." }
+          })
         ],
         component: []
       },

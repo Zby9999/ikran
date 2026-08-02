@@ -184,6 +184,9 @@ Agent fixture 验证；Runtime 必须保存足够的 claim/excerpt/target lineag
 - Components：inventory、anatomy、variants、sizes、states、token links、boundaries、
   usage/content rules、responsive behavior、code links 和 open gaps；
 - Principles / visual language：statement、scope、rationale、use / avoid 和 exceptions。
+- Domain rules：领域级判断规则（如「不要用阴影做区域区分」「CTA 用 ink 色」），
+  以 `kind: domain-rule` 写入所属领域的 source 文件并带正确 `domain`；
+  不够全局的规则不得升级为 principle，也不得伪装成叙事 token。
 
 只抽取 evidence 支持且对系统可复用的类别。不存在的产品状态或组件不是 gap。
 
@@ -267,6 +270,24 @@ Good / bad 对照（bad 同时违反一句一条、事实结构化、原文语�
 - Browser view model 优先使用 `domain` 投影 Color / Typography / Materials；
   旧 entry 的 name regex 仅作为向后兼容 fallback。
 
+### Entry kind 与文件归属
+
+- 所有 foundation entry（`token.json`、`layout-rules.json`、`interaction-rules.json`
+  与 `design-system.json` 的 principles / visualLanguage）必须携带显式 `kind`：
+  `token | domain-rule | global-rule`。
+- kind 与文件归属必须一致，ingest 时确定性校验并给 typed reason：
+  - `token`：只允许 `token.json`；
+  - `domain-rule`：允许 `token.json` / `layout-rules.json` /
+    `interaction-rules.json`；`token.json` 中的 domain-rule 必须携带 `domain`，
+    指向所属 leaf（Color / Typography / Materials）；
+  - `global-rule`：只允许 `design-system.json`。
+- token 没有 global / domain 之分（scope 不是 token 的属性）；领域归属由
+  `domain` 表达。不引入 `form` / `scope` 字段——Layout 的确定/概念区分维持
+  字段级（facts vs meaning），不做 entry 级分组（09C-D04 锁定）。
+- `kind` 必须经过 ingest、DB view 和 derived export 原样保留。
+- 无 `kind` 的旧 entry 不要求迁移；Browser 对其维持现状渲染（09C-D04 的
+  向后兼容默认）。
+
 ### Component specs
 
 在现有 `description / props / boundaries / stateMatrix` 之外，为新生成 spec 增加：
@@ -321,6 +342,12 @@ data/API/derived-export 完整性和现有 Browser 信息架构内已经定义�
 - [ ] `finalize_initial_design_system_preparation` 只有在 manifest、required artifacts、
       ingest、coverage 和 audit 全部通过后才完成 durable command。
 - [ ] 新生成 token 有显式 domain；Typography 不再依赖 token name regex 才能显示。
+- [x] 新 entry 携带显式 `kind`（`token | domain-rule | global-rule`）；kind 与文件
+      归属不一致的 artifact 被 ingest 拒绝并返回 typed reason。
+- [x] 领域级判断规则以 `kind: domain-rule` 写入所属领域 source 文件并带正确
+      `domain`，不再被丢弃或伪装为 token。
+- [x] 含 `kind` 的 schema round-trip slice 在实现顺序上最先交付，解除 09C-D04
+      e2e 的阻塞。
 - [ ] Typography value 可保留 family、size、weight、line-height、letter-spacing 和
       transform。
 - [ ] 新生成 component spec 保留 anatomy、variants、sizes、states、token links、
@@ -343,6 +370,9 @@ data/API/derived-export 完整性和现有 Browser 信息架构内已经定义�
 - [ ] “CTA 为标签 + 箭头文字链接、不使用填充按钮”的 answer 不得生成相反的
       filled Button contract。
 - [ ] 字体问题不得被用来单独支持无关 color / spacing entry 的 formalized 状态。
+- [ ] 重新抽取的项目中，领域级判断规则（如「不要用阴影做区域区分」）以
+      `kind: domain-rule` 写入 `token.json` 并带正确 `domain`，不再静默丢失；
+      Browser Rules 区（09C-D04）可见。
 - [ ] Workbench 现有 Typography leaf 能读取并显示真实 typography tokens。
 - [ ] 删除一个已确认 typography entry 后，finalize 返回具体 uncovered claim，而不是
       成功。
@@ -376,7 +406,8 @@ data/API/derived-export 完整性和现有 Browser 信息架构内已经定义�
   检查。
 - 用 golden semantic fixture 和 mutation tests 验证具体事实；不要让 Runtime 用 LLM
   或关键词匹配冒充语义裁判。
-- Schema extension 先保证 round-trip preservation，再增加 UI consumption。
+- Schema extension 先保证 round-trip preservation，再增加 UI consumption；含 `kind`
+  的 schema slice 最先交付，解除 09C-D04 e2e 的阻塞。
 - 新 token 使用 explicit domain；旧 token 保留 regex fallback，避免一次性迁移历史
   artifact。
 

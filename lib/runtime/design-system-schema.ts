@@ -29,6 +29,15 @@ export const DESIGN_SYSTEM_STATUSES = ["formalized", "candidate", "gap"] as cons
 
 export type DesignSystemStatus = (typeof DESIGN_SYSTEM_STATUSES)[number];
 
+export const DESIGN_SYSTEM_ENTRY_KINDS = [
+  "token",
+  "domain-rule",
+  "global-rule"
+] as const;
+
+export type DesignSystemEntryKind =
+  (typeof DESIGN_SYSTEM_ENTRY_KINDS)[number];
+
 export type DesignSystemFileKind =
   | "design-system.json"
   | "token.json"
@@ -45,6 +54,9 @@ export type DesignSystemSchemaReason =
   | "invalid_status"
   | "entry_links_required"
   | "gap_must_not_link"
+  | "invalid_entry_kind"
+  | "entry_kind_file_mismatch"
+  | "domain_rule_domain_required"
   | "invalid_token_domain"
   | "token_primitive_alias"
   | "token_alias_unresolvable"
@@ -123,6 +135,8 @@ function checkEntry(
   options: {
     withId: boolean;
     checkValue: (value: unknown, ctx: Record<string, unknown>) => DesignSystemSchemaError | null;
+    allowedKinds?: readonly DesignSystemEntryKind[];
+    domainRuleRequiresDomain?: boolean;
   }
 ): DesignSystemSchemaError | null {
   if (!isPlainObject(raw)) {
@@ -131,6 +145,35 @@ function checkEntry(
   if (options.withId) {
     const idFailure = requireString(raw, "id", ctx);
     if (idFailure) return idFailure;
+  }
+  if (raw.kind !== undefined) {
+    if (
+      typeof raw.kind !== "string" ||
+      !(DESIGN_SYSTEM_ENTRY_KINDS as readonly string[]).includes(raw.kind)
+    ) {
+      return fail("invalid_entry_kind", {
+        ...ctx,
+        kind: raw.kind,
+        allowed: DESIGN_SYSTEM_ENTRY_KINDS
+      });
+    }
+    if (
+      options.allowedKinds &&
+      !options.allowedKinds.includes(raw.kind as DesignSystemEntryKind)
+    ) {
+      return fail("entry_kind_file_mismatch", {
+        ...ctx,
+        kind: raw.kind,
+        allowed: options.allowedKinds
+      });
+    }
+    if (
+      raw.kind === "domain-rule" &&
+      options.domainRuleRequiresDomain &&
+      !isNonEmptyString(raw.domain)
+    ) {
+      return fail("domain_rule_domain_required", ctx);
+    }
   }
   const meaningFailure = requireString(raw, "meaning", ctx);
   if (meaningFailure) return meaningFailure;
@@ -175,7 +218,8 @@ function checkEntry(
 function checkEntryArray(
   raw: unknown,
   field: string,
-  checkValue: (value: unknown, ctx: Record<string, unknown>) => DesignSystemSchemaError | null
+  checkValue: (value: unknown, ctx: Record<string, unknown>) => DesignSystemSchemaError | null,
+  allowedKinds?: readonly DesignSystemEntryKind[]
 ): DesignSystemSchemaError | null {
   if (raw === undefined) {
     return fail("missing_required_field", { field });
@@ -186,7 +230,11 @@ function checkEntryArray(
   const seen = new Set<string>();
   for (let i = 0; i < raw.length; i++) {
     const ctx = { collection: field, index: i };
-    const failure = checkEntry(raw[i], ctx, { withId: true, checkValue });
+    const failure = checkEntry(raw[i], ctx, {
+      withId: true,
+      checkValue,
+      allowedKinds
+    });
     if (failure) return failure;
     const id = (raw[i] as Record<string, unknown>).id as string;
     if (seen.has(id)) {
@@ -390,6 +438,8 @@ function validateTokenJson(json: Record<string, unknown>): DesignSystemSchemaRes
       const aliasRef = alias.alias;
       const entryFailure = checkEntry(raw, ctx, {
         withId: false,
+        allowedKinds: ["token", "domain-rule"],
+        domainRuleRequiresDomain: true,
         checkValue: (value) => {
           if (value === null) {
             return fail("invalid_field_type", { ...ctx, field: "value", expected: "non-null" });
@@ -473,6 +523,7 @@ function validateDesignSystemMeta(
   }
   const visualFailure = checkEntry(json.visualLanguage, { entry: "visualLanguage" }, {
     withId: true,
+    allowedKinds: ["global-rule"],
     checkValue: (value, ctx) => {
       if (!isPlainObject(value)) {
         return fail("invalid_field_type", { ...ctx, field: "value", expected: "object" });
@@ -511,7 +562,7 @@ function validateDesignSystemMeta(
         }
       }
       return null;
-    }) ?? { ok: true }
+    }, ["global-rule"]) ?? { ok: true }
   );
 }
 
@@ -643,7 +694,7 @@ function validateRulesFile(
         }
       }
       return null;
-    }) ?? { ok: true }
+    }, ["domain-rule"]) ?? { ok: true }
   );
 }
 

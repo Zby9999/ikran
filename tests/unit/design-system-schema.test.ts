@@ -186,6 +186,84 @@ function insertAnsweredCard(dir: string, id: string) {
 // ---------------------------------------------------------------------------
 
 test.describe("shared entry contract", () => {
+  test("09B entry kind is optional for legacy data but validated against its source file when declared", () => {
+    const legacy = validTokenJson();
+    expect(validateDesignSystemJson("token.json", legacy).ok).toBe(true);
+
+    const tokenWithRule = validTokenJson();
+    Object.assign(tokenWithRule.primitive["color.blue.500"], {
+      kind: "token",
+      domain: "color"
+    });
+    tokenWithRule.semantic["no-shadow-regions"] = {
+      kind: "domain-rule",
+      domain: "shadow",
+      value: { statement: "Do not use shadows to separate regions." },
+      meaning: "Use spacing and borders for hierarchy.",
+      status: "candidate",
+      links: ["card-1"]
+    };
+    expect(validateDesignSystemJson("token.json", tokenWithRule).ok).toBe(true);
+
+    const globalRules = validDesignSystemJson();
+    Object.assign(globalRules.visualLanguage, { kind: "global-rule" });
+    for (const principle of globalRules.principles) {
+      Object.assign(principle, { kind: "global-rule" });
+    }
+    expect(
+      validateDesignSystemJson("design-system.json", globalRules).ok
+    ).toBe(true);
+    expect(
+      validateDesignSystemJson("layout-rules.json", {
+        rules: [entry({ kind: "domain-rule" })]
+      }).ok
+    ).toBe(true);
+    expect(
+      validateDesignSystemJson("interaction-rules.json", {
+        rules: [
+          entry({
+            kind: "domain-rule",
+            value: { statement: "Motion stays quiet." }
+          })
+        ]
+      }).ok
+    ).toBe(true);
+
+    const wrongFile = validTokenJson();
+    Object.assign(wrongFile.primitive["color.blue.500"], {
+      kind: "global-rule"
+    });
+    expect(validateDesignSystemJson("token.json", wrongFile)).toMatchObject({
+      ok: false,
+      reason: "entry_kind_file_mismatch"
+    });
+    expect(
+      validateDesignSystemJson("layout-rules.json", {
+        rules: [entry({ kind: "global-rule" })]
+      })
+    ).toMatchObject({ ok: false, reason: "entry_kind_file_mismatch" });
+
+    const missingDomain = validTokenJson();
+    missingDomain.semantic["cta-ink"] = {
+      kind: "domain-rule",
+      value: { statement: "CTA uses the ink color." },
+      meaning: "Keep calls to action typographic.",
+      status: "candidate",
+      links: ["card-1"]
+    };
+    expect(validateDesignSystemJson("token.json", missingDomain)).toMatchObject({
+      ok: false,
+      reason: "domain_rule_domain_required"
+    });
+
+    const invalidKind = validTokenJson();
+    Object.assign(invalidKind.primitive["color.blue.500"], { kind: "rule" });
+    expect(validateDesignSystemJson("token.json", invalidKind)).toMatchObject({
+      ok: false,
+      reason: "invalid_entry_kind"
+    });
+  });
+
   test("wrong status value → invalid_status", () => {
     const res = validateDesignSystemJson("layout-rules.json", {
       rules: [entry({ status: "locked" })]

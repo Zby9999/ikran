@@ -195,6 +195,8 @@ const TOKEN_LAYER_ORDER: readonly TokenLayerKey[] = [
 export interface DsTokenLeafModel {
   id: TokenLeafId;
   name: string;
+  /** Domain-level judgement rules for this leaf, in source order. */
+  rules: DsRow[];
   /** Non-empty layer groups, primitive → semantic → component. */
   groups: { layer: TokenLayerKey; rows: DsRow[] }[];
   chips: string[];
@@ -312,8 +314,24 @@ export function buildDesignSystemBrowserModel(
   const byLeafLayer = new Map<TokenLeafId, Map<TokenLayerKey, DsRow[]>>(
     tokenLeafIds.map((id) => [id, new Map()])
   );
+  const rulesByLeaf = new Map<TokenLeafId, DsRow[]>(
+    tokenLeafIds.map((id) => [id, []])
+  );
   for (const layer of TOKEN_LAYER_ORDER) {
     for (const entry of view.tokens[layer]) {
+      if (entry.kind === "domain-rule") {
+        const leafId =
+          entry.domain === "color"
+            ? "color"
+            : entry.domain === "typography"
+              ? "typography"
+              : "materials";
+        rulesByLeaf.get(leafId)!.push(toRow(entry));
+        continue;
+      }
+      // A global rule cannot legally live in token.json. Defensive DB reads
+      // omit it instead of disguising it as a token via name classification.
+      if (entry.kind === "global-rule") continue;
       const leafId = classifyToken(
         entryDisplayName(entry),
         entry.domain ?? null
@@ -332,8 +350,12 @@ export function buildDesignSystemBrowserModel(
     return {
       id,
       name: TOKEN_LEAF_NAMES[id],
+      rules: rulesByLeaf.get(id)!,
       groups,
-      chips: statusChips(groups.flatMap((group) => group.rows))
+      chips: statusChips([
+        ...rulesByLeaf.get(id)!,
+        ...groups.flatMap((group) => group.rows)
+      ])
     };
   });
 
@@ -391,7 +413,7 @@ export function buildDesignSystemBrowserModel(
     ...principles,
     ...(visualLanguage ? [visualLanguage.row] : []),
     ...tokenLeaves.flatMap((leaf) =>
-      leaf.groups.flatMap((group) => group.rows)
+      [...leaf.rules, ...leaf.groups.flatMap((group) => group.rows)]
     ),
     ...layoutRows,
     ...interactionRows

@@ -373,6 +373,79 @@ describe("FoundationsHomePage", () => {
 });
 
 describe("TokenLeafPage", () => {
+  test("renders Rules above Tokens and omits either empty zone", () => {
+    const view = fixtureView();
+    view.tokens.semantic.push(
+      entry({
+        entry_id: "semantic.no-shadow-regions",
+        name: "no-shadow-regions",
+        kind: "domain-rule",
+        domain: "shadow",
+        value: {
+          statement: "Do not use shadows to separate regions.",
+          rationale: "Hierarchy should come from spacing."
+        },
+        meaning: "Keep material treatment flat.",
+        status: "candidate"
+      }),
+      entry({
+        entry_id: "semantic.radius.card",
+        name: "radius.card",
+        kind: "token",
+        domain: "radius",
+        value: "12px",
+        meaning: "Standard card radius",
+        status: "formalized"
+      })
+    );
+    const model = buildDesignSystemBrowserModel(view);
+    const materials = model.foundations.tokenLeaves.find(
+      (leaf) => leaf.id === "materials"
+    )!;
+    const html = renderToStaticMarkup(
+      createElement(TokenLeafPage, {
+        leaf: materials,
+        rows: rowSharedProps()
+      })
+    );
+
+    const rulesAt = html.indexOf('data-testid="ds-rules-zone"');
+    const tokensAt = html.indexOf('data-testid="ds-tokens-zone"');
+    expect(rulesAt).toBeGreaterThan(-1);
+    expect(tokensAt).toBeGreaterThan(rulesAt);
+    expect(html).toContain('data-testid="ds-domain-rule-1"');
+    expect(html).toContain("Do not use shadows to separate regions.");
+    expect(html).toContain('data-testid="ds-row-semantic.radius.card"');
+    expect(html).not.toContain("No tokens classified here yet");
+
+    const rulesOnly = renderToStaticMarkup(
+      createElement(TokenLeafPage, {
+        leaf: { ...materials, groups: [] },
+        rows: rowSharedProps()
+      })
+    );
+    expect(rulesOnly).toContain('data-testid="ds-rules-zone"');
+    expect(rulesOnly).not.toContain('data-testid="ds-tokens-zone"');
+    expect(rulesOnly).not.toContain("No tokens classified here yet");
+
+    const tokensOnly = renderToStaticMarkup(
+      createElement(TokenLeafPage, {
+        leaf: { ...materials, rules: [] },
+        rows: rowSharedProps()
+      })
+    );
+    expect(tokensOnly).not.toContain('data-testid="ds-rules-zone"');
+    expect(tokensOnly).toContain('data-testid="ds-tokens-zone"');
+
+    const empty = renderToStaticMarkup(
+      createElement(TokenLeafPage, {
+        leaf: { ...materials, rules: [], groups: [], chips: [] },
+        rows: rowSharedProps()
+      })
+    );
+    expect(empty).toContain("No tokens classified here yet");
+  });
+
   test("renders layer groups with their rows", () => {
     const model = buildDesignSystemBrowserModel(fixtureView());
     const color = model.foundations.tokenLeaves.find(
@@ -526,6 +599,34 @@ function typographyLayers() {
 }
 
 describe("TypographyLeafPage (09C-A Type Atlas)", () => {
+  test("renders typography Rules above the atlas Tokens zone", () => {
+    const rule = toRow(
+      entry({
+        entry_id: "semantic.negative-title-tracking",
+        name: "negative-title-tracking",
+        kind: "domain-rule",
+        domain: "typography",
+        value: {
+          statement: "Titles use negative tracking.",
+          appliesTo: "Display and heading roles"
+        },
+        meaning: "Keep large type visually cohesive."
+      })
+    );
+    const html = renderToStaticMarkup(
+      createElement(TypographyLeafPage, {
+        layers: typographyLayers(),
+        rules: [rule],
+        rows: rowSharedProps()
+      })
+    );
+    const rulesAt = html.indexOf('data-testid="ds-rules-zone"');
+    const tokensAt = html.indexOf('data-testid="ds-tokens-zone"');
+    expect(rulesAt).toBeGreaterThan(-1);
+    expect(tokensAt).toBeGreaterThan(rulesAt);
+    expect(html).toContain("Titles use negative tracking.");
+  });
+
   test("groups readable specimens into Type and Component sections", () => {
     const html = renderToStaticMarkup(
       createElement(TypographyLeafPage, {

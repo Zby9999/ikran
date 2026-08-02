@@ -301,6 +301,60 @@ function entryRows(
 // ---------------------------------------------------------------------------
 
 describe("design-system ingest", () => {
+  test("09B entry kind survives source ingest, DB-backed view, and derived export", () => {
+    withTempProject((dir) => {
+      seedEvidenceCards(dir);
+      writeProjectFile(dir, "design-system/token.json", {
+        primitive: {
+          "color.ink": {
+            kind: "token",
+            domain: "color",
+            value: "#111111",
+            meaning: "Primary ink",
+            status: "formalized",
+            links: ["card-edited"]
+          }
+        },
+        semantic: {
+          "no-shadow-regions": {
+            kind: "domain-rule",
+            domain: "shadow",
+            value: { statement: "Do not use shadows to separate regions." },
+            meaning: "Prefer spacing and borders.",
+            status: "candidate",
+            links: ["card-accepted"]
+          }
+        },
+        component: {}
+      });
+
+      const declared = declareFile(
+        dir,
+        "design-system/token.json",
+        "token.json"
+      );
+      expect(declared.ok).toBe(true);
+
+      const viewResult = getDesignSystemView(dir);
+      expect(viewResult.ok).toBe(true);
+      if (!viewResult.ok) return;
+      expect(viewResult.view.tokens.primitive[0]?.kind).toBe("token");
+      expect(viewResult.view.tokens.semantic[0]?.kind).toBe("domain-rule");
+
+      const exported = writeDesignSystemViewExport(dir);
+      expect(exported.ok).toBe(true);
+      if (!exported.ok) return;
+      const exportJson = JSON.parse(readFileSync(exported.path, "utf8")) as {
+        tokens: {
+          primitive: Array<{ kind?: string }>;
+          semantic: Array<{ kind?: string }>;
+        };
+      };
+      expect(exportJson.tokens.primitive[0]?.kind).toBe("token");
+      expect(exportJson.tokens.semantic[0]?.kind).toBe("domain-rule");
+    });
+  });
+
   test("full six-file set ingests into DB rows grouped by section", () => {
     withTempProject((dir) => {
       seedEvidenceCards(dir);

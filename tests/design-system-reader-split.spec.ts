@@ -257,6 +257,40 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
           status: "formalized",
           links: [designerEditedCardId],
           domain: "typography"
+        },
+        "rule.title-negative-tracking": {
+          kind: "domain-rule",
+          domain: "typography",
+          value: {
+            statement: "Titles use negative tracking.",
+            rationale: "Large type should remain visually cohesive."
+          },
+          meaning: "Tighten display and heading roles.",
+          status: "candidate",
+          links: [designerEditedCardId]
+        },
+        "rule.cta-ink": {
+          kind: "domain-rule",
+          domain: "color",
+          value: {
+            statement: "CTA uses the ink color.",
+            rationale: "Calls to action stay typographic."
+          },
+          meaning: "Avoid introducing a filled action color.",
+          status: "candidate",
+          links: [designerEditedCardId]
+        },
+        "rule.no-shadow-regions": {
+          kind: "domain-rule",
+          domain: "shadow",
+          value: {
+            statement: "Do not use shadows to separate regions.",
+            rationale: "Use spacing and borders for hierarchy.",
+            exceptions: []
+          },
+          meaning: "Keep material treatment flat.",
+          status: "candidate",
+          links: [designerEditedCardId]
         }
       },
       component: {
@@ -423,6 +457,29 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
       "interaction-rules.json"
     ))).toMatchObject({ ok: true, record: { status: "ingested" } });
 
+    const viewResponse = await fetch(new URL("/api/design-system", workbenchUrl), {
+      headers: { "x-ikran-session": token },
+      cache: "no-store"
+    });
+    expect(viewResponse.status).toBe(200);
+    const viewPayload = (await viewResponse.json()) as {
+      ok: boolean;
+      view: {
+        tokens: {
+          semantic: Array<{
+            entry_id: string;
+            kind?: string | null;
+            domain?: string | null;
+          }>;
+        };
+      };
+    };
+    expect(
+      viewPayload.view.tokens.semantic.find(
+        (entry) => entry.entry_id === "semantic.rule.no-shadow-regions"
+      )
+    ).toMatchObject({ kind: "domain-rule", domain: "shadow" });
+
     // ---- Foundations home: the rich principle reads as labeled fields. ----
     await entryButton.click();
     const sheet = page.getByTestId("ds-sheet");
@@ -448,12 +505,63 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(richPrinciple).toContainText("Every choice needs a reason");
     await expect(richPrinciple).toContainText("Marketing one-offs");
 
+    // ---- Materials: a real source-backed rule with no Tokens zone. ----
+    await page.getByRole("button", { name: "Materials", exact: true }).click();
+    const materialsRules = page.getByTestId("ds-rules-zone");
+    await expect(materialsRules).toBeVisible();
+    await expect(page.getByTestId("ds-tokens-zone")).toHaveCount(0);
+    const noShadowRule = page.getByTestId("ds-domain-rule-1");
+    await expect(noShadowRule).toContainText(
+      "Do not use shadows to separate regions."
+    );
+    const noShadowDisclosure = noShadowRule.getByRole("button", {
+      name: "Do not use shadows to separate regions."
+    });
+    await expect(noShadowDisclosure).toHaveAttribute("aria-expanded", "false");
+    await noShadowDisclosure.click();
+    await expect(noShadowDisclosure).toHaveAttribute("aria-expanded", "true");
+    await expect(noShadowRule).toContainText("rationale");
+    await expect(noShadowRule).toContainText(
+      "Use spacing and borders for hierarchy."
+    );
+    const evidenceTrigger = noShadowRule.getByRole("button", {
+      name: "Evidence for domain rule semantic.rule.no-shadow-regions"
+    });
+    await evidenceTrigger.hover();
+    const approveNoShadow = page.getByTestId(
+      "ds-approve-semantic.rule.no-shadow-regions"
+    );
+    await expect(approveNoShadow).toBeVisible();
+    await approveNoShadow.hover();
+    await approveNoShadow.click();
+    await expect(approveNoShadow).toHaveCount(0);
+    await expect(noShadowRule.getByTestId("ds-interaction-status")).toHaveText(
+      "formalized"
+    );
+
     // ---- Typography leaf: quiet three-column ledger + one disclosure. ----
     await page.getByRole("button", { name: "Typography", exact: true }).click();
     await expect(
       page.locator(".dsb-typography-page > .dsb-h1")
     ).toHaveText("Typography");
     await expect(page.getByTestId("ds-leaf-split")).toHaveCount(0);
+    const typographyRules = page.getByTestId("ds-rules-zone");
+    const typographyTokens = page.getByTestId("ds-tokens-zone");
+    await expect(typographyRules).toBeVisible();
+    await expect(typographyTokens).toBeVisible();
+    expect(
+      await typographyRules.evaluate((element) =>
+        Boolean(
+          element.compareDocumentPosition(
+            document.querySelector('[data-testid="ds-tokens-zone"]')!
+          ) & Node.DOCUMENT_POSITION_FOLLOWING
+        )
+      )
+    ).toBe(true);
+    await expect(typographyRules).toContainText("Titles use negative tracking.");
+    await expect(
+      page.getByTestId("ds-atlas-semantic.rule.title-negative-tracking")
+    ).toHaveCount(0);
     const ledger = page.getByTestId("ds-typography-ledger");
     await expect(ledger).toBeVisible();
     const typeGroup = page.getByTestId("ds-typography-group-type");
@@ -701,6 +809,10 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     // ---- Split divider (09C-A): exercised on the Color leaf, which keeps
     // the reading/samples split. ----
     await page.getByRole("button", { name: "Color", exact: true }).click();
+    await expect(page.getByTestId("ds-rules-zone")).toContainText(
+      "CTA uses the ink color."
+    );
+    await expect(page.getByTestId("ds-tokens-zone")).toHaveCount(0);
     const split = page.getByTestId("ds-leaf-split");
     await expect(split).toBeVisible();
     await expect(split).not.toHaveAttribute("data-stacked", "true");

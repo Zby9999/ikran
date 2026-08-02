@@ -17,7 +17,10 @@ coverage 结果。
 
 - Color：primitive、semantic role、component usage 的色板、前景/背景组合和适用的
   contrast preview；
-- Materials：spacing、size、ratio、radius、border、shadow 和 opacity 的测量型样本；
+- Materials：范围收缩——不预建测量型样本 renderer；无真实 Materials token 时
+  leaf 保持 token rows + 诚实空样本（VisualSamplesEmpty）。真实 shadow / radius
+  token 经 09B 重新抽取出现后，再单独立项补测量样本。domain-rule 的呈现归
+  09C-D04（Rules / Tokens 分区），不在本 issue；
 - 09B component inventory 中全部非 gap 组件的 presentation 与 preview outcome；
 - 对实际代码组件的 preview adapters；
 - 对可由结构化 spec 表达的 Source-generated / Schematic renderers；
@@ -50,6 +53,10 @@ System 内容都能得到一致、诚实、可维护的阅读与视觉结果”�
   Visual Grammar 目标已按 section 拆分：Interaction 纯文本见 09C-D01，Layout
   source capture 见 09C-D02）。
 - Color、Materials 与 Components 仍从 DB-backed view 派生；不新增平行事实源。
+- Materials 范围已收缩（2026-08）：rows + 诚实空样本，直到真实 token 经 09B
+  重新抽取出现；不为了 coverage 指标预建 renderer。Color / Typography /
+  Materials 三页的 Rules / Tokens 分区归 09C-D04；本 issue 的 Color 工作落在
+  Tokens 区语境内。
 - visual coverage 以适用性和可追溯性为标准，不设固定截图数量。
 - 每个 Visual Sample 记录所消费的 entry / component identities 和 origin。
 - unavailable 是诚实结果；不得为了 coverage 指标制造不受支持的视觉决定。
@@ -59,9 +66,10 @@ System 内容都能得到一致、诚实、可维护的阅读与视觉结果”�
 
 ## Design prerequisite
 
-开始具体实现前需要设计师确认完整覆盖用的 Figma reference，包括 Color、Materials、
+开始具体实现前需要设计师确认完整覆盖用的 Figma reference，包括 Color、
 通用 unavailable state、origin 标记、override 后的样本形态，以及当前 inventory 中
-不同组件类型的代表页面。取得 reference 后可把 Status 调整为 `ready-for-agent`。
+不同组件类型的代表页面（Materials 已收缩为 rows + 诚实空样本，不在本次
+reference 范围）。取得 reference 后可把 Status 调整为 `ready-for-agent`。
 
 ## Acceptance criteria
 
@@ -69,8 +77,8 @@ System 内容都能得到一致、诚实、可维护的阅读与视觉结果”�
       右栏呈现实际色板和适用的前景/背景组合。
 - [ ] Color sample 只使用 source-backed value；candidate / gap 不会被表现成已确认
       palette。
-- [ ] Materials Reader 与 renderer 覆盖当前适用的 spacing、size、ratio、radius、
-      border、shadow 和 opacity domains。
+- [ ] Materials 不新建 renderer：leaf 维持 token rows；视觉样本位呈现诚实空态，
+      不出现伪造测量样本。
 - [ ] 每个非 gap component inventory entry 都进入统一 Component Reader，并得到
       Code-backed、Source-generated、Schematic 或 unavailable outcome。
 - [ ] 有有效 code link 和 adapter 的组件使用真实实现；没有 adapter 时不会偷偷使用

@@ -828,12 +828,40 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
+  test("v18→v19 adds the nullable foundation entry kind", () => {
+    withTempProject((dir) => {
+      const initialized = openProjectDb(dir);
+      closeProjectDb(initialized);
+      const dbPath = getProjectDbPath(dir);
+      const v18 = new DatabaseSync(dbPath);
+      try {
+        v18.exec(`
+          ALTER TABLE design_system_entries DROP COLUMN kind;
+          PRAGMA user_version = 18;
+        `);
+      } finally {
+        v18.close();
+      }
+
+      const migrated = openProjectDb(dir);
+      try {
+        expect(userVersion(migrated)).toBe(CURRENT_SCHEMA_VERSION);
+        const columns = migrated
+          .prepare("PRAGMA table_info(design_system_entries)")
+          .all() as Array<{ name: string }>;
+        expect(columns.map((column) => column.name)).toContain("kind");
+      } finally {
+        closeProjectDb(migrated);
+      }
+    });
+  });
+
   test("fresh DB opens at CURRENT_SCHEMA_VERSION without backup", () => {
     withTempProject((dir) => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(18);
+        expect(CURRENT_SCHEMA_VERSION).toBe(19);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
@@ -857,6 +885,12 @@ test.describe("PRAGMA user_version migration runner", () => {
             "design_system_extraction_manifests",
             "design_system_extraction_manifest_requests"
           ])
+        );
+        const designSystemColumns = db
+          .prepare("PRAGMA table_info(design_system_entries)")
+          .all() as Array<{ name: string }>;
+        expect(designSystemColumns.map((column) => column.name)).toEqual(
+          expect.arrayContaining(["domain", "kind"])
         );
         const meta = db
           .prepare(

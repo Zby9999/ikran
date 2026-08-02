@@ -19,6 +19,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { recordSourceArtifact } from "../../lib/runtime/source-artifact";
 import { approveDesignSystemEntry } from "../../lib/runtime/design-system-approval";
 import {
+  getDesignSystemView,
   stableJsonStringify,
   writeDesignSystemViewExport
 } from "../../lib/runtime/design-system-view";
@@ -341,6 +342,65 @@ function approve(dir: string, sourceArtifactPath: string, entryId: string) {
 // ---------------------------------------------------------------------------
 
 describe("approveDesignSystemEntry happy path", () => {
+  test("domain-rule approval preserves kind, domain, and value through source write-back and DB view", () => {
+    withTempProject((dir) => {
+      seedEvidenceCards(dir);
+      writeProjectFile(dir, "design-system/token.json", {
+        primitive: {},
+        semantic: {
+          "no-shadow-regions": {
+            kind: "domain-rule",
+            domain: "shadow",
+            value: {
+              statement: "Do not use shadows to separate regions.",
+              rationale: "Use spacing and borders."
+            },
+            meaning: "Keep material treatment flat.",
+            status: "candidate",
+            links: ["card-edited"]
+          }
+        },
+        component: {}
+      });
+      const declared = recordSourceArtifact(dir, {
+        path: "design-system/token.json",
+        artifactType: "token.json",
+        semanticPurpose: "09C-D04 domain rule approval fixture",
+        relatedRecordIds: ["card-edited"]
+      });
+      expect(declared.ok).toBe(true);
+
+      const approved = approve(
+        dir,
+        "design-system/token.json",
+        "semantic.no-shadow-regions"
+      );
+      expect(approved.ok).toBe(true);
+
+      const source = JSON.parse(
+        readProjectFile(dir, "design-system/token.json")
+      );
+      expect(source.semantic["no-shadow-regions"]).toMatchObject({
+        kind: "domain-rule",
+        domain: "shadow",
+        status: "formalized",
+        value: {
+          statement: "Do not use shadows to separate regions.",
+          rationale: "Use spacing and borders."
+        }
+      });
+
+      const view = getDesignSystemView(dir);
+      expect(view.ok).toBe(true);
+      if (!view.ok) return;
+      expect(view.view.tokens.semantic[0]).toMatchObject({
+        kind: "domain-rule",
+        domain: "shadow",
+        status: "formalized"
+      });
+    });
+  });
+
   test("DB row and source file both flip candidate → formalized", () => {
     withTempProject((dir) => {
       seedAndIngest(dir);

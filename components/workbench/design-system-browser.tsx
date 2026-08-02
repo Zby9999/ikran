@@ -21,7 +21,7 @@
 // root so its keydown events stay inside the isolation boundary.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { getSvgPath } from "figma-squircle";
 import {
   ArrowDown01Icon,
@@ -55,6 +55,7 @@ import {
 } from "@/lib/runtime/design-system-browser-preferences-shared";
 import {
   projectObjectFields,
+  projectDomainRuleLeaf,
   projectInteractionLeaf,
   projectPrinciple,
   projectTypographyLeaf,
@@ -858,24 +859,35 @@ export function ComponentsHomePage({
 
 /* ------------------------------- leaf pages ------------------------------- */
 
-function InteractionRuleCard({
+function RuleLedgerCardShell({
   rule,
   approval,
-  rows
+  rows,
+  details,
+  testId,
+  detailsId,
+  evidenceAriaLabel
 }: {
-  rule: ReturnType<typeof projectInteractionLeaf>[number];
+  rule: {
+    key: string;
+    anchor: number;
+    statement: string;
+    meaning: string;
+    status: DsStatus;
+    row: DsRow;
+  };
   approval: ApprovalState;
   rows: RowSharedProps;
+  details: ReactNode;
+  testId: string;
+  detailsId: string;
+  evidenceAriaLabel: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const detailsId = `ds-interaction-details-${rule.row.entryId.replace(
-    /[^a-zA-Z0-9_-]/g,
-    "-"
-  )}`;
   return (
     <li
       className="dsb-interaction-rule"
-      data-testid={`ds-interaction-rule-${rule.anchor}`}
+      data-testid={testId}
       data-expanded={expanded || undefined}
       data-approve-error={approval.kind === "error" || undefined}
     >
@@ -907,28 +919,7 @@ function InteractionRuleCard({
         </CollapsibleTrigger>
         <CollapsibleContent asChild>
           <div className="dsb-interaction-ledger-details" id={detailsId}>
-            {rule.isRich ? (
-              <div className="dsb-principle-fields">
-                {rule.description ? (
-                  <span className="dsb-principle-field">
-                    <span className="dsb-principle-field-label">Description</span>
-                    <p className="dsb-principle-field-text">{rule.description}</p>
-                  </span>
-                ) : null}
-                {(["behavior", "accessibility"] as const).map((field) =>
-                  rule[field].length > 0 ? (
-                    <span className="dsb-principle-field" key={field}>
-                      <span className="dsb-principle-field-label">
-                        {field[0]!.toUpperCase() + field.slice(1)}
-                      </span>
-                      <ul className="dsb-principle-list">
-                        {rule[field].map((item) => <li key={item}>{item}</li>)}
-                      </ul>
-                    </span>
-                  ) : null
-                )}
-              </div>
-            ) : null}
+            {details}
             <div className="dsb-principle-footer">
               <InfoPopover
                 entry={rule.row.entry}
@@ -936,7 +927,7 @@ function InteractionRuleCard({
                 infoOpen={rows.infoKey === rule.key}
                 popoverInstant={rows.popoverInstant(rule.key)}
                 portalContainer={rows.portalContainer}
-                ariaLabel={`Evidence for interaction rule ${rule.row.entryId}`}
+                ariaLabel={evidenceAriaLabel}
                 onInfoOpenChange={(open) => rows.onInfoKey(open ? rule.key : null)}
                 onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.key)}
                 onInfoHoverClose={rows.onInfoHoverClose}
@@ -952,6 +943,98 @@ function InteractionRuleCard({
         </CollapsibleContent>
       </Collapsible>
     </li>
+  );
+}
+
+function InteractionRuleCard({
+  rule,
+  approval,
+  rows
+}: {
+  rule: ReturnType<typeof projectInteractionLeaf>[number];
+  approval: ApprovalState;
+  rows: RowSharedProps;
+}) {
+  const safeId = rule.row.entryId.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const details = rule.isRich ? (
+    <div className="dsb-principle-fields">
+      {rule.description ? (
+        <span className="dsb-principle-field">
+          <span className="dsb-principle-field-label">Description</span>
+          <p className="dsb-principle-field-text">{rule.description}</p>
+        </span>
+      ) : null}
+      {(["behavior", "accessibility"] as const).map((field) =>
+        rule[field].length > 0 ? (
+          <span className="dsb-principle-field" key={field}>
+            <span className="dsb-principle-field-label">
+              {field[0]!.toUpperCase() + field.slice(1)}
+            </span>
+            <ul className="dsb-principle-list">
+              {rule[field].map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          </span>
+        ) : null
+      )}
+    </div>
+  ) : null;
+  return (
+    <RuleLedgerCardShell
+      rule={rule}
+      approval={approval}
+      rows={rows}
+      details={details}
+      testId={`ds-interaction-rule-${rule.anchor}`}
+      detailsId={`ds-interaction-details-${safeId}`}
+      evidenceAriaLabel={`Evidence for interaction rule ${rule.row.entryId}`}
+    />
+  );
+}
+
+function DomainRulesZone({
+  rules: sourceRules,
+  rows
+}: {
+  rules: DsRow[];
+  rows: RowSharedProps;
+}) {
+  const rules = useMemo(
+    () => projectDomainRuleLeaf(sourceRules),
+    [sourceRules]
+  );
+  return (
+    <section className="dsb-section" data-testid="ds-rules-zone">
+      <GroupLabel>Rules</GroupLabel>
+      <ol className="dsb-interaction-ledger">
+        {rules.map((rule) => {
+          const safeId = rule.row.entryId.replace(/[^a-zA-Z0-9_-]/g, "-");
+          const details = rule.fields.length > 0 ? (
+            <div className="dsb-principle-fields">
+              {rule.fields.map((field) => (
+                <span className="dsb-principle-field" key={field.label}>
+                  <span className="dsb-principle-field-label">
+                    {field.label}
+                  </span>
+                  <p className="dsb-principle-field-text">{field.text}</p>
+                </span>
+              ))}
+            </div>
+          ) : null;
+          return (
+            <RuleLedgerCardShell
+              key={rule.key}
+              rule={rule}
+              approval={rows.approvals[rule.key] ?? { kind: "idle" }}
+              rows={rows}
+              details={details}
+              testId={`ds-domain-rule-${rule.anchor}`}
+              detailsId={`ds-domain-rule-details-${safeId}`}
+              evidenceAriaLabel={`Evidence for domain rule ${rule.row.entryId}`}
+            />
+          );
+        })}
+      </ol>
+    </section>
   );
 }
 
@@ -1002,31 +1085,37 @@ export function TokenLeafPage({
     (total, group) => total + group.rows.length,
     0
   );
+  const hasRules = leaf.rules.length > 0;
+  const hasTokens = tokenCount > 0;
   return (
     <>
       <PageHeading
         title={leaf.name}
-        meta={`${tokenCount} tokens across ${leaf.groups.length} layer${
+        meta={`${hasRules ? `${leaf.rules.length} rules · ` : ""}${tokenCount} tokens across ${leaf.groups.length} layer${
           leaf.groups.length === 1 ? "" : "s"
         }`}
         chips={leaf.chips}
       />
-      {leaf.groups.length > 0 ? (
-        leaf.groups.map((group) => (
-          <section
-            key={group.layer}
-            className="dsb-section"
-            data-testid={`ds-token-layer-${group.layer}`}
-          >
-            <GroupLabel>{TOKEN_LAYER_LABELS[group.layer]}</GroupLabel>
-            <RowList rows={group.rows} {...rows} />
-          </section>
-        ))
-      ) : (
+      {hasRules ? <DomainRulesZone rules={leaf.rules} rows={rows} /> : null}
+      {hasTokens ? (
+        <section className="dsb-section" data-testid="ds-tokens-zone">
+          <GroupLabel>Tokens</GroupLabel>
+          {leaf.groups.map((group) => (
+            <section
+              key={group.layer}
+              className="dsb-section"
+              data-testid={`ds-token-layer-${group.layer}`}
+            >
+              <GroupLabel>{TOKEN_LAYER_LABELS[group.layer]}</GroupLabel>
+              <RowList rows={group.rows} {...rows} />
+            </section>
+          ))}
+        </section>
+      ) : !hasRules ? (
         <p className="dsb-empty-body dsb-page-note">
           No tokens classified here yet.
         </p>
-      )}
+      ) : null}
     </>
   );
 }
@@ -1206,12 +1295,15 @@ function TypographyLedgerRow({
  * for construction details. Evidence, approval state and source ids remain
  * outside this interaction surface. */
 export function TypographyLeafPage({
-  layers
+  layers,
+  rules = [],
+  rows
 }: {
   layers: {
     layer: TokenLayerKey;
     entries: DesignSystemEntryView[];
   }[];
+  rules?: DsRow[];
   rows: RowSharedProps;
 }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -1252,8 +1344,14 @@ export function TypographyLeafPage({
   return (
     <div className="dsb-typography-page">
       <h1 className="dsb-h1">Typography</h1>
+      {rules.length > 0 ? <DomainRulesZone rules={rules} rows={rows} /> : null}
       {orderedItems.length > 0 ? (
         <section
+          className="dsb-section"
+          data-testid="ds-tokens-zone"
+        >
+          <GroupLabel>Tokens</GroupLabel>
+          <div
           className="dsb-section dsb-typography-atlas"
           data-testid="ds-typography-ledger"
         >
@@ -1291,12 +1389,13 @@ export function TypographyLeafPage({
               </section>
             ))}
           </div>
+          </div>
         </section>
-      ) : (
+      ) : rules.length === 0 ? (
         <p className="dsb-empty-body dsb-page-note">
           No composite typography roles classified here yet.
         </p>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -2033,6 +2132,7 @@ export function DesignSystemBrowser({
             node: (
               <TypographyLeafPage
                 layers={typographyLayersFromView(view)}
+                rules={tokenLeaf.rules}
                 rows={rowListProps}
               />
             )
