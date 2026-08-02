@@ -371,6 +371,15 @@ describe("Initial Design System preparation", () => {
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("Interaction bad:");
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("Component good:");
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("Component bad:");
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
+      "TYPOGRAPHY ROLE WRITING STYLE"
+    );
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
+      "complete composite typography role"
+    );
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
+      "Connect call-to-action heading size role"
+    );
   });
 
   test("claims the durable command idempotently with the complete immutable context", () => {
@@ -464,6 +473,30 @@ describe("Initial Design System preparation", () => {
             "Cross-component interaction and motion strategies only.",
           component_specs:
             "Component-bound states and motion belong in the matching component spec."
+        },
+        typography_role_writing_style: {
+          role_value_fields: expect.arrayContaining([
+            "fontFamily",
+            "fontSize",
+            "fontWeight",
+            "lineHeight",
+            "letterSpacing",
+            "textTransform"
+          ]),
+          rules: expect.arrayContaining([
+            expect.stringContaining("composite token"),
+            expect.stringContaining("usage context"),
+            expect.stringContaining("Do not invent")
+          ]),
+          examples: {
+            good: expect.objectContaining({
+              name: "typography.connectHeading",
+              meaning: "Closing-section call to action."
+            }),
+            bad: expect.objectContaining({
+              meaning: "Connect call-to-action heading size role."
+            })
+          }
         },
         rich_field_writing_style: {
           applies_to: {

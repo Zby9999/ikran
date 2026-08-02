@@ -383,7 +383,11 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     expect(structuredContent(await declare(
       "design-system/token.json",
       "token.json"
-    ))).toMatchObject({ ok: true, record: { status: "ingested" } });
+    ))).toMatchObject({
+      ok: true,
+      record: { status: "ingested" },
+      quality_diagnostics: []
+    });
     expect(structuredContent(await declare(
       "design-system/layout-rules.json",
       "layout-rules.json"
@@ -469,22 +473,14 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
         minHeight: "0px"
       });
     const typographySummary = page.getByTestId("ds-typography-summary");
-    await expect(typographySummary).toContainText("type styles");
+    await expect(typographySummary).toHaveText("2 type styles");
     await expect(ledger.getByText("formalized", { exact: true })).toHaveCount(0);
     await expect(ledger.getByText("Source-backed", { exact: true })).toHaveCount(0);
     await expect(page.locator('[aria-label="Order type atlas"]')).toHaveCount(0);
 
-    const atomicHeroCard = page.getByTestId(
-      "ds-atlas-primitive.font.size.700"
-    );
-    await expect(atomicHeroCard.getByText("Letter spacing", { exact: true })).toHaveCount(0);
-    await expect
-      .poll(() =>
-        atomicHeroCard.locator(".dsb-type-specimen").evaluate(
-          (element) => getComputedStyle(element).letterSpacing
-        )
-      )
-      .toBe("-1.28px");
+    await expect(
+      page.getByTestId("ds-atlas-primitive.font.size.700")
+    ).toHaveCount(0);
 
     const displayCard = page.getByTestId(
       "ds-atlas-semantic.display.large"
@@ -520,15 +516,6 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(displayCard.getByText("Line height", { exact: true })).toHaveCount(0);
     await expect(displayCard).not.toContainText("semantic.display.large");
     await expect(displayCard).not.toContainText("primitive.font.family.sans");
-
-    const atomicDisclosure = atomicHeroCard.getByRole("button", {
-      name: /details for/
-    });
-    await atomicDisclosure.click();
-    await expect(atomicHeroCard.getByText("Letter spacing", { exact: true })).toBeVisible();
-    await expect(atomicHeroCard).toContainText("-0.04em");
-    await expect(displayCard.getByText("Weight", { exact: true })).toHaveCount(0);
-    await expect(displayDisclosure).toHaveAttribute("aria-expanded", "false");
 
     await expect(page.getByTestId("ds-technical-details")).toHaveCount(0);
     await expect(

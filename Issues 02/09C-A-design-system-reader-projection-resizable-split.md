@@ -227,3 +227,32 @@ Visual Sample 组织方式，不是最终实现稿：
 - 真实 Browser 复核：当前项目 7 个 source-backed 字号 form 均进入 Atlas；标准
   Typography section title 保持不变，双列卡片 `scrollWidth === clientWidth`，状态
   计算样式为 `border-radius: 4px; border-style: none; box-shadow: none`。
+
+## Comments
+
+### 2026-08-02 Typography 名称与用途重复调查
+
+真实 Browser 与 canonical `token.json` 调查确认，当前 Type Atlas 的字体名称与
+`Used for` 重复不是单纯的模型措辞偶发问题，而是两层机制叠加：
+
+- 当前抽取主要产出 atomic family / size / weight / line-height / tracking token 与
+  alias，没有把它们稳定组装成完整的 semantic typography role；
+- atomic size 的 Reader Projection 从 `meaning` 删除末尾 `size` / `size role` 后生成
+  左侧 label，同时又把同一个 `meaning` 原样作为右侧 usage，因此会确定性产生
+  `Connect call-to-action heading` / `Connect call-to-action heading size` 一类重复；
+- source contract 只笼统要求 `meaning` 承载 interpretation、rationale 或 design
+  intent，schema 只验证其为非空字符串；目前没有 Typography 专属的“描述使用场景、
+  不得复述名称或数值属性”质量约束。
+
+设计师锁定以下处理方向：
+
+1. 当前仍处测试阶段，不保留历史 Draft Design System 兼容或迁移逻辑；完成新方案后，
+   直接重新抽取真实项目以展示实际效果。
+2. 低信息 `meaning` 使用非阻断诊断，不升级为 schema 硬拒绝，避免误判或逼迫 Agent
+   编造语义。
+3. `Type styles` 只展示完整 composite typography roles；atomic typography token
+   继续作为 canonical source facts 保存，但不再伪装成完整字体角色。
+
+端到端实施计划已拆为子 Ticket：
+
+- `09C-A01-typography-semantic-role-extraction.md`

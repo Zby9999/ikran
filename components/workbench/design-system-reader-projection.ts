@@ -365,7 +365,7 @@ export interface TypographyProjection {
 
 export interface TypographyAtlasItem {
   key: string;
-  kind: "style" | "scale";
+  kind: "style";
   label: string;
   usage: string;
   fontFamily: string | null;
@@ -447,7 +447,10 @@ export function projectTypographyLeaf(
       const value = entry.value;
       technicalDetails.push(toTechnicalDetail(entry));
 
-      const isComposite = isPlainObject(value) && entry.alias === null;
+      const isRoleLayer =
+        entry.section === "token.semantic" || entry.section === "token.component";
+      const isComposite =
+        isRoleLayer && isPlainObject(value) && entry.alias === null;
       const hasStyleKeys =
         isComposite &&
         (Object.keys(STYLE_FIELD_KEYS) as StyleFieldName[]).some(
@@ -581,70 +584,10 @@ export function typographyLayersFromView(
   }));
 }
 
-/** Base type scale for the right-pane strip: px-valued style sizes plus
- * px-valued metric tokens, deduplicated and ascending. */
-export function typeScaleSteps(
-  projection: TypographyProjection
-): { px: number; sourceKeys: string[] }[] {
-  const rowsByEntryId = new Map(
-    [
-      ...projection.families.map((family) => family.row),
-      ...projection.styles.map((style) => style.row),
-      ...projection.metricGroups.flatMap((group) => group.rows)
-    ].map((row) => [row.entryId, row])
-  );
-  const byPx = new Map<number, string[]>();
-  const add = (px: number, key: string) => {
-    const list = byPx.get(px) ?? [];
-    if (!list.includes(key)) list.push(key);
-    byPx.set(px, list);
-  };
-  const resolveMetricRow = (
-    row: DsRow
-  ): { value: unknown; rows: DsRow[] } => {
-    const rows: DsRow[] = [];
-    const seen = new Set<string>();
-    let current: DsRow | undefined = row;
-    while (current && !seen.has(current.entryId)) {
-      seen.add(current.entryId);
-      rows.push(current);
-      const target =
-        current.entry.alias ?? aliasTargetOf(current.entry.value);
-      if (target === null) return { value: current.entry.value, rows };
-      current = rowsByEntryId.get(target);
-    }
-    return { value: undefined, rows };
-  };
-  for (const style of projection.styles) {
-    if (style.fontSizePx !== null) add(style.fontSizePx, style.key);
-  }
-  for (const group of projection.metricGroups) {
-    for (const row of group.rows) {
-      // Only tokens named as sizes belong on the type scale — a bare "700"
-      // weight parses as a number but is not a font size.
-      if (!/size/i.test(row.name)) continue;
-      const resolved = resolveMetricRow(row);
-      const px = pxOf(resolved.value);
-      if (px !== null && px > 0) {
-        for (const sourceRow of resolved.rows) add(px, sourceRow.key);
-      }
-    }
-  }
-  return [...byPx.entries()]
-    .map(([px, sourceKeys]) => ({ px, sourceKeys }))
-    .sort((a, b) => a.px - b.px);
-}
-
 function combinedStatus(rows: readonly DsRow[]): DsStatus {
   if (rows.some((row) => row.status === "gap")) return "gap";
   if (rows.some((row) => row.status === "candidate")) return "candidate";
   return "formalized";
-}
-
-function atlasLabel(row: DsRow): string {
-  const meaning = row.meaning.trim().replace(/\.$/, "");
-  if (!meaning) return row.name;
-  return meaning.replace(/\s+size(?:\s+role)?$/i, "");
 }
 
 function uniqueRowsByKey(rows: readonly DsRow[]): DsRow[] {
@@ -652,63 +595,6 @@ function uniqueRowsByKey(rows: readonly DsRow[]): DsRow[] {
     (row, index) =>
       rows.findIndex((candidate) => candidate.key === row.key) === index
   );
-}
-
-const TRACKING_TOKEN_PATTERN = /letter[-.]?spacing|tracking/i;
-const TRACKING_VALUE_PATTERN = /^-?\d+(?:\.\d+)?(?:px|em|rem|%)$/i;
-const TYPOGRAPHY_ROLE_WORDS = new Set([
-  "body",
-  "caption",
-  "display",
-  "hero",
-  "link",
-  "metadata",
-  "navigation",
-  "statistic",
-  "statistical",
-  "supporting"
-]);
-
-function roleWords(text: string): Set<string> {
-  return new Set(
-    text
-      .replace(/([a-z])([A-Z])/g, "$1 $2")
-      .toLowerCase()
-      .match(/[a-z0-9]+/g)
-      ?.filter((word) => TYPOGRAPHY_ROLE_WORDS.has(word)) ?? []
-  );
-}
-
-/**
- * Old source sets sometimes retained a role size and its tracking as separate
- * atomic tokens instead of one composite text style. Reattach tracking only
- * when the tracking token's own meaning names the size role unambiguously.
- * This is still a pure projection: every displayed value and relationship
- * remains attached to its canonical DB row, and ties deliberately stay empty.
- */
-function roleMatchedAtomicTracking(
-  primary: DsRow,
-  projection: TypographyProjection
-): { row: DsRow; value: string } | null {
-  const role = roleWords(`${primary.name} ${primary.meaning}`);
-  if (role.size === 0) return null;
-
-  const matches = projection.metricGroups
-    .flatMap((group) => group.rows)
-    .flatMap((row) => {
-      if (!TRACKING_TOKEN_PATTERN.test(row.name)) return [];
-      if (typeof row.entry.value !== "string") return [];
-      const value = row.entry.value.trim();
-      if (!TRACKING_VALUE_PATTERN.test(value)) return [];
-      const declaredRoles = roleWords(row.meaning);
-      const score = [...declaredRoles].filter((word) => role.has(word)).length;
-      return score > 0 ? [{ row, value, score }] : [];
-    })
-    .sort((a, b) => b.score - a.score);
-
-  if (matches.length === 0) return null;
-  if (matches[1]?.score === matches[0]!.score) return null;
-  return { row: matches[0]!.row, value: matches[0]!.value };
 }
 
 function specimenFieldValue(
@@ -730,35 +616,26 @@ function atlasFieldDisplay(
 /**
  * Visual-first Typography atlas.
  *
- * Composite style entries become complete source-backed forms. Atomic px
- * sizes that are not already represented by a composite style remain honest
- * scale specimens: they use the sole declared family when available, but do
- * not invent a weight, line-height, or tracking value. Every consumed row is
- * retained for status/evidence and Technical-details audit.
+ * Composite style entries become complete source-backed forms. Atomic
+ * typography facts remain canonical projection data but do not become Type
+ * styles. Every consumed role row is retained for status/evidence audit.
  */
 export function typographyAtlasItems(
   projection: TypographyProjection
 ): TypographyAtlasItem[] {
-  const rowsByKey = new Map<string, DsRow>();
   const rowsByEntryId = new Map<string, DsRow>();
   for (const family of projection.families) {
-    rowsByKey.set(family.row.key, family.row);
     rowsByEntryId.set(family.row.entryId, family.row);
   }
   for (const style of projection.styles) {
-    rowsByKey.set(style.row.key, style.row);
     rowsByEntryId.set(style.row.entryId, style.row);
   }
   for (const group of projection.metricGroups) {
     for (const row of group.rows) {
-      rowsByKey.set(row.key, row);
       rowsByEntryId.set(row.entryId, row);
     }
   }
-
-  const soleFamily =
-    projection.families.length === 1 ? projection.families[0]! : null;
-  const items: TypographyAtlasItem[] = projection.styles.map((style) => {
+  return projection.styles.map((style): TypographyAtlasItem => {
     const sourceEntryIds = [
       style.fontFamily,
       style.fontSize,
@@ -795,54 +672,6 @@ export function typographyAtlasItems(
       sourceRows
     };
   });
-
-  const representedPx = new Set(
-    projection.styles.flatMap((style) =>
-      style.fontSizePx === null ? [] : [style.fontSizePx]
-    )
-  );
-  for (const step of typeScaleSteps(projection)) {
-    if (representedPx.has(step.px)) continue;
-    const sizeRows = step.sourceKeys.flatMap((key) => {
-      const row = rowsByKey.get(key);
-      return row ? [row] : [];
-    });
-    const primary =
-      sizeRows.find(
-        (row) =>
-          row.entry.alias !== null || aliasTargetOf(row.entry.value) !== null
-      ) ?? sizeRows[0];
-    if (!primary) continue;
-    const matchedTracking = roleMatchedAtomicTracking(primary, projection);
-    const sourceRows = uniqueRowsByKey([
-      primary,
-      ...sizeRows.filter((row) => row.key !== primary.key),
-      ...(matchedTracking ? [matchedTracking.row] : []),
-      ...(soleFamily ? [soleFamily.row] : [])
-    ]);
-    items.push({
-      key: `scale-${step.px}`,
-      kind: "scale",
-      label: atlasLabel(primary),
-      usage: primary.meaning,
-      fontFamily: soleFamily?.primary ?? null,
-      specimenFamily: soleFamily ? cssFontStack(soleFamily.stack) : null,
-      fontSize: `${step.px}px`,
-      fontSizePx: step.px,
-      fontWeight: null,
-      lineHeight: null,
-      letterSpacing: matchedTracking?.value ?? null,
-      textTransform: null,
-      specimenFontWeight: null,
-      specimenLineHeight: null,
-      specimenLetterSpacing: matchedTracking?.value ?? null,
-      specimenTextTransform: null,
-      status: combinedStatus(sourceRows),
-      sourceRows
-    });
-  }
-
-  return items;
 }
 
 /* ------------------------------ rich principle ---------------------------- */

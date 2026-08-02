@@ -119,6 +119,41 @@ const RICH_FIELD_WRITING_STYLE = {
   }
 } as const;
 
+const TYPOGRAPHY_ROLE_WRITING_STYLE = {
+  role_value_fields: [
+    "fontFamily",
+    "fontSize",
+    "fontWeight",
+    "lineHeight",
+    "letterSpacing",
+    "textTransform"
+  ],
+  rules: [
+    "Represent every reusable type style as one complete composite token; keep atomic typography tokens as referenced construction facts.",
+    "Use the token identity for the stable role name and write meaning as one sentence about usage context, function, or design intent.",
+    "Do not repeat the role name with only size, role, or token appended.",
+    "Do not invent usage or missing font fields; preserve unsupported facts as explicit gaps."
+  ],
+  examples: {
+    good: {
+      name: "typography.connectHeading",
+      value: {
+        fontFamily: { alias: "semantic.typography.brandFamily" },
+        fontSize: { alias: "primitive.fontSize.37" },
+        fontWeight: { alias: "primitive.fontWeight.regular" },
+        lineHeight: { alias: "primitive.lineHeight.100" },
+        letterSpacing: { alias: "primitive.letterSpacing.tight" }
+      },
+      meaning: "Closing-section call to action."
+    },
+    bad: {
+      name: "typography.connectHeadingSize",
+      value: { alias: "primitive.fontSize.37" },
+      meaning: "Connect call-to-action heading size role."
+    }
+  }
+} as const;
+
 export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
   schema_version: 2,
   source_root: "design-system",
@@ -159,6 +194,7 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
     component_specs:
       "Component-bound states and motion belong in the matching component spec."
   },
+  typography_role_writing_style: TYPOGRAPHY_ROLE_WRITING_STYLE,
   rich_field_writing_style: RICH_FIELD_WRITING_STYLE
 } as const;
 

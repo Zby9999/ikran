@@ -11,7 +11,6 @@ import {
   projectTypographyLeaf,
   pxOf,
   toTechnicalDetail,
-  typeScaleSteps,
   typographyAtlasItems,
   typographyLayersFromView,
   type TypographyProjection
@@ -505,85 +504,32 @@ describe("toTechnicalDetail", () => {
   });
 });
 
-/* ------------------------------- type scale -------------------------------- */
+/* ------------------------------- type atlas ------------------------------- */
 
-describe("typeScaleSteps", () => {
-  it("merges style sizes and px metric tokens, deduplicated and ascending", () => {
-    const projection = projectTypographyLeaf(fixtureLayers());
-    const steps = typeScaleSteps(projection);
-    expect(steps.map((step) => step.px)).toEqual([16, 64]);
-    const sixteen = steps.find((step) => step.px === 16);
-    expect(sixteen?.sourceKeys).toContain(
-      "design-system/token.json::semantic.body"
-    );
-    expect(sixteen?.sourceKeys).toContain(
-      "design-system/token.json::primitive.font-size-400"
-    );
-  });
-
-  it("ignores non-px metric values and zero", () => {
+describe("typographyAtlasItems", () => {
+  it("does not promote object-valued primitive construction facts to type styles", () => {
     const projection = projectTypographyLeaf([
       {
         layer: "primitive" as const,
         entries: [
-          entry({ entry_id: "p.a", name: "font.tracking.wide", value: "0.01em" }),
-          entry({ entry_id: "p.b", name: "font.size.zero", value: "0px" })
+          entry({
+            entry_id: "p.observed-bundle",
+            section: "token.primitive",
+            name: "fontStyle.observedBundle",
+            value: {
+              fontFamily: "Instrument Sans",
+              fontSize: "64px",
+              fontWeight: 400,
+              lineHeight: 1
+            }
+          })
         ]
       }
     ]);
-    expect(typeScaleSteps(projection)).toEqual([]);
+
+    expect(typographyAtlasItems(projection)).toEqual([]);
   });
 
-  it("resolves whole-token size aliases and keeps every source key", () => {
-    const sizeBase = entry({
-      entry_id: "primitive.font-size-500",
-      name: "font.size.500",
-      value: "20px"
-    });
-    const sizeAlias = entry({
-      entry_id: "semantic.font-size-navigation",
-      name: "font.size.navigation",
-      value: { alias: "primitive.font-size-500" },
-      alias: "primitive.font-size-500",
-      meaning: "Navigation size",
-      status: "candidate"
-    });
-    const projection = projectTypographyLeaf([
-      {
-        layer: "primitive" as const,
-        entries: [FAMILY_SANS, sizeBase]
-      },
-      { layer: "semantic" as const, entries: [sizeAlias] }
-    ]);
-    const steps = typeScaleSteps(projection);
-    expect(steps).toEqual([
-      {
-        px: 20,
-        sourceKeys: [
-          "design-system/token.json::primitive.font-size-500",
-          "design-system/token.json::semantic.font-size-navigation"
-        ]
-      }
-    ]);
-    const atlasItem = typographyAtlasItems(projection)[0]!;
-    expect(atlasItem).toMatchObject({
-      kind: "scale",
-      label: "Navigation",
-      usage: "Navigation size",
-      fontSize: "20px",
-      status: "candidate"
-    });
-    expect(atlasItem.sourceRows.map((row) => row.entryId)).toEqual([
-      "semantic.font-size-navigation",
-      "primitive.font-size-500",
-      "primitive.font-family-sans"
-    ]);
-  });
-});
-
-/* ------------------------------- type atlas ------------------------------- */
-
-describe("typographyAtlasItems", () => {
   it("projects composite styles with their declared construction data and alias sources", () => {
     const projection = projectTypographyLeaf([
       { layer: "primitive" as const, entries: [FAMILY_SANS] },
@@ -611,148 +557,12 @@ describe("typographyAtlasItems", () => {
     ]);
   });
 
-  it("renders uncovered atomic sizes without inventing weight, leading or tracking", () => {
+  it("does not turn atomic typography facts into Type styles", () => {
     const projection = projectTypographyLeaf([
       { layer: "primitive" as const, entries: [FAMILY_SANS, SIZE_400] },
       { layer: "semantic" as const, entries: [] }
     ]);
-    const atlas = typographyAtlasItems(projection);
-    const scale = atlas.find((item) => item.kind === "scale");
-
-    expect(scale).toMatchObject({
-      fontFamily: "Instrument Sans",
-      specimenFamily: '"Instrument Sans", system-ui, sans-serif',
-      fontSize: "16px",
-      fontSizePx: 16,
-      fontWeight: null,
-      lineHeight: null,
-      letterSpacing: null,
-      textTransform: null
-    });
-    expect(scale?.sourceRows.map((row) => row.entryId)).toEqual([
-      "primitive.font-size-400",
-      "primitive.font-family-sans"
-    ]);
-  });
-
-  it("reattaches uniquely role-matched atomic tracking to a scale specimen", () => {
-    const heroSize = entry({
-      entry_id: "semantic.typography-hero-size",
-      name: "typography.heroSize",
-      section: "token.semantic",
-      value: { alias: "primitive.font-size-hero" },
-      alias: "primitive.font-size-hero",
-      meaning: "Hero statement size role"
-    });
-    const primitiveHeroSize = entry({
-      entry_id: "primitive.font-size-hero",
-      name: "fontSize.64",
-      section: "token.primitive",
-      value: "64px",
-      meaning: "Primary hero statement size"
-    });
-    const tightTracking = entry({
-      entry_id: "primitive.letter-spacing-tight",
-      name: "letterSpacing.tight",
-      section: "token.primitive",
-      value: "-0.05em",
-      meaning: "Hero, display and navigation tracking"
-    });
-    const supportingTracking = entry({
-      entry_id: "primitive.letter-spacing-supporting",
-      name: "letterSpacing.supporting",
-      section: "token.primitive",
-      value: "-0.02em",
-      meaning: "Supporting statement tracking"
-    });
-    const projection = projectTypographyLeaf([
-      {
-        layer: "primitive" as const,
-        entries: [
-          FAMILY_SANS,
-          primitiveHeroSize,
-          tightTracking,
-          supportingTracking
-        ]
-      },
-      { layer: "semantic" as const, entries: [heroSize] }
-    ]);
-
-    expect(typographyAtlasItems(projection)[0]).toMatchObject({
-      kind: "scale",
-      label: "Hero statement",
-      fontSize: "64px",
-      letterSpacing: "-0.05em",
-      specimenLetterSpacing: "-0.05em",
-      sourceRows: expect.arrayContaining([
-        expect.objectContaining({
-          entryId: "primitive.letter-spacing-tight"
-        })
-      ])
-    });
-  });
-
-  it("does not choose atomic tracking when role matches are tied", () => {
-    const heroSize = entry({
-      entry_id: "primitive.font-size-hero",
-      name: "fontSize.64",
-      section: "token.primitive",
-      value: "64px",
-      meaning: "Hero statement size"
-    });
-    const trackingA = entry({
-      entry_id: "primitive.tracking-a",
-      name: "letterSpacing.a",
-      section: "token.primitive",
-      value: "-0.05em",
-      meaning: "Hero tracking"
-    });
-    const trackingB = entry({
-      entry_id: "primitive.tracking-b",
-      name: "letterSpacing.b",
-      section: "token.primitive",
-      value: "-0.03em",
-      meaning: "Hero tracking"
-    });
-    const projection = projectTypographyLeaf([
-      {
-        layer: "primitive" as const,
-        entries: [FAMILY_SANS, heroSize, trackingA, trackingB]
-      }
-    ]);
-
-    expect(typographyAtlasItems(projection)[0]).toMatchObject({
-      letterSpacing: null,
-      specimenLetterSpacing: null
-    });
-  });
-
-  it("does not treat shared layout context as a typography-role match", () => {
-    const navigationSize = entry({
-      entry_id: "primitive.font-size-footer-navigation",
-      name: "fontSize.footerNavigation",
-      section: "token.primitive",
-      value: "20px",
-      meaning: "Footer navigation size"
-    });
-    const metadataTracking = entry({
-      entry_id: "primitive.tracking-footer-metadata",
-      name: "letterSpacing.footerMetadata",
-      section: "token.primitive",
-      value: "-0.03em",
-      meaning: "Footer metadata tracking"
-    });
-    const projection = projectTypographyLeaf([
-      {
-        layer: "primitive" as const,
-        entries: [FAMILY_SANS, navigationSize, metadataTracking]
-      }
-    ]);
-
-    expect(typographyAtlasItems(projection)[0]).toMatchObject({
-      letterSpacing: null,
-      specimenLetterSpacing: null
-    });
+    expect(typographyAtlasItems(projection)).toEqual([]);
   });
 
   it("does not duplicate a px size already represented by a composite style", () => {

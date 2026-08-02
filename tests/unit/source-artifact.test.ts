@@ -190,6 +190,227 @@ test.describe("validateSourceArtifactDeclaration (unit)", () => {
 });
 
 test.describe("recordSourceArtifact (record path)", () => {
+  test("token declaration succeeds with actionable typography quality warnings", () => {
+    withTempProject((dir) => {
+      insertAnsweredCard(dir, "card-1");
+      writeProjectFile(
+        dir,
+        "design-system/token.json",
+        JSON.stringify({
+          primitive: {
+            "fontFamily.instrumentSans": {
+              value: "Instrument Sans",
+              meaning: "System type family.",
+              status: "candidate",
+              links: ["card-1"],
+              domain: "typography"
+            },
+            "fontSize.64": {
+              value: "64px",
+              meaning: "Hero statement size.",
+              status: "candidate",
+              links: ["card-1"],
+              domain: "typography"
+            },
+            "fontWeight.regular": {
+              value: 400,
+              meaning: "Regular display weight.",
+              status: "candidate",
+              links: ["card-1"],
+              domain: "typography"
+            },
+            "lineHeight.100": {
+              value: 1,
+              meaning: "Display line height.",
+              status: "candidate",
+              links: ["card-1"],
+              domain: "typography"
+            },
+            "fontStyle.observedBundle": {
+              value: {
+                fontFamily: "Instrument Sans",
+                fontSize: "64px",
+                fontWeight: 400,
+                lineHeight: 1
+              },
+              meaning: "Observed source construction, not a named semantic role.",
+              status: "candidate",
+              links: ["card-1"],
+              domain: "typography"
+            }
+          },
+          semantic: {
+            "typography.heroStatement": {
+              value: { alias: "primitive.fontSize.64" },
+              meaning: "Hero statement size role.",
+              status: "candidate",
+              links: ["card-1"],
+              domain: "typography"
+            }
+          },
+          component: {}
+        })
+      );
+
+      const result = recordSourceArtifact(
+        dir,
+        minimalDeclaration({ relatedRecordIds: ["card-1"] })
+      );
+
+      expect(result).toMatchObject({
+        ok: true,
+        record: { status: "ingested" },
+        quality_diagnostics: expect.arrayContaining([
+          expect.objectContaining({
+            severity: "warning",
+            code: "typography_meaning_restates_role",
+            entry_id: "semantic.typography.heroStatement"
+          }),
+          expect.objectContaining({
+            severity: "warning",
+            code: "typography_composite_roles_missing"
+          })
+        ])
+      });
+    });
+  });
+
+  test("flags the typography contract's low-information counterexample", () => {
+    withTempProject((dir) => {
+      insertAnsweredCard(dir, "card-1");
+      writeProjectFile(
+        dir,
+        "design-system/token.json",
+        JSON.stringify({
+          primitive: {
+            "fontSize.37": {
+              value: "37px",
+              meaning: "Observed heading size.",
+              status: "candidate",
+              links: ["card-1"],
+              domain: "typography"
+            }
+          },
+          semantic: {
+            "typography.connectHeadingSize": {
+              value: { alias: "primitive.fontSize.37" },
+              meaning: "Connect call-to-action heading size role.",
+              status: "candidate",
+              links: ["card-1"],
+              domain: "typography"
+            },
+            "typography.callToAction": {
+              value: { alias: "primitive.fontSize.37" },
+              meaning: "Call-to-action role.",
+              status: "candidate",
+              links: ["card-1"],
+              domain: "typography"
+            }
+          },
+          component: {}
+        })
+      );
+
+      const result = recordSourceArtifact(
+        dir,
+        minimalDeclaration({ relatedRecordIds: ["card-1"] })
+      );
+
+      expect(result).toMatchObject({
+        ok: true,
+        quality_diagnostics: expect.arrayContaining([
+          expect.objectContaining({
+            code: "typography_meaning_restates_role",
+            entry_id: "semantic.typography.connectHeadingSize"
+          }),
+          expect.objectContaining({
+            code: "typography_meaning_restates_role",
+            entry_id: "semantic.typography.callToAction"
+          })
+        ])
+      });
+    });
+  });
+
+  test("does not treat explicit typography gaps as sufficient construction facts", () => {
+    withTempProject((dir) => {
+      insertAnsweredCard(dir, "card-1");
+      writeProjectFile(
+        dir,
+        "design-system/token.json",
+        JSON.stringify({
+          primitive: Object.fromEntries(
+            ["fontFamily.observed", "fontSize.observed", "fontWeight.observed", "lineHeight.pending"].map(
+              (name, index) => [
+                name,
+                {
+                  value: "Unresolved",
+                  meaning: "Evidence does not establish this construction fact.",
+                  status: index === 3 ? "gap" : "candidate",
+                  links: index === 3 ? [] : ["card-1"],
+                  domain: "typography"
+                }
+              ]
+            )
+          ),
+          semantic: {},
+          component: {}
+        })
+      );
+
+      const result = recordSourceArtifact(
+        dir,
+        minimalDeclaration({ relatedRecordIds: ["card-1"] })
+      );
+
+      expect(result).toMatchObject({ ok: true, quality_diagnostics: [] });
+    });
+  });
+
+  test("complete composite typography roles declare without quality warnings", () => {
+    withTempProject((dir) => {
+      insertAnsweredCard(dir, "card-1");
+      writeProjectFile(
+        dir,
+        "design-system/token.json",
+        JSON.stringify({
+          primitive: {
+            "fontWeight.bold": {
+              value: 700,
+              meaning: "Bold weight.",
+              status: "candidate",
+              links: ["card-1"],
+              domain: "typography"
+            }
+          },
+          semantic: {
+            "typography.connectHeading": {
+              value: {
+                fontFamily: "Instrument Sans",
+                fontSize: "37px",
+                fontWeight: 400,
+                lineHeight: 1,
+                letterSpacing: "-0.05em"
+              },
+              meaning: "Connect heading in the closing section.",
+              status: "candidate",
+              links: ["card-1"],
+              domain: "typography"
+            }
+          },
+          component: {}
+        })
+      );
+
+      const result = recordSourceArtifact(
+        dir,
+        minimalDeclaration({ relatedRecordIds: ["card-1"] })
+      );
+
+      expect(result).toMatchObject({ ok: true, quality_diagnostics: [] });
+    });
+  });
+
   test("valid declaration → index row + source_artifact_declared event + bus", () => {
     withTempProject((dir) => {
       insertAnsweredCard(dir, "card-1");

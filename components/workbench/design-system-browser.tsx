@@ -1265,7 +1265,7 @@ export function TypographyLeafPage({
         </section>
       ) : (
         <p className="dsb-empty-body dsb-page-note">
-          No typography tokens classified here yet.
+          No composite typography roles classified here yet.
         </p>
       )}
     </div>

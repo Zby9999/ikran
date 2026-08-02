@@ -551,17 +551,13 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
       })
     );
     expect(html).toContain('<h1 class="dsb-h1">Typography</h1>');
-    expect(html).toContain("3 type styles");
+    expect(html).toContain("2 type styles");
     expect(html).toContain('data-testid="ds-typography-ledger"');
     expect(html).toContain('data-testid="ds-typography-summary"');
     expect(html).not.toContain('data-testid="ds-leaf-split"');
+    expect(html).not.toContain('data-testid="ds-atlas-primitive.font-size-700"');
     expect(
       html.indexOf('data-testid="ds-atlas-semantic.display-large"')
-    ).toBeLessThan(
-      html.indexOf('data-testid="ds-atlas-primitive.font-size-700"')
-    );
-    expect(
-      html.indexOf('data-testid="ds-atlas-primitive.font-size-700"')
     ).toBeLessThan(html.indexOf('data-testid="ds-atlas-semantic.body"'));
   });
 
@@ -614,12 +610,12 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
         rows: rowSharedProps()
       })
     );
-    expect(html).toContain("No typography tokens classified here yet.");
+    expect(html).toContain("No composite typography roles classified here yet.");
     expect(html).not.toContain('data-testid="ds-typography-ledger"');
     expect(html).not.toContain('data-testid="ds-atlas-status"');
   });
 
-  test("shows an unresolved state instead of inheriting the Browser font", () => {
+  test("atomic-only typography names the missing composite roles", () => {
     const html = renderToStaticMarkup(
       createElement(TypographyLeafPage, {
         layers: [
@@ -629,8 +625,34 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
               entry({
                 entry_id: "primitive.font-size-400",
                 section: "token.primitive",
-                name: "font.size.400",
-                value: "16px",
+                name: "fontSize.400",
+                value: "4rem",
+                status: "formalized"
+              })
+            ]
+          },
+          { layer: "semantic" as const, entries: [] },
+          { layer: "component" as const, entries: [] }
+        ],
+        rows: rowSharedProps()
+      })
+    );
+    expect(html).toContain("No composite typography roles classified here yet.");
+    expect(html).not.toContain("fontSize.400");
+  });
+
+  test("shows an unresolved state for a composite role without a typeface", () => {
+    const html = renderToStaticMarkup(
+      createElement(TypographyLeafPage, {
+        layers: [
+          {
+            layer: "primitive" as const,
+            entries: [
+              entry({
+                entry_id: "semantic.caption",
+                section: "token.semantic",
+                name: "caption",
+                value: { fontSize: "16px" },
                 status: "formalized"
               })
             ]

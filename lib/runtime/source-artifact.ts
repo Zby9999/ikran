@@ -16,6 +16,10 @@
 //      Agent-declared readiness. Runtime never judges code quality and never
 //      fabricates semantics.
 //
+// Successful design-system declarations may additionally return advisory
+// extraction-quality diagnostics. They are deliberately separate from these
+// structural validation classes and never reject declaration or ingest.
+//
 // On failure: `invalid_artifact` event + structured error, NO index row —
 // mirroring the invalid-output convention in evidence-package.ts.
 
@@ -46,6 +50,10 @@ import {
   type DesignSystemIngestPlan
 } from "./design-system-ingest";
 import { writeDesignSystemViewExport } from "./design-system-view";
+import {
+  designSystemQualityDiagnostics,
+  type DesignSystemQualityDiagnostic
+} from "./design-system-quality";
 
 // ---------------------------------------------------------------------------
 // Artifact type registry (data-driven; add new types as entries below)
@@ -261,6 +269,8 @@ export interface SourceArtifactRecordResult {
   record: SourceArtifactRecord;
   /** Canonical audit event id (always a string on success). */
   event_id: string;
+  /** Advisory extraction-quality findings; never blocks declaration/ingest. */
+  quality_diagnostics: DesignSystemQualityDiagnostic[];
 }
 
 export interface SourceArtifactRecordError {
@@ -483,6 +493,9 @@ export function recordSourceArtifact(
         ok: true as const,
         record,
         event_id: event.event_id,
+        quality_diagnostics: ingestPlan
+          ? designSystemQualityDiagnostics(relativePath, ingestPlan.rows)
+          : [],
         action: existing ? ("updated" as const) : ("created" as const),
         ingested: ingestPlan !== null
       };
@@ -529,7 +542,8 @@ export function recordSourceArtifact(
     return {
       ok: true,
       record: result.record,
-      event_id: result.event_id
+      event_id: result.event_id,
+      quality_diagnostics: result.quality_diagnostics
     };
   } catch {
     return { ok: false, reason: "db_error" };
