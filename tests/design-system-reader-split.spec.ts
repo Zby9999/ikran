@@ -288,7 +288,8 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
                 nodeName: "Landing / Grid",
                 artifactPath: "design-system/captures/grid-page.png",
                 capturedAt: "2026-07-30T14:05:22Z",
-                surfaceId: evidence.record.id
+                surfaceId: evidence.record.id,
+                nodeRect: { x: 0.1, y: 0.2, width: 0.6, height: 0.4 }
               }
             ]
           },
@@ -639,10 +640,23 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
         gridImg.evaluate((el) => (el as HTMLImageElement).naturalWidth)
       )
       .toBeGreaterThan(0);
-    // The height cap keeps any capture from breaking the reading rhythm.
-    const gridImgBox = await gridImg.boundingBox();
-    expect(gridImgBox).not.toBeNull();
-    expect(gridImgBox!.height).toBeLessThanOrEqual(341);
+    // v2: the figure is a fixed-ratio locator view, orientation from nodeRect.
+    const gridFigure = gridPlacard.getByTestId("ds-layout-figure-grid-page");
+    await expect(gridFigure).toHaveAttribute("data-orientation", "landscape");
+    // A landscape figure holds the 3:2 ratio regardless of the PNG's shape.
+    const figureBox = await gridFigure.boundingBox();
+    expect(figureBox).not.toBeNull();
+    expect(figureBox!.width / figureBox!.height).toBeCloseTo(1.5, 1);
+    // nodeRect below the fill threshold draws a position mark over the node.
+    const gridMark = gridFigure.locator(".dsb-placard-mark");
+    await expect(gridMark).toHaveCount(1);
+    const markStyle = await gridMark.evaluate(
+      (el) => (el as HTMLElement).style.cssText
+    );
+    expect(markStyle).toContain("left: 10%");
+    expect(markStyle).toContain("top: 20%");
+    expect(markStyle).toContain("width: 60%");
+    expect(markStyle).toContain("height: 40%");
     // Provenance caption: origin tag, node name, formatted capture time.
     await expect(
       gridPlacard.locator('.dsb-origin[data-origin="source-capture"]')
@@ -656,6 +670,12 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(shellPlacard).toContainText("Page shell vertical stack");
     await expect(shellPlacard).toContainText("Landing / Shell");
     await expect(shellPlacard.locator("[data-stale]")).toContainText("· stale");
+    // Its capture carries no nodeRect — the figure renders without a mark.
+    const shellFigure = shellPlacard.getByTestId(
+      "ds-layout-figure-shell-regions"
+    );
+    await expect(shellFigure).toHaveAttribute("data-orientation", "landscape");
+    await expect(shellFigure.locator(".dsb-placard-mark")).toHaveCount(0);
 
     // Rules with no linked node get the honest unavailable block.
     const navPlacard = page.getByTestId("ds-layout-placard-nav-mobile");
@@ -671,13 +691,11 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
       navPlacard.getByTestId("ds-layout-status-nav-mobile")
     ).toHaveText("open gap");
 
-    // View in frame opens the full-frame lightbox; Esc closes it without
-    // closing the sheet (capture-phase Esc handling).
-    await gridPlacard.getByRole("button", { name: "View in frame" }).click();
-    const lightbox = page.locator(".dsb-lightbox");
-    await expect(lightbox).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(lightbox).toHaveCount(0);
+    // v2 retires the full-frame lightbox: no trigger, no overlay anywhere.
+    await expect(
+      page.getByRole("button", { name: "View in frame" })
+    ).toHaveCount(0);
+    await expect(page.locator(".dsb-lightbox")).toHaveCount(0);
     await expect(sheet).toHaveAttribute("data-open", "true");
 
     // ---- Split divider (09C-A): exercised on the Color leaf, which keeps

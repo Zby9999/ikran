@@ -1027,7 +1027,8 @@ describe("getDesignSystemView layout captures", () => {
             nodeName: "Work grid",
             artifactPath: "design-system/captures/grid-page-work-grid.png",
             capturedAt: "2026-08-01T04:00:00.000Z",
-            surfaceId
+            surfaceId,
+            nodeRect: { x: 0.05, y: 0, width: 0.9, height: 0.0625 }
           },
           {
             nodeId: "1:99",
@@ -1046,7 +1047,8 @@ describe("getDesignSystemView layout captures", () => {
           artifactPath: "design-system/captures/grid-page-work-grid.png",
           capturedAt: "2026-08-01T04:00:00.000Z",
           surfaceId,
-          stale: false
+          stale: false,
+          nodeRect: { x: 0.05, y: 0, width: 0.9, height: 0.0625 }
         },
         {
           nodeId: "1:99",
@@ -1054,8 +1056,69 @@ describe("getDesignSystemView layout captures", () => {
           artifactPath: "design-system/captures/grid-page-hero.png",
           capturedAt: "2026-08-01T04:01:00.000Z",
           surfaceId: null,
-          stale: false
+          stale: false,
+          nodeRect: null
         }
+      ]);
+    });
+  });
+
+  test("malformed nodeRect in a legacy row degrades to null, never breaks the view", () => {
+    withTempProject((dir) => {
+      seedEvidenceCards(dir);
+      declareLayoutRules(dir, {
+        columns: "12",
+        sourceCaptures: [
+          {
+            nodeName: "Work grid",
+            artifactPath: "design-system/captures/grid-page-work-grid.png",
+            capturedAt: "2026-08-01T04:00:00.000Z"
+          }
+        ]
+      });
+      // Simulate a row that predates the nodeRect schema (or was hand-edited):
+      // write malformed rect shapes straight into the stored value, past the
+      // declaration gate.
+      const db = new DatabaseSync(getProjectDbPath(dir));
+      try {
+        const row = db
+          .prepare(
+            "SELECT value_json FROM design_system_entries WHERE section = 'layout'"
+          )
+          .get() as { value_json: string };
+        const value = JSON.parse(row.value_json) as Record<string, unknown>;
+        value.sourceCaptures = [
+          {
+            nodeName: "Stringy",
+            artifactPath: "design-system/captures/stringy.png",
+            capturedAt: "2026-08-01T04:00:00.000Z",
+            nodeRect: "top-left"
+          },
+          {
+            nodeName: "Overflow",
+            artifactPath: "design-system/captures/overflow.png",
+            capturedAt: "2026-08-01T04:01:00.000Z",
+            nodeRect: { x: 0, y: 0, width: 4.1, height: 0.5 }
+          },
+          {
+            nodeName: "Missing key",
+            artifactPath: "design-system/captures/missing.png",
+            capturedAt: "2026-08-01T04:02:00.000Z",
+            nodeRect: { x: 0, y: 0, width: 0.5 }
+          }
+        ];
+        db.prepare(
+          "UPDATE design_system_entries SET value_json = ? WHERE section = 'layout'"
+        ).run(JSON.stringify(value));
+      } finally {
+        db.close();
+      }
+
+      const entry = captureOf(dir);
+      expect(entry.layoutCaptures?.map((capture) => capture.nodeRect)).toEqual([
+        null,
+        null,
+        null
       ]);
     });
   });

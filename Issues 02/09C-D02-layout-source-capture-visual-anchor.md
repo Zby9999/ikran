@@ -132,3 +132,35 @@ capture 渲染、限高、缩略条、stale、lightbox 由 unit 与 reader e2e �
 **Review 修订（2026-08-01）**：lightbox 的「View in frame」仅在 capture 自带
 `surfaceId` 时出现——去掉了回退到 entry 首个 evidence version 的逻辑，避免
 展示与 capture node 无关的对齐期整帧。
+
+### 2026-08-02 — Source Capture v2：固定比例定位视图（取代 340px 限高与整帧 lightbox）
+
+真实抽取后暴露的问题：node 比例奇怪时（46px 高的 sticky bar、3586px 高的整页
+frame），直出截图要么成细条、要么顶天立地，严重降低易读性；而「点开看清晰
+大图」本身价值有限——需要细看时设计师可以回到 Figma 画布。这个界面的截图
+职责是**让人对「这条规则指的是哪里」有概念**（定位视图，locator view）。
+
+据此与设计师确认的 v2 决策：
+
+- **固定比例裁切**：capture PNG 一律裁成含 node 的 **3:2（横向）/ 2:3（竖
+  向）**区域，按 node 取向选档。Nav bar 之类极端比例因此必然带周边上下
+  文；整页 frame 只取顶部一段任其截断——文字描述足以补全语义，易读性优
+  先。PNG 按精确比例导出，Browser 以 `object-fit: contain` 显示（mark 坐
+  标因此恒对齐）。
+- **位置标注常显**：`sourceCaptures` 新增可选 `nodeRect`（node 在裁后 PNG
+  内的 bounds，0–1 fractions，Agent 由 Figma metadata 确定性算出）；有
+  `nodeRect` 且 node 面积 < 0.85 时叠加 hairline 矩形（黑边 + 白 halo，亮
+  暗图均可读）。面积 ≥ 0.85 视为「图即 node」不再标注。裁切截断 node 时
+  width/height 允许 > 1（schema 上限 4），面积超阈值自然不画 mark，取向
+  判定也不受影响。
+- **退役「View in frame」与整帧 lightbox**：只删查看入口；`surfaceId` 保
+  留，stale 判定不变。`/api/evidence-screenshot` 端点（唯一消费方是
+  lightbox）一并删除。
+- 多 capture 保持主图 + 缩略条；portrait figure 限高 480px 居中（可调）。
+
+契约更新落在 `source_contract.layout_rule_capture_field` 指引（3:2/2:3 裁
+切、过大取顶、精确比例、nodeRect fractions）。Schema / view / projection /
+Browser 单测与 reader-split e2e 全部改写覆盖；`ikran test 7` 已按 v2 重抽五
+张 capture 并在真实 Browser 核对：Redo（亮图）/ Titan（暗图）标注框可读，
+sticky bar 呈顶部细带 + 完整页面上下文，pageNarrative 呈限高居中的顶部截断
+竖图，无 View in frame。全量 `npm run check` 通过。

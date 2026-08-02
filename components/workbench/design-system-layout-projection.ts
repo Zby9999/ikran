@@ -15,8 +15,38 @@ import {
   formatValueField,
   pxOf
 } from "./design-system-reader-projection";
-import type { DesignSystemLayoutCapture } from "@/lib/runtime/design-system-view";
+import type {
+  DesignSystemLayoutCapture,
+  LayoutCaptureNodeRect
+} from "@/lib/runtime/design-system-view";
 import type { DsRow } from "./design-system-view-model";
+
+/* ------------------------------- v2 display ------------------------------- */
+
+/** A node occupying at least this much of the capture area IS the picture —
+ * framing it again would be noise, so the position mark is skipped. */
+const NODE_MARK_FILL_THRESHOLD = 0.85;
+
+/** Fixed-ratio figure orientation (v2): 3:2 landscape for wide nodes, 2:3
+ * portrait for tall ones. Derived from the declared nodeRect (the node's
+ * own shape); legacy captures without one default to landscape. */
+export function captureOrientation(
+  capture: DesignSystemLayoutCapture
+): "landscape" | "portrait" {
+  const rect = capture.nodeRect;
+  if (rect == null) return "landscape";
+  return rect.width >= rect.height ? "landscape" : "portrait";
+}
+
+/** The hairline position mark's rect, or null when no mark should render —
+ * either undeclared (legacy capture) or the node nearly fills the image. */
+export function captureNodeMark(
+  capture: DesignSystemLayoutCapture
+): LayoutCaptureNodeRect | null {
+  const rect = capture.nodeRect;
+  if (rect == null) return null;
+  return rect.width * rect.height < NODE_MARK_FILL_THRESHOLD ? rect : null;
+}
 
 /* --------------------------------- model --------------------------------- */
 

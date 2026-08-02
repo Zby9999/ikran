@@ -759,6 +759,93 @@ test.describe("layout-rules.json sourceCaptures", () => {
     }
   });
 
+  test("nodeRect declares the node's position inside the capture image", () => {
+    expect(
+      validateDesignSystemJson(
+        "layout-rules.json",
+        rulesWith([
+          capture({
+            nodeRect: { x: 0.05, y: 0, width: 0.9, height: 0.0625 }
+          })
+        ])
+      )
+    ).toMatchObject({ ok: true });
+  });
+
+  test("nodeRect must be an object with x/y/width/height fractions", () => {
+    expect(
+      validateDesignSystemJson(
+        "layout-rules.json",
+        rulesWith([capture({ nodeRect: "top-left" })])
+      )
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: {
+        field: "value.sourceCaptures[0].nodeRect",
+        expected: "object"
+      }
+    });
+    for (const field of ["x", "y", "width", "height"] as const) {
+      const broken: Record<string, unknown> = {
+        x: 0,
+        y: 0,
+        width: 0.5,
+        height: 0.5
+      };
+      delete broken[field];
+      expect(
+        validateDesignSystemJson(
+          "layout-rules.json",
+          rulesWith([capture({ nodeRect: broken })])
+        )
+      ).toMatchObject({
+        ok: false,
+        reason: "invalid_field_type",
+        details: {
+          field: `value.sourceCaptures[0].nodeRect.${field}`,
+          expected: "number"
+        }
+      });
+    }
+  });
+
+  test("nodeRect fractions stay inside the image", () => {
+    const cases: Record<string, unknown>[] = [
+      { x: -0.1, y: 0, width: 0.5, height: 0.5 },
+      { x: 0, y: 1.2, width: 0.5, height: 0.5 },
+      { x: 0, y: 0, width: 0, height: 0.5 },
+      { x: 0, y: 0, width: 0.5, height: -0.2 },
+      { x: 0, y: 0, width: 4.1, height: 0.5 },
+      { x: 0, y: 0, width: 0.5, height: 4.1 }
+    ];
+    for (const nodeRect of cases) {
+      expect(
+        validateDesignSystemJson(
+          "layout-rules.json",
+          rulesWith([capture({ nodeRect })])
+        )
+      ).toMatchObject({
+        ok: false,
+        reason: "invalid_field_type",
+        details: { field: "value.sourceCaptures[0].nodeRect" }
+      });
+    }
+  });
+
+  test("nodeRect width/height may exceed 1 when the crop truncates the node", () => {
+    // A tall frame captured as a top-truncated 2:3 portrait: the node fills
+    // the crop horizontally and overflows below — a valid locator, no mark.
+    expect(
+      validateDesignSystemJson(
+        "layout-rules.json",
+        rulesWith([
+          capture({ nodeRect: { x: 0, y: 0, width: 1, height: 1.87 } })
+        ])
+      )
+    ).toMatchObject({ ok: true });
+  });
+
   test("capture items must be plain objects", () => {
     expect(
       validateDesignSystemJson("layout-rules.json", rulesWith(["work-grid"]))

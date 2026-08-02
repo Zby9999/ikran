@@ -558,7 +558,7 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
       })
     );
 
-    expect(html).toContain("2 type styles");
+    expect(html).not.toContain("2 type styles");
     expect(html).toContain('data-testid="ds-typography-group-type"');
     expect(html).toContain('data-testid="ds-typography-group-component"');
     expect(html).toContain("Type · 1");
@@ -593,9 +593,8 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
       })
     );
     expect(html).toContain('<h1 class="dsb-h1">Typography</h1>');
-    expect(html).toContain("2 type styles");
     expect(html).toContain('data-testid="ds-typography-ledger"');
-    expect(html).toContain('data-testid="ds-typography-summary"');
+    expect(html).not.toContain('data-testid="ds-typography-summary"');
     expect(html).not.toContain('data-testid="ds-leaf-split"');
     expect(html).not.toContain('data-testid="ds-atlas-primitive.font-size-700"');
     expect(
@@ -928,7 +927,8 @@ function layoutLeafRows(): DsRow[] {
             artifactPath: "design-system/captures/grid-page.png",
             capturedAt: "2026-07-30T14:05:22Z",
             surfaceId: "surf-grid",
-            stale: false
+            stale: false,
+            nodeRect: { x: 0.1, y: 0.2, width: 0.6, height: 0.4 }
           },
           {
             nodeId: "11:21",
@@ -936,7 +936,8 @@ function layoutLeafRows(): DsRow[] {
             artifactPath: "design-system/captures/grid-page-detail.png",
             capturedAt: "2026-07-30T14:06:01Z",
             surfaceId: null,
-            stale: false
+            stale: false,
+            nodeRect: null
           }
         ]
       }
@@ -956,7 +957,8 @@ function layoutLeafRows(): DsRow[] {
             artifactPath: "design-system/captures/shell.png",
             capturedAt: "2026-07-28T09:12:00Z",
             surfaceId: "surf-shell",
-            stale: true
+            stale: true,
+            nodeRect: null
           }
         ]
       }
@@ -1031,9 +1033,26 @@ describe("LayoutLeafPage Source Capture (09C-D02)", () => {
     expect(html).toContain("1120px");
     expect(html).toContain("→ spacing.200");
     expect(html).not.toContain("{&quot;columns&quot;");
-    // A linked surface offers the full-frame lightbox (closed by default).
-    expect(html).toContain("View in frame");
-    expect(html).not.toContain("dsb-lightbox-img");
+    // v2: the figure is a fixed-ratio locator view, orientation from nodeRect.
+    expect(html).toContain('data-testid="ds-layout-figure-grid-page"');
+    expect(html).toContain('data-orientation="landscape"');
+    // nodeRect below the fill threshold renders a hairline mark over the node.
+    expect(html).toContain('class="dsb-placard-mark"');
+    expect(html).toContain("left:10%");
+    expect(html).toContain("top:20%");
+    expect(html).toContain("width:60%");
+    expect(html).toContain("height:40%");
+    // The full-frame lightbox and its trigger are retired.
+    expect(html).not.toContain("View in frame");
+    expect(html).not.toContain("dsb-lightbox");
+  });
+
+  test("a capture without nodeRect renders no mark", () => {
+    const html = renderLayoutLeaf();
+    // shell-regions' capture has nodeRect null — the figure renders but no
+    // mark is drawn (nothing honest to locate).
+    expect(html).toContain('data-testid="ds-layout-figure-shell-regions"');
+    expect(html).not.toContain("left:0%");
   });
 
   test("a rule with several captures renders a thumbnail strip", () => {

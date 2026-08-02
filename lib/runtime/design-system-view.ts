@@ -24,6 +24,9 @@ import {
   getDesignIntentAlignment,
   targetsFromAnchor
 } from "./design-intent-alignment";
+import {
+  LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT
+} from "./design-system-schema";
 import type {
   DesignSystemFileKind,
   DesignSystemStatus,
@@ -80,6 +83,17 @@ export interface DesignSystemEntryEvidence {
   unresolved_links: string[];
 }
 
+/** The node's position inside the capture image (0–1 fractions of the
+ * image), declared by the Agent from Figma node bounds. Drives the v2
+ * orientation pick and the hairline position mark; null when undeclared or
+ * malformed in a legacy row. */
+export interface LayoutCaptureNodeRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /** One Figma node screenshot backing a layout rule (09C-D02). The Agent
  * captures the node via Figma MCP, stores the image as a project artifact,
  * and records the provenance in the rule's `value.sourceCaptures`; the view
@@ -94,6 +108,7 @@ export interface DesignSystemLayoutCapture {
   /** True when the linked surface was superseded or no longer exists —
    * the capture may not match the current source anymore. */
   stale: boolean;
+  nodeRect: LayoutCaptureNodeRect | null;
 }
 
 export interface DesignSystemEntryView {
@@ -187,6 +202,31 @@ function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+/** Defensive nodeRect read: declaration schema enforces the shape, but a
+ * legacy or hand-edited DB row may carry anything — degrade to null. */
+function nodeRectOfItem(item: Record<string, unknown>): LayoutCaptureNodeRect | null {
+  const rect = item.nodeRect;
+  if (!isPlainObject(rect)) return null;
+  const { x, y, width, height } = rect;
+  if (
+    typeof x !== "number" ||
+    typeof y !== "number" ||
+    typeof width !== "number" ||
+    typeof height !== "number" ||
+    x < 0 ||
+    y < 0 ||
+    x > 1 ||
+    y > 1 ||
+    width <= 0 ||
+    height <= 0 ||
+    width > LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT ||
+    height > LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT
+  ) {
+    return null;
+  }
+  return { x, y, width, height };
+}
+
 /** Parse a layout rule's `value.sourceCaptures` into view captures (09C-D02).
  * Ingest schema already enforces the item shape; the view still guards item
  * by item so a hand-edited legacy row degrades to "no captures" instead of
@@ -215,7 +255,8 @@ function layoutCapturesOfValue(
       artifactPath: item.artifactPath,
       capturedAt: item.capturedAt,
       surfaceId,
-      stale: surfaceId !== null ? staleOf(surfaceId) : false
+      stale: surfaceId !== null ? staleOf(surfaceId) : false,
+      nodeRect: nodeRectOfItem(item)
     });
   }
   return captures.length > 0 ? captures : undefined;

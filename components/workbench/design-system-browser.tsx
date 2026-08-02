@@ -22,7 +22,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { createPortal } from "react-dom";
 import { getSvgPath } from "figma-squircle";
 import {
   ArrowDown01Icon,
@@ -66,6 +65,8 @@ import {
   type TypographyAtlasItem
 } from "./design-system-reader-projection";
 import {
+  captureNodeMark,
+  captureOrientation,
   projectLayoutLeaf,
   type LayoutRuleProjection
 } from "./design-system-layout-projection";
@@ -1304,75 +1305,31 @@ export function TypographyLeafPage({
 
 /**
  * Layout leaf (09C-D02, designer-selected Source Capture direction — Placard
- * variant): one vertical placard block per rule. A real Figma node capture
- * hangs in a hairline frame; below it the rule's statement, its recognized
- * spatial facts as one quiet line, and a provenance caption (origin tag,
- * node name, capture time, staleness). Rules with no linked capture get an
- * honest dashed unavailable block instead of a fabricated visual.
+ * variant, v2 定位视图): one vertical placard block per rule. A real Figma
+ * node capture hangs in a fixed-ratio hairline frame — 3:2 landscape or 2:3
+ * portrait by the node's own shape — with a hairline mark locating the node
+ * inside the image when it doesn't nearly fill it. Below: the rule's
+ * statement, its recognized spatial facts as one quiet line, and a
+ * provenance caption (origin tag, node name, capture time, staleness).
+ * Rules with no linked capture get an honest dashed unavailable block.
+ *
+ * This view is for orientation ("which part of the design does this rule
+ * mean"), not inspection — detail lives on the Workbench canvas, so the v1
+ * "View in frame" lightbox is retired; `surfaceId` stays purely for the
+ * stale verdict.
  *
  * Captures are declared by the agent in layout-rules.json `sourceCaptures`
- * (screenshot taken via Figma MCP, stored under design-system/captures/) and
- * decorated onto the entry by the Runtime view. The Blueprint schematic
- * drawing (09C-B) is retired — a composition of parsed values could never
- * show what the layout actually looks like; a capture can.
+ * (screenshot taken via Figma MCP, framed to the ratio region containing
+ * the node, stored under design-system/captures/) and decorated onto the
+ * entry by the Runtime view. The Blueprint schematic drawing (09C-B) is
+ * retired — a composition of parsed values could never show what the
+ * layout actually looks like; a capture can.
  */
 
 /** "2026-07-31T14:05:22Z" → "2026-07-31 14:05"; anything else passes through. */
 function formatCapturedAt(iso: string): string {
   const match = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(iso.trim());
   return match ? `${match[1]} ${match[2]}` : iso;
-}
-
-/** Full-frame lightbox for a capture's evidence surface screenshot. Portaled
- * to document.body: ancestors carry the entrance animation's fill-mode
- * transform, which would trap position:fixed inside the placard box. Esc is
- * handled on document CAPTURE with stopPropagation so the sheet's own layered
- * Esc handler never sees it (pressing Esc inside the lightbox must not close
- * the whole sheet). */
-function LayoutFrameLightbox({
-  surfaceId,
-  session,
-  title,
-  open,
-  onClose
-}: {
-  surfaceId: string;
-  session: string;
-  title: string;
-  open: boolean;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.stopPropagation();
-      onClose();
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [open, onClose]);
-  if (!open) return null;
-  return createPortal(
-    <div
-      className="dsb-lightbox"
-      role="dialog"
-      aria-label={`${title} — full frame`}
-      onClick={onClose}
-    >
-      <img
-        className="dsb-lightbox-img"
-        src={`/api/evidence-screenshot?id=${encodeURIComponent(
-          surfaceId
-        )}&session=${encodeURIComponent(session)}`}
-        alt={`Full source frame for ${title}`}
-      />
-      <span className="dsb-lightbox-hint">
-        Full frame · click anywhere to close
-      </span>
-    </div>,
-    document.body
-  );
 }
 
 function LayoutPlacardBlock({
@@ -1387,15 +1344,13 @@ function LayoutPlacardBlock({
   rows: RowSharedProps;
 }) {
   const [activeCapture, setActiveCapture] = useState(0);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
   // The thumbnail strip may reference a capture index beyond the current
   // capture list; clamp instead of trusting the state.
   const activeIndex = Math.min(activeCapture, rule.captures.length - 1);
   const capture = rule.captures[activeIndex];
   const approval = rows.approvals[rule.row.key] ?? { kind: "idle" as const };
-  // "View in frame" only makes sense when the capture itself is linked to an
-  // evidence surface — never fall back to an unrelated entry-level frame.
-  const frameSurfaceId = capture?.surfaceId ?? null;
+  const orientation = capture ? captureOrientation(capture) : null;
+  const mark = capture ? captureNodeMark(capture) : null;
   return (
     <article
       className="dsb-placard dsb-placard-enter"
@@ -1403,11 +1358,27 @@ function LayoutPlacardBlock({
       data-testid={`ds-layout-placard-${rule.row.entryId}`}
     >
       {capture ? (
-        <figure className="dsb-placard-figure">
+        <figure
+          className="dsb-placard-figure"
+          data-orientation={orientation}
+          data-testid={`ds-layout-figure-${rule.row.entryId}`}
+        >
           <img
             src={artifactScreenshotUrl(capture.artifactPath, session)}
             alt={`Source capture of ${capture.nodeName}`}
           />
+          {mark ? (
+            <span
+              className="dsb-placard-mark"
+              aria-hidden="true"
+              style={{
+                left: `${mark.x * 100}%`,
+                top: `${mark.y * 100}%`,
+                width: `${mark.width * 100}%`,
+                height: `${mark.height * 100}%`
+              }}
+            />
+          ) : null}
         </figure>
       ) : (
         <div
@@ -1475,15 +1446,6 @@ function LayoutPlacardBlock({
                 captured {formatCapturedAt(capture.capturedAt)}
                 {capture.stale ? " · stale" : ""}
               </span>
-              {frameSurfaceId ? (
-                <button
-                  type="button"
-                  className="dsb-placard-frame-link"
-                  onClick={() => setLightboxOpen(true)}
-                >
-                  View in frame
-                </button>
-              ) : null}
             </>
           ) : (
             <OriginTag origin="unavailable" />
@@ -1495,15 +1457,6 @@ function LayoutPlacardBlock({
           </span>
         ) : null}
       </div>
-      {frameSurfaceId ? (
-        <LayoutFrameLightbox
-          surfaceId={frameSurfaceId}
-          session={session}
-          title={rule.headline}
-          open={lightboxOpen}
-          onClose={() => setLightboxOpen(false)}
-        />
-      ) : null}
     </article>
   );
 }

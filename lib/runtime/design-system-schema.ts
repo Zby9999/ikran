@@ -665,6 +665,67 @@ export const LAYOUT_RULE_CAPTURE_OPTIONAL_FIELDS = [
   "surfaceId"
 ] as const;
 
+/** Node position inside the capture image (fractions of the PNG, v2
+ * annotation). Optional: captures without it simply render no position
+ * mark. x/y locate the node's top-left inside the image and stay in
+ * [0, 1]; width/height may exceed 1 when the fixed-ratio crop truncates
+ * an oversized node (the browser skips the mark for near-fill rects and
+ * uses the fraction aspect to pick the figure orientation). */
+export const LAYOUT_RULE_CAPTURE_NODE_RECT_FIELD = "nodeRect";
+export const LAYOUT_RULE_CAPTURE_NODE_RECT_KEYS = [
+  "x",
+  "y",
+  "width",
+  "height"
+] as const;
+/** Generous ceiling for width/height — a node more than 4× the crop is a
+ * data error, not a truncation. */
+export const LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT = 4;
+
+function validateCaptureNodeRect(
+  item: Record<string, unknown>,
+  itemField: string
+): DesignSystemSchemaResult {
+  const rect = item[LAYOUT_RULE_CAPTURE_NODE_RECT_FIELD];
+  if (rect === undefined) return { ok: true };
+  const rectField = `${itemField}.${LAYOUT_RULE_CAPTURE_NODE_RECT_FIELD}`;
+  if (!isPlainObject(rect)) {
+    return fail("invalid_field_type", { field: rectField, expected: "object" });
+  }
+  for (const key of LAYOUT_RULE_CAPTURE_NODE_RECT_KEYS) {
+    const value = rect[key];
+    if (typeof value !== "number" || Number.isNaN(value)) {
+      return fail("invalid_field_type", {
+        field: `${rectField}.${key}`,
+        expected: "number"
+      });
+    }
+  }
+  const { x, y, width, height } = rect as {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  if (
+    x < 0 ||
+    y < 0 ||
+    x > 1 ||
+    y > 1 ||
+    width <= 0 ||
+    height <= 0 ||
+    width > LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT ||
+    height > LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT
+  ) {
+    return fail("invalid_field_type", {
+      field: rectField,
+      expected:
+        "x/y in [0, 1]; width/height in (0, 4] (may exceed 1 when the crop truncates the node)"
+    });
+  }
+  return { ok: true };
+}
+
 function validateLayoutRulesFile(
   json: Record<string, unknown>
 ): DesignSystemSchemaResult {
@@ -708,6 +769,8 @@ function validateLayoutRulesFile(
           });
         }
       }
+      const rect = validateCaptureNodeRect(item, itemField);
+      if (!rect.ok) return rect;
     }
   }
   return { ok: true };

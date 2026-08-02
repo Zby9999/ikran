@@ -4,7 +4,11 @@ import type {
   DesignSystemEntryView,
   DesignSystemLayoutCapture
 } from "@/lib/runtime/design-system-view";
-import { projectLayoutLeaf } from "@/components/workbench/design-system-layout-projection";
+import {
+  captureNodeMark,
+  captureOrientation,
+  projectLayoutLeaf
+} from "@/components/workbench/design-system-layout-projection";
 import { toRow, type DsRow } from "@/components/workbench/design-system-view-model";
 
 function entry(
@@ -50,6 +54,7 @@ function capture(partial: Partial<DesignSystemLayoutCapture> = {}) {
     capturedAt: "2026-08-01T04:00:00.000Z",
     surfaceId: null,
     stale: false,
+    nodeRect: null,
     ...partial
   };
 }
@@ -262,5 +267,57 @@ describe("projectLayoutLeaf headline", () => {
     );
     expect(model.rules[0]!.concern).toBe("grid.page");
     expect(model.rules[1]!.headline).toBe("nav.mobile");
+  });
+});
+
+/* ----------------------- v2: orientation + position mark ----------------------- */
+
+describe("captureOrientation", () => {
+  it("picks landscape for wide nodes, portrait for tall ones", () => {
+    expect(
+      captureOrientation(
+        capture({ nodeRect: { x: 0, y: 0, width: 1, height: 0.05 } })
+      )
+    ).toBe("landscape");
+    expect(
+      captureOrientation(
+        capture({ nodeRect: { x: 0, y: 0, width: 0.36, height: 1 } })
+      )
+    ).toBe("portrait");
+  });
+
+  it("defaults to landscape when no nodeRect is declared", () => {
+    expect(captureOrientation(capture())).toBe("landscape");
+  });
+});
+
+describe("captureNodeMark", () => {
+  it("returns the rect for a node that occupies part of the capture", () => {
+    const rect = { x: 0, y: 0.02, width: 1, height: 0.06 };
+    expect(captureNodeMark(capture({ nodeRect: rect }))).toEqual(rect);
+  });
+
+  it("returns null when no nodeRect is declared", () => {
+    expect(captureNodeMark(capture())).toBeNull();
+  });
+
+  it("returns null when the node nearly fills the capture (mark would be noise)", () => {
+    expect(
+      captureNodeMark(
+        capture({ nodeRect: { x: 0.02, y: 0.02, width: 0.95, height: 0.93 } })
+      )
+    ).toBeNull();
+    // Boundary: 0.85 area is still "nearly fills".
+    expect(
+      captureNodeMark(
+        capture({ nodeRect: { x: 0, y: 0, width: 1, height: 0.85 } })
+      )
+    ).toBeNull();
+    // Just under the threshold keeps the mark.
+    expect(
+      captureNodeMark(
+        capture({ nodeRect: { x: 0, y: 0, width: 1, height: 0.84 } })
+      )
+    ).not.toBeNull();
   });
 });
