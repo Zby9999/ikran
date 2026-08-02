@@ -149,8 +149,8 @@ frame），直出截图要么成细条、要么顶天立地，严重降低易读
   标因此恒对齐）。
 - **位置标注常显**：`sourceCaptures` 新增可选 `nodeRect`（node 在裁后 PNG
   内的 bounds，0–1 fractions，Agent 由 Figma metadata 确定性算出）；有
-  `nodeRect` 且 node 面积 < 0.85 时叠加 hairline 矩形（黑边 + 白 halo，亮
-  暗图均可读）。面积 ≥ 0.85 视为「图即 node」不再标注。裁切截断 node 时
+  `nodeRect` 且 node 面积 < 0.85 时叠加 hairline 矩形（Human Annotation
+  绿 `#19d122` + 白 halo，亮暗图均可读；不复制画布标注的框内阴影）。面积 ≥ 0.85 视为「图即 node」不再标注。裁切截断 node 时
   width/height 允许 > 1（schema 上限 4），面积超阈值自然不画 mark，取向
   判定也不受影响。
 - **退役「View in frame」与整帧 lightbox**：只删查看入口；`surfaceId` 保

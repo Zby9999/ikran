@@ -1189,11 +1189,12 @@
   margin-inline: auto;
 }
 
-/* Hairline node position mark. Dual-tone stroke stays visible on both light
- * and dark imagery without weighing the picture down. */
+/* Hairline node position mark in the Human Annotation green (Figma 670:891)
+ * — the mark reads as "a person pointed here". White outer halo keeps it
+ * visible on dark imagery; no inner shadow/fill (that's canvas-only). */
 .dsb-placard-mark {
   position: absolute;
-  border: 1px solid rgb(0 0 0 / 70%);
+  border: 1px solid #19d122;
   border-radius: 2px;
   box-shadow: 0 0 0 1px rgb(255 255 255 / 70%);
   pointer-events: none;
