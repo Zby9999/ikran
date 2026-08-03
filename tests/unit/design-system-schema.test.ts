@@ -726,7 +726,7 @@ test.describe("layout-rules.json / interaction-rules.json", () => {
     }
   });
 
-  test("D01 interaction strategies use description, behavior, and accessibility", () => {
+  test("legacy rich rules validate field shapes without taxonomy whitelists", () => {
     const layout = validRulesJson();
     Object.assign(layout.rules[0].value, {
       relationship: [{ from: "title", to: "content" }],
@@ -781,15 +781,8 @@ test.describe("layout-rules.json / interaction-rules.json", () => {
       ]
     };
     expect(
-      validateDesignSystemJson("interaction-rules.json", componentBound)
-    ).toMatchObject({
-      ok: false,
-      reason: "invalid_field_type",
-      details: {
-        field: "value.states",
-        expected: "interaction rules only support cross-component strategy fields; component-bound fields belong in a component spec"
-      }
-    });
+      validateDesignSystemJson("interaction-rules.json", componentBound).ok
+    ).toBe(true);
   });
 
   test("keeps rich-field writing style as a soft contract", () => {
@@ -993,7 +986,7 @@ test.describe("layout-rules.json sourceCaptures", () => {
     });
   });
 
-  test("interaction rules still reject sourceCaptures (component-bound whitelist)", () => {
+  test("interaction rich-object shape no longer triggers a taxonomy hard reject", () => {
     expect(
       validateDesignSystemJson("interaction-rules.json", {
         rules: [
@@ -1004,12 +997,8 @@ test.describe("layout-rules.json sourceCaptures", () => {
             }
           })
         ]
-      })
-    ).toMatchObject({
-      ok: false,
-      reason: "invalid_field_type",
-      details: { field: "value.sourceCaptures" }
-    });
+      }).ok
+    ).toBe(true);
   });
 });
 

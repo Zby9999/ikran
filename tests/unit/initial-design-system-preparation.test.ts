@@ -365,6 +365,13 @@ describe("Initial Design System preparation", () => {
     });
     expect(contract.token_domains).toContain("color");
     expect(contract.token_domains).toContain("typography");
+    expect(contract.rule_taxonomy).toEqual({
+      interaction_rules: "Cross-component interaction and motion strategies.",
+      component_specs: "Component-bound behavior, states, and motion.",
+      layout_rules: "Spatial composition and layout behavior.",
+      self_audit:
+        "When writing a rule, inspect existing rules in that file for placement. Propose misplaced-rule moves through the rule-update proposal channel; never move rules silently."
+    });
 
     const style = contract.rich_field_writing_style;
     expect(style.rules).toContain(

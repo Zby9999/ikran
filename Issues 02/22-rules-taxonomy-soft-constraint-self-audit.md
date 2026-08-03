@@ -1,6 +1,6 @@
 # Rules Taxonomy Soft Constraint + Agent Self-Audit Conventions
 
-Status: ready-for-agent
+Status: claimed
 
 ## What to build
 

@@ -679,8 +679,7 @@ function validateRulesFile(
   json: Record<string, unknown>,
   fileKind: "layout-rules.json" | "interaction-rules.json",
   collectionFields: readonly string[],
-  stringFields: readonly string[] = [],
-  allowedFields: readonly string[] | null = null
+  stringFields: readonly string[] = []
 ): DesignSystemSchemaResult {
   return (
     checkEntryArray(json.rules, "rules", (value, ctx) => {
@@ -691,18 +690,6 @@ function validateRulesFile(
           field: "value",
           expected: "non-empty prose string or legacy object"
         });
-      }
-      if (allowedFields) {
-        const allowed = new Set(allowedFields);
-        for (const field of Object.keys(value)) {
-          if (allowed.has(field)) continue;
-          return fail("invalid_field_type", {
-            ...ctx,
-            field: `value.${field}`,
-            expected:
-              "interaction rules only support cross-component strategy fields; component-bound fields belong in a component spec"
-          });
-        }
       }
       for (const field of stringFields) {
         if (value[field] !== undefined && !isNonEmptyString(value[field])) {
@@ -891,8 +878,7 @@ const FILE_KIND_VALIDATORS: Record<
       json,
       "interaction-rules.json",
       RICH_INTERACTION_RULE_COLLECTION_FIELDS,
-      RICH_INTERACTION_RULE_STRING_FIELDS,
-      RICH_INTERACTION_RULE_FIELDS
+      RICH_INTERACTION_RULE_STRING_FIELDS
     )
 };
 

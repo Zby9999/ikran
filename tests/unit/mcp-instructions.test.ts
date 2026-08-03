@@ -22,6 +22,9 @@ describe("MCP instructions channel split", () => {
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("Never silently drop");
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("formalize unrelated claims");
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("sole Active ingestion path");
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain("rule taxonomy");
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain("never move silently");
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain("rule-update proposal");
   });
 
   test("points at on-demand contracts instead of restating them", () => {

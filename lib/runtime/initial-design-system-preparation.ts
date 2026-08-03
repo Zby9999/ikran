@@ -218,6 +218,13 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
     component_specs:
       "Component-bound states and motion belong in the matching component spec."
   },
+  rule_taxonomy: {
+    interaction_rules: "Cross-component interaction and motion strategies.",
+    component_specs: "Component-bound behavior, states, and motion.",
+    layout_rules: "Spatial composition and layout behavior.",
+    self_audit:
+      "When writing a rule, inspect existing rules in that file for placement. Propose misplaced-rule moves through the rule-update proposal channel; never move rules silently."
+  },
   typography_role_writing_style: TYPOGRAPHY_ROLE_WRITING_STYLE,
   rich_field_writing_style: RICH_FIELD_WRITING_STYLE
 } as const;
