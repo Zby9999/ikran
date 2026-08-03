@@ -29,9 +29,11 @@ import {
 import { listFigmaEvidenceSurfaces } from "../../lib/runtime/evidence-package";
 import {
   discardManagedEvidenceArtifact,
+  EVIDENCE_MEDIA_PROVISIONAL_GRACE_MS,
   EVIDENCE_MEDIA_RETENTION_MS,
   getEvidenceMediaMarkerPath,
-  maintainEvidenceMedia
+  maintainEvidenceMedia,
+  persistEvidenceScreenshot
 } from "../../lib/runtime/evidence-media";
 import { listEvents } from "../../lib/runtime/events";
 import { closeProjectDb, openProjectDb } from "../../lib/runtime/db";
@@ -180,6 +182,23 @@ test("cleanup from a losing writer cannot delete a committed current artifact", 
   expect(listFigmaEvidenceSurfaces(projectDir)[0].screenshot_artifact_path).toBe(
     artifactPath
   );
+});
+
+test("maintenance removes a provisional artifact left before its DB commit", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-08-03T00:00:00.000Z"));
+  const surfaceId = "provisional-surface";
+  const artifactPath = persistEvidenceScreenshot(
+    projectDir,
+    surfaceId,
+    TINY_PNG
+  );
+  expect(existsSync(path.join(projectDir, artifactPath))).toBe(true);
+
+  vi.advanceTimersByTime(EVIDENCE_MEDIA_PROVISIONAL_GRACE_MS + 1);
+  maintainEvidenceMedia(projectDir);
+
+  expect(existsSync(path.join(projectDir, artifactPath))).toBe(false);
 });
 
 test("explicit refresh appends a surface, advances current, and preserves history", async () => {

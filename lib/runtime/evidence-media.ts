@@ -22,6 +22,7 @@ import { closeProjectDb, openProjectDb } from "./db";
 import { getArtifactsDir, getIkranDir } from "./paths";
 
 export const EVIDENCE_MEDIA_RETENTION_MS = 24 * 60 * 60 * 1_000;
+export const EVIDENCE_MEDIA_PROVISIONAL_GRACE_MS = 5 * 60 * 1_000;
 
 const MANAGED_MEDIA_DIR_NAME = "evidence-media";
 const RETENTION_MARKER_NAME = "evidence-media-retention-v1.json";
@@ -42,6 +43,7 @@ type SurfaceMediaRow = {
 type PendingDeletion = {
   surface_id: string;
   artifact_path: string;
+  not_before_ms?: number;
 };
 
 const maintenanceTimers = new Map<string, NodeJS.Timeout>();
@@ -166,6 +168,16 @@ export function persistEvidenceScreenshot(
   const realDirectory = assertContainedDirectory(projectPath, directory);
 
   const relativePath = managedRelativePath(surfaceId, decoded.extension);
+  // Register ownership before bytes hit disk. If the process exits before the
+  // Surface transaction commits, the next maintenance pass sees no matching
+  // DB reference and removes this provisional artifact.
+  enqueueEvidenceArtifactDeletions(projectPath, [
+    {
+      surface_id: surfaceId,
+      artifact_path: relativePath,
+      not_before_ms: Date.now() + EVIDENCE_MEDIA_PROVISIONAL_GRACE_MS
+    }
+  ]);
   const absolutePath = path.join(
     realDirectory,
     `${surfaceFileStem(surfaceId)}.${decoded.extension}`
@@ -248,7 +260,9 @@ function readPendingDeletions(projectPath: string): PendingDeletion[] {
         entry !== null &&
         typeof entry === "object" &&
         typeof (entry as PendingDeletion).surface_id === "string" &&
-        typeof (entry as PendingDeletion).artifact_path === "string"
+        typeof (entry as PendingDeletion).artifact_path === "string" &&
+        ((entry as PendingDeletion).not_before_ms === undefined ||
+          typeof (entry as PendingDeletion).not_before_ms === "number")
     );
   } catch {
     return [];
@@ -265,7 +279,18 @@ export function enqueueEvidenceArtifactDeletions(
   if (managedEntries.length === 0) return;
   const byKey = new Map<string, PendingDeletion>();
   for (const entry of [...readPendingDeletions(projectPath), ...managedEntries]) {
-    byKey.set(`${entry.surface_id}\0${entry.artifact_path}`, entry);
+    const key = `${entry.surface_id}\0${entry.artifact_path}`;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, entry);
+      continue;
+    }
+    const existingNotBefore = existing.not_before_ms ?? 0;
+    const incomingNotBefore = entry.not_before_ms ?? 0;
+    byKey.set(
+      key,
+      incomingNotBefore < existingNotBefore ? entry : existing
+    );
   }
   writeJsonAtomically(getDeletionQueuePath(projectPath), {
     version: 1,
@@ -293,6 +318,11 @@ export function processPendingEvidenceArtifactDeletions(
         | undefined;
       if (row?.screenshot_artifact_path === entry.artifact_path) {
         remaining.push(entry);
+        continue;
+      }
+      if ((entry.not_before_ms ?? 0) > Date.now()) {
+        remaining.push(entry);
+        retryNeeded = true;
         continue;
       }
       if (
