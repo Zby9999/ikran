@@ -38,7 +38,11 @@ import {
   figmaSeedIdentitiesEqual,
   type FigmaSeedIdentity
 } from "./figma-identity";
-import { removeManagedEvidenceArtifact } from "./evidence-media";
+import {
+  enqueueEvidenceArtifactDeletions,
+  isManagedEvidenceArtifactPath,
+  maintainEvidenceMedia
+} from "./evidence-media";
 
 export type { FigmaSeedIdentity };
 export { parseFigmaSeedIdentity, figmaSeedIdentitiesEqual };
@@ -362,7 +366,10 @@ export function deleteSeedReference(
     return { ok: false, reason: "not_found" };
   }
   const id = seedId.trim();
-  let artifactPaths: string[] = [];
+  let artifactDeletions: Array<{
+    surface_id: string;
+    artifact_path: string;
+  }> = [];
 
   try {
     const result = withProjectTransaction(projectPath, (db) => {
@@ -383,11 +390,21 @@ export function deleteSeedReference(
         screenshot_artifact_path: string | null;
       }>;
       const surfaceIds = surfaces.map((surface) => surface.id);
-      artifactPaths = surfaces.flatMap((surface) =>
-        surface.screenshot_artifact_path
-          ? [surface.screenshot_artifact_path]
+      artifactDeletions = surfaces.flatMap((surface) =>
+        surface.screenshot_artifact_path &&
+        isManagedEvidenceArtifactPath(
+          surface.screenshot_artifact_path,
+          surface.id
+        )
+          ? [
+              {
+                surface_id: surface.id,
+                artifact_path: surface.screenshot_artifact_path
+              }
+            ]
           : []
       );
+      enqueueEvidenceArtifactDeletions(projectPath, artifactDeletions);
 
       if (surfaceIds.length > 0) {
         const placeholders = surfaceIds.map(() => "?").join(", ");
@@ -410,8 +427,10 @@ export function deleteSeedReference(
     });
 
     if (result.ok) {
-      for (const artifactPath of artifactPaths) {
-        removeManagedEvidenceArtifact(projectPath, artifactPath);
+      try {
+        maintainEvidenceMedia(projectPath);
+      } catch {
+        // Canonical deletion already committed; the durable queue retries.
       }
       emitRecordEvent({
         kind: "seed",

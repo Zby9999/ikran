@@ -15,6 +15,10 @@ import {
 import { registerSeedReference, listSeedReferences } from "../../lib/runtime/seed-reference";
 import { listEvents } from "../../lib/runtime/events";
 import { initializeProjectDb } from "../../lib/runtime/db";
+import {
+  EVIDENCE_MEDIA_RETENTION_MS,
+  maintainEvidenceMedia
+} from "../../lib/runtime/evidence-media";
 
 const VALID_FIGMA = "https://www.figma.com/design/AbCdEf/Checkout?node-id=1:2";
 const TINY_PNG =
@@ -544,6 +548,51 @@ test.describe("recordEvidencePackage (unit)", () => {
       expect(
         existsSync(path.join(dir, res.record.screenshot_artifact_path!))
       ).toBe(true);
+    });
+  });
+
+  test("retention clears but never unlinks an explicitly declared user artifact", () => {
+    withTempProject((dir) => {
+      const seed = registerSeedReference(dir, {
+        figmaSeedReference: VALID_FIGMA,
+        originalDesignIntent: "checkout trust"
+      });
+      expect(seed.ok).toBe(true);
+      if (!seed.ok) return;
+      const userPath = ".ikran/artifacts/evidence-media/user-owned.png";
+      mkdirSync(path.dirname(path.join(dir, userPath)), { recursive: true });
+      writeFileSync(path.join(dir, userPath), "user-owned");
+
+      const first = recordEvidencePackage(
+        dir,
+        minimalPackage({
+          seedReferenceId: seed.record.id,
+          figmaSeedReference: undefined,
+          evidenceViews: { rawData: "available", screenshot: "available" },
+          screenshot: { artifactPath: userPath }
+        })
+      );
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+      const second = recordEvidencePackage(
+        dir,
+        minimalPackage({
+          seedReferenceId: seed.record.id,
+          figmaSeedReference: undefined,
+          frame: { nodeId: "1:2", name: "Second" }
+        })
+      );
+      expect(second.ok).toBe(true);
+      if (!second.ok) return;
+
+      maintainEvidenceMedia(dir, {
+        now: new Date(Date.now() + EVIDENCE_MEDIA_RETENTION_MS + 1_000)
+      });
+      const retired = listFigmaEvidenceSurfaces(dir).find(
+        (surface) => surface.id === first.record.id
+      )!;
+      expect(retired.screenshot_artifact_path).toBeNull();
+      expect(existsSync(path.join(dir, userPath))).toBe(true);
     });
   });
 

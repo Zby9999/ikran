@@ -25,9 +25,9 @@ import {
   normalizeFigmaNodeId
 } from "./figma-identity";
 import {
+  discardManagedEvidenceArtifact,
   maintainEvidenceMedia,
-  persistEvidenceScreenshot,
-  removeManagedEvidenceArtifact
+  persistEvidenceScreenshot
 } from "./evidence-media";
 
 export type EvidenceViewStatus = "available" | "missing";
@@ -895,11 +895,20 @@ export function recordEvidencePackage(
         id: result.record.id,
         projectPath: path.resolve(projectPath)
       });
+      try {
+        maintainEvidenceMedia(projectPath);
+      } catch {
+        // The canonical write succeeded; a later read/timer retries retention.
+      }
     }
 
     return result;
   } catch (err) {
-    removeManagedEvidenceArtifact(projectPath, managedScreenshotArtifactPath);
+    discardManagedEvidenceArtifact(
+      projectPath,
+      managedScreenshotArtifactPath,
+      surfaceId
+    );
     const reason =
       err instanceof Error &&
       typeof (err as Error & { evidenceReason?: string }).evidenceReason ===

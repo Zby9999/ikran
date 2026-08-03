@@ -19,9 +19,9 @@ import { requireFigmaConnectionCommand } from "./commands/figma-connection";
 import { emitRecordEvent } from "./record-bus";
 import type { FigmaEvidenceSurfaceRecord } from "./evidence-package";
 import {
+  discardManagedEvidenceArtifact,
   maintainEvidenceMedia,
-  persistEvidenceScreenshot,
-  removeManagedEvidenceArtifact
+  persistEvidenceScreenshot
 } from "./evidence-media";
 import type { SeedReferenceRecord } from "./seed-reference";
 import {
@@ -226,6 +226,13 @@ export async function addSeedReference(
   const initiator: SeedCaptureInitiator =
     input.initiator === "ui" ? "ui" : "agent";
 
+  // Migrate legacy current media before the fast reuse path can serialize it.
+  try {
+    maintainEvidenceMedia(projectPath);
+  } catch {
+    return { ok: false, reason: "db_error" };
+  }
+
   // Reuse existing seed+surface without network refresh (ADR 0003).
   try {
     const reused = withProjectTransaction(projectPath, (db) => {
@@ -271,7 +278,6 @@ export async function addSeedReference(
   let screenshotArtifactPath: string;
 
   try {
-    maintainEvidenceMedia(projectPath);
     screenshotArtifactPath = persistEvidenceScreenshot(
       projectPath,
       surfaceId,
@@ -415,7 +421,11 @@ export async function addSeedReference(
     });
 
     if (result.reused) {
-      removeManagedEvidenceArtifact(projectPath, screenshotArtifactPath);
+      discardManagedEvidenceArtifact(
+        projectPath,
+        screenshotArtifactPath,
+        surfaceId
+      );
     } else if (result.ok) {
       if (!result.fulfilled_pending) {
         emitRecordEvent({
@@ -435,7 +445,11 @@ export async function addSeedReference(
 
     return result;
   } catch {
-    removeManagedEvidenceArtifact(projectPath, screenshotArtifactPath);
+    discardManagedEvidenceArtifact(
+      projectPath,
+      screenshotArtifactPath,
+      surfaceId
+    );
     return { ok: false, reason: "db_error" };
   }
 }
@@ -556,9 +570,20 @@ export async function refreshSeedReference(
       id: result.record.id,
       projectPath: path.resolve(projectPath)
     });
+    // The newly superseded media now has a concrete expiry; schedule it even
+    // when Workbench receives no further record reloads.
+    try {
+      maintainEvidenceMedia(projectPath);
+    } catch {
+      // Capture is already canonical. A later read/timer retries maintenance.
+    }
     return result;
   } catch (error) {
-    removeManagedEvidenceArtifact(projectPath, screenshotArtifactPath);
+    discardManagedEvidenceArtifact(
+      projectPath,
+      screenshotArtifactPath,
+      surfaceId
+    );
     if (
       error instanceof Error &&
       (error as Error & { reason?: string }).reason ===

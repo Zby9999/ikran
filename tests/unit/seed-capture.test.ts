@@ -1,7 +1,13 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   createMemoryFigmaCredentialStore,
   resetFigmaCredentialStoreForTests,
@@ -22,6 +28,7 @@ import {
 } from "../../lib/runtime/seed-reference";
 import { listFigmaEvidenceSurfaces } from "../../lib/runtime/evidence-package";
 import {
+  discardManagedEvidenceArtifact,
   EVIDENCE_MEDIA_RETENTION_MS,
   getEvidenceMediaMarkerPath,
   maintainEvidenceMedia
@@ -116,6 +123,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   resetRecordBusForTests();
   resetFigmaCredentialStoreForTests();
   resetFigmaApiClientForTests();
@@ -154,6 +162,24 @@ test("atomic capture writes seed + surface + positional index", async () => {
   expect(result.surface.positional_nodes_json).toContain('"FRAME"');
   expect(listSeedReferences(projectDir)).toHaveLength(1);
   expect(listFigmaEvidenceSurfaces(projectDir)).toHaveLength(1);
+});
+
+test("cleanup from a losing writer cannot delete a committed current artifact", async () => {
+  await withConnectedStore();
+  const added = await addSeedReference(projectDir, {
+    figmaSeedReference: "https://www.figma.com/design/AbCdEf/X?node-id=1-2",
+    initiator: "ui"
+  });
+  expect(added.ok).toBe(true);
+  if (!added.ok) return;
+  const artifactPath = added.surface.screenshot_artifact_path!;
+
+  discardManagedEvidenceArtifact(projectDir, artifactPath, added.surface.id);
+
+  expect(existsSync(path.join(projectDir, artifactPath))).toBe(true);
+  expect(listFigmaEvidenceSurfaces(projectDir)[0].screenshot_artifact_path).toBe(
+    artifactPath
+  );
 });
 
 test("explicit refresh appends a surface, advances current, and preserves history", async () => {
@@ -241,6 +267,48 @@ test("superseded screenshot media expires after 24 hours without deleting lineag
   expect(existsSync(path.join(projectDir, currentArtifact))).toBe(true);
 });
 
+test("scheduled maintenance expires superseded media while Workbench stays idle", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-08-03T00:00:00.000Z"));
+  await withConnectedStore();
+  const first = await addSeedReference(projectDir, {
+    figmaSeedReference: "https://www.figma.com/design/AbCdEf/X?node-id=1-2",
+    initiator: "ui"
+  });
+  expect(first.ok).toBe(true);
+  if (!first.ok) return;
+  const refreshed = await refreshSeedReference(projectDir, {
+    seedReferenceId: first.record.id,
+    initiator: "ui"
+  });
+  expect(refreshed.ok).toBe(true);
+  if (!refreshed.ok) return;
+
+  vi.advanceTimersByTime(EVIDENCE_MEDIA_RETENTION_MS + 1);
+
+  const db = openProjectDb(projectDir);
+  try {
+    const retired = db
+      .prepare(
+        `SELECT screenshot_artifact_path, screenshot_data_url
+         FROM figma_evidence_surfaces WHERE id = ?`
+      )
+      .get(first.surface.id) as {
+      screenshot_artifact_path: string | null;
+      screenshot_data_url: string | null;
+    };
+    expect(retired).toEqual({
+      screenshot_artifact_path: null,
+      screenshot_data_url: null
+    });
+  } finally {
+    closeProjectDb(db);
+  }
+  expect(
+    existsSync(path.join(projectDir, first.surface.screenshot_artifact_path!))
+  ).toBe(false);
+});
+
 test("legacy bootstrap immediately purges retired inline media and externalizes current", async () => {
   await withConnectedStore();
   const first = await addSeedReference(projectDir, {
@@ -257,6 +325,10 @@ test("legacy bootstrap immediately purges retired inline media and externalizes 
   if (!refreshed.ok) return;
 
   rmSync(getEvidenceMediaMarkerPath(projectDir), { force: true });
+  rmSync(
+    path.join(projectDir, ".ikran", "evidence-media-vacuum-v1.json"),
+    { force: true }
+  );
   rmSync(path.join(projectDir, first.surface.screenshot_artifact_path!), {
     force: true
   });
@@ -296,6 +368,68 @@ test("legacy bootstrap immediately purges retired inline media and externalizes 
   expect(
     existsSync(path.join(projectDir, current.screenshot_artifact_path!))
   ).toBe(true);
+});
+
+test("legacy fast reuse migrates current inline media before returning it", async () => {
+  await withConnectedStore();
+  const first = await addSeedReference(projectDir, {
+    figmaSeedReference: "https://www.figma.com/design/AbCdEf/X?node-id=1-2",
+    initiator: "ui"
+  });
+  expect(first.ok).toBe(true);
+  if (!first.ok) return;
+  rmSync(getEvidenceMediaMarkerPath(projectDir), { force: true });
+  rmSync(
+    path.join(projectDir, ".ikran", "evidence-media-vacuum-v1.json"),
+    { force: true }
+  );
+  rmSync(path.join(projectDir, first.surface.screenshot_artifact_path!), {
+    force: true
+  });
+  const db = openProjectDb(projectDir);
+  try {
+    db.prepare(
+      `UPDATE figma_evidence_surfaces
+       SET screenshot_artifact_path = NULL, screenshot_data_url = ?
+       WHERE id = ?`
+    ).run(TINY_PNG, first.surface.id);
+  } finally {
+    closeProjectDb(db);
+  }
+
+  const reused = await addSeedReference(projectDir, {
+    figmaSeedReference: "https://www.figma.com/design/AbCdEf/X?node-id=1-2",
+    initiator: "ui"
+  });
+  expect(reused.ok).toBe(true);
+  if (!reused.ok) return;
+  expect(reused.reused).toBe(true);
+  expect(reused.surface.screenshot_data_url).toBeNull();
+  expect(reused.surface.screenshot_artifact_path).toMatch(
+    /^\.ikran\/artifacts\/evidence-media\/.+\.png$/
+  );
+});
+
+test("capture rejects a managed-media directory symlink that escapes the project", async () => {
+  await withConnectedStore();
+  const outside = mkdtempSync(path.join(tmpdir(), "ikran-media-outside-"));
+  try {
+    mkdirSync(path.join(projectDir, ".ikran", "artifacts"), {
+      recursive: true
+    });
+    symlinkSync(
+      outside,
+      path.join(projectDir, ".ikran", "artifacts", "evidence-media")
+    );
+    const result = await addSeedReference(projectDir, {
+      figmaSeedReference: "https://www.figma.com/design/AbCdEf/X?node-id=1-2",
+      initiator: "ui"
+    });
+    expect(result).toEqual({ ok: false, reason: "db_error" });
+    expectNoHalfWritten(projectDir);
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
 });
 
 test("deleting a seed removes its Runtime-owned screenshot artifacts immediately", async () => {
