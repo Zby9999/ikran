@@ -401,7 +401,7 @@ describe("FoundationsHomePage", () => {
     expect(html).not.toContain('data-testid="ds-row-p1"');
   });
 
-  test("offers the same inline title and body editors for global principles", () => {
+  test("offers one inline edit-mode control for global principles", () => {
     const model = buildDesignSystemBrowserModel(fixtureView());
     const html = renderToStaticMarkup(
       createElement(FoundationsHomePage, {
@@ -409,8 +409,11 @@ describe("FoundationsHomePage", () => {
         rows: rowSharedProps({ onEditEntry: vi.fn() })
       })
     );
-    expect(html).toContain('data-testid="ds-edit-title-p1"');
-    expect(html).toContain('data-testid="ds-edit-body-p1"');
+    expect(html).toContain('data-testid="ds-rule-edit-p1"');
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).not.toContain('data-testid="ds-rule-save-p1"');
+    expect(html).not.toContain('aria-label="Rule title"');
+    expect(html).not.toContain('aria-label="Rule body"');
   });
 });
 
@@ -505,7 +508,7 @@ describe("TokenLeafPage", () => {
 });
 
 describe("RulesLeafPage interaction ledger (09C-D01)", () => {
-  test("renders a collapsed source-backed strategy ledger without a visual specimen", () => {
+  test("renders a directly editable strategy ledger without a visual specimen", () => {
     const rule = toRow(
       entry({
         entry_id: "quiet-motion",
@@ -529,13 +532,13 @@ describe("RulesLeafPage interaction ledger (09C-D01)", () => {
     expect(html).toContain('data-testid="ds-interaction-rule-1"');
     expect(html).toContain("Animation supports comprehension.");
     expect(html).toContain("Motion explains change without becoming the subject.");
-    expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain('aria-controls="ds-interaction-details-quiet-motion"');
+    expect(html).not.toContain('aria-controls="ds-interaction-details-quiet-motion"');
+    expect(html).not.toContain("dsb-interaction-ledger-chevron");
     expect(html).not.toContain("Description");
     expect(html).toContain("Use short feedback for state changes, avoid decorative loops");
     expect(html).toContain("Animation supports comprehension.");
     expect(html).toContain('data-status="candidate"');
-    expect(html).not.toContain('aria-label="Evidence for interaction rule quiet-motion"');
+    expect(html).toContain('aria-label="Evidence for interaction rule quiet-motion"');
     expect(html).not.toContain("Live specimens");
     expect(html).not.toContain("No visual sample");
   });

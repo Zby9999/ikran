@@ -28,6 +28,7 @@ import {
   ArrowRight01Icon,
   ColorsIcon,
   ComponentIcon,
+  Edit02Icon,
   GridViewIcon,
   Home01Icon,
   InformationCircleIcon,
@@ -42,22 +43,15 @@ import { subscribeRuntimeEvents } from "@/components/runtime/runtime-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger
-} from "@/components/ui/collapsible";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
 import {
   projectObjectFields,
   projectDomainRuleLeaf,
   projectInteractionLeaf,
-  projectPrinciple,
   projectTypographyLeaf,
   typographyAtlasItems,
   typographyLayersFromView,
-  type PrincipleProjection,
   type TokenLayerKey,
   type TypographyAtlasItem
 } from "./design-system-reader-projection";
@@ -597,159 +591,173 @@ type RowListProps = {
 /** Everything RowList needs except the rows themselves — shared by all pages. */
 export type RowSharedProps = Omit<RowListProps, "rows" | "numbered">;
 
-function RuleTitleEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
+type RuleInlineEditor = {
+  editable: boolean;
+  editing: boolean;
+  dirty: boolean;
+  pending: boolean;
+  title: string;
+  body: string;
+  error: string | null;
+  errorId: string;
+  setTitle: (value: string) => void;
+  setBody: (value: string) => void;
+  toggle: () => void;
+  save: () => Promise<void>;
+};
+
+function useRuleInlineEditor(
+  row: DsRow,
+  rows: RowSharedProps,
+  displayBody = ""
+): RuleInlineEditor {
+  const sourceBody = typeof row.entry.value === "string" ? row.entry.value : null;
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(row.meaning);
+  const [title, setTitle] = useState(row.meaning);
+  const [body, setBody] = useState(sourceBody ?? displayBody);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!editing) setDraft(row.meaning);
-  }, [editing, row.meaning]);
+    if (editing) return;
+    setTitle(row.meaning);
+    setBody(sourceBody ?? displayBody);
+  }, [displayBody, editing, row.meaning, sourceBody]);
 
-  if (!rows.onEditEntry) return null;
-  if (!editing) {
-    return (
-      <Button
-        variant="ghost"
-        size="xs"
-        className="dsb-rule-edit-button"
-        data-testid={`ds-edit-title-${row.entryId}`}
-        onClick={() => {
-          setError(null);
-          setDraft(row.meaning);
-          setEditing(true);
-        }}
-      >
-        Edit title
-      </Button>
-    );
-  }
-
-  return (
-    <form
-      className="dsb-rule-edit-form"
-      data-testid={`ds-edit-title-form-${row.entryId}`}
-      onSubmit={async (event) => {
-        event.preventDefault();
-        setPending(true);
-        setError(null);
-        const result = await rows.onEditEntry!(row, "meaning", draft);
+  const editable = Boolean(rows.onEditEntry && sourceBody !== null);
+  const dirty = editable && (title !== row.meaning || body !== sourceBody);
+  const toggle = () => {
+    if (pending || !editable) return;
+    setError(null);
+    if (editing) {
+      setTitle(row.meaning);
+      setBody(sourceBody ?? displayBody);
+    }
+    setEditing((current) => !current);
+  };
+  const save = async () => {
+    if (!rows.onEditEntry || !dirty || !title.trim() || !body.trim()) return;
+    setPending(true);
+    setError(null);
+    if (title !== row.meaning) {
+      const result = await rows.onEditEntry(row, "meaning", title);
+      if (!result.ok) {
+        setError(result.error);
         setPending(false);
-        if (result.ok) setEditing(false);
-        else setError(result.error);
-      }}
-    >
-      <label className="dsb-rule-edit-label" htmlFor={`rule-title-${safeDomId(row.key)}`}>
-        Rule title
-      </label>
-      <Input
-        id={`rule-title-${safeDomId(row.key)}`}
-        className="dsb-rule-edit-input"
-        value={draft}
-        disabled={pending}
-        autoFocus
-        onChange={(event) => setDraft(event.target.value)}
-      />
-      <span className="dsb-rule-edit-actions">
-        <Button type="submit" size="xs" disabled={pending || draft.trim().length === 0}>
-          {pending ? "Saving…" : "Save"}
-        </Button>
-        <Button
-          variant="ghost"
-          size="xs"
-          type="button"
-          disabled={pending}
-          onClick={() => {
-            setError(null);
-            setDraft(row.meaning);
-            setEditing(false);
-          }}
-        >
-          Cancel
-        </Button>
-      </span>
-      {error ? <span className="dsb-rule-edit-error" role="alert">{error}</span> : null}
-    </form>
+        return;
+      }
+    }
+    if (body !== sourceBody) {
+      const result = await rows.onEditEntry(row, "value", body);
+      if (!result.ok) {
+        setError(result.error);
+        setPending(false);
+        return;
+      }
+    }
+    setPending(false);
+    setEditing(false);
+  };
+
+  return {
+    editable,
+    editing,
+    dirty,
+    pending,
+    title,
+    body,
+    error,
+    errorId: `rule-edit-error-${safeDomId(row.key)}`,
+    setTitle,
+    setBody,
+    toggle,
+    save
+  };
+}
+
+function RuleInlineTitle({ editor }: { editor: RuleInlineEditor }) {
+  return editor.editing ? (
+    <Input
+      className="dsb-rule-inline-title"
+      aria-label="Rule title"
+      aria-describedby={editor.error ? editor.errorId : undefined}
+      aria-invalid={Boolean(editor.error)}
+      value={editor.title}
+      disabled={editor.pending}
+      autoFocus
+      onChange={(event) => editor.setTitle(event.target.value)}
+    />
+  ) : (
+    <span className="dsb-card-title">{editor.title}</span>
   );
 }
 
-function RuleBodyEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
-  const body = typeof row.entry.value === "string" ? row.entry.value : null;
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(body ?? "");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+function RuleInlineBody({ editor }: { editor: RuleInlineEditor }) {
+  return editor.editing ? (
+    <Textarea
+      className="dsb-rule-inline-body"
+      aria-label="Rule body"
+      aria-describedby={editor.error ? editor.errorId : undefined}
+      aria-invalid={Boolean(editor.error)}
+      value={editor.body}
+      disabled={editor.pending}
+      rows={1}
+      onChange={(event) => editor.setBody(event.target.value)}
+    />
+  ) : editor.body ? (
+    <span className="dsb-card-desc">{editor.body}</span>
+  ) : null;
+}
 
-  useEffect(() => {
-    if (!editing && body !== null) setDraft(body);
-  }, [body, editing]);
-
-  if (!rows.onEditEntry || body === null) return null;
-  if (!editing) {
-    return (
+function RuleInlineActions({
+  row,
+  editor
+}: {
+  row: DsRow;
+  editor: RuleInlineEditor;
+}) {
+  if (!editor.editable) return null;
+  const valid = editor.title.trim().length > 0 && editor.body.trim().length > 0;
+  return (
+    <span className="dsb-rule-inline-actions">
+      {editor.dirty ? (
+        <Button
+          size="xs"
+          data-testid={`ds-rule-save-${row.entryId}`}
+          disabled={editor.pending || !valid}
+          onClick={() => void editor.save()}
+        >
+          {editor.pending ? "Saving…" : "Save"}
+        </Button>
+      ) : null}
       <Button
         variant="ghost"
-        size="xs"
-        className="dsb-rule-edit-button"
-        data-testid={`ds-edit-body-${row.entryId}`}
-        onClick={() => {
-          setError(null);
-          setDraft(body);
-          setEditing(true);
-        }}
+        size="icon-xs"
+        className="dsb-rule-edit-icon active:scale-[0.96] active:translate-y-0"
+        data-testid={`ds-rule-edit-${row.entryId}`}
+        aria-label={`${editor.editing ? "Cancel editing" : "Edit"} rule ${row.meaning}`}
+        aria-pressed={editor.editing}
+        disabled={editor.pending}
+        onClick={editor.toggle}
       >
-        Edit body
+        <HugeiconsIcon
+          icon={editor.editing ? MultiplicationSignIcon : Edit02Icon}
+          size={14}
+          strokeWidth={1.5}
+          color="currentColor"
+          aria-hidden
+        />
       </Button>
-    );
-  }
-  return (
-    <form
-      className="dsb-rule-edit-form dsb-rule-edit-form--body"
-      data-testid={`ds-edit-body-form-${row.entryId}`}
-      onSubmit={async (event) => {
-        event.preventDefault();
-        setPending(true);
-        setError(null);
-        const result = await rows.onEditEntry!(row, "value", draft);
-        setPending(false);
-        if (result.ok) setEditing(false);
-        else setError(result.error);
-      }}
-    >
-      <label className="dsb-rule-edit-label" htmlFor={`rule-body-${safeDomId(row.key)}`}>
-        Rule body
-      </label>
-      <Textarea
-        id={`rule-body-${safeDomId(row.key)}`}
-        className="dsb-rule-edit-textarea"
-        value={draft}
-        disabled={pending}
-        autoFocus
-        rows={5}
-        onChange={(event) => setDraft(event.target.value)}
-      />
-      <span className="dsb-rule-edit-actions">
-        <Button type="submit" size="xs" disabled={pending || draft.trim().length === 0}>
-          {pending ? "Saving…" : "Save"}
-        </Button>
-        <Button
-          variant="ghost"
-          size="xs"
-          type="button"
-          disabled={pending}
-          onClick={() => {
-            setError(null);
-            setDraft(body);
-            setEditing(false);
-          }}
-        >
-          Cancel
-        </Button>
-      </span>
-      {error ? <span className="dsb-rule-edit-error" role="alert">{error}</span> : null}
-    </form>
+    </span>
   );
+}
+
+function RuleInlineError({ editor }: { editor: RuleInlineEditor }) {
+  return editor.error ? (
+    <span id={editor.errorId} className="dsb-rule-edit-error" role="alert">
+      {editor.error}
+    </span>
+  ) : null;
 }
 
 function RowList({ rows, numbered = false, ...rest }: RowListProps) {
@@ -830,19 +838,18 @@ function PrincipleCard({
   approval: ApprovalState;
   rows: RowSharedProps;
 }) {
-  const principle: PrincipleProjection = projectPrinciple(row.entry);
+  const editor = useRuleInlineEditor(row, rows);
   return (
     <div
       className="dsb-card dsb-principle"
       data-testid={`ds-principle-${row.entryId}`}
       data-approve-error={approval.kind === "error" || undefined}
     >
-      <span className="dsb-card-title">{principle.title}</span>
-      <span className="dsb-card-desc">{principle.body}</span>
-      <RuleTitleEditor row={row} rows={rows} />
-      <RuleBodyEditor row={row} rows={rows} />
+      <RuleInlineTitle editor={editor} />
+      <RuleInlineBody editor={editor} />
       <div className="dsb-principle-footer">
         <StatusChip status={row.status} />
+        <RuleInlineActions row={row} editor={editor} />
         <InfoPopover
           entry={row.entry}
           approval={approval}
@@ -856,6 +863,7 @@ function PrincipleCard({
           onApprove={() => rows.onApprove(row)}
         />
       </div>
+      <RuleInlineError editor={editor} />
       {approval.kind === "error" ? (
         <span className="dsb-row-error" role="alert">
           Approval failed: {approval.message}
@@ -980,9 +988,7 @@ function RuleLedgerCardShell({
   rule,
   approval,
   rows,
-  details,
   testId,
-  detailsId,
   evidenceAriaLabel
 }: {
   rule: {
@@ -995,72 +1001,48 @@ function RuleLedgerCardShell({
   };
   approval: ApprovalState;
   rows: RowSharedProps;
-  details: ReactNode;
   testId: string;
-  detailsId: string;
   evidenceAriaLabel: string;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const editor = useRuleInlineEditor(rule.row, rows, rule.body);
   return (
     <li
       className="dsb-interaction-rule"
       data-testid={testId}
-      data-expanded={expanded || undefined}
+      data-editing={editor.editing || undefined}
       data-approve-error={approval.kind === "error" || undefined}
     >
-      <Collapsible open={expanded} onOpenChange={setExpanded}>
-        <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className="dsb-interaction-ledger-row"
-            aria-label={rule.title}
-            aria-controls={detailsId}
-          >
-            <span className="dsb-interaction-anchor" aria-hidden>
-              {rule.anchor}
-            </span>
-            <span className="dsb-interaction-ledger-main">
-              <span className="dsb-card-title">{rule.title}</span>
-              {rule.body ? (
-                <span className="dsb-card-desc">{rule.body}</span>
-              ) : null}
-            </span>
-            <StatusChip status={rule.status} testId="ds-interaction-status" />
-            <HugeiconsIcon
-              icon={ArrowDown01Icon}
-              size={14}
-              className="dsb-interaction-ledger-chevron"
-              aria-hidden
-            />
-          </button>
-        </CollapsibleTrigger>
-        <CollapsibleContent asChild>
-          <div className="dsb-interaction-ledger-details" id={detailsId}>
-            {details}
-            <div className="dsb-principle-footer">
-              <RuleTitleEditor row={rule.row} rows={rows} />
-              <RuleBodyEditor row={rule.row} rows={rows} />
-              <InfoPopover
-                entry={rule.row.entry}
-                approval={approval}
-                infoOpen={rows.infoKey === rule.key}
-                popoverInstant={rows.popoverInstant(rule.key)}
-                portalContainer={rows.portalContainer}
-                ariaLabel={evidenceAriaLabel}
-                onInfoOpenChange={(open) => rows.onInfoKey(open ? rule.key : null)}
-                onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.key)}
-                onInfoHoverClose={rows.onInfoHoverClose}
-                onApprove={() => rows.onApprove(rule.row)}
-              />
-            </div>
-            {approval.kind === "error" ? (
-              <span className="dsb-row-error" role="alert">
-                Approval failed: {approval.message}
-              </span>
-            ) : null}
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
+      <div className="dsb-interaction-ledger-row">
+        <span className="dsb-interaction-anchor" aria-hidden>
+          {rule.anchor}
+        </span>
+        <span className="dsb-interaction-ledger-main">
+          <RuleInlineTitle editor={editor} />
+          <RuleInlineBody editor={editor} />
+        </span>
+        <span className="dsb-rule-row-meta">
+          <StatusChip status={rule.status} testId="ds-interaction-status" />
+          <InfoPopover
+            entry={rule.row.entry}
+            approval={approval}
+            infoOpen={rows.infoKey === rule.key}
+            popoverInstant={rows.popoverInstant(rule.key)}
+            portalContainer={rows.portalContainer}
+            ariaLabel={evidenceAriaLabel}
+            onInfoOpenChange={(open) => rows.onInfoKey(open ? rule.key : null)}
+            onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.key)}
+            onInfoHoverClose={rows.onInfoHoverClose}
+            onApprove={() => rows.onApprove(rule.row)}
+          />
+        </span>
+        <RuleInlineActions row={rule.row} editor={editor} />
+      </div>
+      <RuleInlineError editor={editor} />
+      {approval.kind === "error" ? (
+        <span className="dsb-row-error" role="alert">
+          Approval failed: {approval.message}
+        </span>
+      ) : null}
     </li>
   );
 }
@@ -1074,15 +1056,12 @@ function InteractionRuleCard({
   approval: ApprovalState;
   rows: RowSharedProps;
 }) {
-  const safeId = safeDomId(rule.row.entryId);
   return (
     <RuleLedgerCardShell
       rule={rule}
       approval={approval}
       rows={rows}
-      details={null}
       testId={`ds-interaction-rule-${rule.anchor}`}
-      detailsId={`ds-interaction-details-${safeId}`}
       evidenceAriaLabel={`Evidence for interaction rule ${rule.row.entryId}`}
     />
   );
@@ -1104,16 +1083,13 @@ function DomainRulesZone({
       <GroupLabel>Rules</GroupLabel>
       <ol className="dsb-interaction-ledger">
         {rules.map((rule) => {
-          const safeId = safeDomId(rule.row.entryId);
           return (
             <RuleLedgerCardShell
               key={rule.key}
               rule={rule}
               approval={rows.approvals[rule.key] ?? { kind: "idle" }}
               rows={rows}
-              details={null}
               testId={`ds-domain-rule-${rule.anchor}`}
-              detailsId={`ds-domain-rule-details-${safeId}`}
               evidenceAriaLabel={`Evidence for domain rule ${rule.row.entryId}`}
             />
           );
@@ -1508,6 +1484,7 @@ function LayoutPlacardBlock({
   const activeIndex = Math.min(activeCapture, rule.captures.length - 1);
   const capture = rule.captures[activeIndex];
   const approval = rows.approvals[rule.row.key] ?? { kind: "idle" as const };
+  const editor = useRuleInlineEditor(rule.row, rows, rule.body);
   const orientation = capture ? captureOrientation(capture) : null;
   const mark = capture ? captureNodeMark(capture) : null;
   return (
@@ -1571,29 +1548,35 @@ function LayoutPlacardBlock({
       ) : null}
       <div className="dsb-placard-body">
         <div className="dsb-placard-head">
-          <span className="dsb-placard-statement">{rule.headline}</span>
-          <StatusChip
-            status={rule.row.status}
-            testId={`ds-layout-status-${rule.row.entryId}`}
-          />
-          <InfoPopover
-            entry={rule.row.entry}
-            approval={approval}
-            infoOpen={rows.infoKey === rule.row.key}
-            popoverInstant={rows.popoverInstant(rule.row.key)}
-            portalContainer={rows.portalContainer}
-            ariaLabel={`Evidence for layout rule ${rule.row.entryId}`}
-            onInfoOpenChange={(open) =>
-              rows.onInfoKey(open ? rule.row.key : null)
-            }
-            onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.row.key)}
-            onInfoHoverClose={rows.onInfoHoverClose}
-            onApprove={() => rows.onApprove(rule.row)}
-          />
+          <span className="dsb-placard-statement">
+            <RuleInlineTitle editor={editor} />
+          </span>
+          <span className="dsb-rule-row-actions">
+            <StatusChip
+              status={rule.row.status}
+              testId={`ds-layout-status-${rule.row.entryId}`}
+            />
+            <RuleInlineActions row={rule.row} editor={editor} />
+            <InfoPopover
+              entry={rule.row.entry}
+              approval={approval}
+              infoOpen={rows.infoKey === rule.row.key}
+              popoverInstant={rows.popoverInstant(rule.row.key)}
+              portalContainer={rows.portalContainer}
+              ariaLabel={`Evidence for layout rule ${rule.row.entryId}`}
+              onInfoOpenChange={(open) =>
+                rows.onInfoKey(open ? rule.row.key : null)
+              }
+              onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.row.key)}
+              onInfoHoverClose={rows.onInfoHoverClose}
+              onApprove={() => rows.onApprove(rule.row)}
+            />
+          </span>
         </div>
-        {rule.body ? <p className="dsb-rule-prose">{rule.body}</p> : null}
-        <RuleTitleEditor row={rule.row} rows={rows} />
-        <RuleBodyEditor row={rule.row} rows={rows} />
+        <div className="dsb-rule-prose">
+          <RuleInlineBody editor={editor} />
+        </div>
+        <RuleInlineError editor={editor} />
         <div className="dsb-placard-caption">
           {capture ? (
             <>

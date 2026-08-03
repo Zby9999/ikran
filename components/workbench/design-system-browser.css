@@ -509,45 +509,77 @@
 .dsb-principle-footer {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   margin-top: 12px;
 }
 
-.dsb-rule-edit-form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px 8px;
-  width: min(100%, 520px);
-  margin-top: 10px;
-}
-
-.dsb-rule-edit-label {
-  grid-column: 1 / -1;
-  color: var(--dsc-ink-3);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.dsb-rule-edit-form--body {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.dsb-rule-edit-textarea {
-  min-height: 96px;
-  resize: vertical;
-  line-height: 1.5;
-}
-
-.dsb-rule-edit-actions {
-  display: flex;
+.dsb-rule-inline-actions,
+.dsb-rule-row-actions,
+.dsb-rule-row-meta {
+  display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 4px;
 }
 
+.dsb-rule-edit-icon {
+  color: var(--dsc-ink-3);
+}
+
+.dsb-rule-edit-icon[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--dsc-accent) 10%, transparent);
+  color: var(--dsc-accent);
+}
+
+.dsb-rule-inline-title {
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: inherit;
+  box-shadow: none;
+  caret-color: var(--dsc-accent);
+}
+
+.dsb-rule-inline-body {
+  display: block;
+  field-sizing: content;
+  min-height: 1.45em;
+  margin-top: 4px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  resize: none;
+  color: var(--dsc-ink-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+  box-shadow: none;
+  caret-color: var(--dsc-accent);
+}
+
+.dsb-rule-inline-title:focus-visible,
+.dsb-rule-inline-body:focus-visible {
+  border: 0;
+  outline: none;
+  box-shadow: none;
+}
+
+.dsb-principle > .dsb-rule-inline-title,
+.dsb-principle > .dsb-rule-inline-body {
+  width: 100%;
+}
+
 .dsb-rule-edit-error {
-  grid-column: 1 / -1;
+  display: block;
+  margin-top: 6px;
   color: #b42318;
   font-size: 11px;
 }
@@ -1120,9 +1152,16 @@
 }
 
 .dsb-placard-statement {
+  min-width: 0;
+  flex: 1;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
+}
+
+.dsb-placard-statement .dsb-rule-inline-title {
+  width: 100%;
+  font-size: 15px;
 }
 
 .dsb-rule-prose {
@@ -1131,6 +1170,22 @@
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
+}
+
+.dsb-rule-prose .dsb-card-desc {
+  display: block;
+  margin: 0;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.dsb-rule-prose .dsb-rule-inline-body {
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .dsb-placard-caption {
@@ -1418,8 +1473,7 @@
   overflow-wrap: break-word;
 }
 
-/* Interaction strategies use a quiet ledger: summary first, source detail on
-   explicit disclosure. Keyboard activation is intentionally instantaneous. */
+/* Interaction and domain strategies use a quiet, directly editable ledger. */
 .dsb-interaction-ledger {
   margin: 20px 0 0;
   padding: 0;
@@ -1434,21 +1488,33 @@
 .dsb-interaction-ledger-row {
   width: 100%;
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto 14px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
   align-items: start;
-  gap: 12px;
+  gap: 4px 12px;
   padding: 16px 4px;
-  border: 0;
-  outline: none;
   background: transparent;
   color: inherit;
-  font: inherit;
   text-align: left;
-  cursor: pointer;
 }
 
 .dsb-interaction-ledger-main {
   min-width: 0;
+  grid-column: 2;
+  grid-row: 1 / 3;
+}
+
+.dsb-interaction-ledger-row > .dsb-rule-row-meta {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+}
+
+.dsb-interaction-ledger-row > .dsb-rule-inline-actions {
+  grid-column: 3;
+  grid-row: 2;
+  align-self: end;
+  justify-self: end;
 }
 
 .dsb-interaction-ledger-main .dsb-card-title,
@@ -1458,17 +1524,6 @@
 
 .dsb-interaction-ledger-main .dsb-card-desc {
   margin-top: 3px;
-}
-
-.dsb-interaction-ledger-row:focus-visible {
-  border-radius: 4px;
-  box-shadow: 0 0 0 2px rgb(58 147 255 / 45%);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .dsb-interaction-ledger-row:hover {
-    background: rgb(0 0 0 / 2%);
-  }
 }
 
 .dsb-interaction-anchor {
@@ -1485,26 +1540,15 @@
   font-variant-numeric: tabular-nums;
 }
 
-.dsb-interaction-ledger-row > .dsb-chip {
+.dsb-rule-row-actions > .dsb-chip,
+.dsb-rule-row-meta > .dsb-chip {
   margin-top: 1px;
 }
 
-.dsb-interaction-ledger-chevron {
-  margin-top: 2px;
-  color: var(--dsc-ink-3);
-}
-
-.dsb-interaction-rule[data-expanded] .dsb-interaction-ledger-chevron {
-  transform: rotate(180deg);
-}
-
-.dsb-interaction-ledger-details {
+.dsb-interaction-rule > .dsb-rule-edit-error,
+.dsb-interaction-rule > .dsb-row-error {
   margin-left: 30px;
-  padding: 0 32px 18px 0;
-}
-
-.dsb-interaction-ledger-details .dsb-principle-footer {
-  margin-top: 14px;
+  margin-bottom: 12px;
 }
 
 @media (max-width: 920px) {

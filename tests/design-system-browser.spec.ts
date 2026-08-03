@@ -371,31 +371,30 @@ test("09A design system browser: declare → render → approve write-back", asy
     await expect(page.getByRole("cell", { name: "hover" })).toBeVisible();
     await expect(page.getByRole("cell", { name: "disabled" })).toBeVisible();
 
-    // ---- Direct rule title edit: UI → source + DB + event → SSE refresh. ----
+    // ---- Inline rule edit: UI → source + DB + event → SSE refresh. ----
     await page.getByRole("tab", { name: "Foundations" }).click();
     await page.getByRole("button", { name: "Interaction", exact: true }).click();
     const interactionRule = page.getByTestId("ds-interaction-rule-1");
-    await interactionRule
-      .getByRole("button", { name: "Calm feedback" })
-      .click();
-    await interactionRule
-      .getByTestId("ds-edit-title-interaction-calm-feedback")
-      .click();
+    await expect(interactionRule.getByRole("button", { name: "Save" })).toHaveCount(0);
+    const editButton = interactionRule.getByTestId(
+      "ds-rule-edit-interaction-calm-feedback"
+    );
+    await editButton.click();
+    await expect(editButton).toHaveAttribute("aria-pressed", "true");
     const titleInput = interactionRule.getByLabel("Rule title");
     await titleInput.fill("Measured feedback");
-    await interactionRule.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(interactionRule).toContainText("Measured feedback");
-    await interactionRule
-      .getByTestId("ds-edit-body-interaction-calm-feedback")
-      .click();
+    await expect(
+      interactionRule.getByTestId("ds-rule-save-interaction-calm-feedback")
+    ).toBeVisible();
     const bodyInput = interactionRule.getByLabel("Rule body");
     await bodyInput.fill(
       "Respond immediately.\nKeep feedback motion deliberately restrained."
     );
     await interactionRule.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(
-      interactionRule.getByTestId("ds-edit-body-form-interaction-calm-feedback")
-    ).toHaveCount(0);
+    await expect(interactionRule.getByLabel("Rule title")).toHaveCount(0);
+    await expect(interactionRule.getByLabel("Rule body")).toHaveCount(0);
+    await expect(editButton).toHaveAttribute("aria-pressed", "false");
+    await expect(interactionRule).toContainText("Measured feedback");
     await expect(interactionRule).toContainText(
       "Keep feedback motion deliberately restrained."
     );
