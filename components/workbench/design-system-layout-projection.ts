@@ -69,6 +69,8 @@ export interface LayoutRuleProjection {
   /** Display headline: the rule's human-readable claim (meaning), with the
    * concern name as the fallback when no meaning was written. */
   headline: string;
+  /** Verbatim prose body; null for legacy rich-object rules. */
+  body: string | null;
   /** The rule's source key ("grid.page") — identity, not display. */
   concern: string;
   facts: LayoutSpatialFact[];
@@ -309,6 +311,7 @@ function projectRule(row: DsRow): LayoutRuleProjection {
   return {
     row,
     headline: row.meaning.trim() !== "" ? row.meaning : row.name,
+    body: typeof value === "string" ? value : null,
     concern: row.name,
     facts,
     captures: row.entry.layoutCaptures ?? []

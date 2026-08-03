@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 19;
+export const CURRENT_SCHEMA_VERSION = 20;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1055,6 +1055,19 @@ CREATE INDEX IF NOT EXISTS idx_region_annotation_tombstones_deleted_at
         .all() as Array<{ name: string }>;
       if (!designSystemColumns.some((column) => column.name === "kind")) {
         db.exec("ALTER TABLE design_system_entries ADD COLUMN kind TEXT");
+      }
+    }
+  },
+  {
+    version: 20,
+    up(db) {
+      const columns = db
+        .prepare("PRAGMA table_info(design_system_entries)")
+        .all() as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === "source_captures_json")) {
+        db.exec(
+          "ALTER TABLE design_system_entries ADD COLUMN source_captures_json TEXT NOT NULL DEFAULT '[]'"
+        );
       }
     }
   }

@@ -190,6 +190,7 @@ type EntryRow = {
   kind: string | null;
   domain: string | null;
   value_json: string;
+  source_captures_json: string;
   meaning: string;
   status: string;
   links_json: string;
@@ -233,16 +234,14 @@ function nodeRectOfItem(item: Record<string, unknown>): LayoutCaptureNodeRect | 
   return { x, y, width, height };
 }
 
-/** Parse a layout rule's `value.sourceCaptures` into view captures (09C-D02).
+/** Parse a layout rule's structured source captures into view captures.
  * Ingest schema already enforces the item shape; the view still guards item
  * by item so a hand-edited legacy row degrades to "no captures" instead of
  * breaking the whole view. */
-function layoutCapturesOfValue(
-  value: unknown,
+function layoutCapturesOfRaw(
+  raw: unknown,
   staleOf: (surfaceId: string) => boolean
 ): DesignSystemLayoutCapture[] | undefined {
-  if (!isPlainObject(value)) return undefined;
-  const raw = value.sourceCaptures;
   if (!Array.isArray(raw)) return undefined;
   const captures: DesignSystemLayoutCapture[] = [];
   for (const item of raw) {
@@ -351,8 +350,9 @@ export function getDesignSystemView(
 
     const rows = db
       .prepare(
-        `SELECT id, file_kind, section, entry_id, name, kind, domain, value_json, meaning,
-                status, links_json, source_artifact_path, position
+        `SELECT id, file_kind, section, entry_id, name, kind, domain, value_json,
+                source_captures_json, meaning, status, links_json,
+                source_artifact_path, position
          FROM design_system_entries
          ORDER BY section ASC, position ASC, entry_id ASC`
       )
@@ -388,6 +388,13 @@ export function getDesignSystemView(
 
     for (const row of rows) {
       const value = JSON.parse(row.value_json) as unknown;
+      const storedCaptures = JSON.parse(row.source_captures_json) as unknown;
+      const sourceCaptures =
+        Array.isArray(storedCaptures) && storedCaptures.length > 0
+          ? storedCaptures
+          : isPlainObject(value) && Array.isArray(value.sourceCaptures)
+            ? value.sourceCaptures
+            : [];
       const links = JSON.parse(row.links_json) as string[];
       const evidence: DesignSystemEntryEvidence = {
         question_cards: [],
@@ -501,7 +508,12 @@ export function getDesignSystemView(
           source_artifact_path: row.source_artifact_path,
           evidence,
           ...(row.section === "layout"
-            ? { layoutCaptures: layoutCapturesOfValue(value, captureStaleOf) }
+            ? {
+                layoutCaptures: layoutCapturesOfRaw(
+                  sourceCaptures,
+                  captureStaleOf
+                )
+              }
             : {})
         },
         versionIds: [...new Set(versionIds)]

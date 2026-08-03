@@ -83,6 +83,13 @@ function ingestGapRule(projectPath: string): void {
         meaning: "Immediate feedback",
         status: "formalized",
         links: ["designer-card"]
+      },
+      {
+        id: "interaction.prose",
+        value: "Use a short, calm response.",
+        meaning: "Calm response",
+        status: "candidate",
+        links: ["designer-card"]
       }
     ]
   });
@@ -237,6 +244,41 @@ test("designer title edits preserve candidate and formalized status", () => {
         after: "Persistent focus"
       })
     ]);
+  });
+});
+
+test("designer edits a prose body verbatim through the same write path", () => {
+  withTempProject((projectPath) => {
+    ingestGapRule(projectPath);
+    const body = "Respond immediately.\nKeep motion restrained.";
+    const result = editDesignSystemEntryCommand(projectPath, {
+      sourceArtifactPath: "design-system/interaction-rules.json",
+      entryId: "interaction.prose",
+      field: "value",
+      text: body
+    });
+    expect(result.ok).toBe(true);
+
+    const source = JSON.parse(
+      readFileSync(
+        path.join(projectPath, "design-system/interaction-rules.json"),
+        "utf8"
+      )
+    );
+    expect(source.rules[3].value).toBe(body);
+    expect(listEvents(projectPath, "design_system_entry_edited")[0].payload)
+      .toMatchObject({
+        field: "value",
+        before: "Use a short, calm response.",
+        after: body
+      });
+    const view = getDesignSystemView(projectPath);
+    if (!view.ok) throw new Error(view.reason);
+    expect(
+      view.view.interaction.find(
+        (entry) => entry.entry_id === "interaction.prose"
+      )?.value
+    ).toBe(body);
   });
 });
 

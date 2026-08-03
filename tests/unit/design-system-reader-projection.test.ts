@@ -45,6 +45,39 @@ function entry(
   };
 }
 
+describe("prose rule projection", () => {
+  it("uses meaning as the sole title and preserves prose body verbatim", () => {
+    const body = "Use calm feedback.\nPreserve this line break exactly.";
+    const interaction = projectInteractionLeaf([
+      toRow(
+        entry({
+          entry_id: "interaction.feedback",
+          file_kind: "interaction-rules.json",
+          section: "interaction",
+          value: body,
+          meaning: "Calm feedback"
+        })
+      )
+    ])[0]!;
+    expect(interaction.statement).toBe("Calm feedback");
+    expect(interaction.meaning).toBe(body);
+
+    const domain = projectDomainRuleLeaf([
+      toRow(
+        entry({
+          entry_id: "domain.materials",
+          kind: "domain-rule",
+          domain: "other",
+          value: body,
+          meaning: "Material hierarchy"
+        })
+      )
+    ])[0]!;
+    expect(domain.statement).toBe("Material hierarchy");
+    expect(domain.meaning).toBe(body);
+  });
+});
+
 /* ------------------------------ fixture layers ----------------------------- */
 
 const FAMILY_SANS = entry({

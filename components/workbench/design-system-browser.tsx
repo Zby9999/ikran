@@ -669,6 +669,81 @@ function RuleTitleEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
   );
 }
 
+function RuleBodyEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
+  const body = typeof row.entry.value === "string" ? row.entry.value : null;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(body ?? "");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!editing && body !== null) setDraft(body);
+  }, [body, editing]);
+
+  if (!rows.onEditEntry || body === null) return null;
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="dsb-rule-edit-button"
+        data-testid={`ds-edit-body-${row.entryId}`}
+        onClick={() => {
+          setError(null);
+          setDraft(body);
+          setEditing(true);
+        }}
+      >
+        Edit body
+      </button>
+    );
+  }
+  return (
+    <form
+      className="dsb-rule-edit-form dsb-rule-edit-form--body"
+      data-testid={`ds-edit-body-form-${row.entryId}`}
+      onSubmit={async (event) => {
+        event.preventDefault();
+        setPending(true);
+        setError(null);
+        const result = await rows.onEditEntry!(row, "value", draft);
+        setPending(false);
+        if (result.ok) setEditing(false);
+        else setError(result.error);
+      }}
+    >
+      <label className="dsb-rule-edit-label" htmlFor={`rule-body-${safeDomId(row.key)}`}>
+        Rule body
+      </label>
+      <textarea
+        id={`rule-body-${safeDomId(row.key)}`}
+        className="dsb-rule-edit-textarea"
+        value={draft}
+        disabled={pending}
+        autoFocus
+        rows={5}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+      <span className="dsb-rule-edit-actions">
+        <button type="submit" disabled={pending || draft.trim().length === 0}>
+          {pending ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => {
+            setError(null);
+            setDraft(body);
+            setEditing(false);
+          }}
+        >
+          Cancel
+        </button>
+      </span>
+      {error ? <span className="dsb-rule-edit-error" role="alert">{error}</span> : null}
+    </form>
+  );
+}
+
 function RowList({ rows, numbered = false, ...rest }: RowListProps) {
   return (
     <div className="dsb-rows">
@@ -1015,6 +1090,7 @@ function RuleLedgerCardShell({
             {details}
             <div className="dsb-principle-footer">
               <RuleTitleEditor row={rule.row} rows={rows} />
+              <RuleBodyEditor row={rule.row} rows={rows} />
               <InfoPopover
                 entry={rule.row.entry}
                 approval={approval}
@@ -1600,7 +1676,11 @@ function LayoutPlacardBlock({
             onApprove={() => rows.onApprove(rule.row)}
           />
         </div>
+        {rule.body !== null ? (
+          <p className="dsb-rule-prose">{rule.body}</p>
+        ) : null}
         <RuleTitleEditor row={rule.row} rows={rows} />
+        <RuleBodyEditor row={rule.row} rows={rows} />
         {rule.facts.length > 0 ? (
           <p className="dsb-placard-facts">
             {rule.facts.map((fact) => fact.label).join("  ·  ")}

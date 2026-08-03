@@ -548,6 +548,30 @@
   outline: none;
 }
 
+.dsb-rule-edit-form--body {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.dsb-rule-edit-textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid rgb(0 0 0 / 14%);
+  border-radius: 7px;
+  background: #fff;
+  padding: 8px 9px;
+  color: var(--dsc-ink);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.dsb-rule-edit-textarea:focus-visible {
+  border-color: var(--dsc-accent);
+  box-shadow: 0 0 0 2px rgb(55 90 255 / 14%);
+}
+
 .dsb-rule-edit-input:focus-visible {
   border-color: var(--dsc-accent);
   box-shadow: 0 0 0 2px rgb(55 90 255 / 14%);
@@ -1150,6 +1174,14 @@
   margin: 0;
   font-size: 12px;
   color: var(--dsc-ink-3);
+}
+
+.dsb-rule-prose {
+  margin: 0;
+  color: var(--dsc-ink-2);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
 
 .dsb-placard-caption {

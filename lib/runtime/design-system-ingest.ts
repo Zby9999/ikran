@@ -144,6 +144,7 @@ export interface DesignSystemEntryRowInput {
   /** Explicit token taxonomy; null for legacy tokens and non-token entries. */
   domain: TokenDomain | null;
   value: unknown;
+  source_captures: unknown[];
   meaning: string;
   status: DesignSystemStatus;
   links: string[];
@@ -156,10 +157,15 @@ type RawEntry = {
   kind?: DesignSystemEntryKind;
   domain?: TokenDomain;
   value: unknown;
+  sourceCaptures?: unknown[];
   meaning: string;
   status: DesignSystemStatus;
   links: string[];
 };
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 
 /**
  * Flatten a schema-validated file into ingest rows. Mirrors the shapes owned
@@ -187,6 +193,11 @@ export function collectDesignSystemEntryRows(
       kind: entry.kind ?? null,
       domain,
       value: entry.value,
+      source_captures: Array.isArray(entry.sourceCaptures)
+        ? entry.sourceCaptures
+        : isPlainObject(entry.value) && Array.isArray(entry.value.sourceCaptures)
+          ? entry.value.sourceCaptures
+          : [],
       meaning: entry.meaning,
       status: entry.status,
       links: entry.links,
@@ -374,9 +385,10 @@ export function applyDesignSystemIngestOnDb(
 
   const insert = db.prepare(
     `INSERT INTO design_system_entries (
-      id, file_kind, section, entry_id, name, kind, domain, value_json, meaning, status,
-      links_json, source_artifact_path, position, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      id, file_kind, section, entry_id, name, kind, domain, value_json,
+      source_captures_json, meaning, status, links_json, source_artifact_path,
+      position, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   for (const row of plan.rows) {
     insert.run(
@@ -388,6 +400,7 @@ export function applyDesignSystemIngestOnDb(
       row.kind,
       row.domain,
       JSON.stringify(row.value),
+      JSON.stringify(row.source_captures),
       row.meaning,
       row.status,
       JSON.stringify(row.links),

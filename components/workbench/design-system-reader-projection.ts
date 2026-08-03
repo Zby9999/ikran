@@ -120,6 +120,20 @@ export function projectInteractionLeaf(
 ): InteractionRuleProjection[] {
   return rows.map((row, index) => {
     const value = row.entry.value;
+    if (typeof value === "string") {
+      return {
+        key: row.key,
+        anchor: index + 1,
+        statement: row.meaning,
+        meaning: value,
+        description: null,
+        behavior: [],
+        accessibility: [],
+        isRich: false,
+        status: row.status,
+        row
+      };
+    }
     const rich = isPlainObject(value) && row.entry.alias === null;
     return {
       key: row.key,
@@ -199,6 +213,17 @@ export function projectDomainRuleLeaf(
 ): DomainRuleProjection[] {
   return rows.map((row, index) => {
     const value = row.entry.value;
+    if (typeof value === "string") {
+      return {
+        key: row.key,
+        anchor: index + 1,
+        statement: row.meaning,
+        meaning: value,
+        fields: [],
+        status: row.status,
+        row
+      };
+    }
     const objectValue =
       isPlainObject(value) && row.entry.alias === null ? value : null;
     return {

@@ -132,7 +132,18 @@ export function editDesignSystemEntry(
     return { ok: false, reason: "entry_not_in_source_file" };
   }
 
-  const before = input.field === "meaning" ? row.meaning : row.value_json;
+  let before = row.meaning;
+  if (input.field === "value") {
+    try {
+      const priorValue = JSON.parse(row.value_json) as unknown;
+      before =
+        typeof priorValue === "string"
+          ? priorValue
+          : stableJsonStringify(priorValue);
+    } catch {
+      before = row.value_json;
+    }
+  }
   const nextStatus: DesignSystemStatus =
     row.status === "gap" ? "candidate" : row.status;
   const editEvent = buildLoggedEvent("design_system_entry_edited", {

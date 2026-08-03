@@ -256,7 +256,7 @@ test("09A design system browser: declare → render → approve write-back", asy
       rules: [
         {
           id: "interaction-calm-feedback",
-          value: { statement: "Feedback remains quiet and immediate." },
+          value: "Feedback remains quiet and immediate.",
           meaning: "Calm feedback",
           status: "candidate",
           links: [designerEditedCardId]
@@ -340,7 +340,7 @@ test("09A design system browser: declare → render → approve write-back", asy
     await page.getByRole("button", { name: "Interaction", exact: true }).click();
     const interactionRule = page.getByTestId("ds-interaction-rule-1");
     await interactionRule
-      .getByRole("button", { name: "Feedback remains quiet and immediate." })
+      .getByRole("button", { name: "Calm feedback" })
       .click();
     await interactionRule
       .getByTestId("ds-edit-title-interaction-calm-feedback")
@@ -349,14 +349,31 @@ test("09A design system browser: declare → render → approve write-back", asy
     await titleInput.fill("Measured feedback");
     await interactionRule.getByRole("button", { name: "Save", exact: true }).click();
     await expect(interactionRule).toContainText("Measured feedback");
+    await interactionRule
+      .getByTestId("ds-edit-body-interaction-calm-feedback")
+      .click();
+    const bodyInput = interactionRule.getByLabel("Rule body");
+    await bodyInput.fill(
+      "Respond immediately.\nKeep feedback motion deliberately restrained."
+    );
+    await interactionRule.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(
+      interactionRule.getByTestId("ds-edit-body-form-interaction-calm-feedback")
+    ).toHaveCount(0);
+    await expect(interactionRule).toContainText(
+      "Keep feedback motion deliberately restrained."
+    );
 
     const editedInteraction = JSON.parse(
       readFileSync(
         path.join(designSystemDir, "interaction-rules.json"),
         "utf-8"
       )
-    ) as { rules: Array<{ meaning: string }> };
+    ) as { rules: Array<{ meaning: string; value: string }> };
     expect(editedInteraction.rules[0].meaning).toBe("Measured feedback");
+    expect(editedInteraction.rules[0].value).toBe(
+      "Respond immediately.\nKeep feedback motion deliberately restrained."
+    );
     const editDb = openIkranDb(path.join(projectDir, ".ikran", "ikran.db"));
     try {
       expect(
@@ -382,6 +399,11 @@ test("09A design system browser: declare → render → approve write-back", asy
     await expect(
       page.getByTestId("ds-evidence-interaction-calm-feedback")
     ).toContainText("Calm feedback → Measured feedback");
+    await expect(
+      page.getByTestId("ds-evidence-interaction-calm-feedback")
+    ).toContainText(
+      "Feedback remains quiet and immediate. → Respond immediately. Keep feedback motion deliberately restrained."
+    );
     await page.getByRole("heading", { name: "Interaction", exact: true }).hover();
     await expect(
       page.getByTestId("ds-evidence-interaction-calm-feedback")

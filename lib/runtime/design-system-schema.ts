@@ -684,8 +684,13 @@ function validateRulesFile(
 ): DesignSystemSchemaResult {
   return (
     checkEntryArray(json.rules, "rules", (value, ctx) => {
+      if (isNonEmptyString(value)) return null;
       if (!isPlainObject(value)) {
-        return fail("invalid_field_type", { ...ctx, field: "value", expected: "object" });
+        return fail("invalid_field_type", {
+          ...ctx,
+          field: "value",
+          expected: "non-empty prose string or legacy object"
+        });
       }
       if (allowedFields) {
         const allowed = new Set(allowedFields);
@@ -821,12 +826,14 @@ function validateLayoutRulesFile(
     RICH_LAYOUT_RULE_FIELDS
   );
   if (!base.ok) return base;
-  // Base validation passed: every rule is a plain object with a plain-object
-  // value. Walk the capture lists for their item shape.
+  // Captures stay structured outside the prose body. During expand, legacy
+  // value.sourceCaptures remains accepted alongside top-level sourceCaptures.
   const rules = json.rules as Record<string, unknown>[];
   for (const rule of rules) {
-    const value = rule.value as Record<string, unknown>;
-    const captures = value[LAYOUT_RULE_CAPTURE_FIELD];
+    const value = rule.value;
+    const captures =
+      rule[LAYOUT_RULE_CAPTURE_FIELD] ??
+      (isPlainObject(value) ? value[LAYOUT_RULE_CAPTURE_FIELD] : undefined);
     if (captures === undefined) continue;
     if (!Array.isArray(captures)) {
       return fail("invalid_field_type", {

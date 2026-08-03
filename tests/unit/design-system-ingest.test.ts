@@ -171,6 +171,50 @@ function declareFile(
   });
 }
 
+test("prose layout rules round-trip body verbatim with structured captures", () => {
+  withTempProject((dir) => {
+    seedEvidenceCards(dir);
+    const body = "Keep the article column narrow.\nLet wide media break out deliberately.";
+    writeProjectFile(dir, "design-system/layout-rules.json", {
+      rules: [
+        {
+          id: "layout.editorial-column",
+          value: body,
+          meaning: "Editorial column",
+          status: "candidate",
+          links: ["card-accepted"],
+          sourceCaptures: [
+            {
+              nodeName: "Article frame",
+              artifactPath: "design-system/captures/article-frame.png",
+              capturedAt: "2026-08-03T12:00:00.000Z"
+            }
+          ]
+        }
+      ]
+    });
+    expect(
+      declareFile(
+        dir,
+        "design-system/layout-rules.json",
+        "layout-rules.json",
+        ["card-accepted"]
+      ).ok
+    ).toBe(true);
+
+    const result = getDesignSystemView(dir);
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.view.layout[0].value).toBe(body);
+    expect(result.view.layout[0].layoutCaptures).toEqual([
+      expect.objectContaining({
+        nodeName: "Article frame",
+        artifactPath: "design-system/captures/article-frame.png",
+        stale: false
+      })
+    ]);
+  });
+});
+
 // Full 09A six-file set: formalized entries back onto card-edited,
 // candidates onto card-accepted / ann-reasonable, gaps link nothing.
 function writeSixFiles(dir: string) {
@@ -1162,7 +1206,9 @@ describe("getDesignSystemView layout captures", () => {
           }
         ];
         db.prepare(
-          "UPDATE design_system_entries SET value_json = ? WHERE section = 'layout'"
+          `UPDATE design_system_entries
+           SET value_json = ?, source_captures_json = '[]'
+           WHERE section = 'layout'`
         ).run(JSON.stringify(value));
       } finally {
         db.close();

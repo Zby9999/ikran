@@ -62,6 +62,19 @@ function capture(partial: Partial<DesignSystemLayoutCapture> = {}) {
 /* --------------------------- composite recognition -------------------------- */
 
 describe("projectLayoutLeaf key-driven fact recognition", () => {
+  it("keeps a prose body verbatim beneath the meaning title", () => {
+    const body = "Keep the reading column narrow.\nBreak media out deliberately.";
+    const model = projectLayoutLeaf([
+      layoutRow("editorial-column", null, body, {
+        meaning: "Editorial column"
+      })
+    ]);
+    expect(model.rules[0]).toMatchObject({
+      headline: "Editorial column",
+      body
+    });
+  });
+
   it("derives container + columns + gutter facts from one composite grid rule", () => {
     const model = projectLayoutLeaf([
       layoutRow("grid-page", "grid.page", {

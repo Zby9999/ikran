@@ -666,6 +666,44 @@ test.describe("component-spec", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("layout-rules.json / interaction-rules.json", () => {
+  test("accepts prose rule bodies while keeping meaning required", () => {
+    const proseRule = {
+      id: "interaction-prose",
+      value: "Use restrained 150ms transitions so feedback stays immediate without becoming decorative.",
+      meaning: "Restrained transitions",
+      status: "candidate",
+      links: ["card-1"]
+    };
+    expect(
+      validateDesignSystemJson("interaction-rules.json", {
+        rules: [proseRule]
+      }).ok
+    ).toBe(true);
+    expect(
+      validateDesignSystemJson("layout-rules.json", {
+        rules: [
+          {
+            ...proseRule,
+            id: "layout-prose",
+            meaning: "Editorial rhythm",
+            sourceCaptures: []
+          }
+        ]
+      }).ok
+    ).toBe(true);
+
+    const { meaning: _meaning, ...withoutMeaning } = proseRule;
+    expect(
+      validateDesignSystemJson("interaction-rules.json", {
+        rules: [withoutMeaning]
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "missing_required_field",
+      details: { field: "meaning" }
+    });
+  });
+
   test("valid files", () => {
     expect(
       validateDesignSystemJson("layout-rules.json", validRulesJson()).ok
@@ -677,8 +715,8 @@ test.describe("layout-rules.json / interaction-rules.json", () => {
     ).toBe(true);
   });
 
-  test("rule value must be a plain object", () => {
-    for (const badValue of [[1, 2], "text", 7]) {
+  test("rule value must be prose text or a legacy plain object", () => {
+    for (const badValue of [[1, 2], 7]) {
       const res = validateDesignSystemJson("layout-rules.json", {
         rules: [entry({ value: badValue })]
       });
