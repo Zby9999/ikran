@@ -24,6 +24,11 @@ import {
   figmaSeedIdentitiesEqual,
   normalizeFigmaNodeId
 } from "./figma-identity";
+import {
+  maintainEvidenceMedia,
+  persistEvidenceScreenshot,
+  removeManagedEvidenceArtifact
+} from "./evidence-media";
 
 export type EvidenceViewStatus = "available" | "missing";
 
@@ -747,6 +752,24 @@ export function recordEvidencePackage(
 
   const surfaceId = randomUUID();
   const createdAt = new Date().toISOString();
+  let managedScreenshotArtifactPath: string | null = null;
+
+  try {
+    maintainEvidenceMedia(projectPath);
+    if (screenshotDataUrl && !screenshotArtifactPath) {
+      managedScreenshotArtifactPath = persistEvidenceScreenshot(
+        projectPath,
+        surfaceId,
+        screenshotDataUrl
+      );
+      screenshotArtifactPath = managedScreenshotArtifactPath;
+    }
+    // SQLite stores metadata only. An explicitly supplied artifact wins when
+    // callers provide both forms; otherwise the inline image was externalized.
+    screenshotDataUrl = null;
+  } catch {
+    return { ok: false, reason: "db_error" };
+  }
 
   try {
     const result = withProjectTransaction(projectPath, (db) => {
@@ -876,6 +899,7 @@ export function recordEvidencePackage(
 
     return result;
   } catch (err) {
+    removeManagedEvidenceArtifact(projectPath, managedScreenshotArtifactPath);
     const reason =
       err instanceof Error &&
       typeof (err as Error & { evidenceReason?: string }).evidenceReason ===
@@ -899,6 +923,10 @@ export function recordEvidencePackage(
 export function listFigmaEvidenceSurfaces(
   projectPath: string
 ): FigmaEvidenceSurfaceRecord[] {
+  // This read boundary intentionally performs lightweight lifecycle
+  // maintenance. It gives existing projects a one-time self-migration before
+  // any screenshot records are serialized to Workbench.
+  maintainEvidenceMedia(projectPath);
   const db = openProjectDb(projectPath);
   try {
     return db

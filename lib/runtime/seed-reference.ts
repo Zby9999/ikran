@@ -38,6 +38,7 @@ import {
   figmaSeedIdentitiesEqual,
   type FigmaSeedIdentity
 } from "./figma-identity";
+import { removeManagedEvidenceArtifact } from "./evidence-media";
 
 export type { FigmaSeedIdentity };
 export { parseFigmaSeedIdentity, figmaSeedIdentitiesEqual };
@@ -361,6 +362,7 @@ export function deleteSeedReference(
     return { ok: false, reason: "not_found" };
   }
   const id = seedId.trim();
+  let artifactPaths: string[] = [];
 
   try {
     const result = withProjectTransaction(projectPath, (db) => {
@@ -371,13 +373,21 @@ export function deleteSeedReference(
         return { ok: false as const, reason: "not_found" as const };
       }
 
-      const surfaceIds = (
-        db
-          .prepare(
-            `SELECT id FROM figma_evidence_surfaces WHERE seed_reference_id = ?`
-          )
-          .all(id) as Array<{ id: string }>
-      ).map((s) => s.id);
+      const surfaces = db
+        .prepare(
+          `SELECT id, screenshot_artifact_path
+           FROM figma_evidence_surfaces WHERE seed_reference_id = ?`
+        )
+        .all(id) as Array<{
+        id: string;
+        screenshot_artifact_path: string | null;
+      }>;
+      const surfaceIds = surfaces.map((surface) => surface.id);
+      artifactPaths = surfaces.flatMap((surface) =>
+        surface.screenshot_artifact_path
+          ? [surface.screenshot_artifact_path]
+          : []
+      );
 
       if (surfaceIds.length > 0) {
         const placeholders = surfaceIds.map(() => "?").join(", ");
@@ -400,6 +410,9 @@ export function deleteSeedReference(
     });
 
     if (result.ok) {
+      for (const artifactPath of artifactPaths) {
+        removeManagedEvidenceArtifact(projectPath, artifactPath);
+      }
       emitRecordEvent({
         kind: "seed",
         action: "deleted",

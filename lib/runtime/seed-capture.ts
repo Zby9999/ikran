@@ -18,6 +18,11 @@ import {
 import { requireFigmaConnectionCommand } from "./commands/figma-connection";
 import { emitRecordEvent } from "./record-bus";
 import type { FigmaEvidenceSurfaceRecord } from "./evidence-package";
+import {
+  maintainEvidenceMedia,
+  persistEvidenceScreenshot,
+  removeManagedEvidenceArtifact
+} from "./evidence-media";
 import type { SeedReferenceRecord } from "./seed-reference";
 import {
   lookupSeedRegisteredEventId,
@@ -129,6 +134,7 @@ function insertCapturedSurface(
     figmaUrl: string;
     createdAt: string;
     capture: PositionalCapturePayload;
+    screenshotArtifactPath: string;
   }
 ): FigmaEvidenceSurfaceRecord {
   const positionalJson = JSON.stringify(input.capture.nodes);
@@ -145,8 +151,8 @@ function insertCapturedSurface(
       rawData: "available",
       screenshot: "available"
     }),
-    screenshot_artifact_path: null,
-    screenshot_data_url: input.capture.screenshotDataUrl,
+    screenshot_artifact_path: input.screenshotArtifactPath,
+    screenshot_data_url: null,
     design_signals_json: null,
     surface_bounds_json: JSON.stringify(input.capture.surfaceBounds),
     positional_nodes_json: positionalJson,
@@ -262,6 +268,18 @@ export async function addSeedReference(
   const surfaceId = randomUUID();
   const createdAt = new Date().toISOString();
   const capture = captured.capture;
+  let screenshotArtifactPath: string;
+
+  try {
+    maintainEvidenceMedia(projectPath);
+    screenshotArtifactPath = persistEvidenceScreenshot(
+      projectPath,
+      surfaceId,
+      capture.screenshotDataUrl
+    );
+  } catch {
+    return { ok: false, reason: "db_error" };
+  }
 
   try {
     const result = withProjectTransaction(projectPath, (db) => {
@@ -305,7 +323,8 @@ export async function addSeedReference(
           seedId,
           figmaUrl: seedUrl,
           createdAt,
-          capture
+          capture,
+          screenshotArtifactPath
         });
 
         let seedEventId = lookupSeedRegisteredEventId(db, seedId);
@@ -360,7 +379,8 @@ export async function addSeedReference(
         seedId: newSeedId,
         figmaUrl: validated.url,
         createdAt,
-        capture
+        capture,
+        screenshotArtifactPath
       });
 
       const seedEvent = logEventOnDb(db, "seed_reference_registered", {
@@ -394,7 +414,9 @@ export async function addSeedReference(
       };
     });
 
-    if (result.ok && !result.reused) {
+    if (result.reused) {
+      removeManagedEvidenceArtifact(projectPath, screenshotArtifactPath);
+    } else if (result.ok) {
       if (!result.fulfilled_pending) {
         emitRecordEvent({
           kind: "seed",
@@ -413,6 +435,7 @@ export async function addSeedReference(
 
     return result;
   } catch {
+    removeManagedEvidenceArtifact(projectPath, screenshotArtifactPath);
     return { ok: false, reason: "db_error" };
   }
 }
@@ -451,6 +474,17 @@ export async function refreshSeedReference(
 
   const surfaceId = randomUUID();
   const createdAt = new Date().toISOString();
+  let screenshotArtifactPath: string;
+  try {
+    maintainEvidenceMedia(projectPath);
+    screenshotArtifactPath = persistEvidenceScreenshot(
+      projectPath,
+      surfaceId,
+      captured.capture.screenshotDataUrl
+    );
+  } catch {
+    return { ok: false, reason: "db_error" };
+  }
   try {
     const result = withProjectTransaction(projectPath, (db) => {
       const currentRow = db
@@ -476,7 +510,8 @@ export async function refreshSeedReference(
         seedId: currentSeed.id,
         figmaUrl: currentSeed.figma_seed_reference,
         createdAt,
-        capture: captured.capture
+        capture: captured.capture,
+        screenshotArtifactPath
       });
       const advanced = db
         .prepare(
@@ -523,6 +558,7 @@ export async function refreshSeedReference(
     });
     return result;
   } catch (error) {
+    removeManagedEvidenceArtifact(projectPath, screenshotArtifactPath);
     if (
       error instanceof Error &&
       (error as Error & { reason?: string }).reason ===

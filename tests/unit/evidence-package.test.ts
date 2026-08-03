@@ -17,6 +17,8 @@ import { listEvents } from "../../lib/runtime/events";
 import { initializeProjectDb } from "../../lib/runtime/db";
 
 const VALID_FIGMA = "https://www.figma.com/design/AbCdEf/Checkout?node-id=1:2";
+const TINY_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 function minimalPackage(overrides: Record<string, unknown> = {}) {
   return {
@@ -512,6 +514,36 @@ test.describe("recordEvidencePackage (unit)", () => {
       expect(res.record.screenshot_artifact_path).toBe("artifacts/checkout.png");
       // File need not exist yet (Agent may declare before write).
       expect(existsSync(path.join(dir, "artifacts/checkout.png"))).toBe(false);
+    });
+  });
+
+  test("inline screenshot input is externalized into a Runtime-owned artifact", () => {
+    withTempProject((dir) => {
+      const seed = registerSeedReference(dir, {
+        figmaSeedReference: VALID_FIGMA,
+        originalDesignIntent: "checkout trust"
+      });
+      expect(seed.ok).toBe(true);
+      if (!seed.ok) return;
+
+      const res = recordEvidencePackage(
+        dir,
+        minimalPackage({
+          seedReferenceId: seed.record.id,
+          figmaSeedReference: undefined,
+          evidenceViews: { rawData: "available", screenshot: "available" },
+          screenshot: { dataUrl: TINY_PNG }
+        })
+      );
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.record.screenshot_data_url).toBeNull();
+      expect(res.record.screenshot_artifact_path).toMatch(
+        /^\.ikran\/artifacts\/evidence-media\/.+\.png$/
+      );
+      expect(
+        existsSync(path.join(dir, res.record.screenshot_artifact_path!))
+      ).toBe(true);
     });
   });
 

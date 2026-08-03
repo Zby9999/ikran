@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
@@ -16,8 +16,16 @@ import {
   addSeedReference,
   refreshSeedReference
 } from "../../lib/runtime/seed-capture";
-import { listSeedReferences } from "../../lib/runtime/seed-reference";
+import {
+  deleteSeedReference,
+  listSeedReferences
+} from "../../lib/runtime/seed-reference";
 import { listFigmaEvidenceSurfaces } from "../../lib/runtime/evidence-package";
+import {
+  EVIDENCE_MEDIA_RETENTION_MS,
+  getEvidenceMediaMarkerPath,
+  maintainEvidenceMedia
+} from "../../lib/runtime/evidence-media";
 import { listEvents } from "../../lib/runtime/events";
 import { closeProjectDb, openProjectDb } from "../../lib/runtime/db";
 import { getAnnotationNodeCandidatesContext } from "../../lib/runtime/figma-context";
@@ -136,7 +144,13 @@ test("atomic capture writes seed + surface + positional index", async () => {
   if (!result.ok) return;
   expect(result.record.file_key).toBe("AbCdEf");
   expect(result.record.node_id).toBe("1:2");
-  expect(result.surface.screenshot_data_url).toMatch(/^data:image\/png/);
+  expect(result.surface.screenshot_data_url).toBeNull();
+  expect(result.surface.screenshot_artifact_path).toMatch(
+    /^\.ikran\/artifacts\/evidence-media\/.+\.png$/
+  );
+  expect(
+    existsSync(path.join(projectDir, result.surface.screenshot_artifact_path!))
+  ).toBe(true);
   expect(result.surface.positional_nodes_json).toContain('"FRAME"');
   expect(listSeedReferences(projectDir)).toHaveLength(1);
   expect(listFigmaEvidenceSurfaces(projectDir)).toHaveLength(1);
@@ -186,6 +200,120 @@ test("explicit refresh appends a surface, advances current, and preserves histor
     }
   ]);
   unsubscribe();
+});
+
+test("superseded screenshot media expires after 24 hours without deleting lineage", async () => {
+  await withConnectedStore();
+  const first = await addSeedReference(projectDir, {
+    figmaSeedReference: "https://www.figma.com/design/AbCdEf/X?node-id=1-2",
+    initiator: "ui"
+  });
+  expect(first.ok).toBe(true);
+  if (!first.ok) return;
+  const refreshed = await refreshSeedReference(projectDir, {
+    seedReferenceId: first.record.id,
+    initiator: "ui"
+  });
+  expect(refreshed.ok).toBe(true);
+  if (!refreshed.ok) return;
+
+  const oldArtifact = first.surface.screenshot_artifact_path!;
+  const currentArtifact = refreshed.surface.screenshot_artifact_path!;
+  expect(existsSync(path.join(projectDir, oldArtifact))).toBe(true);
+
+  const result = maintainEvidenceMedia(projectDir, {
+    now: new Date(Date.now() + EVIDENCE_MEDIA_RETENTION_MS + 1_000)
+  });
+  expect(result).toMatchObject({ bootstrapped: false, purged: 1 });
+
+  const surfaces = listFigmaEvidenceSurfaces(projectDir);
+  const retired = surfaces.find((surface) => surface.id === first.surface.id)!;
+  const current = surfaces.find(
+    (surface) => surface.id === refreshed.surface.id
+  )!;
+  expect(retired).toMatchObject({
+    superseded_by: refreshed.surface.id,
+    screenshot_artifact_path: null,
+    screenshot_data_url: null
+  });
+  expect(current.screenshot_artifact_path).toBe(currentArtifact);
+  expect(existsSync(path.join(projectDir, oldArtifact))).toBe(false);
+  expect(existsSync(path.join(projectDir, currentArtifact))).toBe(true);
+});
+
+test("legacy bootstrap immediately purges retired inline media and externalizes current", async () => {
+  await withConnectedStore();
+  const first = await addSeedReference(projectDir, {
+    figmaSeedReference: "https://www.figma.com/design/AbCdEf/X?node-id=1-2",
+    initiator: "ui"
+  });
+  expect(first.ok).toBe(true);
+  if (!first.ok) return;
+  const refreshed = await refreshSeedReference(projectDir, {
+    seedReferenceId: first.record.id,
+    initiator: "ui"
+  });
+  expect(refreshed.ok).toBe(true);
+  if (!refreshed.ok) return;
+
+  rmSync(getEvidenceMediaMarkerPath(projectDir), { force: true });
+  rmSync(path.join(projectDir, first.surface.screenshot_artifact_path!), {
+    force: true
+  });
+  rmSync(path.join(projectDir, refreshed.surface.screenshot_artifact_path!), {
+    force: true
+  });
+  const db = openProjectDb(projectDir);
+  try {
+    db.prepare(
+      `UPDATE figma_evidence_surfaces
+       SET screenshot_artifact_path = NULL, screenshot_data_url = ?`
+    ).run(TINY_PNG);
+  } finally {
+    closeProjectDb(db);
+  }
+
+  const result = maintainEvidenceMedia(projectDir);
+  expect(result).toEqual({
+    bootstrapped: true,
+    materialized: 1,
+    purged: 1,
+    vacuumed: true
+  });
+  expect(existsSync(getEvidenceMediaMarkerPath(projectDir))).toBe(true);
+
+  const surfaces = listFigmaEvidenceSurfaces(projectDir);
+  const retired = surfaces.find((surface) => surface.id === first.surface.id)!;
+  const current = surfaces.find(
+    (surface) => surface.id === refreshed.surface.id
+  )!;
+  expect(retired.screenshot_artifact_path).toBeNull();
+  expect(retired.screenshot_data_url).toBeNull();
+  expect(current.screenshot_data_url).toBeNull();
+  expect(current.screenshot_artifact_path).toMatch(
+    /^\.ikran\/artifacts\/evidence-media\/.+\.png$/
+  );
+  expect(
+    existsSync(path.join(projectDir, current.screenshot_artifact_path!))
+  ).toBe(true);
+});
+
+test("deleting a seed removes its Runtime-owned screenshot artifacts immediately", async () => {
+  await withConnectedStore();
+  const added = await addSeedReference(projectDir, {
+    figmaSeedReference: "https://www.figma.com/design/AbCdEf/X?node-id=1-2",
+    initiator: "ui"
+  });
+  expect(added.ok).toBe(true);
+  if (!added.ok) return;
+  const artifactPath = added.surface.screenshot_artifact_path!;
+  expect(existsSync(path.join(projectDir, artifactPath))).toBe(true);
+
+  expect(deleteSeedReference(projectDir, added.record.id)).toEqual({
+    ok: true,
+    id: added.record.id
+  });
+  expect(existsSync(path.join(projectDir, artifactPath))).toBe(false);
 });
 
 test("failed explicit refresh leaves current and history unchanged", async () => {
