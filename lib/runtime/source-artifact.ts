@@ -276,6 +276,7 @@ export interface SourceArtifactRecordResult {
 export interface SourceArtifactRecordError {
   ok: false;
   reason: SourceArtifactRecordReason;
+  details?: unknown;
 }
 
 export type SourceArtifactRecordResponse =
@@ -346,7 +347,7 @@ export function recordSourceArtifact(
       rawDeclaredPath(input),
       validated.details
     );
-    return { ok: false, reason: validated.reason };
+    return { ok: false, reason: validated.reason, details: validated.details };
   }
   const declaration = validated.declaration;
 
@@ -370,8 +371,19 @@ export function recordSourceArtifact(
   const checkFile = spec.checkFile ?? CLASS_FILE_CHECKS[spec.validationClass];
   const fileFailure = checkFile(absolutePath);
   if (fileFailure !== null) {
-    logInvalidArtifact(projectPath, fileFailure, relativePath);
-    return { ok: false, reason: fileFailure };
+    let details: unknown;
+    if (spec.validationClass === "design-system") {
+      const file = readJsonFileObject(absolutePath);
+      if (file.ok) {
+        const schemaResult = validateDesignSystemJson(
+          declaration.artifactType as DesignSystemFileKind,
+          file.json
+        );
+        if (!schemaResult.ok) details = schemaResult.details;
+      }
+    }
+    logInvalidArtifact(projectPath, fileFailure, relativePath, details);
+    return { ok: false, reason: fileFailure, details };
   }
 
   const now = new Date().toISOString();
@@ -503,7 +515,7 @@ export function recordSourceArtifact(
 
     if (!result.ok) {
       logInvalidArtifact(projectPath, result.reason, relativePath, result.details);
-      return { ok: false, reason: result.reason };
+      return { ok: false, reason: result.reason, details: result.details };
     }
 
     emitRecordEvent({

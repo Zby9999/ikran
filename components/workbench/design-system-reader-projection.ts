@@ -715,100 +715,16 @@ export function typographyAtlasItems(
   });
 }
 
-/* ------------------------------ rich principle ---------------------------- */
+/* ----------------------------- prose principle --------------------------- */
 
 export interface PrincipleProjection {
-  /** The card title — statement for rich values, legacy display otherwise. */
-  statement: string;
-  rationale: string | null;
-  scope: string | null;
-  use: string[];
-  avoid: string[];
-  exceptions: string[];
-  /** Everything extracted beyond the six known fields — responsive
-   * relationships, checks, and every field of object values with no
-   * recognized key at all — as labeled lines, never raw JSON. Null when
-   * there is nothing extra. */
-  extraFields: { label: string; text: string }[] | null;
-  /** False for legacy string/single-key values (caller keeps current card). */
-  isRich: boolean;
+  title: string;
+  body: string;
 }
-
-function stringArrayOf(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
-}
-
-const PRINCIPLE_KNOWN_KEYS = new Set([
-  "statement",
-  "rationale",
-  "scope",
-  "use",
-  "avoid",
-  "exceptions"
-]);
 
 export function projectPrinciple(entry: DesignSystemEntryView): PrincipleProjection {
-  const value = entry.value;
-  if (isPlainObject(value) && entry.alias === null) {
-    // Single-key string values stay legacy: formatEntryValue already flattens
-    // them to plain text, so the current card shows them well. Anything the
-    // flat display would JSON-serialize projects to rich fields instead.
-    const keys = Object.keys(value);
-    const isLegacySingleString =
-      keys.length === 1 && typeof value[keys[0]!] === "string";
-    if (!isLegacySingleString) {
-      const hasRichShape =
-        typeof value.statement === "string" ||
-        typeof value.rationale === "string" ||
-        typeof value.scope === "string" ||
-        Array.isArray(value.use) ||
-        Array.isArray(value.avoid) ||
-        Array.isArray(value.exceptions);
-      if (hasRichShape) {
-        const extras = keys
-          .filter((key) => !PRINCIPLE_KNOWN_KEYS.has(key))
-          .map((key) => ({ label: key, text: formatValueField(value[key]) }));
-        return {
-          statement:
-            typeof value.statement === "string" ? value.statement : entry.meaning,
-          rationale: typeof value.rationale === "string" ? value.rationale : null,
-          scope: typeof value.scope === "string" ? value.scope : null,
-          use: stringArrayOf(value.use),
-          avoid: stringArrayOf(value.avoid),
-          exceptions: stringArrayOf(value.exceptions),
-          extraFields: extras.length > 0 ? extras : null,
-          isRich: true
-        };
-      }
-      // Object with no recognized key: the legacy flat display would
-      // JSON-serialize it into the main reading layer (forbidden) — project
-      // labeled field lines instead; the full envelope stays in Technical
-      // details.
-      return {
-        statement: entryDisplayName(entry),
-        rationale: null,
-        scope: null,
-        use: [],
-        avoid: [],
-        exceptions: [],
-        extraFields: projectObjectFields(value),
-        isRich: true
-      };
-    }
-  }
-  // Legacy shapes: plain string, or single-key { statement: "…" } — the view
-  // model's formatEntryValue already flattens those to display text.
-  const row = toRow(entry);
   return {
-    statement: row.value,
-    rationale: null,
-    scope: null,
-    use: [],
-    avoid: [],
-    exceptions: [],
-    extraFields: null,
-    isRich: false
+    title: entry.meaning || entryDisplayName(entry),
+    body: formatRuleBody(entry.value)
   };
 }

@@ -48,6 +48,8 @@ export {
   editDesignSystemEntryCommand
 } from "./design-system";
 
+export { proposeRuleUpdateCommand } from "./rule-update-proposal";
+
 export {
   createRegionAnnotationCommand,
   confirmAnnotationPrimaryNodeCommand,
@@ -118,6 +120,8 @@ export {
   approveDesignSystemEntryInputShape,
   editDesignSystemEntryInputSchema,
   editDesignSystemEntryInputShape,
+  proposeRuleUpdateInputSchema,
+  proposeRuleUpdateInputShape,
   createOrOpenProjectInputShape,
   setupWorkspaceInputShape
 } from "./schemas";

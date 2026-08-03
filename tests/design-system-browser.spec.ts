@@ -192,7 +192,7 @@ test("09A design system browser: declare → render → approve write-back", asy
       principles: [
         {
           id: "principle-clarity",
-          value: { statement: "Clarity before ornament" },
+          value: "Clarity comes before ornament.",
           meaning: "Lead with legibility",
           status: "candidate",
           links: [designerEditedCardId]
@@ -274,6 +274,42 @@ test("09A design system browser: declare → render → approve write-back", asy
           relatedRecordIds: links
         }
       });
+
+    writeSource("design-system/interaction-rules.json", {
+      rules: [
+        {
+          id: "interaction-legacy-shape",
+          value: { statement: "Feedback remains quiet." },
+          meaning: "Legacy feedback",
+          status: "candidate",
+          links: [designerEditedCardId]
+        }
+      ]
+    });
+    expect(structuredContent(await declare(
+      "design-system/interaction-rules.json",
+      "interaction-rules.json",
+      [designerEditedCardId]
+    ))).toMatchObject({
+      ok: false,
+      error: "legacy_rule_body_requires_prose",
+      details: {
+        field: "value",
+        expected: "non-empty prose string"
+      }
+    });
+    writeSource("design-system/interaction-rules.json", {
+      rules: [
+        {
+          id: "interaction-calm-feedback",
+          value: "Feedback remains quiet and immediate.",
+          meaning: "Calm feedback",
+          status: "candidate",
+          links: [designerEditedCardId]
+        }
+      ]
+    });
+
     expect(structuredContent(await declare(
       "design-system/design-system.json",
       "design-system.json",

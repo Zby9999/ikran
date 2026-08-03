@@ -122,14 +122,8 @@ writeSource("design-system/design-system.json", {
   principles: [
     {
       id: "principle-intent",
-      value: {
-        statement: "Design with intent.",
-        rationale: "Every choice needs a reason the designer can repeat.",
-        scope: "All product surfaces",
-        use: ["State the reason next to the choice"],
-        avoid: ["Decoration without a job"],
-        exceptions: ["Marketing one-offs"]
-      },
+      value:
+        "Design with intent. Every choice across product surfaces needs a reason the designer can repeat. State the reason next to the choice; avoid decoration without a job, except for deliberate marketing one-offs.",
       meaning: "Intent over decoration",
       status: "candidate",
       links: [designerEditedCardId]
@@ -198,38 +192,48 @@ writeSource("design-system/token.json", {
   component: {}
 });
 writeSource("design-system/layout-rules.json", {
+  sourceCaptures: [
+    {
+      artifactId: designerEditedCardId,
+      nodeId: "11:49",
+      capturedAt: "2026-08-03T00:00:00.000Z"
+    }
+  ],
   rules: [
     {
       id: "grid-page",
-      value: { columns: "12", gutter: { alias: "spacing.200" }, maxWidth: "1120px" },
+      value:
+        "Use a 12-column page grid with the spacing.200 gutter and a maximum width of 1120px.",
       meaning: "Default page grid",
       status: "candidate",
       links: [designerEditedCardId]
     },
     {
       id: "shell-regions",
-      value: { regions: ["header", "hero", "content", "footer"] },
+      value: "Stack the page shell as header, hero, content, then footer.",
       meaning: "Page shell vertical stack",
       status: "candidate",
       links: [designerEditedCardId]
     },
     {
       id: "section-rhythm",
-      value: { heroToNext: "96 → 56px" },
+      value:
+        "Keep 96px between the hero and the following section on desktop, reducing to 56px on mobile.",
       meaning: "Scroll rhythm, desktop → mobile",
       status: "candidate",
       links: [designerEditedCardId]
     },
     {
       id: "breakpoints",
-      value: { breakpoints: ["640", "768", "1024", "1280"] },
+      value: "Use breakpoints at 640px, 768px, 1024px, and 1280px.",
       meaning: "Same source as code",
       status: "formalized",
       links: [designerEditedCardId]
     },
     {
       id: "nav-mobile",
-      value: { layout: "—" },
+      value:
+        "The mobile navigation layout remains a documented gap until its open state is captured.",
       meaning: "Mobile navigation layout — open state missing",
       status: "gap",
       links: []

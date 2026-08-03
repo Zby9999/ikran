@@ -7,6 +7,7 @@ import { registerRegionTools } from "./region-tools";
 import { registerSeedEvidenceTools } from "./seed-evidence-tools";
 import { registerDesignIntentAlignmentTools } from "./design-intent-alignment-tools";
 import { registerArtifactTools } from "./artifact-tools";
+import { registerRuleUpdateTools } from "./rule-update-tools";
 import { registerInitialDesignSystemTools } from "./initial-design-system-tools";
 import {
   IKRAN_MCP_INSTRUCTIONS,
@@ -30,4 +31,5 @@ export function registerIkranTools(
   registerDesignIntentAlignmentTools(mcp, deps);
   registerInitialDesignSystemTools(mcp, deps);
   registerArtifactTools(mcp, deps);
+  registerRuleUpdateTools(mcp, deps);
 }

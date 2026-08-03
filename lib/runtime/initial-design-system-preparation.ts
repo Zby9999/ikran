@@ -21,10 +21,6 @@ import {
   DESIGN_SYSTEM_ENTRY_KINDS,
   DESIGN_SYSTEM_ENTRY_KIND_FILE_OWNERSHIP,
   RICH_COMPONENT_SPEC_FIELDS,
-  RICH_INTERACTION_RULE_FIELDS,
-  RICH_LAYOUT_RULE_FIELDS,
-  RICH_PRINCIPLE_COLLECTION_FIELDS,
-  RICH_PRINCIPLE_STRING_FIELDS,
   TOKEN_DOMAINS
 } from "./design-system-schema";
 
@@ -44,79 +40,32 @@ const REQUIRED_ARTIFACT_TYPES = {
   "design-system/interaction-rules.json": "interaction-rules.json"
 } as const;
 
-const RICH_FIELD_WRITING_STYLE = {
-  applies_to: {
-    layout: ["relationship", "responsiveBehavior", "acceptanceChecks"],
-    interaction: [
-      "description",
-      "behavior",
-      "accessibility"
-    ],
-    component: [
-      "anatomy",
-      "variants",
-      "sizes",
-      "usageRules",
-      "contentRules",
-      "responsiveBehavior",
-      "states",
-      "motion",
-      "verificationTargets",
-      "openGaps"
-    ]
-  },
+const RULE_BODY_WRITING_STYLE = {
+  shape: "Every global, domain, layout, and interaction rule value is one non-empty prose string.",
   rules: [
-    "Each array item is one short constraint sentence: one sentence, one rule; never multi-sentence prose.",
-    "Put spatial and numeric facts in structured values, such as a dedicated key or the compact value '96 → 56px', instead of burying them in prose.",
-    "Put interpretation, rationale, and design intent in meaning, using one sentence only.",
+    "Write the complete reusable decision as concise prose in value; use multiple sentences only when needed to preserve evidence-backed nuance.",
+    "Keep the stable rule title in meaning as one sentence.",
     "Use the language of the designer's source text; if the designer writes Chinese, write the extracted rules in Chinese.",
-    "Do not restate existing rules, add padding, or generalize beyond the evidence; unsupported ideas belong in open questions, not source rules."
+    "Do not restate existing rules or generalize beyond the evidence; unsupported ideas belong in open questions, not source rules.",
+    "Do not precompute affected items inside a rule body; derive them from the complete current rule set when proposing a change."
   ],
   examples: {
     layout: {
       good: {
-        value: {
-          gap: "20px",
-          imageSize: "461.25 × 446px",
-          responsiveBehavior: ["窄屏支持触控横向滚动。"],
-          acceptanceChecks: ["右侧裁切提示仍可见。"]
-        },
+        value: "项目图片组成横向轨道，图片尺寸为 461.25 × 446px，间距为 20px；窄屏支持触控横向滚动，并保留右侧裁切提示。",
         meaning: "横向画廊用于连续浏览项目。"
       },
       bad: {
-        relationship: [
-          "Project images form a horizontal track with 461.25 × 446px images and 20px gaps. The clipped edge creates a dynamic sense of discovery and should inspire future galleries."
-        ]
+        value: { gap: "20px", imageSize: "461.25 × 446px" }
       }
     },
     interaction: {
       good: {
-        value: {
-          statement: "动效保持克制。",
-          description: "高频工具中的动效只用于解释状态变化。",
-          behavior: ["使用短促反馈确认系统已响应。", "避免循环或装饰性动效。"],
-          accessibility: ["减少动态效果时保留等价的状态信息。"]
-        },
+        value: "高频工具中的动效只用于解释状态变化。使用短促反馈确认系统已响应，避免循环或装饰性动效；减少动态效果时保留等价的状态信息。",
         meaning: "动效服务理解，不争夺注意力。"
       },
       bad: {
-        appliesTo: ["Text Link"],
-        stateBehavior: [{ state: "hover", behavior: "箭头右移 4px。" }],
-        motion: ["160ms ease-out"]
-      }
-    },
-    component: {
-      good: {
-        value: {
-          anatomy: ["CTA 由文字标签和右箭头组成。"],
-          contentRules: ["标签使用动词短语。"]
-        },
-        meaning: "文字链接保持行动入口轻量。"
-      },
-      bad: {
-        usageRules: [
-          "Use this sophisticated CTA throughout the product wherever a strong action is needed. It should feel bold, polished, and memorable."
-        ]
+        value: { motion: "160ms ease-out" }
       }
     }
   }
@@ -175,11 +124,11 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
     "stateMatrix",
     ...RICH_COMPONENT_SPEC_FIELDS
   ],
-  principle_value_fields: {
-    strings: ["statement", ...RICH_PRINCIPLE_STRING_FIELDS],
-    collections: RICH_PRINCIPLE_COLLECTION_FIELDS
+  rule_body: {
+    applies_to: ["global-rule", "domain-rule"],
+    field: "value",
+    type: "non-empty prose string"
   },
-  layout_rule_value_fields: RICH_LAYOUT_RULE_FIELDS,
   layout_rule_capture_field: {
     field: LAYOUT_RULE_CAPTURE_FIELD,
     item_required: LAYOUT_RULE_CAPTURE_REQUIRED_FIELDS,
@@ -212,7 +161,6 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
       "the node. Rules without captures render an honest unavailable " +
       "block — never fabricate one."
   },
-  interaction_rule_value_fields: RICH_INTERACTION_RULE_FIELDS,
   interaction_entry_split: {
     interaction_rules: "Cross-component interaction and motion strategies only.",
     component_specs:
@@ -226,7 +174,7 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
       "When writing a rule, inspect existing rules in that file for placement. Propose misplaced-rule moves through the rule-update proposal channel; never move rules silently."
   },
   typography_role_writing_style: TYPOGRAPHY_ROLE_WRITING_STYLE,
-  rich_field_writing_style: RICH_FIELD_WRITING_STYLE
+  rule_body_writing_style: RULE_BODY_WRITING_STYLE
 } as const;
 
 type InitialDesignSystemCommandFailureReason =

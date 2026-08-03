@@ -208,6 +208,134 @@ const TOKEN_LEAF_NAMES: Record<TokenLeafId, string> = {
   materials: "Materials"
 };
 
+/* ----------------------------- color page model ----------------------------- */
+
+/** One rendered color row: the semantic/component token plus the concrete
+ * color its alias chain resolves to. `source` is the terminal token name
+ * behind the chain (hover-tooltip provenance); null for concrete tokens. */
+export interface DsColorToken {
+  row: DsRow;
+  name: string;
+  meaning: string;
+  status: DsStatus;
+  hex: string | null;
+  source: string | null;
+}
+
+export interface DsColorLeafModel {
+  /** Domain-level judgement rules (color), in source order. */
+  rules: DsRow[];
+  semantic: DsColorToken[];
+  component: DsColorToken[];
+  /** Color primitives no alias in the file points at — shown as bare swatches. */
+  unconsumed: { name: string; hex: string | null; status: DsStatus }[];
+}
+
+/** Alias targets are "layer.name"; the name may itself contain dots, so the
+ * split happens at the FIRST dot (mirrors parseTokenEntryRef in the schema). */
+function splitTokenRef(ref: string): { layer: TokenLayerKey; name: string } | null {
+  const dot = ref.indexOf(".");
+  if (dot <= 0 || dot === ref.length - 1) return null;
+  const layer = ref.slice(0, dot);
+  if (!(TOKEN_LAYER_ORDER as readonly string[]).includes(layer)) return null;
+  return { layer: layer as TokenLayerKey, name: ref.slice(dot + 1) };
+}
+
+/** Color leaf of the token.json layers: primitives collapse into resolved
+ * swatch provenance (the redesign drops the Primitive section), semantic and
+ * component tokens stay as governed rows. Domain rules split out. */
+export function buildColorLeafModel(view: DesignSystemView): DsColorLeafModel {
+  // Qualified lookup ("layer.name" → entry). Tokens address each other by
+  // `name`; legacy rows without a name fall back to their entry_id.
+  const byQualified = new Map<string, DesignSystemEntryView>();
+  for (const layer of TOKEN_LAYER_ORDER) {
+    for (const entry of view.tokens[layer]) {
+      byQualified.set(`${layer}.${entry.name ?? entry.entry_id}`, entry);
+      if (entry.entry_id.startsWith(`${layer}.`)) {
+        byQualified.set(entry.entry_id, entry);
+      }
+    }
+  }
+
+  const isColor = (entry: DesignSystemEntryView) =>
+    entry.kind !== "domain-rule" &&
+    classifyToken(entry.name ?? entry.entry_id, entry.domain ?? null) === "color";
+
+  const resolve = (
+    entry: DesignSystemEntryView
+  ): { hex: string | null; source: string | null } => {
+    if (entry.status === "gap" || entry.alias === null) {
+      const hex = entry.alias === null ? detectSwatch(formatEntryValue(entry)) : null;
+      return { hex, source: null };
+    }
+    // Walk the chain to its terminal concrete token. The schema rejects
+    // cycles at ingest; the depth cap keeps stale DB rows honest.
+    let ref: string | null = entry.alias;
+    let terminal: DesignSystemEntryView | null = null;
+    for (let depth = 0; ref !== null && depth < 8; depth += 1) {
+      const target = splitTokenRef(ref);
+      const next = target ? byQualified.get(`${target.layer}.${target.name}`) : undefined;
+      if (!next) return { hex: null, source: null };
+      terminal = next;
+      ref = next.alias;
+    }
+    if (terminal === null || ref !== null) return { hex: null, source: null };
+    const hex = detectSwatch(formatEntryValue(terminal));
+    if (hex === null) return { hex: null, source: null };
+    return { hex, source: entryDisplayName(terminal) };
+  };
+
+  const toColorToken = (entry: DesignSystemEntryView): DsColorToken => ({
+    row: toRow(entry),
+    name: entryDisplayName(entry),
+    meaning: entry.meaning,
+    status: entry.status,
+    ...resolve(entry)
+  });
+
+  const rules: DsRow[] = [];
+  const semantic: DsColorToken[] = [];
+  const component: DsColorToken[] = [];
+  for (const entry of view.tokens.semantic) {
+    if (entry.kind === "domain-rule" && entry.domain === "color") {
+      rules.push(toRow(entry));
+    } else if (isColor(entry)) {
+      semantic.push(toColorToken(entry));
+    }
+  }
+  for (const entry of view.tokens.component) {
+    if (entry.kind === "domain-rule" && entry.domain === "color") {
+      rules.push(toRow(entry));
+    } else if (isColor(entry)) {
+      component.push(toColorToken(entry));
+    }
+  }
+
+  // File-wide consumption: any alias target, any layer, marks its primitive
+  // as consumed. A primitive dangling aliases point at is not "consumed".
+  const consumed = new Set<string>();
+  for (const layer of TOKEN_LAYER_ORDER) {
+    for (const entry of view.tokens[layer]) {
+      if (entry.alias !== null) {
+        const target = splitTokenRef(entry.alias);
+        if (target?.layer === "primitive") consumed.add(target.name);
+      }
+    }
+  }
+  const unconsumed = view.tokens.primitive
+    .filter(
+      (entry) =>
+        isColor(entry) && !consumed.has(entry.name ?? entry.entry_id)
+    )
+    .map((entry) => ({
+      name: entryDisplayName(entry),
+      hex: detectSwatch(formatEntryValue(entry)),
+      status: entry.status
+    }));
+
+  return { rules, semantic, component, unconsumed };
+}
+
 /* ---------------------------- component mapping ---------------------------- */
 
 export interface DsComponentProp {

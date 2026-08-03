@@ -23,7 +23,7 @@ import { getProjectDbPath } from "../../lib/runtime/paths";
 function entry(overrides: Record<string, unknown> = {}) {
   return {
     id: "rule-1",
-    value: { statement: "保持界面克制" },
+    value: "保持界面克制。",
     meaning: "少即是多",
     status: "formalized",
     links: ["card-1"],
@@ -43,7 +43,7 @@ function validDesignSystemJson() {
     },
     principles: [
       entry({ id: "principle-1" }),
-      entry({ id: "principle-2", status: "gap", links: [], value: { statement: "待定" } })
+      entry({ id: "principle-2", status: "gap", links: [], value: "待定。" })
     ]
   };
 }
@@ -134,7 +134,7 @@ function validRulesJson() {
     rules: [
       {
         id: "layout-1",
-        value: { rule: "页面主栅格为 12 列", category: "grid" },
+        value: "页面主栅格为 12 列。",
         meaning: "主栅格",
         status: "candidate",
         links: ["card-1"]
@@ -198,7 +198,7 @@ test.describe("shared entry contract", () => {
     tokenWithRule.semantic["no-shadow-regions"] = {
       kind: "domain-rule",
       domain: "shadow",
-      value: { statement: "Do not use shadows to separate regions." },
+      value: "Do not use shadows to separate regions.",
       meaning: "Use spacing and borders for hierarchy.",
       status: "candidate",
       links: ["card-1"]
@@ -223,7 +223,7 @@ test.describe("shared entry contract", () => {
         rules: [
           entry({
             kind: "domain-rule",
-            value: { statement: "Motion stays quiet." }
+            value: "Motion stays quiet."
           })
         ]
       }).ok
@@ -246,7 +246,7 @@ test.describe("shared entry contract", () => {
     const missingDomain = validTokenJson();
     missingDomain.semantic["cta-ink"] = {
       kind: "domain-rule",
-      value: { statement: "CTA uses the ink color." },
+      value: "CTA uses the ink color.",
       meaning: "Keep calls to action typographic.",
       status: "candidate",
       links: ["card-1"]
@@ -345,35 +345,18 @@ test.describe("design-system.json", () => {
     }
   });
 
-  test("principle value must carry a statement string", () => {
+  test("principle value must be prose and legacy rich objects explain the migration", () => {
     const res = validateDesignSystemJson("design-system.json", {
       ...validDesignSystemJson(),
-      principles: [entry({ value: {} })]
+      principles: [entry({ value: { statement: "Keep hierarchy clear." } })]
     });
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.reason).toBe("missing_required_field");
-  });
-
-  test("09B principle detail fields have stable string/array shapes", () => {
-    const rich = validDesignSystemJson();
-    Object.assign(rich.principles[0].value, {
-      rationale: "Preserve editorial hierarchy.",
-      scope: "Product surfaces",
-      use: ["Large display type"],
-      avoid: ["Competing emphasis"],
-      exceptions: []
-    });
-    expect(validateDesignSystemJson("design-system.json", rich).ok).toBe(true);
-
-    const invalid = validDesignSystemJson();
-    Object.assign(invalid.principles[0].value, { use: "everywhere" });
-    expect(
-      validateDesignSystemJson("design-system.json", invalid)
-    ).toMatchObject({
+    expect(res).toMatchObject({
       ok: false,
-      reason: "invalid_field_type",
-      details: { field: "value.use", expected: "array" }
+      reason: "legacy_rule_body_requires_prose",
+      details: {
+        field: "value",
+        expected: "non-empty prose string"
+      }
     });
   });
 
@@ -413,6 +396,23 @@ test.describe("token.json", () => {
       ok: false,
       reason: "invalid_token_domain",
       details: { token: "primitive.color.blue.500", domain: "marketing" }
+    });
+  });
+
+  test("domain rules in token.json require prose bodies", () => {
+    const legacy = validTokenJson();
+    legacy.semantic["no-shadow-regions"] = {
+      kind: "domain-rule",
+      domain: "shadow",
+      value: { statement: "Do not use shadows to separate regions." },
+      meaning: "Use spacing and borders for hierarchy.",
+      status: "candidate",
+      links: ["card-1"]
+    };
+    expect(validateDesignSystemJson("token.json", legacy)).toMatchObject({
+      ok: false,
+      reason: "legacy_rule_body_requires_prose",
+      details: { field: "value", expected: "non-empty prose string" }
     });
   });
 
@@ -710,13 +710,13 @@ test.describe("layout-rules.json / interaction-rules.json", () => {
     ).toBe(true);
     expect(
       validateDesignSystemJson("interaction-rules.json", {
-        rules: [entry({ value: { statement: "Motion stays quiet" } })]
+        rules: [entry({ value: "Motion stays quiet." })]
       }).ok
     ).toBe(true);
   });
 
-  test("rule value must be prose text or a legacy plain object", () => {
-    for (const badValue of [[1, 2], 7]) {
+  test("rule value must be prose text", () => {
+    for (const badValue of [[1, 2], 7, "  "]) {
       const res = validateDesignSystemJson("layout-rules.json", {
         rules: [entry({ value: badValue })]
       });
@@ -726,74 +726,21 @@ test.describe("layout-rules.json / interaction-rules.json", () => {
     }
   });
 
-  test("legacy rich rules validate field shapes without taxonomy whitelists", () => {
-    const layout = validRulesJson();
-    Object.assign(layout.rules[0].value, {
-      relationship: [{ from: "title", to: "content" }],
-      responsiveBehavior: ["Preserve hierarchy"],
-      tokenLinks: ["spacing.section"],
-      acceptanceChecks: ["Title remains dominant"]
-    });
-    expect(validateDesignSystemJson("layout-rules.json", layout).ok).toBe(true);
-
-    const interaction = {
-      rules: [
-        entry({
-          value: {
-            statement: "Motion stays quiet",
-            description: "Feedback explains change without competing with content.",
-            behavior: ["Use short state feedback."],
-            accessibility: ["Preserve the same information without motion."]
-          }
+  test("legacy rich rule objects explain how to migrate", () => {
+    for (const fileKind of ["layout-rules.json", "interaction-rules.json"] as const) {
+      expect(
+        validateDesignSystemJson(fileKind, {
+          rules: [entry({ value: { statement: "Motion stays quiet." } })]
         })
-      ]
-    };
-    expect(
-      validateDesignSystemJson("interaction-rules.json", interaction).ok
-    ).toBe(true);
-
-    const invalid = {
-      rules: [
-        entry({
-          value: {
-            statement: "Keep focus visible",
-            accessibility: "visible focus"
-          }
-        })
-      ]
-    };
-    expect(
-      validateDesignSystemJson("interaction-rules.json", invalid)
-    ).toMatchObject({
-      ok: false,
-      reason: "invalid_field_type",
-      details: { field: "value.accessibility", expected: "array" }
-    });
-
-    const componentBound = {
-      rules: [
-        entry({
-          value: {
-            statement: "Underline TextLink on hover",
-            states: [{ state: "hover", behavior: "Underline" }]
-          }
-        })
-      ]
-    };
-    expect(
-      validateDesignSystemJson("interaction-rules.json", componentBound).ok
-    ).toBe(true);
-  });
-
-  test("keeps rich-field writing style as a soft contract", () => {
-    const layout = validRulesJson();
-    Object.assign(layout.rules[0].value, {
-      relationship: [
-        "This remains structurally valid. The schema does not judge prose style."
-      ]
-    });
-
-    expect(validateDesignSystemJson("layout-rules.json", layout).ok).toBe(true);
+      ).toMatchObject({
+        ok: false,
+        reason: "legacy_rule_body_requires_prose",
+        details: {
+          field: "value",
+          expected: "non-empty prose string"
+        }
+      });
+    }
   });
 });
 
@@ -815,7 +762,7 @@ test.describe("layout-rules.json sourceCaptures", () => {
 
   function rulesWith(captures: unknown) {
     return {
-      rules: [entry({ value: { columns: "12", sourceCaptures: captures } })]
+      rules: [entry({ value: "Use a twelve-column grid.", sourceCaptures: captures })]
     };
   }
 
@@ -837,7 +784,7 @@ test.describe("layout-rules.json sourceCaptures", () => {
     ).toMatchObject({
       ok: false,
       reason: "invalid_field_type",
-      details: { field: "value.sourceCaptures", expected: "array" }
+      details: { field: "sourceCaptures", expected: "array" }
     });
   });
 
@@ -851,7 +798,7 @@ test.describe("layout-rules.json sourceCaptures", () => {
         ok: false,
         reason: "invalid_field_type",
         details: {
-          field: `value.sourceCaptures[0].${field}`,
+          field: `sourceCaptures[0].${field}`,
           expected: "non-empty string"
         }
       });
@@ -864,7 +811,7 @@ test.describe("layout-rules.json sourceCaptures", () => {
         ok: false,
         reason: "invalid_field_type",
         details: {
-          field: `value.sourceCaptures[0].${field}`,
+          field: `sourceCaptures[0].${field}`,
           expected: "non-empty string"
         }
       });
@@ -882,7 +829,7 @@ test.describe("layout-rules.json sourceCaptures", () => {
         ok: false,
         reason: "invalid_field_type",
         details: {
-          field: `value.sourceCaptures[0].${field}`,
+          field: `sourceCaptures[0].${field}`,
           expected: "non-empty string"
         }
       });
@@ -912,7 +859,7 @@ test.describe("layout-rules.json sourceCaptures", () => {
       ok: false,
       reason: "invalid_field_type",
       details: {
-        field: "value.sourceCaptures[0].nodeRect",
+        field: "sourceCaptures[0].nodeRect",
         expected: "object"
       }
     });
@@ -933,7 +880,7 @@ test.describe("layout-rules.json sourceCaptures", () => {
         ok: false,
         reason: "invalid_field_type",
         details: {
-          field: `value.sourceCaptures[0].nodeRect.${field}`,
+          field: `sourceCaptures[0].nodeRect.${field}`,
           expected: "number"
         }
       });
@@ -958,7 +905,7 @@ test.describe("layout-rules.json sourceCaptures", () => {
       ).toMatchObject({
         ok: false,
         reason: "invalid_field_type",
-        details: { field: "value.sourceCaptures[0].nodeRect" }
+        details: { field: "sourceCaptures[0].nodeRect" }
       });
     }
   });
@@ -982,11 +929,11 @@ test.describe("layout-rules.json sourceCaptures", () => {
     ).toMatchObject({
       ok: false,
       reason: "invalid_field_type",
-      details: { field: "value.sourceCaptures[0]", expected: "object" }
+      details: { field: "sourceCaptures[0]", expected: "object" }
     });
   });
 
-  test("interaction rich-object shape no longer triggers a taxonomy hard reject", () => {
+  test("interaction rich-object shape receives the prose migration error", () => {
     expect(
       validateDesignSystemJson("interaction-rules.json", {
         rules: [
@@ -997,8 +944,8 @@ test.describe("layout-rules.json sourceCaptures", () => {
             }
           })
         ]
-      }).ok
-    ).toBe(true);
+      })
+    ).toMatchObject({ ok: false, reason: "legacy_rule_body_requires_prose" });
   });
 });
 
@@ -1057,7 +1004,7 @@ test.describe("declaration wiring (deep checkFile seam)", () => {
         [
           "design-system/interaction-rules.json",
           "interaction-rules.json",
-          { rules: [entry({ value: { statement: "Motion stays quiet" } })] }
+          { rules: [entry({ value: "Motion stays quiet." })] }
         ]
       ];
       for (const [rel, artifactType, content] of files) {

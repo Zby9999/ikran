@@ -61,6 +61,7 @@ test("record_artifact_written is discoverable and declares a written file", asyn
     client = handle.client;
     const names = (await client.listTools()).tools.map((tool) => tool.name);
     expect(names).toContain("record_artifact_written");
+    expect(names).toContain("propose_rule_update");
 
     const opened = structuredContent(await client.callTool({
       name: "create_or_open_project",

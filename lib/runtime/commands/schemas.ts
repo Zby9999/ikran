@@ -236,6 +236,19 @@ export const editDesignSystemEntryInputSchema = z.object(
   editDesignSystemEntryInputShape
 );
 
+export const proposeRuleUpdateInputShape = {
+  sourceArtifactPath: z.string(),
+  entryId: z.string(),
+  proposedTargetPath: z.string(),
+  reason: z.string(),
+  affectedItems: z.array(z.string()),
+  evidenceRecordIds: z.array(z.string())
+} as const;
+
+export const proposeRuleUpdateInputSchema = z.object(
+  proposeRuleUpdateInputShape
+);
+
 const alignmentEvidenceLinkShape = {
   seedReferenceId: z.string(),
   evidenceSurfaceId: z.string(),

@@ -20,7 +20,9 @@ const CONFLICT_REASONS = new Set([
   "already_formalized",
   "already_exists",
   "entry_not_in_source_file",
-  "concurrent_edit_superseded"
+  "concurrent_edit_superseded",
+  "source_db_drift",
+  "concurrent_source_changed"
 ]);
 const NOT_FOUND_REASONS = new Set(["not_found"]);
 const GONE_REASONS = new Set(["endpoint_retired"]);

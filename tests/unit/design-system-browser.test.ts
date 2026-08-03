@@ -136,7 +136,7 @@ function fixtureView(): DesignSystemView {
           file_kind: "design-system.json",
           section: "foundations.principles",
           name: null,
-          value: { statement: "Evidence before inference" },
+          value: "Evidence before inference.",
           meaning: "Rules must trace to seed evidence",
           status: "candidate"
         })
@@ -400,6 +400,18 @@ describe("FoundationsHomePage", () => {
     // Cards, not spec rows.
     expect(html).not.toContain('data-testid="ds-row-p1"');
   });
+
+  test("offers the same inline title and body editors for global principles", () => {
+    const model = buildDesignSystemBrowserModel(fixtureView());
+    const html = renderToStaticMarkup(
+      createElement(FoundationsHomePage, {
+        model,
+        rows: rowSharedProps({ onEditEntry: vi.fn() })
+      })
+    );
+    expect(html).toContain('data-testid="ds-edit-title-p1"');
+    expect(html).toContain('data-testid="ds-edit-body-p1"');
+  });
 });
 
 describe("TokenLeafPage", () => {
@@ -411,10 +423,7 @@ describe("TokenLeafPage", () => {
         name: "no-shadow-regions",
         kind: "domain-rule",
         domain: "shadow",
-        value: {
-          statement: "Do not use shadows to separate regions.",
-          rationale: "Hierarchy should come from spacing."
-        },
+        value: "Do not use shadows to separate regions; hierarchy comes from spacing.",
         meaning: "Keep material treatment flat.",
         status: "candidate"
       }),
@@ -444,7 +453,7 @@ describe("TokenLeafPage", () => {
     expect(rulesAt).toBeGreaterThan(-1);
     expect(tokensAt).toBeGreaterThan(rulesAt);
     expect(html).toContain('data-testid="ds-domain-rule-1"');
-    expect(html).toContain("Do not use shadows to separate regions.");
+    expect(html).toContain("Do not use shadows to separate regions; hierarchy comes from spacing.");
     expect(html).toContain('data-testid="ds-row-semantic.radius.card"');
     expect(html).not.toContain("No tokens classified here yet");
 
@@ -503,15 +512,7 @@ describe("RulesLeafPage interaction ledger (09C-D01)", () => {
         file_kind: "interaction-rules.json",
         section: "interaction",
         name: "Quiet motion",
-        value: {
-          statement: "Motion stays quiet",
-          description: "Motion explains a change without becoming the subject.",
-          behavior: [
-            "Use short feedback for state changes.",
-            "Avoid decorative loops."
-          ],
-          accessibility: ["Preserve the same information with reduced motion."]
-        },
+        value: "Motion explains change without becoming the subject. Use short feedback for state changes, avoid decorative loops, and preserve the same information with reduced motion.",
         meaning: "Animation supports comprehension.",
         status: "candidate",
         source_artifact_path: "design-system/interaction-rules.json"
@@ -526,11 +527,12 @@ describe("RulesLeafPage interaction ledger (09C-D01)", () => {
     );
 
     expect(html).toContain('data-testid="ds-interaction-rule-1"');
-    expect(html).toContain("Motion stays quiet");
+    expect(html).toContain("Animation supports comprehension.");
+    expect(html).toContain("Motion explains change without becoming the subject.");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('aria-controls="ds-interaction-details-quiet-motion"');
     expect(html).not.toContain("Description");
-    expect(html).toContain("Use short feedback for state changes.");
+    expect(html).toContain("Use short feedback for state changes, avoid decorative loops");
     expect(html).toContain("Animation supports comprehension.");
     expect(html).toContain('data-status="candidate"');
     expect(html).not.toContain('aria-label="Evidence for interaction rule quiet-motion"');
@@ -637,10 +639,7 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
         name: "negative-title-tracking",
         kind: "domain-rule",
         domain: "typography",
-        value: {
-          statement: "Titles use negative tracking.",
-          appliesTo: "Display and heading roles"
-        },
+        value: "Display and heading roles use negative tracking.",
         meaning: "Keep large type visually cohesive."
       })
     );
@@ -655,7 +654,7 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
     const tokensAt = html.indexOf('data-testid="ds-tokens-zone"');
     expect(rulesAt).toBeGreaterThan(-1);
     expect(tokensAt).toBeGreaterThan(rulesAt);
-    expect(html).toContain("Titles use negative tracking.");
+    expect(html).toContain("Display and heading roles use negative tracking.");
   });
 
   test("groups readable specimens into Type and Component sections", () => {
@@ -967,7 +966,7 @@ describe("SpecRowView object values (09C-A: no raw JSON in the reading layer)", 
 });
 
 describe("FoundationsHomePage rich principles (09B shapes, 09C-A reading)", () => {
-  test("rich statement objects project into labeled fields; legacy stays flat", () => {
+  test("principles project meaning as title and prose value as body", () => {
     const view = fixtureView();
     view.foundations.principles = [
       entry({
@@ -975,14 +974,7 @@ describe("FoundationsHomePage rich principles (09B shapes, 09C-A reading)", () =
         file_kind: "design-system.json",
         section: "foundations.principles",
         name: null,
-        value: {
-          statement: "Design with intent.",
-          rationale: "Every choice needs a reason.",
-          scope: "All product surfaces",
-          use: ["State the reason"],
-          avoid: ["Decoration without job"],
-          exceptions: ["Marketing one-offs"]
-        },
+        value: "Design with intent. Every choice needs an evidence-backed reason.",
         meaning: "Intent over decoration",
         status: "candidate"
       }),
@@ -991,7 +983,7 @@ describe("FoundationsHomePage rich principles (09B shapes, 09C-A reading)", () =
         file_kind: "design-system.json",
         section: "foundations.principles",
         name: null,
-        value: { statement: "Evidence before inference" },
+        value: "Evidence before inference.",
         meaning: "Rules must trace to seed evidence",
         status: "formalized"
       })
@@ -1003,17 +995,10 @@ describe("FoundationsHomePage rich principles (09B shapes, 09C-A reading)", () =
         rows: rowSharedProps()
       })
     );
-    // Rich card: statement + labeled rationale/scope/use/avoid/exceptions.
     expect(html).toContain('data-testid="ds-principle-p-rich"');
+    expect(html).toContain("Intent over decoration");
     expect(html).toContain("Design with intent.");
-    expect(html).toContain("Rationale");
-    expect(html).toContain("Every choice needs a reason.");
-    expect(html).toContain("Scope");
-    expect(html).toContain("All product surfaces");
-    expect(html).toContain("State the reason");
-    expect(html).toContain("Decoration without job");
-    expect(html).toContain("Marketing one-offs");
-    // Legacy card: flat statement, no rich field labels bleeding out.
+    expect(html).toContain("Every choice needs an evidence-backed reason.");
     expect(html).toContain('data-testid="ds-principle-p-legacy"');
     expect(html).toContain("Evidence before inference");
   });

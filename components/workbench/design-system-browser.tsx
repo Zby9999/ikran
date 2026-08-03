@@ -40,6 +40,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
 import { subscribeRuntimeEvents } from "@/components/runtime/runtime-client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Collapsible,
   CollapsibleContent,
@@ -608,8 +610,9 @@ function RuleTitleEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
   if (!rows.onEditEntry) return null;
   if (!editing) {
     return (
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="xs"
         className="dsb-rule-edit-button"
         data-testid={`ds-edit-title-${row.entryId}`}
         onClick={() => {
@@ -619,7 +622,7 @@ function RuleTitleEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
         }}
       >
         Edit title
-      </button>
+      </Button>
     );
   }
 
@@ -640,7 +643,7 @@ function RuleTitleEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
       <label className="dsb-rule-edit-label" htmlFor={`rule-title-${safeDomId(row.key)}`}>
         Rule title
       </label>
-      <input
+      <Input
         id={`rule-title-${safeDomId(row.key)}`}
         className="dsb-rule-edit-input"
         value={draft}
@@ -649,10 +652,12 @@ function RuleTitleEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
         onChange={(event) => setDraft(event.target.value)}
       />
       <span className="dsb-rule-edit-actions">
-        <button type="submit" disabled={pending || draft.trim().length === 0}>
+        <Button type="submit" size="xs" disabled={pending || draft.trim().length === 0}>
           {pending ? "Saving…" : "Save"}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          size="xs"
           type="button"
           disabled={pending}
           onClick={() => {
@@ -662,7 +667,7 @@ function RuleTitleEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
           }}
         >
           Cancel
-        </button>
+        </Button>
       </span>
       {error ? <span className="dsb-rule-edit-error" role="alert">{error}</span> : null}
     </form>
@@ -683,8 +688,9 @@ function RuleBodyEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
   if (!rows.onEditEntry || body === null) return null;
   if (!editing) {
     return (
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="xs"
         className="dsb-rule-edit-button"
         data-testid={`ds-edit-body-${row.entryId}`}
         onClick={() => {
@@ -694,7 +700,7 @@ function RuleBodyEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
         }}
       >
         Edit body
-      </button>
+      </Button>
     );
   }
   return (
@@ -714,7 +720,7 @@ function RuleBodyEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
       <label className="dsb-rule-edit-label" htmlFor={`rule-body-${safeDomId(row.key)}`}>
         Rule body
       </label>
-      <textarea
+      <Textarea
         id={`rule-body-${safeDomId(row.key)}`}
         className="dsb-rule-edit-textarea"
         value={draft}
@@ -724,10 +730,12 @@ function RuleBodyEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
         onChange={(event) => setDraft(event.target.value)}
       />
       <span className="dsb-rule-edit-actions">
-        <button type="submit" disabled={pending || draft.trim().length === 0}>
+        <Button type="submit" size="xs" disabled={pending || draft.trim().length === 0}>
           {pending ? "Saving…" : "Save"}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          size="xs"
           type="button"
           disabled={pending}
           onClick={() => {
@@ -737,7 +745,7 @@ function RuleBodyEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
           }}
         >
           Cancel
-        </button>
+        </Button>
       </span>
       {error ? <span className="dsb-rule-edit-error" role="alert">{error}</span> : null}
     </form>
@@ -812,10 +820,7 @@ const FOUNDATIONS_LEAVES: {
 
 /* ------------------------------- home pages ------------------------------- */
 
-/** Principle rule card (09A: principles 规则卡 on Foundations Home — cards in
- * the prototype's LeafCard visual language, not spec rows). Rich values
- * (09B: statement / rationale / scope / use / avoid / exceptions) project
- * into readable fields (09C-A); chip + ⓘ evidence affordance in the footer. */
+/** Principle rule card: meaning is the stable title and value is prose. */
 function PrincipleCard({
   row,
   approval,
@@ -832,66 +837,10 @@ function PrincipleCard({
       data-testid={`ds-principle-${row.entryId}`}
       data-approve-error={approval.kind === "error" || undefined}
     >
-      <span className="dsb-card-title">{principle.statement}</span>
-      {row.meaning ? (
-        <span className="dsb-card-desc">{row.meaning}</span>
-      ) : null}
-      {principle.isRich ? (
-        <div className="dsb-principle-fields">
-          {principle.rationale ? (
-            <span className="dsb-principle-field">
-              <span className="dsb-principle-field-label">Rationale</span>
-              <p className="dsb-principle-field-text">{principle.rationale}</p>
-            </span>
-          ) : null}
-          {principle.scope ? (
-            <span className="dsb-principle-field">
-              <span className="dsb-principle-field-label">Scope</span>
-              <p className="dsb-principle-field-text">{principle.scope}</p>
-            </span>
-          ) : null}
-          {principle.use.length > 0 ? (
-            <span className="dsb-principle-field">
-              <span className="dsb-principle-field-label">Use</span>
-              <ul className="dsb-principle-list">
-                {principle.use.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </span>
-          ) : null}
-          {principle.avoid.length > 0 ? (
-            <span className="dsb-principle-field">
-              <span className="dsb-principle-field-label">Avoid</span>
-              <ul className="dsb-principle-list">
-                {principle.avoid.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </span>
-          ) : null}
-          {principle.exceptions.length > 0 ? (
-            <span className="dsb-principle-field">
-              <span className="dsb-principle-field-label">Exceptions</span>
-              <ul className="dsb-principle-list">
-                {principle.exceptions.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </span>
-          ) : null}
-          {principle.extraFields
-            ? principle.extraFields.map((field) => (
-                <span key={field.label} className="dsb-principle-field">
-                  <span className="dsb-principle-field-label">
-                    {field.label}
-                  </span>
-                  <p className="dsb-principle-field-text">{field.text}</p>
-                </span>
-              ))
-            : null}
-        </div>
-      ) : null}
+      <span className="dsb-card-title">{principle.title}</span>
+      <span className="dsb-card-desc">{principle.body}</span>
+      <RuleTitleEditor row={row} rows={rows} />
+      <RuleBodyEditor row={row} rows={rows} />
       <div className="dsb-principle-footer">
         <StatusChip status={row.status} />
         <InfoPopover

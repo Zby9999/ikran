@@ -23,4 +23,4 @@ Status: resolved
 
 Domain / Interaction 已统一为 `meaning` 标题 + 正文；旧 `statement` 提升、点路径展开、字段数组拼接全部删除。Layout projection 删除所有 key/name-driven facts 识别与 facts 行，只保留标题、正文、capture、stale 与 provenance caption。
 
-expand 过渡期的旧对象仅通过通用递归文本降级显示，不读取任何富字段语义，也不输出裸 JSON；相关投影与 Browser 单测已重写为新 contract。完整 `npm run check` 将在 19–23 收尾统一执行。
+expand 过渡期的旧对象仅通过通用递归文本降级显示，不读取任何富字段语义，也不输出裸 JSON；相关投影与 Browser 单测已重写为新 contract。19–23 收尾时完整 `npm run check` 已通过。

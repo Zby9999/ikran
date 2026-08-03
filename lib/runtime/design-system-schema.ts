@@ -7,8 +7,8 @@
 //   - File layout under `design-system/`: design-system.json, token.json,
 //     component-list.json, components/<name>.json, layout-rules.json,
 //     interaction-rules.json.
-//   - Every rule / token / component entry carries `value` (structured
-//     payload, shape per file kind), `meaning` (one-line semantics), `status`
+//   - Every rule / token / component entry carries `value` (prose for rules,
+//     structured payload for tokens/components), `meaning` (one-line semantics), `status`
 //     ("formalized" | "candidate" | "gap") and `links` (answered question
 //     card ids / Agent annotation ids). Non-gap entries must link at least
 //     one record; gap entries carry none — the gap declaration itself is the
@@ -78,6 +78,7 @@ export type DesignSystemSchemaReason =
   | "gap_must_not_link"
   | "invalid_entry_kind"
   | "entry_kind_file_mismatch"
+  | "legacy_rule_body_requires_prose"
   | "domain_rule_domain_required"
   | "invalid_token_domain"
   | "token_primitive_alias"
@@ -113,6 +114,27 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function validateRuleBody(
+  value: unknown,
+  ctx: Record<string, unknown>
+): DesignSystemSchemaError | null {
+  if (isNonEmptyString(value)) return null;
+  if (isPlainObject(value)) {
+    return fail("legacy_rule_body_requires_prose", {
+      ...ctx,
+      field: "value",
+      expected: "non-empty prose string",
+      migration:
+        "Merge the legacy rule fields into value as prose. Keep layout sourceCaptures on the rule entry itself."
+    });
+  }
+  return fail("invalid_field_type", {
+    ...ctx,
+    field: "value",
+    expected: "non-empty prose string"
+  });
 }
 
 /** Required non-empty string field on `entry`. */
@@ -334,34 +356,6 @@ export const RICH_COMPONENT_SPEC_FIELDS = [
   "openGaps"
 ] as const;
 
-export const RICH_PRINCIPLE_STRING_FIELDS = [
-  "rationale",
-  "scope"
-] as const;
-export const RICH_PRINCIPLE_COLLECTION_FIELDS = [
-  "use",
-  "avoid",
-  "exceptions"
-] as const;
-export const RICH_LAYOUT_RULE_FIELDS = [
-  "relationship",
-  "responsiveBehavior",
-  "tokenLinks",
-  "acceptanceChecks"
-] as const;
-export const RICH_INTERACTION_RULE_STRING_FIELDS = [
-  "statement",
-  "description"
-] as const;
-export const RICH_INTERACTION_RULE_COLLECTION_FIELDS = [
-  "behavior",
-  "accessibility"
-] as const;
-export const RICH_INTERACTION_RULE_FIELDS = [
-  ...RICH_INTERACTION_RULE_STRING_FIELDS,
-  ...RICH_INTERACTION_RULE_COLLECTION_FIELDS
-] as const;
-
 const ALLOWED_ALIAS_TARGET_LAYERS: Record<TokenLayer, readonly TokenLayer[]> =
   {
     primitive: [],
@@ -463,6 +457,9 @@ function validateTokenJson(json: Record<string, unknown>): DesignSystemSchemaRes
         allowedKinds: entryKindsAllowedIn("token.json"),
         domainRuleRequiresDomain: true,
         checkValue: (value) => {
+          if (raw.kind === "domain-rule") {
+            return validateRuleBody(value, ctx);
+          }
           if (value === null) {
             return fail("invalid_field_type", { ...ctx, field: "value", expected: "non-null" });
           }
@@ -557,33 +554,7 @@ function validateDesignSystemMeta(
 
   return (
     checkEntryArray(json.principles, "principles", (value, ctx) => {
-      if (!isPlainObject(value)) {
-        return fail("invalid_field_type", { ...ctx, field: "value", expected: "object" });
-      }
-      const statementFailure = requireString(value, "statement", {
-        ...ctx,
-        field: "value"
-      });
-      if (statementFailure) return statementFailure;
-      for (const field of RICH_PRINCIPLE_STRING_FIELDS) {
-        if (value[field] !== undefined && !isNonEmptyString(value[field])) {
-          return fail("invalid_field_type", {
-            ...ctx,
-            field: `value.${field}`,
-            expected: "non-empty string"
-          });
-        }
-      }
-      for (const field of RICH_PRINCIPLE_COLLECTION_FIELDS) {
-        if (value[field] !== undefined && !Array.isArray(value[field])) {
-          return fail("invalid_field_type", {
-            ...ctx,
-            field: `value.${field}`,
-            expected: "array"
-          });
-        }
-      }
-      return null;
+      return validateRuleBody(value, ctx);
     }, ["global-rule"]) ?? { ok: true }
   );
 }
@@ -677,39 +648,11 @@ function validateComponentSpec(
 
 function validateRulesFile(
   json: Record<string, unknown>,
-  fileKind: "layout-rules.json" | "interaction-rules.json",
-  collectionFields: readonly string[],
-  stringFields: readonly string[] = []
+  fileKind: "layout-rules.json" | "interaction-rules.json"
 ): DesignSystemSchemaResult {
   return (
     checkEntryArray(json.rules, "rules", (value, ctx) => {
-      if (isNonEmptyString(value)) return null;
-      if (!isPlainObject(value)) {
-        return fail("invalid_field_type", {
-          ...ctx,
-          field: "value",
-          expected: "non-empty prose string or legacy object"
-        });
-      }
-      for (const field of stringFields) {
-        if (value[field] !== undefined && !isNonEmptyString(value[field])) {
-          return fail("invalid_field_type", {
-            ...ctx,
-            field: `value.${field}`,
-            expected: "non-empty string"
-          });
-        }
-      }
-      for (const field of collectionFields) {
-        if (value[field] !== undefined && !Array.isArray(value[field])) {
-          return fail("invalid_field_type", {
-            ...ctx,
-            field: `value.${field}`,
-            expected: "array"
-          });
-        }
-      }
-      return null;
+      return validateRuleBody(value, ctx);
     }, entryKindsAllowedIn(fileKind)) ?? { ok: true }
   );
 }
@@ -718,9 +661,8 @@ function validateRulesFile(
 // Layout rule source captures (09C-D02)
 // ---------------------------------------------------------------------------
 
-/** Rule → Figma node screenshot provenance. Captures are structured records,
- * not writing-style constraint sentences, so the field lives outside
- * RICH_LAYOUT_RULE_FIELDS and gets its own item shape check below. */
+/** Rule → Figma node screenshot provenance. Captures are structured records
+ * outside the prose body and get their own item shape check below. */
 export const LAYOUT_RULE_CAPTURE_FIELD = "sourceCaptures";
 export const LAYOUT_RULE_CAPTURE_REQUIRED_FIELDS = [
   "nodeName",
@@ -807,30 +749,22 @@ function validateCaptureNodeRect(
 function validateLayoutRulesFile(
   json: Record<string, unknown>
 ): DesignSystemSchemaResult {
-  const base = validateRulesFile(
-    json,
-    "layout-rules.json",
-    RICH_LAYOUT_RULE_FIELDS
-  );
+  const base = validateRulesFile(json, "layout-rules.json");
   if (!base.ok) return base;
-  // Captures stay structured outside the prose body. During expand, legacy
-  // value.sourceCaptures remains accepted alongside top-level sourceCaptures.
+  // Captures stay structured outside the prose body.
   const rules = json.rules as Record<string, unknown>[];
   for (const rule of rules) {
-    const value = rule.value;
-    const captures =
-      rule[LAYOUT_RULE_CAPTURE_FIELD] ??
-      (isPlainObject(value) ? value[LAYOUT_RULE_CAPTURE_FIELD] : undefined);
+    const captures = rule[LAYOUT_RULE_CAPTURE_FIELD];
     if (captures === undefined) continue;
     if (!Array.isArray(captures)) {
       return fail("invalid_field_type", {
-        field: `value.${LAYOUT_RULE_CAPTURE_FIELD}`,
+        field: LAYOUT_RULE_CAPTURE_FIELD,
         expected: "array"
       });
     }
     for (let i = 0; i < captures.length; i++) {
       const item = captures[i];
-      const itemField = `value.${LAYOUT_RULE_CAPTURE_FIELD}[${i}]`;
+      const itemField = `${LAYOUT_RULE_CAPTURE_FIELD}[${i}]`;
       if (!isPlainObject(item)) {
         return fail("invalid_field_type", {
           field: itemField,
@@ -874,12 +808,7 @@ const FILE_KIND_VALIDATORS: Record<
   "component-spec": validateComponentSpec,
   "layout-rules.json": validateLayoutRulesFile,
   "interaction-rules.json": (json) =>
-    validateRulesFile(
-      json,
-      "interaction-rules.json",
-      RICH_INTERACTION_RULE_COLLECTION_FIELDS,
-      RICH_INTERACTION_RULE_STRING_FIELDS
-    )
+    validateRulesFile(json, "interaction-rules.json")
 };
 
 export function validateDesignSystemJson(

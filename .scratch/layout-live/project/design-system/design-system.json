@@ -14,20 +14,8 @@
   "principles": [
     {
       "id": "principle-intent",
-      "value": {
-        "statement": "Design with intent.",
-        "rationale": "Every choice needs a reason the designer can repeat.",
-        "scope": "All product surfaces",
-        "use": [
-          "State the reason next to the choice"
-        ],
-        "avoid": [
-          "Decoration without a job"
-        ],
-        "exceptions": [
-          "Marketing one-offs"
-        ]
-      },
+      "kind": "global-rule",
+      "value": "Design with intent across all product surfaces. Every choice needs a reason the designer can repeat; state that reason next to the choice and avoid decoration without a job. Marketing one-offs may be treated as exceptions.",
       "meaning": "Intent over decoration",
       "status": "candidate",
       "links": [

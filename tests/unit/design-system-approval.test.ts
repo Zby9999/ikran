@@ -201,28 +201,28 @@ function writeApprovalFixtures(dir: string) {
     principles: [
       {
         id: "p1",
-        value: { statement: "少即是多" },
+        value: "少即是多。",
         meaning: "克制",
         status: "candidate",
         links: ["card-edited"]
       },
       {
         id: "p2",
-        value: { statement: "一致性优先" },
+        value: "一致性优先。",
         meaning: "一致性",
         status: "candidate",
         links: ["card-edited"]
       },
       {
         id: "p3",
-        value: { statement: "Agent 推断的原则" },
+        value: "Agent 推断的原则。",
         meaning: "仅 annotation 支撑",
         status: "candidate",
         links: ["ann-reasonable"]
       },
       {
         id: "p4",
-        value: { statement: "待定" },
+        value: "待定。",
         meaning: "显式缺口",
         status: "gap",
         links: []
@@ -265,7 +265,7 @@ function writeApprovalFixtures(dir: string) {
     rules: [
       {
         id: "layout-1",
-        value: { rule: "12 列主栅格" },
+        value: "使用 12 列主栅格。",
         meaning: "主栅格",
         status: "candidate",
         links: ["card-edited"]
@@ -276,14 +276,14 @@ function writeApprovalFixtures(dir: string) {
     rules: [
       {
         id: "ix-1",
-        value: { statement: "待定" },
+        value: "待定。",
         meaning: "显式缺口",
         status: "gap",
         links: []
       },
       {
         id: "ix-2",
-        value: { statement: "Transitions use 150ms ease-out." },
+        value: "Transitions use 150ms ease-out.",
         meaning: "标准过渡",
         status: "candidate",
         links: ["card-edited"]
@@ -351,10 +351,7 @@ describe("approveDesignSystemEntry happy path", () => {
           "no-shadow-regions": {
             kind: "domain-rule",
             domain: "shadow",
-            value: {
-              statement: "Do not use shadows to separate regions.",
-              rationale: "Use spacing and borders."
-            },
+            value: "Do not use shadows to separate regions; use spacing and borders.",
             meaning: "Keep material treatment flat.",
             status: "candidate",
             links: ["card-edited"]
@@ -384,10 +381,7 @@ describe("approveDesignSystemEntry happy path", () => {
         kind: "domain-rule",
         domain: "shadow",
         status: "formalized",
-        value: {
-          statement: "Do not use shadows to separate regions.",
-          rationale: "Use spacing and borders."
-        }
+        value: "Do not use shadows to separate regions; use spacing and borders."
       });
 
       const view = getDesignSystemView(dir);

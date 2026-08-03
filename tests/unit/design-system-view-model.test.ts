@@ -4,6 +4,7 @@ import type { DesignIntentAlignmentSnapshot } from "@/lib/runtime/design-intent-
 import {
   approvalErrorMessage,
   approvalReducer,
+  buildColorLeafModel,
   buildDesignSystemBrowserModel,
   canOpenDesignSystemBrowser,
   classifyToken,
@@ -73,7 +74,7 @@ function fixtureView(): DesignSystemView {
           file_kind: "design-system.json",
           section: "foundations.principles",
           name: null,
-          value: { statement: "Evidence before inference" },
+          value: "Evidence before inference.",
           status: "candidate"
         })
       ]
@@ -186,7 +187,7 @@ describe("row value mapping", () => {
     expect(formatEntryValue(entry({ value: "10px" }))).toBe("10px");
     expect(formatEntryValue(entry({ value: 12 }))).toBe("12");
     expect(
-      formatEntryValue(entry({ value: { statement: "Evidence first" } }))
+      formatEntryValue(entry({ value: { summary: "Evidence first" } }))
     ).toBe("Evidence first");
     expect(
       formatEntryValue(entry({ value: { columns: 12, gap: 24 } }))
@@ -251,7 +252,7 @@ describe("buildDesignSystemBrowserModel", () => {
         name: "color.no-shadow",
         kind: "domain-rule",
         domain: "shadow",
-        value: { statement: "Do not use shadows to separate regions." },
+        value: "Do not use shadows to separate regions.",
         meaning: "Prefer spacing and borders.",
         status: "candidate"
       })
@@ -303,7 +304,7 @@ describe("buildDesignSystemBrowserModel", () => {
       "Quiet, editorial surfaces."
     );
     expect(model.foundations.principles.map((row) => row.value)).toEqual([
-      "Evidence before inference"
+      "Evidence before inference."
     ]);
 
     // Token leaves: classification + layer grouping.
@@ -369,6 +370,170 @@ describe("buildDesignSystemBrowserModel", () => {
     expect(model.components.list).toHaveLength(1);
     expect(model.components.list[0]!.leafId).toBe("component:button");
     expect(model.components.list[0]!.spec?.entry_id).toBe("button-spec");
+  });
+});
+
+describe("buildColorLeafModel (color page redesign)", () => {
+  function colorView(): DesignSystemView {
+    const view = emptyView();
+    view.tokens.primitive = [
+      entry({
+        entry_id: "primitive.gray.800",
+        section: "token.primitive",
+        name: "gray.800",
+        kind: "token",
+        domain: "color",
+        value: "#3D3D3D",
+        meaning: ""
+      }),
+      entry({
+        entry_id: "primitive.blue.500",
+        section: "token.primitive",
+        name: "blue.500",
+        kind: "token",
+        domain: "color",
+        value: "#3A93FF",
+        meaning: ""
+      }),
+      entry({
+        entry_id: "primitive.pink.400",
+        section: "token.primitive",
+        name: "pink.400",
+        kind: "token",
+        domain: "color",
+        value: "#F968AD",
+        meaning: ""
+      }),
+      entry({
+        entry_id: "primitive.font.body",
+        section: "token.primitive",
+        name: "font.body",
+        kind: "token",
+        domain: "typography",
+        value: "16/1.6",
+        meaning: "Body text style"
+      })
+    ];
+    view.tokens.semantic = [
+      entry({
+        entry_id: "semantic.ink.primary",
+        name: "ink.primary",
+        kind: "token",
+        domain: "color",
+        value: { alias: "primitive.gray.800" },
+        alias: "primitive.gray.800",
+        meaning: "主要文字与标题。"
+      }),
+      entry({
+        entry_id: "semantic.accent.solid",
+        name: "accent.solid",
+        kind: "token",
+        domain: "color",
+        value: "#3A93FF",
+        meaning: "主要行动与选中态。"
+      }),
+      entry({
+        entry_id: "semantic.divider.subtle",
+        name: "divider.subtle",
+        kind: "token",
+        domain: "color",
+        value: null,
+        meaning: "面板边界。",
+        status: "gap"
+      }),
+      entry({
+        entry_id: "semantic.color.no-warm",
+        name: "color.no-warm",
+        kind: "domain-rule",
+        domain: "color",
+        value: "Do not use warm neutrals on canvas.",
+        meaning: "Canvas stays on the cool gray ramp."
+      })
+    ];
+    view.tokens.component = [
+      entry({
+        entry_id: "component.annotation.agent",
+        name: "annotation.agent",
+        kind: "token",
+        domain: "color",
+        value: { alias: "semantic.ink.primary" },
+        alias: "semantic.ink.primary",
+        meaning: "Agent Annotation 标注色。"
+      }),
+      entry({
+        entry_id: "component.bridge.link",
+        name: "bridge.link",
+        kind: "token",
+        domain: "color",
+        value: { alias: "primitive.missing.999" },
+        alias: "primitive.missing.999",
+        meaning: "Bridge 连接指示。"
+      })
+    ];
+    return view;
+  }
+
+  test("resolves alias chains to a concrete color + terminal source name", () => {
+    const model = buildColorLeafModel(colorView());
+    expect(model.semantic[0]).toMatchObject({
+      name: "ink.primary",
+      hex: "#3D3D3D",
+      source: "gray.800",
+      meaning: "主要文字与标题。"
+    });
+    // component → semantic → primitive chain ends at the primitive.
+    expect(model.component[0]).toMatchObject({
+      name: "annotation.agent",
+      hex: "#3D3D3D",
+      source: "gray.800"
+    });
+  });
+
+  test("concrete tokens carry their own hex with no source; gaps and dangling aliases are unresolved", () => {
+    const model = buildColorLeafModel(colorView());
+    expect(model.semantic[1]).toMatchObject({
+      name: "accent.solid",
+      hex: "#3A93FF",
+      source: null
+    });
+    expect(model.semantic[2]).toMatchObject({
+      name: "divider.subtle",
+      hex: null,
+      source: null,
+      status: "gap"
+    });
+    expect(model.component[1]).toMatchObject({
+      name: "bridge.link",
+      hex: null,
+      source: null
+    });
+  });
+
+  test("domain rules split out; rows keep the full DsRow for evidence/approval", () => {
+    const model = buildColorLeafModel(colorView());
+    expect(model.rules.map((row) => row.entryId)).toEqual([
+      "semantic.color.no-warm"
+    ]);
+    expect(model.semantic[0]!.row.entryId).toBe("semantic.ink.primary");
+    expect(model.component).toHaveLength(2);
+  });
+
+  test("unconsumed = color primitives with no incoming alias, file-wide", () => {
+    const model = buildColorLeafModel(colorView());
+    // gray.800 consumed by semantic.ink.primary; blue.500 + pink.400 not
+    // referenced by any alias. font.body is not a color primitive.
+    expect(model.unconsumed).toEqual([
+      { name: "blue.500", hex: "#3A93FF", status: "formalized" },
+      { name: "pink.400", hex: "#F968AD", status: "formalized" }
+    ]);
+  });
+
+  test("empty view → empty groups, no unconsumed", () => {
+    const model = buildColorLeafModel(emptyView());
+    expect(model.rules).toEqual([]);
+    expect(model.semantic).toEqual([]);
+    expect(model.component).toEqual([]);
+    expect(model.unconsumed).toEqual([]);
   });
 });
 

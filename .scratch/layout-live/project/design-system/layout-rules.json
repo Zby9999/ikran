@@ -2,13 +2,8 @@
   "rules": [
     {
       "id": "grid-page",
-      "value": {
-        "columns": "12",
-        "gutter": {
-          "alias": "spacing.200"
-        },
-        "maxWidth": "1120px"
-      },
+      "kind": "domain-rule",
+      "value": "Use a 12-column page grid with spacing.200 gutters and a maximum width of 1120px.",
       "meaning": "Default page grid",
       "status": "candidate",
       "links": [
@@ -17,14 +12,8 @@
     },
     {
       "id": "shell-regions",
-      "value": {
-        "regions": [
-          "header",
-          "hero",
-          "content",
-          "footer"
-        ]
-      },
+      "kind": "domain-rule",
+      "value": "Stack the page shell vertically as header, hero, content, then footer.",
       "meaning": "Page shell vertical stack",
       "status": "candidate",
       "links": [
@@ -33,9 +22,8 @@
     },
     {
       "id": "section-rhythm",
-      "value": {
-        "heroToNext": "96 → 56px"
-      },
+      "kind": "domain-rule",
+      "value": "Reduce the hero-to-next-section spacing from 96px on desktop to 56px on mobile.",
       "meaning": "Scroll rhythm, desktop → mobile",
       "status": "candidate",
       "links": [
@@ -44,14 +32,8 @@
     },
     {
       "id": "breakpoints",
-      "value": {
-        "breakpoints": [
-          "640",
-          "768",
-          "1024",
-          "1280"
-        ]
-      },
+      "kind": "domain-rule",
+      "value": "Use the same breakpoints as the code source: 640px, 768px, 1024px, and 1280px.",
       "meaning": "Same source as code",
       "status": "formalized",
       "links": [
@@ -60,9 +42,8 @@
     },
     {
       "id": "nav-mobile",
-      "value": {
-        "layout": "—"
-      },
+      "kind": "domain-rule",
+      "value": "The mobile navigation open-state layout is not yet defined.",
       "meaning": "Mobile navigation layout — open state missing",
       "status": "gap",
       "links": []

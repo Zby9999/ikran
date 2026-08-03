@@ -230,14 +230,14 @@ function writeSixFiles(dir: string) {
     principles: [
       {
         id: "p1",
-        value: { statement: "少即是多" },
+        value: "少即是多。",
         meaning: "克制",
         status: "candidate",
         links: ["card-accepted"]
       },
       {
         id: "p2",
-        value: { statement: "待定" },
+        value: "待定。",
         meaning: "尚未确认的原则",
         status: "gap",
         links: []
@@ -291,7 +291,7 @@ function writeSixFiles(dir: string) {
     rules: [
       {
         id: "layout-1",
-        value: { rule: "12 列主栅格" },
+        value: "使用 12 列主栅格。",
         meaning: "主栅格",
         status: "formalized",
         links: ["card-edited"]
@@ -302,7 +302,7 @@ function writeSixFiles(dir: string) {
     rules: [
       {
         id: "ix-1",
-        value: { statement: "Transitions use 150ms ease-out." },
+        value: "Transitions use 150ms ease-out.",
         meaning: "标准过渡",
         status: "gap",
         links: []
@@ -363,7 +363,7 @@ describe("design-system ingest", () => {
           "no-shadow-regions": {
             kind: "domain-rule",
             domain: "shadow",
-            value: { statement: "Do not use shadows to separate regions." },
+            value: "Do not use shadows to separate regions.",
             meaning: "Prefer spacing and borders.",
             status: "candidate",
             links: ["card-accepted"]
@@ -627,14 +627,14 @@ describe("ingest cross-validation gate", () => {
         rules: [
           {
             id: "layout-1",
-            value: { rule: "12 列" },
+            value: "使用 12 列布局。",
             meaning: "annotation 支撑的候选",
             status: "candidate",
             links: ["ann-reasonable"]
           },
           {
             id: "layout-2",
-            value: { rule: "待定" },
+            value: "待定。",
             meaning: "显式缺口",
             status: "gap",
             links: []
@@ -664,7 +664,7 @@ describe("ingest cross-validation gate", () => {
         principles: [
           {
             id: "shared-id",
-            value: { statement: "碰撞" },
+            value: "碰撞。",
             meaning: "与 visualLanguage 撞 id",
             status: "candidate",
             links: ["card-accepted"]
@@ -781,30 +781,15 @@ describe("design-system-view.json derived export", () => {
     });
   });
 
-  test("rich principle, layout, and interaction fields survive the full read path", () => {
+  test("prose principle, layout, and interaction bodies survive the full read path", () => {
     withTempProject((dir) => {
       seedEvidenceCards(dir);
-      const principleValue = {
-        statement: "Typography establishes hierarchy.",
-        rationale: "The Seed is editorial and type-led.",
-        scope: "Product surfaces",
-        use: ["Large display type"],
-        avoid: ["Competing emphasis"],
-        exceptions: []
-      };
-      const layoutValue = {
-        rule: "Display titles lead each section.",
-        relationship: [{ from: "title", to: "content" }],
-        responsiveBehavior: ["Preserve hierarchy at narrow widths."],
-        tokenLinks: ["spacing.section"],
-        acceptanceChecks: ["Title remains the strongest layer."]
-      };
-      const interactionValue = {
-        statement: "Motion stays quiet.",
-        description: "Feedback explains change without competing with content.",
-        behavior: ["Use short state feedback."],
-        accessibility: ["Preserve the same information without motion."]
-      };
+      const principleValue =
+        "Typography establishes hierarchy across product surfaces; use large display type without competing emphasis.";
+      const layoutValue =
+        "Display titles lead each section and remain the strongest layer at narrow widths.";
+      const interactionValue =
+        "Motion stays quiet: use short state feedback and preserve the same information without motion.";
       writeProjectFile(dir, "design-system/design-system.json", {
         name: "Rich rules",
         visualLanguage: {
@@ -1094,7 +1079,8 @@ describe("getDesignSystemView layout captures", () => {
       rules: [
         {
           id: "grid-page",
-          value,
+          value: "Use a twelve-column page grid.",
+          sourceCaptures: value.sourceCaptures,
           meaning: "Page grid",
           status: "candidate",
           links: ["card-accepted"]
@@ -1179,13 +1165,7 @@ describe("getDesignSystemView layout captures", () => {
       // declaration gate.
       const db = new DatabaseSync(getProjectDbPath(dir));
       try {
-        const row = db
-          .prepare(
-            "SELECT value_json FROM design_system_entries WHERE section = 'layout'"
-          )
-          .get() as { value_json: string };
-        const value = JSON.parse(row.value_json) as Record<string, unknown>;
-        value.sourceCaptures = [
+        const malformedCaptures = [
           {
             nodeName: "Stringy",
             artifactPath: "design-system/captures/stringy.png",
@@ -1207,9 +1187,9 @@ describe("getDesignSystemView layout captures", () => {
         ];
         db.prepare(
           `UPDATE design_system_entries
-           SET value_json = ?, source_captures_json = '[]'
+           SET source_captures_json = ?
            WHERE section = 'layout'`
-        ).run(JSON.stringify(value));
+        ).run(JSON.stringify(malformedCaptures));
       } finally {
         db.close();
       }
@@ -1290,16 +1270,14 @@ describe("getDesignSystemView layout captures", () => {
         principles: [
           {
             id: "principle-1",
-            value: {
-              statement: "Type leads.",
-              sourceCaptures: [
-                {
-                  nodeName: "Hero",
-                  artifactPath: "design-system/captures/hero.png",
-                  capturedAt: "2026-08-01T04:00:00.000Z"
-                }
-              ]
-            },
+            value: "Type leads.",
+            sourceCaptures: [
+              {
+                nodeName: "Hero",
+                artifactPath: "design-system/captures/hero.png",
+                capturedAt: "2026-08-01T04:00:00.000Z"
+              }
+            ],
             meaning: "Hierarchy",
             status: "candidate",
             links: ["card-accepted"]

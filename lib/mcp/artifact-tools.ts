@@ -30,6 +30,11 @@ export function registerArtifactTools(
           event_id: result.event_id,
           quality_diagnostics: result.quality_diagnostics
         })
-      : failureResult("record_artifact_written", result.reason, ctx.rt);
+      : failureResult(
+          "record_artifact_written",
+          result.reason,
+          ctx.rt,
+          result.details
+        );
   });
 }

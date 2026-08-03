@@ -191,7 +191,7 @@ function declareInitialDesignSystemArtifacts(
       {
         id: "principle-restraint",
         kind: "global-rule",
-        value: { statement: "Use restraint to preserve hierarchy." },
+        value: "Use restraint to preserve hierarchy.",
         meaning: "Restrained hierarchy",
         status: "candidate",
         links: [card("design-principle").id]
@@ -220,7 +220,7 @@ function declareInitialDesignSystemArtifacts(
       {
         id: "layout-display-hierarchy",
         kind: "domain-rule",
-        value: { rule: "Display titles remain the strongest visual layer." },
+        value: "Display titles remain the strongest visual layer.",
         meaning: "Display hierarchy",
         status: "candidate",
         links: [card("layout").id]
@@ -232,7 +232,7 @@ function declareInitialDesignSystemArtifacts(
       {
         id: "interaction-quiet-hover",
         kind: "domain-rule",
-        value: { statement: "Hover feedback remains quiet." },
+        value: "Hover feedback remains quiet.",
         meaning: "Quiet hover",
         status: "candidate",
         links: [card("interaction").id]
@@ -373,22 +373,21 @@ describe("Initial Design System preparation", () => {
         "When writing a rule, inspect existing rules in that file for placement. Propose misplaced-rule moves through the rule-update proposal channel; never move rules silently."
     });
 
-    const style = contract.rich_field_writing_style;
-    expect(style.rules).toContain(
-      "Each array item is one short constraint sentence: one sentence, one rule; never multi-sentence prose."
-    );
-    expect(style.rules).toContain(
-      "Put interpretation, rationale, and design intent in meaning, using one sentence only."
-    );
-    expect(style.rules.join(" ")).toContain("96 → 56px");
+    expect(contract.rule_body).toEqual({
+      applies_to: ["global-rule", "domain-rule"],
+      field: "value",
+      type: "non-empty prose string"
+    });
+    const style = contract.rule_body_writing_style;
+    expect(style.shape).toContain("non-empty prose string");
+    expect(style.rules.join(" ")).toContain("complete reusable decision");
+    expect(style.rules.join(" ")).toContain("stable rule title in meaning");
     expect(style.rules.join(" ")).toContain("designer's source text");
     expect(style.rules.join(" ")).toContain("generalize beyond the evidence");
     expect(style.examples.layout.good.meaning).toBe("横向画廊用于连续浏览项目。");
-    expect(style.examples.layout.bad.relationship).toBeDefined();
-    expect(style.examples.interaction.good.value).toHaveProperty("behavior");
-    expect(style.examples.interaction.bad).toHaveProperty("appliesTo");
-    expect(style.examples.component.good.value).toHaveProperty("anatomy");
-    expect(style.examples.component.bad.usageRules).toBeDefined();
+    expect(typeof style.examples.layout.good.value).toBe("string");
+    expect(typeof style.examples.interaction.good.value).toBe("string");
+    expect(style.examples.layout.bad.value).toEqual(expect.any(Object));
 
     const typography = contract.typography_role_writing_style;
     expect(typography.rules.join(" ")).toContain("complete composite");
@@ -470,20 +469,11 @@ describe("Initial Design System preparation", () => {
           "responsiveBehavior",
           "openGaps"
         ]),
-        principle_value_fields: {
-          strings: expect.arrayContaining(["statement", "rationale", "scope"]),
-          collections: expect.arrayContaining([
-            "use",
-            "avoid",
-            "exceptions"
-          ])
+        rule_body: {
+          applies_to: ["global-rule", "domain-rule"],
+          field: "value",
+          type: "non-empty prose string"
         },
-        layout_rule_value_fields: expect.arrayContaining([
-          "relationship",
-          "responsiveBehavior",
-          "tokenLinks",
-          "acceptanceChecks"
-        ]),
         layout_rule_capture_field: {
           field: "sourceCaptures",
           item_required: expect.arrayContaining([
@@ -494,12 +484,6 @@ describe("Initial Design System preparation", () => {
           item_optional: expect.arrayContaining(["nodeId", "surfaceId"]),
           guidance: expect.stringContaining("Figma MCP")
         },
-        interaction_rule_value_fields: expect.arrayContaining([
-          "statement",
-          "description",
-          "behavior",
-          "accessibility"
-        ]),
         interaction_entry_split: {
           interaction_rules:
             "Cross-component interaction and motion strategies only.",
@@ -530,31 +514,12 @@ describe("Initial Design System preparation", () => {
             })
           }
         },
-        rich_field_writing_style: {
-          applies_to: {
-            layout: expect.arrayContaining([
-              "relationship",
-              "responsiveBehavior",
-              "acceptanceChecks"
-            ]),
-            interaction: expect.arrayContaining([
-              "description",
-              "behavior",
-              "accessibility"
-            ]),
-            component: expect.arrayContaining([
-              "anatomy",
-              "usageRules",
-              "contentRules",
-              "responsiveBehavior"
-            ])
-          },
+        rule_body_writing_style: {
+          shape: expect.stringContaining("prose string"),
           rules: expect.arrayContaining([
-            expect.stringContaining("one sentence, one rule"),
-            expect.stringContaining("structured values"),
-            expect.stringContaining("design intent in meaning"),
-            expect.stringContaining("language of the designer's source text"),
-            expect.stringContaining("add padding")
+            expect.stringContaining("complete reusable decision"),
+            expect.stringContaining("stable rule title"),
+            expect.stringContaining("language of the designer's source text")
           ]),
           examples: {
             layout: {
@@ -562,10 +527,6 @@ describe("Initial Design System preparation", () => {
               bad: expect.any(Object)
             },
             interaction: {
-              good: expect.any(Object),
-              bad: expect.any(Object)
-            },
-            component: {
               good: expect.any(Object),
               bad: expect.any(Object)
             }

@@ -150,13 +150,13 @@ describe("Interaction rule prose", () => {
       section: "interaction",
       name: "Quiet motion",
       value: {
-        statement: "Motion stays quiet",
-        description: "Routine feedback should not compete with content.",
-        behavior: [
+        summary: "Motion stays quiet",
+        details: "Routine feedback should not compete with content.",
+        steps: [
           "Use motion to explain a state change.",
           "Avoid decorative loops."
         ],
-        accessibility: ["Preserve the same state information without motion."]
+        fallbacks: ["Preserve the same state information without motion."]
       },
       meaning: "Motion confirms change without becoming the subject.",
       status: "candidate",
@@ -169,10 +169,10 @@ describe("Interaction rule prose", () => {
         title: "Motion confirms change without becoming the subject.",
         status: "candidate",
         body:
-          "statement: Motion stays quiet\n" +
-          "description: Routine feedback should not compete with content.\n" +
-          "behavior:\n  • Use motion to explain a state change.\n  • Avoid decorative loops.\n" +
-          "accessibility:\n  • Preserve the same state information without motion."
+          "summary: Motion stays quiet\n" +
+          "details: Routine feedback should not compete with content.\n" +
+          "steps:\n  • Use motion to explain a state change.\n  • Avoid decorative loops.\n" +
+          "fallbacks:\n  • Preserve the same state information without motion."
       })
     ]);
   });
@@ -180,15 +180,15 @@ describe("Interaction rule prose", () => {
 });
 
 describe("Domain rule prose", () => {
-  it("does not promote a legacy statement into the title", () => {
+  it("does not promote a legacy object field into the title", () => {
     const source = entry({
       entry_id: "semantic.no-shadow-regions",
       kind: "domain-rule",
       domain: "shadow",
       name: "no-shadow-regions",
       value: {
-        statement: "Do not use shadows to separate regions.",
-        rationale: "Hierarchy should come from spacing.",
+        summary: "Do not use shadows to separate regions.",
+        reason: "Hierarchy should come from spacing.",
         alternatives: ["spacing", "border"],
         exception: "",
         examples: [],
@@ -203,7 +203,7 @@ describe("Domain rule prose", () => {
         anchor: 1,
         title: "Keep material treatment flat.",
         status: "candidate",
-        body: expect.stringContaining("statement: Do not use shadows")
+        body: expect.stringContaining("summary: Do not use shadows")
       })
     ]);
   });
@@ -214,7 +214,7 @@ describe("Domain rule prose", () => {
       kind: "domain-rule",
       domain: "spacing",
       value: {
-        statement: "Spacing contracts on narrow screens.",
+        summary: "Spacing contracts on narrow screens.",
         constraints: {
           desktop: { min: "32px", max: "64px" },
           mobile: "20px"
@@ -823,7 +823,7 @@ describe("typographyLayersFromView", () => {
             name: "font.title.negative-tracking",
             kind: "domain-rule",
             domain: "typography",
-            value: { statement: "Titles use negative tracking." }
+            value: "Titles use negative tracking."
           })
         ],
         component: []
@@ -869,61 +869,37 @@ describe("projectObjectFields", () => {
   });
 });
 
-/* ------------------------------ rich principle ----------------------------- */
+/* ----------------------------- prose principle ---------------------------- */
 
 describe("projectPrinciple", () => {
-  it("projects rich statement objects with all fields", () => {
+  it("projects meaning as title and prose value as body", () => {
     const projection = projectPrinciple(
       entry({
         entry_id: "principle.1",
         file_kind: "design-system.json",
         section: "foundations.principles",
-        value: {
-          statement: "Design with intent.",
-          rationale: "Every choice needs a reason.",
-          scope: "All product surfaces",
-          use: ["Do this", "And this"],
-          avoid: ["Not that"],
-          exceptions: ["Unless legacy"]
-        }
+        meaning: "Intentional choices",
+        value: "Design with intent. Every choice needs an evidence-backed reason."
       })
     );
-    expect(projection.isRich).toBe(true);
-    expect(projection.statement).toBe("Design with intent.");
-    expect(projection.rationale).toBe("Every choice needs a reason.");
-    expect(projection.scope).toBe("All product surfaces");
-    expect(projection.use).toEqual(["Do this", "And this"]);
-    expect(projection.avoid).toEqual(["Not that"]);
-    expect(projection.exceptions).toEqual(["Unless legacy"]);
+    expect(projection).toEqual({
+      title: "Intentional choices",
+      body: "Design with intent. Every choice needs an evidence-backed reason."
+    });
   });
 
-  it("treats partially rich objects as rich, falling back to meaning", () => {
+  it("keeps legacy persisted objects generic without semantic field reads", () => {
     const projection = projectPrinciple(
       entry({
         entry_id: "principle.2",
-        meaning: "Fallback statement",
-        value: { avoid: ["Don't"] }
+        meaning: "Legacy body",
+        value: { first: "Do this", second: ["Then this"] }
       })
     );
-    expect(projection.isRich).toBe(true);
-    expect(projection.statement).toBe("Fallback statement");
-    expect(projection.rationale).toBeNull();
-    expect(projection.use).toEqual([]);
-    expect(projection.avoid).toEqual(["Don't"]);
-  });
-
-  it("keeps legacy strings and single-key statements flat", () => {
-    const legacy = projectPrinciple(
-      entry({ entry_id: "p.legacy", value: "Keep it simple." })
-    );
-    expect(legacy.isRich).toBe(false);
-    expect(legacy.statement).toBe("Keep it simple.");
-
-    const singleKey = projectPrinciple(
-      entry({ entry_id: "p.single", value: { statement: "Only text." } })
-    );
-    expect(singleKey.isRich).toBe(false);
-    expect(singleKey.statement).toBe("Only text.");
+    expect(projection.title).toBe("Legacy body");
+    expect(projection.body).toContain("first: Do this");
+    expect(projection.body).toContain("second:\n  • Then this");
+    expect(projection.body).not.toMatch(/[{}[\]"]/);
   });
 
   it("keeps alias principles as arrow rows", () => {
@@ -934,48 +910,6 @@ describe("projectPrinciple", () => {
         alias: "principle.canonical"
       })
     );
-    expect(projection.isRich).toBe(false);
-    expect(projection.statement).toBe("→ principle.canonical");
-  });
-
-  it("keeps unknown keys alongside a rich shape as labeled extra fields", () => {
-    const projection = projectPrinciple(
-      entry({
-        entry_id: "principle.extra",
-        value: {
-          statement: "Design with intent.",
-          origin: "Brand workshop 2026",
-          priority: 2
-        }
-      })
-    );
-    expect(projection.isRich).toBe(true);
-    expect(projection.statement).toBe("Design with intent.");
-    expect(projection.extraFields).toEqual([
-      { label: "origin", text: "Brand workshop 2026" },
-      { label: "priority", text: "2" }
-    ]);
-  });
-
-  it("projects unrecognized objects as field lines, never as JSON", () => {
-    const projection = projectPrinciple(
-      entry({
-        entry_id: "principle.oddball",
-        name: "Oddball principle",
-        value: {
-          philosophy: "Less, but better",
-          lineage: { alias: "principle.rams" }
-        }
-      })
-    );
-    expect(projection.isRich).toBe(true);
-    expect(projection.statement).toBe("Oddball principle");
-    expect(projection.extraFields).toEqual([
-      { label: "philosophy", text: "Less, but better" },
-      { label: "lineage", text: "→ principle.rams" }
-    ]);
-    for (const field of projection.extraFields ?? []) {
-      expect(field.text).not.toMatch(/[{}[\]]/);
-    }
+    expect(projection.body).toBe("alias: principle.canonical");
   });
 });

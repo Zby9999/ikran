@@ -119,8 +119,8 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     expect(completeResponse.status).toBe(200);
     await expect(entryButton).toBeVisible();
 
-    // ---- 09B-rich sources: composite text styles with an alias chain,
-    // candidate + gap statuses, a rich principle, an object layout rule. ----
+    // ---- Prose-rule sources: composite text styles with an alias chain,
+    // candidate + gap statuses, and top-level layout captures. ----
     mkdirSync(path.join(projectDir, "design-system"), { recursive: true });
     // 09C-D02: a real capture PNG the placard <img> loads via /api/artifacts.
     mkdirSync(path.join(projectDir, "design-system", "captures"), {
@@ -149,14 +149,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
       principles: [
         {
           id: "principle-intent",
-          value: {
-            statement: "Design with intent.",
-            rationale: "Every choice needs a reason the designer can repeat.",
-            scope: "All product surfaces",
-            use: ["State the reason next to the choice"],
-            avoid: ["Decoration without a job"],
-            exceptions: ["Marketing one-offs"]
-          },
+          value: "Design with intent across all product surfaces. Every choice needs a reason the designer can repeat; state that reason next to the choice and avoid decoration without a job. Marketing one-offs may be treated as exceptions.",
           meaning: "Intent over decoration",
           status: "candidate",
           links: [designerEditedCardId]
@@ -236,10 +229,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         "rule.title-negative-tracking": {
           kind: "domain-rule",
           domain: "typography",
-          value: {
-            statement: "Titles use negative tracking.",
-            rationale: "Large type should remain visually cohesive."
-          },
+          value: "Titles use negative tracking so large type remains visually cohesive.",
           meaning: "Tighten display and heading roles.",
           status: "candidate",
           links: [designerEditedCardId]
@@ -247,10 +237,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         "rule.cta-ink": {
           kind: "domain-rule",
           domain: "color",
-          value: {
-            statement: "CTA uses the ink color.",
-            rationale: "Calls to action stay typographic."
-          },
+          value: "CTA uses the ink color so calls to action stay typographic.",
           meaning: "Avoid introducing a filled action color.",
           status: "candidate",
           links: [designerEditedCardId]
@@ -258,11 +245,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         "rule.no-shadow-regions": {
           kind: "domain-rule",
           domain: "shadow",
-          value: {
-            statement: "Do not use shadows to separate regions.",
-            rationale: "Use spacing and borders for hierarchy.",
-            exceptions: []
-          },
+          value: "Do not use shadows to separate regions; use spacing and borders for hierarchy.",
           meaning: "Keep material treatment flat.",
           status: "candidate",
           links: [designerEditedCardId]
@@ -287,61 +270,55 @@ test("09C-A reader projection: atlas and leaf pages", async ({
       rules: [
         {
           id: "grid-page",
-          value: {
-            columns: "12",
-            gutter: { alias: "spacing.200" },
-            maxWidth: "1120px",
-            sourceCaptures: [
-              {
-                nodeId: "11:20",
-                nodeName: "Landing / Grid",
-                artifactPath: "design-system/captures/grid-page.png",
-                capturedAt: "2026-07-30T14:05:22Z",
-                surfaceId: evidence.record.id,
-                nodeRect: { x: 0.1, y: 0.2, width: 0.6, height: 0.4 }
-              }
-            ]
-          },
+          value: "Use a 12-column page grid with spacing.200 gutters and a maximum width of 1120px.",
+          sourceCaptures: [
+            {
+              nodeId: "11:20",
+              nodeName: "Landing / Grid",
+              artifactPath: "design-system/captures/grid-page.png",
+              capturedAt: "2026-07-30T14:05:22Z",
+              surfaceId: evidence.record.id,
+              nodeRect: { x: 0.1, y: 0.2, width: 0.6, height: 0.4 }
+            }
+          ],
           meaning: "Default page grid",
           status: "candidate",
           links: [designerEditedCardId]
         },
         {
           id: "shell-regions",
-          value: {
-            regions: ["header", "hero", "content", "footer"],
-            sourceCaptures: [
-              {
-                nodeId: "11:30",
-                nodeName: "Landing / Shell",
-                artifactPath: "design-system/captures/grid-page.png",
-                capturedAt: "2026-07-28T09:12:00Z",
-                // No live surface carries this id — the capture must read stale.
-                surfaceId: "surf-shell-missing"
-              }
-            ]
-          },
+          value: "Stack the page shell vertically as header, hero, content, then footer.",
+          sourceCaptures: [
+            {
+              nodeId: "11:30",
+              nodeName: "Landing / Shell",
+              artifactPath: "design-system/captures/grid-page.png",
+              capturedAt: "2026-07-28T09:12:00Z",
+              // No live surface carries this id — the capture must read stale.
+              surfaceId: "surf-shell-missing"
+            }
+          ],
           meaning: "Page shell vertical stack",
           status: "candidate",
           links: [designerEditedCardId]
         },
         {
           id: "section-rhythm",
-          value: { heroToNext: "96 → 56px" },
+          value: "Reduce the hero-to-next-section spacing from 96px on desktop to 56px on mobile.",
           meaning: "Scroll rhythm, desktop → mobile",
           status: "candidate",
           links: [designerEditedCardId]
         },
         {
           id: "breakpoints",
-          value: { breakpoints: ["640", "768", "1024", "1280"] },
+          value: "Use the same breakpoints as code: 640px, 768px, 1024px, and 1280px.",
           meaning: "Same source as code",
           status: "formalized",
           links: [designerEditedCardId]
         },
         {
           id: "nav-mobile",
-          value: { layout: "—" },
+          value: "The mobile navigation open-state layout is not yet defined.",
           meaning: "Mobile navigation layout — open state missing",
           status: "gap",
           links: []
@@ -353,17 +330,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         {
           id: "quiet-motion",
           name: "Quiet motion",
-          value: {
-            statement: "Motion stays quiet",
-            description: "Routine feedback never competes with content.",
-            behavior: [
-              "Use short feedback to explain a state change.",
-              "Avoid decorative loops."
-            ],
-            accessibility: [
-              "Preserve the same information when motion is reduced."
-            ]
-          },
+          value: "Routine feedback never competes with content. Use short feedback to explain a state change, avoid decorative loops, and preserve the same information when motion is reduced.",
           meaning: "Animation supports comprehension.",
           status: "candidate",
           links: [designerEditedCardId]
@@ -371,16 +338,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         {
           id: "frequent-actions",
           name: "Frequent actions",
-          value: {
-            statement: "Frequent actions switch instantly",
-            description: "Repeated actions should never accumulate animation cost.",
-            behavior: [
-              "Switch tabs and sibling views without transitional movement."
-            ],
-            accessibility: [
-              "Keep keyboard-initiated actions free of motion."
-            ]
-          },
+          value: "Repeated actions should never accumulate animation cost. Switch tabs and sibling views without transitional movement, and keep keyboard-initiated actions free of motion.",
           meaning: "Frequency determines whether motion belongs.",
           status: "candidate",
           links: [designerEditedCardId]
@@ -388,12 +346,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         {
           id: "keyboard-parity",
           name: "Keyboard parity",
-          value: {
-            statement: "Keyboard parity",
-            description: "Every pointer action needs an equivalent keyboard path.",
-            behavior: [],
-            accessibility: []
-          },
+          value: "Every pointer action needs an equivalent keyboard path.",
           meaning: "Input method does not limit capability.",
           status: "gap",
           links: []
@@ -455,7 +408,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
       )
     ).toMatchObject({ kind: "domain-rule", domain: "shadow" });
 
-    // ---- Foundations home: the rich principle reads as labeled fields. ----
+    // ---- Foundations home: principle title + prose body. ----
     await entryButton.click();
     const sheet = page.getByTestId("ds-sheet");
     await expect(sheet).toHaveAttribute("data-open", "true");
@@ -475,8 +428,8 @@ test("09C-A reader projection: atlas and leaf pages", async ({
       .toBe("none");
     const richPrinciple = page.getByTestId("ds-principle-principle-intent");
     await expect(richPrinciple).toBeVisible();
-    await expect(richPrinciple).toContainText("Design with intent.");
-    await expect(richPrinciple).toContainText("Rationale");
+    await expect(richPrinciple).toContainText("Intent over decoration");
+    await expect(richPrinciple).toContainText("Design with intent");
     await expect(richPrinciple).toContainText("Every choice needs a reason");
     await expect(richPrinciple).toContainText("Marketing one-offs");
 
@@ -487,17 +440,16 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     await expect(page.getByTestId("ds-tokens-zone")).toHaveCount(0);
     const noShadowRule = page.getByTestId("ds-domain-rule-1");
     await expect(noShadowRule).toContainText(
-      "Do not use shadows to separate regions."
+      "Do not use shadows to separate regions"
     );
     const noShadowDisclosure = noShadowRule.getByRole("button", {
-      name: "Do not use shadows to separate regions."
+      name: "Keep material treatment flat."
     });
     await expect(noShadowDisclosure).toHaveAttribute("aria-expanded", "false");
     await noShadowDisclosure.click();
     await expect(noShadowDisclosure).toHaveAttribute("aria-expanded", "true");
-    await expect(noShadowRule).toContainText("rationale");
     await expect(noShadowRule).toContainText(
-      "Use spacing and borders for hierarchy."
+      "use spacing and borders for hierarchy"
     );
     const evidenceTrigger = noShadowRule.getByRole("button", {
       name: "Evidence for domain rule semantic.rule.no-shadow-regions"
@@ -533,7 +485,9 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         )
       )
     ).toBe(true);
-    await expect(typographyRules).toContainText("Titles use negative tracking.");
+    await expect(typographyRules).toContainText(
+      "Titles use negative tracking so large type remains visually cohesive."
+    );
     await expect(
       page.getByTestId("ds-atlas-semantic.rule.title-negative-tracking")
     ).toHaveCount(0);
@@ -747,10 +701,10 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     await expect(
       gridPlacard.getByTestId("ds-layout-status-grid-page")
     ).toHaveText("candidate");
-    // Recognized facts read as one quiet line — never raw JSON.
-    const gridFacts = gridPlacard.locator(".dsb-placard-facts");
-    await expect(gridFacts).toContainText("1120px");
-    await expect(gridFacts).toContainText("→ spacing.200");
+    // The prose body preserves the extracted spatial facts without projection.
+    const gridBody = gridPlacard.locator(".dsb-rule-prose");
+    await expect(gridBody).toContainText("1120px");
+    await expect(gridBody).toContainText("spacing.200");
     await expect(gridPlacard).not.toContainText('{"columns"');
     // The capture image renders and actually loads through /api/artifacts.
     const gridImg = gridPlacard.locator(".dsb-placard-figure img");
@@ -824,7 +778,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     // ---- Color leaf: full-width token/rules page; split retired 2026-08-03. ----
     await page.getByRole("button", { name: "Color", exact: true }).click();
     await expect(page.getByTestId("ds-rules-zone")).toContainText(
-      "CTA uses the ink color."
+      "CTA uses the ink color so calls to action stay typographic."
     );
     await expect(page.getByTestId("ds-tokens-zone")).toHaveCount(0);
     await expect(page.getByTestId("ds-leaf-split")).toHaveCount(0);
@@ -859,19 +813,16 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     await expect(page.getByTestId("ds-leaf-split")).toHaveCount(0);
 
     const quietMotion = page.getByTestId("ds-interaction-rule-1");
-    await expect(quietMotion).toContainText("Motion stays quiet");
+    await expect(quietMotion).toContainText("Animation supports comprehension.");
     await expect(quietMotion).not.toContainText("Description");
     const quietMotionToggle = quietMotion.getByRole("button", {
-      name: "Motion stays quiet"
+      name: "Animation supports comprehension."
     });
     await expect(quietMotionToggle).toHaveAttribute("aria-expanded", "false");
     await quietMotionToggle.click();
     await expect(quietMotionToggle).toHaveAttribute("aria-expanded", "true");
-    await expect(quietMotion).toContainText("Description");
-    await expect(quietMotion).toContainText("Behavior");
-    await expect(quietMotion).toContainText("Accessibility");
     await expect(quietMotion).toContainText(
-      "Use short feedback to explain a state change."
+      "Use short feedback to explain a state change"
     );
     await expect(quietMotion.getByTestId("ds-interaction-status")).toHaveText(
       "candidate"
@@ -884,7 +835,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     await expect(interactionEvidence).toBeVisible();
     await expect(interactionEvidence).toContainText("设计师改写后的回答");
     await expect(page.getByTestId("ds-interaction-rule-3")).toContainText(
-      "Keyboard parity"
+      "Input method does not limit capability."
     );
     await expect(page.getByText("No visual sample", { exact: true })).toHaveCount(0);
   } finally {

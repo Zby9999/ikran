@@ -12,6 +12,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, test } from "vitest";
 
 import { editDesignSystemEntry } from "../../lib/runtime/design-system-edit";
+import { approveDesignSystemEntry } from "../../lib/runtime/design-system-approval";
 import { initializeProjectDb } from "../../lib/runtime/db";
 import { listEvents } from "../../lib/runtime/events";
 import { getProjectDbPath } from "../../lib/runtime/paths";
@@ -65,21 +66,21 @@ function ingestGapRule(projectPath: string): void {
     rules: [
       {
         id: "interaction.transition",
-        value: { statement: "Transitions stay quiet." },
+        value: "Transitions stay quiet.",
         meaning: "Quiet transitions",
         status: "gap",
         links: []
       },
       {
         id: "interaction.focus",
-        value: { statement: "Focus remains visible." },
+        value: "Focus remains visible.",
         meaning: "Visible focus",
         status: "candidate",
         links: ["designer-card"]
       },
       {
         id: "interaction.feedback",
-        value: { statement: "Feedback is immediate." },
+        value: "Feedback is immediate.",
         meaning: "Immediate feedback",
         status: "formalized",
         links: ["designer-card"]
@@ -250,7 +251,7 @@ test("designer title edits preserve candidate and formalized status", () => {
 test("designer edits a prose body verbatim through the same write path", () => {
   withTempProject((projectPath) => {
     ingestGapRule(projectPath);
-    const body = "Respond immediately.\nKeep motion restrained.";
+    const body = "  Respond immediately.\nKeep motion restrained.  ";
     const result = editDesignSystemEntryCommand(projectPath, {
       sourceArtifactPath: "design-system/interaction-rules.json",
       entryId: "interaction.prose",
@@ -336,17 +337,17 @@ test("edit command rejects source drift and missing source files", () => {
     const relativePath = "design-system/interaction-rules.json";
     const sourcePath = path.join(projectPath, relativePath);
     const source = JSON.parse(readFileSync(sourcePath, "utf8"));
-    source.rules[0].value.componentOnlyField = true;
+    source.rules[0].meaning = 42;
     writeFileSync(sourcePath, JSON.stringify(source), "utf8");
 
     expect(
       editDesignSystemEntry(projectPath, {
         sourceArtifactPath: relativePath,
         entryId: "interaction.transition",
-        field: "meaning",
-        text: "Schema drift"
+        field: "value",
+        text: "Schema drift."
       })
-    ).toMatchObject({ ok: false, reason: "invalid_field_type" });
+    ).toMatchObject({ ok: false, reason: "source_db_drift" });
 
     unlinkSync(sourcePath);
     expect(
@@ -438,5 +439,217 @@ test("LWW race loser preserves the winner bytes and records an invalid-output au
       tool: "edit_design_system_entry",
       reason: "concurrent_edit_superseded"
     });
+  });
+});
+
+test("interleaved edits to different entries in one file both commit", () => {
+  withTempProject((projectPath) => {
+    ingestGapRule(projectPath);
+    const relativePath = "design-system/interaction-rules.json";
+    let inner: ReturnType<typeof editDesignSystemEntry> | undefined;
+    const outer = editDesignSystemEntry(
+      projectPath,
+      {
+        sourceArtifactPath: relativePath,
+        entryId: "interaction.focus",
+        field: "meaning",
+        text: "Persistent focus"
+      },
+      {
+        beforeCommit: () => {
+          inner = editDesignSystemEntry(projectPath, {
+            sourceArtifactPath: relativePath,
+            entryId: "interaction.feedback",
+            field: "meaning",
+            text: "Prompt feedback"
+          });
+        }
+      }
+    );
+
+    expect(inner?.ok).toBe(true);
+    expect(outer.ok).toBe(true);
+    const source = JSON.parse(
+      readFileSync(path.join(projectPath, relativePath), "utf8")
+    );
+    const db = new DatabaseSync(getProjectDbPath(projectPath));
+    try {
+      for (const [entryId, meaning, sourceIndex] of [
+        ["interaction.focus", "Persistent focus", 1],
+        ["interaction.feedback", "Prompt feedback", 2]
+      ] as const) {
+        const row = db
+          .prepare(
+            `SELECT meaning, links_json FROM design_system_entries
+             WHERE source_artifact_path = ? AND entry_id = ?`
+          )
+          .get(relativePath, entryId) as {
+          meaning: string;
+          links_json: string;
+        };
+        expect(row.meaning).toBe(meaning);
+        expect(source.rules[sourceIndex]).toMatchObject({
+          meaning,
+          links: JSON.parse(row.links_json)
+        });
+      }
+    } finally {
+      db.close();
+    }
+    expect(listEvents(projectPath, "design_system_entry_edited")).toHaveLength(2);
+  });
+});
+
+test("outer DB failure rolls back only its entry after another entry commits", () => {
+  withTempProject((projectPath) => {
+    ingestGapRule(projectPath);
+    const relativePath = "design-system/interaction-rules.json";
+    let inner: ReturnType<typeof editDesignSystemEntry> | undefined;
+    const outer = editDesignSystemEntry(
+      projectPath,
+      {
+        sourceArtifactPath: relativePath,
+        entryId: "interaction.focus",
+        field: "meaning",
+        text: "Rejected outer edit"
+      },
+      {
+        beforeCommit: () => {
+          inner = editDesignSystemEntry(projectPath, {
+            sourceArtifactPath: relativePath,
+            entryId: "interaction.feedback",
+            field: "meaning",
+            text: "Committed inner edit"
+          });
+          const db = new DatabaseSync(getProjectDbPath(projectPath));
+          try {
+            db.exec(
+              `CREATE TRIGGER reject_outer_entry
+               BEFORE UPDATE ON design_system_entries
+               WHEN OLD.entry_id = 'interaction.focus'
+               BEGIN SELECT RAISE(ABORT, 'reject outer'); END;`
+            );
+          } finally {
+            db.close();
+          }
+        }
+      }
+    );
+
+    expect(inner?.ok).toBe(true);
+    expect(outer).toEqual({ ok: false, reason: "db_error" });
+    const source = JSON.parse(
+      readFileSync(path.join(projectPath, relativePath), "utf8")
+    );
+    expect(source.rules[1]).toMatchObject({
+      meaning: "Visible focus",
+      links: ["designer-card"]
+    });
+    expect(source.rules[2].meaning).toBe("Committed inner edit");
+    const db = new DatabaseSync(getProjectDbPath(projectPath));
+    try {
+      expect(
+        db
+          .prepare(
+            `SELECT entry_id, meaning, links_json FROM design_system_entries
+             WHERE source_artifact_path = ? AND entry_id IN (?, ?)
+             ORDER BY entry_id`
+          )
+          .all(
+            relativePath,
+            "interaction.focus",
+            "interaction.feedback"
+          )
+      ).toEqual([
+        expect.objectContaining({
+          entry_id: "interaction.feedback",
+          meaning: "Committed inner edit"
+        }),
+        {
+          entry_id: "interaction.focus",
+          meaning: "Visible focus",
+          links_json: JSON.stringify(["designer-card"])
+        }
+      ]);
+    } finally {
+      db.close();
+    }
+    expect(listEvents(projectPath, "design_system_entry_edited")).toHaveLength(1);
+  });
+});
+
+test("edit repairs source-only evidence-link drift from the DB authority", () => {
+  withTempProject((projectPath) => {
+    ingestGapRule(projectPath);
+    const relativePath = "design-system/interaction-rules.json";
+    const sourcePath = path.join(projectPath, relativePath);
+    const source = JSON.parse(readFileSync(sourcePath, "utf8"));
+    source.rules[1].links = ["source-only-drift"];
+    writeFileSync(sourcePath, JSON.stringify(source), "utf8");
+
+    const result = editDesignSystemEntry(projectPath, {
+      sourceArtifactPath: relativePath,
+      entryId: "interaction.focus",
+      field: "meaning",
+      text: "Persistent focus"
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result));
+
+    const repaired = JSON.parse(readFileSync(sourcePath, "utf8"));
+    expect(repaired.rules[1].links).toEqual([
+      "designer-card",
+      result.event_id
+    ]);
+  });
+});
+
+test("an approval interleaved after a source write fails closed without splitting source and DB", () => {
+  withTempProject((projectPath) => {
+    ingestGapRule(projectPath);
+    const relativePath = "design-system/interaction-rules.json";
+    let approval: ReturnType<typeof approveDesignSystemEntry> | undefined;
+    const edit = editDesignSystemEntry(
+      projectPath,
+      {
+        sourceArtifactPath: relativePath,
+        entryId: "interaction.focus",
+        field: "meaning",
+        text: "Persistent focus"
+      },
+      {
+        beforeCommit: () => {
+          approval = approveDesignSystemEntry(projectPath, {
+            sourceArtifactPath: relativePath,
+            entryId: "interaction.focus"
+          });
+        }
+      }
+    );
+
+    expect(approval).toMatchObject({ ok: false, reason: "source_db_drift" });
+    expect(edit.ok).toBe(true);
+    const source = JSON.parse(
+      readFileSync(path.join(projectPath, relativePath), "utf8")
+    );
+    const db = new DatabaseSync(getProjectDbPath(projectPath));
+    try {
+      const row = db
+        .prepare(
+          `SELECT meaning, status, links_json FROM design_system_entries
+           WHERE source_artifact_path = ? AND entry_id = ?`
+        )
+        .get(relativePath, "interaction.focus") as {
+        meaning: string;
+        status: string;
+        links_json: string;
+      };
+      expect(source.rules[1]).toMatchObject({
+        meaning: row.meaning,
+        status: row.status,
+        links: JSON.parse(row.links_json)
+      });
+    } finally {
+      db.close();
+    }
   });
 });

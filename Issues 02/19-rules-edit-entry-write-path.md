@@ -26,6 +26,6 @@ None — ADR 0005 已定案,可立即开始。
 
 ## Answer
 
-已完成 `edit-entry` 的 Runtime / command / HTTP / Browser 全链路。写回采用源文件优先、DB 与语义事件同事务、失败恢复原始字节；交错编辑按无 etag LWW 处理，败方保留赢家字节并记 `invalid_output`。编辑事件 id 同步加入条目 links，Browser view 将其解析为 ⓘ Designer edits 历史。Domain、Interaction、Layout 卡片共享标题编辑控件。
+已完成 `edit-entry` 的 Runtime / command / HTTP / Browser 全链路。写回采用源文件优先、DB 与语义事件同事务、失败恢复原始字节；交错编辑按无 etag LWW 处理，败方保留赢家字节并记 `invalid_output`。编辑事件 id 同步加入条目 links，Browser view 将其解析为 ⓘ Designer edits 历史。Global Principles、Domain、Interaction、Layout 卡片共享标题与正文编辑控件。
 
-验证：`tests/unit/design-system-edit.test.ts` 覆盖成功、输入拒绝、状态转换、schema 漂移、恢复与并发；`tests/design-system-browser.spec.ts` 覆盖真实 UI → 源 JSON → DB → event → SSE → provenance，Chromium 单票通过。
+验证：`tests/unit/design-system-edit.test.ts` 覆盖成功、输入拒绝、状态转换、schema 漂移、恢复与同文件交错并发；`tests/design-system-browser.spec.ts` 覆盖真实 UI → 源 JSON → DB → event → SSE → provenance。最终完整测试通过。

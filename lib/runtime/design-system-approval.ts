@@ -279,6 +279,16 @@ export function approveDesignSystemEntry(
   if (entryObject === null) {
     return { ok: false, reason: "entry_not_in_source_file" };
   }
+  const sourceStatusCompatible =
+    entryObject.status === row.status ||
+    (row.status === "candidate" && entryObject.status === "formalized");
+  if (!sourceStatusCompatible || JSON.stringify(entryObject.links) !== row.links_json) {
+    return {
+      ok: false,
+      reason: "source_db_drift",
+      details: { source_artifact_path: relativePath, entry_id: input.entryId }
+    };
+  }
   entryObject.status = "formalized";
 
   // Self-check: the file Runtime is about to write must pass its own schema
@@ -294,6 +304,9 @@ export function approveDesignSystemEntry(
   }
   const newContent = `${stableJsonStringify(parsed)}\n`;
   try {
+    if (readFileSync(absolutePath, "utf-8") !== originalContent) {
+      return { ok: false, reason: "concurrent_source_changed" };
+    }
     writeFileSync(absolutePath, newContent, "utf-8");
   } catch {
     return { ok: false, reason: "write_failed" };

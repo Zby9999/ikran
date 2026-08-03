@@ -14,6 +14,11 @@ describe("commandErrorHttpStatus", () => {
     expect(commandErrorHttpStatus("project_mismatch")).toBe(409);
   });
 
+  test("maps source write-back conflicts to 409", () => {
+    expect(commandErrorHttpStatus("source_db_drift")).toBe(409);
+    expect(commandErrorHttpStatus("concurrent_source_changed")).toBe(409);
+  });
+
   test("maps not_found to 404", () => {
     expect(commandErrorHttpStatus("not_found")).toBe(404);
   });

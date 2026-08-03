@@ -74,8 +74,8 @@ export function editDesignSystemEntry(
   input: EditDesignSystemEntryInput,
   hooks: EditDesignSystemEntryHooks = {}
 ): DesignSystemEditResult {
-  const text = input.text.trim();
-  if (text.length === 0) return { ok: false, reason: "empty_text" };
+  const text = input.field === "value" ? input.text : input.text.trim();
+  if (input.text.trim().length === 0) return { ok: false, reason: "empty_text" };
   if (input.field !== "meaning" && input.field !== "value") {
     return { ok: false, reason: "unsupported_field" };
   }
@@ -131,6 +131,33 @@ export function editDesignSystemEntry(
   if (entryObject === null) {
     return { ok: false, reason: "entry_not_in_source_file" };
   }
+  let dbValue: unknown;
+  let dbLinks: string[];
+  try {
+    dbValue = JSON.parse(row.value_json);
+    dbLinks = JSON.parse(row.links_json) as string[];
+  } catch {
+    return { ok: false, reason: "db_error" };
+  }
+  const sourceStatusCompatible =
+    entryObject.status === row.status ||
+    (row.status === "gap" && entryObject.status === "candidate");
+  const sourceMeaningCompatible =
+    input.field === "meaning" || entryObject.meaning === row.meaning;
+  const sourceValueCompatible =
+    input.field === "value" ||
+    stableJsonStringify(entryObject.value) === stableJsonStringify(dbValue);
+  if (
+    !sourceStatusCompatible ||
+    !sourceMeaningCompatible ||
+    !sourceValueCompatible
+  ) {
+    return {
+      ok: false,
+      reason: "source_db_drift",
+      details: { source_artifact_path: relativePath, entry_id: input.entryId }
+    };
+  }
 
   let before = row.meaning;
   if (input.field === "value") {
@@ -155,9 +182,10 @@ export function editDesignSystemEntry(
     from_status: row.status,
     to_status: nextStatus
   });
-  const currentLinks = Array.isArray(entryObject.links)
-    ? entryObject.links.filter((link): link is string => typeof link === "string")
-    : [];
+  // DB links are the evidence-authoritative envelope. Reusing them repairs a
+  // source-only links drift and prevents an uncommitted writer's event id
+  // from leaking into the winning transaction.
+  const currentLinks = dbLinks;
   const nextLinks = [...currentLinks, editEvent.event_id];
   entryObject[input.field] = text;
   entryObject.status = nextStatus;
@@ -172,19 +200,85 @@ export function editDesignSystemEntry(
     };
   }
 
+  const nextContent = `${stableJsonStringify(parsed)}\n`;
   try {
-    writeFileSync(absolutePath, `${stableJsonStringify(parsed)}\n`, "utf8");
+    if (readFileSync(absolutePath, "utf8") !== originalContent) {
+      return { ok: false, reason: "concurrent_source_changed" };
+    }
+    writeFileSync(absolutePath, nextContent, "utf8");
   } catch {
     return { ok: false, reason: "write_failed" };
   }
-  const restoreFile = () => {
+  const restoreOwnFileChange = () => {
     try {
-      writeFileSync(absolutePath, originalContent, "utf8");
+      const currentContent = readFileSync(absolutePath, "utf8");
+      if (currentContent === nextContent) {
+        writeFileSync(absolutePath, originalContent, "utf8");
+        return;
+      }
+      const currentParsed = JSON.parse(currentContent) as unknown;
+      if (!isPlainObject(currentParsed)) return;
+      const currentEntry = locateEntryObject(
+        row.file_kind,
+        currentParsed,
+        input.entryId
+      );
+      const stillContainsOwnWrite =
+        currentEntry !== null &&
+        currentEntry[input.field] === text &&
+        currentEntry.status === nextStatus &&
+        stableJsonStringify(currentEntry.links) === stableJsonStringify(nextLinks);
+      if (!stillContainsOwnWrite || currentEntry === null) return;
+      currentEntry.meaning = row.meaning;
+      currentEntry.value = dbValue;
+      currentEntry.status = row.status;
+      currentEntry.links = dbLinks;
+      writeFileSync(
+        absolutePath,
+        `${stableJsonStringify(currentParsed)}\n`,
+        "utf8"
+      );
     } catch {
-      // Best-effort restoration; the primary DB failure remains authoritative.
+      // Best-effort rollback; the primary DB failure remains authoritative.
     }
   };
   hooks.beforeCommit?.();
+  try {
+    const currentContent = readFileSync(absolutePath, "utf8");
+    let ownWritePreserved = currentContent === nextContent;
+    if (!ownWritePreserved) {
+      try {
+        const currentParsed = JSON.parse(currentContent) as unknown;
+        if (isPlainObject(currentParsed)) {
+          const currentEntry = locateEntryObject(
+            row.file_kind,
+            currentParsed,
+            input.entryId
+          );
+          ownWritePreserved =
+            currentEntry !== null &&
+            currentEntry[input.field] === text &&
+            currentEntry.status === nextStatus &&
+            stableJsonStringify(currentEntry.links) ===
+              stableJsonStringify(nextLinks);
+        }
+      } catch {
+        ownWritePreserved = false;
+      }
+    }
+    if (!ownWritePreserved) {
+      logInvalidToolEvent(
+        projectPath,
+        "invalid_output",
+        "edit_design_system_entry",
+        "concurrent_edit_superseded",
+        { source_artifact_path: relativePath, entry_id: input.entryId }
+      );
+      return { ok: false, reason: "concurrent_edit_superseded" };
+    }
+  } catch {
+    return { ok: false, reason: "artifact_file_missing" };
+  }
 
   const now = new Date().toISOString();
   let transaction:
@@ -249,7 +343,7 @@ export function editDesignSystemEntry(
       return { ok: true as const, eventId: editEvent.event_id };
     });
   } catch {
-    restoreFile();
+    restoreOwnFileChange();
     return { ok: false, reason: "db_error" };
   }
   if (!transaction.ok) {
@@ -263,7 +357,7 @@ export function editDesignSystemEntry(
       );
       return transaction;
     }
-    restoreFile();
+    restoreOwnFileChange();
     return transaction;
   }
 
