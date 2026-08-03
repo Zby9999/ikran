@@ -43,7 +43,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("claim_alignment_preparation", {
-    description: "Claim the current durable prepare_design_intent_alignment command. Returns the stable command, Alignment attempt, immutable input snapshot, exact Seed Reference notes, and captured evidence identities needed to prepare all six sections. In each section, create its gray Agent Annotation hypotheses first, then its colored Question cards, before moving to the next section. Safe to retry after disconnect; a repeated claim returns the same claimed work. No arguments."
+    description: "Claim the current durable prepare_design_intent_alignment command. Returns the stable command, Alignment attempt, immutable input snapshot, exact Seed Reference notes, captured evidence identities, and the section_contract (card kinds and ordering, title format, evidence target modes) needed to prepare all six sections — follow the returned contract rather than memory. In each section, create its gray Agent Annotation hypotheses first, then its colored Question cards, before moving to the next section. Safe to retry after disconnect; a repeated claim returns the same claimed work. No arguments."
   }, async () => {
     const ctx = await active("claim_alignment_preparation");
     if (!ctx.ok) return ctx.result;
@@ -52,7 +52,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("create_alignment_question_card", {
-    description: "Create one Runtime-owned Design Intent Alignment Question card for the claimed current attempt. Before the first Question in a section, create at least one gray Agent Annotation for that same section; Runtime rejects the Question otherwise. Pass the alignmentAttemptId returned by claim_alignment_preparation and a stable idempotencyKey for this semantic question. The evidence anchor must belong to that attempt's immutable snapshot. The observation field is the card title: use a concise 2–5 word noun phrase (48 characters maximum), never a sentence. Each of the six sections must end with 2–5 questions and every question needs a non-empty proposedAnswer before finalize. For a whole-Frame question use a single surface target; never approximate it with a nearly full-size region. For one specific element or component, prefer its exact positional node; use a free region only when no exact node represents the target. Use focus-target-set for repeated or shared elements across components/Frames.",
+    description: "Create one Runtime-owned Design Intent Alignment Question card for the claimed current attempt. Pass the alignmentAttemptId returned by claim_alignment_preparation and a stable idempotencyKey for this semantic question. The evidence anchor must belong to that attempt's immutable snapshot. Section ordering, question title format, per-section question counts, the proposedAnswer requirement, and evidence target modes are defined by that claim's section_contract — follow it; Runtime rejects violations.",
     inputSchema: createAlignmentQuestionCardInputSchema
   }, async (args) => {
     const ctx = await active("create_alignment_question_card");
@@ -75,7 +75,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("create_agent_annotation", {
-    description: "Create an attempt-bound, section-bound, idempotent gray Agent Annotation with a short non-empty title and a meaningful confirmed observation or reasonable assumption body. For each section, create its Annotation before creating that section's colored Question cards. Use the same three evidence anchor modes as Questions: a single node/region for one specific target, a single surface for a whole Frame, or focus-target-set for repeated/shared elements. At least one gray Agent Annotation is mandatory in every section before Alignment preparation can finish.",
+    description: "Create an attempt-bound, section-bound, idempotent gray Agent Annotation with a short non-empty title and a meaningful confirmed observation or reasonable assumption body. Section ordering and evidence anchor modes follow the claim's section_contract. At least one gray Agent Annotation is mandatory in every section before Alignment preparation can finish.",
     inputSchema: createAgentAnnotationInputSchema
   }, async (args) => {
     const ctx = await active("create_agent_annotation");
@@ -105,7 +105,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("update_alignment_question_title", {
-    description: "Replace a Question card's title with a concise 2–5 word noun phrase (48 characters maximum). Use this to correct a verbose or sentence-like generated title.",
+    description: "Replace a Question card's title so it satisfies the claimed section_contract question_title format. Use this to correct a verbose or sentence-like generated title.",
     inputSchema: updateAlignmentQuestionTitleInputSchema
   }, async (args) => {
     const ctx = await active("update_alignment_question_title");
@@ -115,7 +115,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("update_alignment_question_anchor", {
-    description: "Replace a Question card's evidence anchor. Use a single surface target for a whole-Frame question (no Annotation, Focus Mode, or connector), a node/region for one specific element or component, and a focus-target-set for repeated/shared elements across components or Frames. Focus Mode activates on hover or click without moving the camera.",
+    description: "Replace a Question card's evidence anchor. Target modes and their rendering semantics follow the claimed section_contract evidence_target_modes.",
     inputSchema: updateAlignmentQuestionAnchorInputSchema
   }, async (args) => {
     const ctx = await active("update_alignment_question_anchor");

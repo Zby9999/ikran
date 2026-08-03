@@ -1,7 +1,12 @@
 import path from "node:path";
 
 import { withProjectTransaction } from "./db";
-import { ALIGNMENT_SECTIONS } from "./design-intent-alignment";
+import {
+  ALIGNMENT_SECTIONS,
+  ALIGNMENT_SECTION_CONTRACT,
+  ALIGNMENT_SECTION_QUESTION_MAX,
+  ALIGNMENT_SECTION_QUESTION_MIN
+} from "./design-intent-alignment";
 import { logEventOnDb } from "./events";
 import { getAlignmentPreparationOnDb } from "./alignment-preparation";
 import { emitRecordEvent } from "./record-bus";
@@ -79,7 +84,12 @@ export function claimAlignmentPreparationCommand(projectPath: string) {
         projectPath: path.resolve(projectPath)
       });
     }
-    return result;
+    // Issue 18: the Alignment section contract rides the claim payload (same
+    // on-demand pattern as the extraction source_contract), so MCP
+    // instructions only need a pointer.
+    return result.ok
+      ? { ...result, section_contract: ALIGNMENT_SECTION_CONTRACT }
+      : result;
   } catch {
     return { ok: false, reason: "db_error" } as CommandFailure;
   }
@@ -91,8 +101,8 @@ function preparationCoverageComplete(
   return ALIGNMENT_SECTIONS.every((section) => {
     const cards = rows.filter((row) => row.section === section);
     return (
-      cards.length >= 2 &&
-      cards.length <= 5 &&
+      cards.length >= ALIGNMENT_SECTION_QUESTION_MIN &&
+      cards.length <= ALIGNMENT_SECTION_QUESTION_MAX &&
       cards.every(
         (card) =>
           typeof card.proposed_answer === "string" &&

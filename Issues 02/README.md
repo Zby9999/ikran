@@ -48,6 +48,10 @@
 
 17. `17-codex-app-server-activation-adapter-prototype.md` - Codex App Server Activation Adapter Prototype（不进入 MVP blocking path）
 
+## MCP 契约通道
+
+18. `18-mcp-instructions-contract-channel-split.md` - MCP Instructions 通道切分：行为底线、流程契约与方法论归属
+
 ADR 0003 转型的实际 frontier 是：`05A → 05B → 05C → 06 → 05D → 07`。05C 先交付 structural overlay、refresh correspondence 与 context lookup；Issue 06 再建立持久 surface/node/region Annotation 和 stale warning；05D 完成 legacy contract 后，Issue 07 才进入正式 Alignment gate。
 
 Issue 01–05 与 Issue 06 的既有代码/历史材料已存在；阅读时先看各文件顶部的架构收口说明。Issue 05A–05D 与 07–16 同步的是目标与验收，不表示已实现完成。

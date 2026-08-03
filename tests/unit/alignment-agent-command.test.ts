@@ -86,12 +86,25 @@ describe("Alignment preparation Agent command", () => {
           data: {
             design_language_description: "A calm, precise product language"
           }
+        },
+        // Issue 18: the section contract rides the claim payload (fresh and
+        // reused claims alike), sourced from the same constants the coverage
+        // validators enforce.
+        section_contract: {
+          sections: ALIGNMENT_SECTIONS,
+          per_section: {
+            agent_annotations_min: 1,
+            question_cards_min: 2,
+            question_cards_max: 5
+          },
+          question_title: { max_characters: 48 }
         }
       });
       expect(claimAlignmentPreparationCommand(projectPath)).toMatchObject({
         ok: true,
         reused: true,
-        command: { id: prepared.command.id, status: "claimed" }
+        command: { id: prepared.command.id, status: "claimed" },
+        section_contract: { sections: ALIGNMENT_SECTIONS }
       });
     });
   });

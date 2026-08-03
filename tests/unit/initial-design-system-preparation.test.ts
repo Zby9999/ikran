@@ -9,7 +9,6 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { IKRAN_MCP_INSTRUCTIONS } from "../../lib/mcp/shared";
 import {
   claimAlignmentPreparationCommand,
   finalizeAlignmentPreparation
@@ -29,6 +28,7 @@ import { listEvents } from "../../lib/runtime/events";
 import {
   claimInitialDesignSystemPreparation,
   finalizeInitialDesignSystemPreparation,
+  INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT,
   recordDesignSystemExtractionManifest,
   type DesignSystemExtractionClaim
 } from "../../lib/runtime/initial-design-system-preparation";
@@ -354,42 +354,39 @@ afterEach(() => {
 });
 
 describe("Initial Design System preparation", () => {
-  test("publishes the rich-field writing style through MCP instructions", () => {
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "Every new foundation entry must declare kind"
+  test("publishes the extraction writing contract through the claim payload source_contract", () => {
+    // Issue 18: the writing contract's single home is the source_contract
+    // payload (sourced from the schema validators), not the MCP instructions.
+    const contract = INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT;
+    expect(contract.entry_kind_file_ownership).toEqual({
+      token: ["token.json"],
+      "domain-rule": ["token.json", "layout-rules.json", "interaction-rules.json"],
+      "global-rule": ["design-system.json"]
+    });
+    expect(contract.token_domains).toContain("color");
+    expect(contract.token_domains).toContain("typography");
+
+    const style = contract.rich_field_writing_style;
+    expect(style.rules).toContain(
+      "Each array item is one short constraint sentence: one sentence, one rule; never multi-sentence prose."
     );
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "domain-rule entries in token.json must also declare domain"
+    expect(style.rules).toContain(
+      "Put interpretation, rationale, and design intent in meaning, using one sentence only."
     );
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "Each array item is one short constraint sentence"
-    );
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "Put spatial and numeric facts in structured values"
-    );
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "Put interpretation, rationale, and design intent in meaning"
-    );
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "Use the language of the designer's source text"
-    );
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "Do not restate existing rules, add padding, or generalize beyond the evidence"
-    );
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("Layout good:");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("Layout bad:");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("Interaction good:");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("Interaction bad:");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("Component good:");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("Component bad:");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "TYPOGRAPHY ROLE WRITING STYLE"
-    );
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "complete composite typography role"
-    );
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "Connect call-to-action heading size role"
+    expect(style.rules.join(" ")).toContain("96 → 56px");
+    expect(style.rules.join(" ")).toContain("designer's source text");
+    expect(style.rules.join(" ")).toContain("generalize beyond the evidence");
+    expect(style.examples.layout.good.meaning).toBe("横向画廊用于连续浏览项目。");
+    expect(style.examples.layout.bad.relationship).toBeDefined();
+    expect(style.examples.interaction.good.value).toHaveProperty("behavior");
+    expect(style.examples.interaction.bad).toHaveProperty("appliesTo");
+    expect(style.examples.component.good.value).toHaveProperty("anatomy");
+    expect(style.examples.component.bad.usageRules).toBeDefined();
+
+    const typography = contract.typography_role_writing_style;
+    expect(typography.rules.join(" ")).toContain("complete composite");
+    expect(typography.examples.bad.meaning).toBe(
+      "Connect call-to-action heading size role."
     );
   });
 

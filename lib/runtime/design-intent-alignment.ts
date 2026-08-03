@@ -22,6 +22,59 @@ export const ALIGNMENT_SECTIONS = [
 
 export const ALIGNMENT_QUESTION_TITLE_MAX_LENGTH = 48;
 
+/** Question title word bounds — enforced by questionTitleIsValid and published
+ * via ALIGNMENT_SECTION_CONTRACT.question_title. */
+export const ALIGNMENT_QUESTION_TITLE_MIN_WORDS = 2;
+export const ALIGNMENT_QUESTION_TITLE_MAX_WORDS = 5;
+
+/** Per-section Question card bounds — enforced at coverage checks
+ * (finalize + read surface) and published via ALIGNMENT_SECTION_CONTRACT. */
+export const ALIGNMENT_SECTION_QUESTION_MIN = 2;
+export const ALIGNMENT_SECTION_QUESTION_MAX = 5;
+
+/**
+ * Alignment section contract (Issue 18): the on-demand flow contract returned
+ * by claim_alignment_preparation. Normative content lives here next to the
+ * validators that enforce it — MCP instructions only point at this payload,
+ * never restate it.
+ */
+export const ALIGNMENT_SECTION_CONTRACT = {
+  sections: ALIGNMENT_SECTIONS,
+  ordering:
+    "Prepare the six sections in order. Within EACH section, create at least one gray Agent Annotation first, then its colored Question cards, before moving to the next section. Runtime rejects a Question until its same-section Annotation exists and rejects finalize unless all six sections contain both card kinds.",
+  per_section: {
+    agent_annotations_min: 1,
+    question_cards_min: ALIGNMENT_SECTION_QUESTION_MIN,
+    question_cards_max: ALIGNMENT_SECTION_QUESTION_MAX,
+    question_proposed_answer: "required-non-empty-before-finalize"
+  },
+  question_title: {
+    max_characters: ALIGNMENT_QUESTION_TITLE_MAX_LENGTH,
+    min_words: ALIGNMENT_QUESTION_TITLE_MIN_WORDS,
+    max_words: ALIGNMENT_QUESTION_TITLE_MAX_WORDS,
+    style:
+      "The observation field is the card title: a concise 2–5 word noun phrase, never a sentence or a repeat of the question."
+  },
+  evidence_target_modes: {
+    "node/region":
+      "One specific element or component — prefer the exact positional node when available; use a free region only when no exact node represents the target. Rendered with an Annotation and horizontal connector.",
+    "focus-target-set":
+      "Repeated/shared elements such as color or typography across components or Frames. Rendered with Focus Mode on card hover or click, without Annotation, connector, or camera movement.",
+    surface:
+      "Whole-Frame statements or questions. Rendered as only its card beside the Frame, without target chrome or Focus Mode. Never approximate a whole Frame or an available node with a guessed region."
+  },
+  designer_annotations:
+    "designer_annotations are the designer's own section-bound intent input and part of this Alignment: read them before writing answers or summaries for a section, treat them as designer direction, and never contradict them, restate them as your own, or count them as Agent cards or coverage.",
+  proposed_answers:
+    "Proposed answers only prefill the editor and never count as answered or as coverage; the designer must explicitly submit every Question card.",
+  judgment: [
+    "State a meaningful confirmed observation or reasonable assumption openly in the Agent Annotation; do not hide assumptions inside questions.",
+    "Do not turn genuine uncertainty into an asserted annotation.",
+    "Never reuse one Annotation across sections."
+  ],
+  scope_note: "Content style is not a gate section."
+} as const;
+
 function questionTitleWordCount(value: string): number {
   const segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
   return Array.from(segmenter.segment(value)).filter(
@@ -38,7 +91,11 @@ function normalizedQuestionText(value: string): string {
 
 function questionTitleIsValid(value: string, question?: string): boolean {
   const words = questionTitleWordCount(value);
-  if (words < 2 || words > 5) return false;
+  if (
+    words < ALIGNMENT_QUESTION_TITLE_MIN_WORDS ||
+    words > ALIGNMENT_QUESTION_TITLE_MAX_WORDS
+  )
+    return false;
   if (/[.!?。！？]\s*$/u.test(value)) return false;
   return !question || normalizedQuestionText(value) !== normalizedQuestionText(question);
 }
@@ -406,8 +463,8 @@ function coverageFor(cards: QuestionCardRecord[]) {
       question_count: sectionCards.length,
       covered_count: covered,
       complete:
-        sectionCards.length >= 2 &&
-        sectionCards.length <= 5 &&
+        sectionCards.length >= ALIGNMENT_SECTION_QUESTION_MIN &&
+        sectionCards.length <= ALIGNMENT_SECTION_QUESTION_MAX &&
         covered === sectionCards.length
     };
   });
