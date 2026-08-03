@@ -75,7 +75,7 @@ source、DB view、alias graph 与 evidence lineage 中，但不再单独生成 
 - 真实 Browser 显示 8 个 Type styles，例如 `typography.connectHeading` 对应
   `Closing-section call to action.`，名称与 `Used for` 不再复述。
 - 直接相关验证：110 个单测通过；
-  `tests/design-system-reader-split.spec.ts` 通过；真实项目 Browser 验收通过。
+  `tests/design-system-reader.spec.ts` 通过；真实项目 Browser 验收通过。
 - 全量检查中 871/871 单测、79/80 浏览器用例通过；唯一失败是既有
   `tests/design-system-browser.spec.ts` 的 Radix evidence popover 拦截 `Color` heading
   hover，单独重跑仍在同一未修改路径超时，与本 Ticket 的 Typography diff 无关。

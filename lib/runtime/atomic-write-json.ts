@@ -1,5 +1,5 @@
 // Shared atomic JSON write for project-local state files
-// (`.ikran/workbench-layout.json`, `.ikran/design-system-browser.json`, …).
+// (`.ikran/workbench-layout.json`, …).
 // Write to a sibling tmp file, then rename — a crash mid-write never leaves a
 // truncated document behind.
 

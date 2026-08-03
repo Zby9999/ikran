@@ -1,5 +1,4 @@
-// Ikran Issue 09C-A — Reader Projection + resizable split e2e through the
-// real Workbench.
+// Ikran Issue 09C-A — Reader Projection e2e through the real Workbench.
 //
 // Full chain: alignment completes → 09B-rich sources (composite text styles,
 // alias chains, candidate + gap statuses, a rich principle, an object layout
@@ -7,10 +6,9 @@
 // visual Type Atlas with construction data attached to each source-backed
 // specimen → the Layout leaf renders Source Capture placards (09C-D02): a
 // captured Figma node per rule with provenance caption, an honest unavailable
-// block when no node is linked → the divider drags, nudges by keyboard,
-// double-click resets → the ratio persists project-locally across sheet
-// close/reopen → narrow viewports stack split leaves without horizontal
-// scroll.
+// block when no node is linked → Color / Materials / Component leaves render
+// as full-width pages (2026-08-03: LeafSplit retired — no divider, no right
+// pane, no split-ratio preference).
 //
 // Staging mirrors tests/design-system-browser.spec.ts.
 
@@ -49,30 +47,7 @@ async function patchAlignment(
   });
 }
 
-async function readPreferences(
-  workbenchUrl: string,
-  token: string
-): Promise<{ splitRatio: number } | null> {
-  const response = await fetch(
-    new URL("/api/design-system-browser-preferences", workbenchUrl),
-    { headers: { "x-ikran-session": token }, cache: "no-store" }
-  );
-  const data = (await response.json().catch(() => ({}))) as {
-    ok?: boolean;
-    preferences?: { splitRatio?: unknown };
-  };
-  if (!response.ok || data.ok !== true) return null;
-  return typeof data.preferences?.splitRatio === "number"
-    ? { splitRatio: data.preferences.splitRatio }
-    : null;
-}
-
-/** The debounced preference PUT (300ms) needs room to land. */
-async function waitForPreferenceWrite(page: import("@playwright/test").Page) {
-  await page.waitForTimeout(600);
-}
-
-test("09C-A reader projection: atlas, split persistence, stacking", async ({
+test("09C-A reader projection: atlas and leaf pages", async ({
   page
 }) => {
   test.setTimeout(240_000);
@@ -806,109 +781,17 @@ test("09C-A reader projection: atlas, split persistence, stacking", async ({
     await expect(page.locator(".dsb-lightbox")).toHaveCount(0);
     await expect(sheet).toHaveAttribute("data-open", "true");
 
-    // ---- Split divider (09C-A): exercised on the Color leaf, which keeps
-    // the reading/samples split. ----
+    // ---- Color leaf: full-width token/rules page; split retired 2026-08-03. ----
     await page.getByRole("button", { name: "Color", exact: true }).click();
     await expect(page.getByTestId("ds-rules-zone")).toContainText(
       "CTA uses the ink color."
     );
     await expect(page.getByTestId("ds-tokens-zone")).toHaveCount(0);
-    const split = page.getByTestId("ds-leaf-split");
-    await expect(split).toBeVisible();
-    await expect(split).not.toHaveAttribute("data-stacked", "true");
+    await expect(page.getByTestId("ds-leaf-split")).toHaveCount(0);
+    await expect(page.getByTestId("ds-samples-empty")).toHaveCount(0);
 
-
-    // ---- Drag the divider: live resize + debounced preference write. ----
-    const divider = page.getByTestId("ds-split-divider");
-    await expect(divider).toBeVisible();
-    await expect(divider).toHaveAttribute("role", "separator");
-    await expect(divider).toHaveAttribute("aria-valuenow", "42");
-    await expect(divider).toHaveAttribute(
-      "aria-label",
-      "Resize reading and visual sample panels"
-    );
-    // aria-valuemin/max derive from the measured container width (pixel
-    // minimums → percents), so assert the contract, not fixed numbers.
-    const ariaMin = Number.parseInt(
-      (await divider.getAttribute("aria-valuemin")) ?? "-1",
-      10
-    );
-    const ariaMax = Number.parseInt(
-      (await divider.getAttribute("aria-valuemax")) ?? "-1",
-      10
-    );
-    expect(ariaMin).toBeGreaterThanOrEqual(0);
-    expect(ariaMin).toBeLessThan(42);
-    expect(ariaMax).toBeGreaterThan(42);
-    expect(ariaMax).toBeLessThanOrEqual(100);
-    const leftPane = page.getByTestId("ds-split-left");
-    const leftWidthBefore = (await leftPane.boundingBox())!.width;
-    const dividerBox = (await divider.boundingBox())!;
-    const startX = dividerBox.x + dividerBox.width / 2;
-    const startY = dividerBox.y + dividerBox.height / 2;
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    await page.mouse.move(startX + 120, startY, { steps: 6 });
-    await page.mouse.up();
-    const leftWidthAfter = (await leftPane.boundingBox())!.width;
-    expect(leftWidthAfter).toBeGreaterThan(leftWidthBefore + 80);
-    const draggedNow = Number.parseInt(
-      (await divider.getAttribute("aria-valuenow")) ?? "0",
-      10
-    );
-    expect(draggedNow).toBeGreaterThan(42);
-    await waitForPreferenceWrite(page);
-    const draggedPrefs = await readPreferences(workbenchUrl, token);
-    expect(draggedPrefs).not.toBeNull();
-    expect(draggedPrefs!.splitRatio).toBeGreaterThan(0.42);
-    expect(draggedPrefs!.splitRatio).toBeCloseTo(draggedNow / 100, 1);
-
-    // ---- Double-click restores the default and persists it. ----
-    await divider.dblclick();
-    await expect(divider).toHaveAttribute("aria-valuenow", "42");
-    await waitForPreferenceWrite(page);
-    expect((await readPreferences(workbenchUrl, token))?.splitRatio).toBeCloseTo(
-      0.42,
-      2
-    );
-
-    // ---- Keyboard nudges: Arrow ±2%, Shift ±10%, Home resets. ----
-    await divider.focus();
-    await page.keyboard.press("ArrowRight");
-    await expect(divider).toHaveAttribute("aria-valuenow", "44");
-    await page.keyboard.press("Shift+ArrowRight");
-    await expect(divider).toHaveAttribute("aria-valuenow", "54");
-    await page.keyboard.press("ArrowLeft");
-    await expect(divider).toHaveAttribute("aria-valuenow", "52");
-    await page.keyboard.press("Home");
-    await expect(divider).toHaveAttribute("aria-valuenow", "42");
-
-    // ---- Persistence across sheet close/reopen (project-local route). ----
-    await page.keyboard.press("ArrowRight");
-    await page.keyboard.press("ArrowRight");
-    await expect(divider).toHaveAttribute("aria-valuenow", "46");
-    await waitForPreferenceWrite(page);
-    await page.getByTestId("ds-close").click();
-    await expect(sheet).toHaveAttribute("data-open", "false");
-    await expect(page.getByTestId("design-system-browser")).toHaveCount(0);
-    await entryButton.click();
-    await expect(sheet).toHaveAttribute("data-open", "true");
-    await page.getByRole("button", { name: "Color", exact: true }).click();
-    await expect(page.getByTestId("ds-split-divider")).toHaveAttribute(
-      "aria-valuenow",
-      "46"
-    );
-
-    // ---- Narrow viewport: panes stack, samples below, no horizontal scroll. ----
+    // ---- Narrow viewport: Typography reflows without horizontal scroll. ----
     await page.setViewportSize({ width: 500, height: 800 });
-    await expect(split).toHaveAttribute("data-stacked", "true");
-    await expect(page.getByTestId("ds-split-divider")).toHaveCount(0);
-    await expect(page.getByTestId("ds-split-right")).toBeVisible();
-    const splitOverflow = await split.evaluate(
-      (el) => el.scrollWidth - el.clientWidth
-    );
-    expect(splitOverflow).toBeLessThanOrEqual(1);
-
     await page.getByRole("button", { name: "Typography", exact: true }).click();
     const narrowStatisticalDisplay = page.getByTestId(
       "ds-atlas-semantic.typography.statisticalDisplay"

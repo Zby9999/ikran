@@ -47,12 +47,6 @@ import {
 } from "@/components/ui/collapsible";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
-import { LeafSplit } from "./ds-split-pane";
-import { DEFAULT_DS_SPLIT_RATIO } from "./ds-split-pane-model";
-import {
-  DESIGN_SYSTEM_BROWSER_PREFERENCES_VERSION,
-  parseDesignSystemBrowserPreferences
-} from "@/lib/runtime/design-system-browser-preferences-shared";
 import {
   projectObjectFields,
   projectDomainRuleLeaf,
@@ -1124,30 +1118,6 @@ export function TokenLeafPage({
   );
 }
 
-/* ------------------------- 09C-A: leaf split pages ------------------------- */
-
-/** Ratio state threaded from the browser-level preference hook. */
-interface LeafSplitRatioProps {
-  ratio: number;
-  onRatioChange: (ratio: number) => void;
-  onRatioCommit: (ratio: number) => void;
-}
-
-/** Honest right-pane state for leaves whose visual grammar lands in 09C-B/C:
- * an explicit "no visual samples yet", never a fake sample. Locked decision:
- * no standalone explanatory paragraph in the right pane — the marker alone
- * carries the state. */
-function VisualSamplesEmpty() {
-  return (
-    <div className="dsb-samples" data-testid="ds-samples-empty">
-      <GroupLabel>Visual samples</GroupLabel>
-      <div className="dsb-samples-empty">
-        <p className="dsb-samples-empty-title">No visual samples yet</p>
-      </div>
-    </div>
-  );
-}
-
 function numericWeight(text: string | undefined): number | undefined {
   if (!text) return undefined;
   const parsed = Number.parseInt(text, 10);
@@ -1565,7 +1535,7 @@ function LayoutPlacardBlock({
 }
 
 /** Layout leaf (09C-D02): standard Browser heading, then the placard stream.
- * Full-width page (no split) — the capture needs the whole reading column. */
+ * Full-width page — the capture needs the whole reading column. */
 export function LayoutLeafPage({
   leaf,
   rows,
@@ -1676,80 +1646,6 @@ function useSheetPresence(
   return { mounted, shown };
 }
 
-/**
- * Browser-level split ratio preference (09C-A): loaded once per browser
- * mount from the project-local server route, kept locally during gestures,
- * and committed (debounced) on gesture end. Best-effort UX state — a failed
- * load/save leaves the default or local ratio in place, never an error UI.
- * Lives at the browser container so switching leaves never resets it.
- */
-function useDesignSystemSplitRatio(session: string, open: boolean) {
-  const [ratio, setRatio] = useState(DEFAULT_DS_SPLIT_RATIO);
-  const loadedRef = useRef(false);
-  const putTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (!open || loadedRef.current) return;
-    loadedRef.current = true;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch("/api/design-system-browser-preferences", {
-          cache: "no-store",
-          headers: { "x-ikran-session": session }
-        });
-        const data = (await response.json().catch(() => ({}))) as {
-          ok?: boolean;
-          preferences?: unknown;
-        };
-        if (!cancelled && response.ok && data.ok === true) {
-          const parsed = parseDesignSystemBrowserPreferences(data.preferences);
-          if (parsed) setRatio(parsed.splitRatio);
-        }
-      } catch {
-        // Best-effort preference — the default ratio still works.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open, session]);
-
-  const commitRatio = useCallback(
-    (next: number) => {
-      if (putTimerRef.current) clearTimeout(putTimerRef.current);
-      putTimerRef.current = setTimeout(() => {
-        putTimerRef.current = null;
-        void fetch("/api/design-system-browser-preferences", {
-          method: "PUT",
-          headers: {
-            "x-ikran-session": session,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            preferences: {
-              version: DESIGN_SYSTEM_BROWSER_PREFERENCES_VERSION,
-              splitRatio: next
-            }
-          })
-        }).catch(() => {
-          // Best-effort UX preference, not research data.
-        });
-      }, 300);
-    },
-    [session]
-  );
-
-  useEffect(
-    () => () => {
-      if (putTimerRef.current) clearTimeout(putTimerRef.current);
-    },
-    []
-  );
-
-  return { ratio, setRatio, commitRatio };
-}
-
 /* --------------------------------- browser --------------------------------- */
 
 export function DesignSystemEntryButton({ onOpen }: { onOpen: () => void }) {
@@ -1775,7 +1671,6 @@ export function DesignSystemBrowser({
   onClose: (source: SheetCloseSource) => void;
 }) {
   const { view, setView, error, reload } = useDesignSystemView(session, open);
-  const splitRatio = useDesignSystemSplitRatio(session, open);
   const prefersReducedMotion = usePrefersReducedMotion();
   const { mounted, shown } = useSheetPresence(
     open,
@@ -1938,11 +1833,11 @@ export function DesignSystemBrowser({
 
   // Canvas keyboard isolation + focus trap. Attached as a BUBBLE-phase React
   // handler on the sheet root (see onSheetKeyDown): keydown first serves the
-  // sheet's own interactive elements (divider keyboard resize, ⓘ buttons,
-  // future inputs), then stops at the root so it never reaches tldraw's
-  // body-level bindings. A capture-phase window listener used to swallow
-  // events BEFORE the sheet's own controls could receive them — that made
-  // every keyboard interaction inside the sheet inert.
+  // sheet's own interactive elements (ⓘ buttons, future inputs), then stops
+  // at the root so it never reaches tldraw's body-level bindings. A
+  // capture-phase window listener used to swallow events BEFORE the sheet's
+  // own controls could receive them — that made every keyboard interaction
+  // inside the sheet inert.
   const infoKeyRef = useRef<string | null>(null);
   const shownRef = useRef(false);
   useEffect(() => {
@@ -2040,44 +1935,35 @@ export function DesignSystemBrowser({
     onApprove: (row) => void approve(row)
   };
 
-  const renderMain = (): { node: React.ReactNode; layout: "page" | "leaf" } => {
+  const renderMain = (): ReactNode => {
     if (error && !model) {
-      return {
-        layout: "page",
-        node: (
-          <div className="dsb-empty">
-            <p className="dsb-empty-title dsb-load-error">
-              Could not load the design system
-            </p>
-            <p className="dsb-empty-body">{error}</p>
-          </div>
-        )
-      };
+      return (
+        <div className="dsb-empty">
+          <p className="dsb-empty-title dsb-load-error">
+            Could not load the design system
+          </p>
+          <p className="dsb-empty-body">{error}</p>
+        </div>
+      );
     }
     if (!model) {
-      return {
-        layout: "page",
-        node: (
-          <div className="dsb-empty">
-            <p className="dsb-empty-body">Loading…</p>
-          </div>
-        )
-      };
+      return (
+        <div className="dsb-empty">
+          <p className="dsb-empty-body">Loading…</p>
+        </div>
+      );
     }
     if (model.empty) {
-      return {
-        layout: "page",
-        node: (
-          <div className="dsb-empty" data-testid="ds-empty-state">
-            <p className="dsb-empty-title">No design system entries yet</p>
-            <p className="dsb-empty-body">
-              Alignment is complete, but the agent has not declared any
-              design-system artifacts yet. Once design-system JSON sources are
-              declared and ingested, they appear here.
-            </p>
-          </div>
-        )
-      };
+      return (
+        <div className="dsb-empty" data-testid="ds-empty-state">
+          <p className="dsb-empty-title">No design system entries yet</p>
+          <p className="dsb-empty-body">
+            Alignment is complete, but the agent has not declared any
+            design-system artifacts yet. Once design-system JSON sources are
+            declared and ingested, they appear here.
+          </p>
+        </div>
+      );
     }
 
     const sectionHome =
@@ -2090,90 +1976,56 @@ export function DesignSystemBrowser({
         />
       );
 
-    if (route.kind === "section") return { layout: "page", node: sectionHome };
-
-    const splitProps: LeafSplitRatioProps = {
-      ratio: splitRatio.ratio,
-      onRatioChange: splitRatio.setRatio,
-      onRatioCommit: splitRatio.commitRatio
-    };
+    if (route.kind === "section") return sectionHome;
 
     if (route.section === "foundations") {
       if (route.leaf === "layout") {
-        // 09C-D02: Source Capture placards replace the Blueprint schematic —
-        // a full-width page stream, no split.
-        return {
-          layout: "page",
-          node: (
-            <LayoutLeafPage
-              leaf={model.foundations.layout}
-              rows={rowListProps}
-              session={session}
-            />
-          )
-        };
+        // 09C-D02: Source Capture placards — full-width page stream.
+        return (
+          <LayoutLeafPage
+            leaf={model.foundations.layout}
+            rows={rowListProps}
+            session={session}
+          />
+        );
       }
       if (route.leaf === "interaction") {
-        return {
-          layout: "page",
-          node: (
-            <RulesLeafPage
-              leaf={model.foundations.interaction}
-              rows={rowListProps}
-            />
-          )
-        };
+        return (
+          <RulesLeafPage
+            leaf={model.foundations.interaction}
+            rows={rowListProps}
+          />
+        );
       }
       const tokenLeaf =
         model.foundations.tokenLeaves.find((leaf) => leaf.id === route.leaf) ??
         null;
       if (tokenLeaf) {
-        // Typography is the 09C-A tracer bullet: Reader Projection + real
-        // specimens. Color / Materials keep their token rows until 09C-C.
+        // Typography: Reader Projection + real specimens. Color / Materials
+        // keep token rows until 09C-C visual modules land as full-width pages.
         if (tokenLeaf.id === "typography" && view) {
-          return {
-            layout: "leaf",
-            node: (
-              <TypographyLeafPage
-                layers={typographyLayersFromView(view)}
-                rules={tokenLeaf.rules}
-                rows={rowListProps}
-              />
-            )
-          };
-        }
-        return {
-          layout: "leaf",
-          node: (
-            <LeafSplit
-              {...splitProps}
-              left={<TokenLeafPage leaf={tokenLeaf} rows={rowListProps} />}
-              right={<VisualSamplesEmpty />}
+          return (
+            <TypographyLeafPage
+              layers={typographyLayersFromView(view)}
+              rules={tokenLeaf.rules}
+              rows={rowListProps}
             />
-          )
-        };
+          );
+        }
+        return <TokenLeafPage leaf={tokenLeaf} rows={rowListProps} />;
       }
     } else {
       const entryId = componentLeafId(route.leaf);
       const component =
         model.components.list.find((c) => c.entryId === entryId) ?? null;
       if (component) {
-        return {
-          layout: "leaf",
-          node: (
-            <LeafSplit
-              {...splitProps}
-              left={<ComponentDetail component={component} rows={rowListProps} />}
-              right={<VisualSamplesEmpty />}
-            />
-          )
-        };
+        return <ComponentDetail component={component} rows={rowListProps} />;
       }
     }
 
     // Stale route after a refetch (leaf/component vanished): render the
     // section home rather than a blank main.
-    return { layout: "page", node: sectionHome };
+    return sectionHome;
   };
 
   const sidebarLeaves: { id: DsLeafId; name: string; icon: IconSvgElement }[] =
@@ -2309,13 +2161,9 @@ export function DesignSystemBrowser({
             </div>
             <div
               key={`${route.kind}-${route.kind === "leaf" ? route.leaf : route.section}`}
-              className={
-                mainContent.layout === "leaf"
-                  ? "dsb-enter dsb-leaf"
-                  : "dsb-enter dsb-page"
-              }
+              className="dsb-enter dsb-page"
             >
-              {mainContent.node}
+              {mainContent}
             </div>
           </main>
         </div>

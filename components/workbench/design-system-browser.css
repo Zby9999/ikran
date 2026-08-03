@@ -200,16 +200,11 @@
   padding: 28px 56px 0 36px;
 }
 
-.dsb-main > .dsb-page,
-.dsb-main > .dsb-leaf {
+.dsb-main > .dsb-page {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
   overscroll-behavior-y: none;
-}
-
-.dsb-main > .dsb-leaf:has(> .dsb-split) {
-  overflow: hidden;
 }
 
 /* Narrow sheets: the sidebar becomes a horizontal bar above the content —
@@ -953,170 +948,6 @@
   button.dsb-card:hover {
     transform: none;
   }
-
-  .dsb-split-divider-line,
-  .dsb-split-divider::after {
-    transition-duration: 1ms;
-  }
-}
-
-/* ============================ 09C-A: leaf split ============================ */
-/* Universal leaf chrome: left = title / status / rules / Technical details /
-   Evidence entry; right = Visual Samples + their own annotations only.
-   The grid template itself is set inline from the persisted ratio; the
-   stacked fallback is single-sourced in JS (`data-stacked`) so an inline
-   style can never defeat it. */
-
-.dsb-leaf {
-  display: flex;
-  min-height: 0;
-  flex-direction: column;
-}
-
-.dsb-split {
-  display: grid;
-  height: 100%;
-  min-height: 0;
-  flex: 1;
-}
-
-.dsb-split[data-stacked] {
-  display: flex;
-  height: auto;
-  /* flex: 1 from the base rule would pin the split to the 100%-height leaf
-     (flex-basis beats height on the column main axis), truncating the
-     stacked column to the viewport and pulling the samples pane up over the
-     rules pane's overflow. Stacked mode sizes to content; .dsb-main
-     scrolls. */
-  flex: none;
-  flex-direction: column;
-  gap: 48px;
-  padding: 48px 36px 28px;
-}
-
-.dsb-split[data-dragging] {
-  cursor: col-resize;
-  user-select: none;
-}
-
-/* Dragged ratio changes must not animate — the pane tracks the pointer. */
-.dsb-split[data-dragging] * {
-  transition-duration: 0s !important;
-}
-
-.dsb-split-pane {
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 48px 24px 28px 36px;
-}
-
-.dsb-split-right {
-  padding: 48px 36px 28px 24px;
-}
-
-.dsb-split[data-stacked] .dsb-split-pane {
-  overflow: visible;
-  padding: 0;
-}
-
-.dsb-split-pane > * + * {
-  margin-top: 32px;
-}
-
-.dsb-split[data-stacked] .dsb-split-pane > * + * {
-  margin-top: 32px;
-}
-
-/* Divider: 20px hit area, 1px visible line, center grab pill. */
-.dsb-split-divider {
-  position: relative;
-  cursor: col-resize;
-  outline: none;
-  touch-action: none;
-}
-
-.dsb-split-divider-line {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 1px;
-  background: rgb(0 0 0 / 8%);
-  transition:
-    background-color 150ms ease-out,
-    width 150ms ease-out;
-}
-
-.dsb-split-divider::after {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 4px;
-  height: 24px;
-  border-radius: 2px;
-  background: rgb(0 0 0 / 12%);
-  content: "";
-  transform: translate(-50%, -50%);
-  transition: background-color 150ms ease-out;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .dsb-split-divider:hover .dsb-split-divider-line {
-    width: 2px;
-    background: rgb(0 0 0 / 20%);
-  }
-
-  .dsb-split-divider:hover::after {
-    background: rgb(0 0 0 / 28%);
-  }
-}
-
-.dsb-split-divider:focus-visible {
-  outline: 2px solid var(--dsc-accent);
-  outline-offset: -2px;
-  border-radius: 3px;
-}
-
-.dsb-split-divider:focus-visible .dsb-split-divider-line {
-  width: 2px;
-  background: var(--dsc-accent);
-}
-
-.dsb-split[data-dragging] .dsb-split-divider-line {
-  width: 2px;
-  background: var(--dsc-accent);
-}
-
-.dsb-split[data-dragging] .dsb-split-divider::after {
-  background: var(--dsc-accent);
-}
-
-/* ------------------------- 09C-A: visual samples -------------------------- */
-
-.dsb-samples {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  container-type: inline-size;
-}
-
-.dsb-samples > * + * {
-  margin-top: 0;
-}
-
-.dsb-samples-empty {
-  border: 1px dashed rgb(0 0 0 / 14%);
-  border-radius: 10px;
-  background: rgb(0 0 0 / 2%);
-  padding: 24px;
-}
-
-.dsb-samples-empty-title {
-  margin: 0;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--dsc-ink-2);
 }
 
 /* -------------------------- 09C-B: visual origin --------------------------- */
@@ -1318,7 +1149,6 @@
   display: flex;
   flex-direction: column;
   gap: 48px;
-  padding: 48px 36px 28px;
 }
 
 .dsb-type-count {
@@ -1473,6 +1303,7 @@
 .dsb-type-detail {
   min-width: 0;
 }
+
 
 .dsb-type-detail dt {
   margin-bottom: 5px;
@@ -1685,10 +1516,6 @@
 }
 
 @media (max-width: 760px) {
-  .dsb-typography-page {
-    padding: 32px 20px 24px;
-  }
-
   .dsb-page {
     padding: 32px 20px 24px;
   }

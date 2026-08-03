@@ -47,13 +47,6 @@ export function getWorkbenchLayoutPath(projectPath: string): string {
   return path.join(getIkranDir(projectPath), "workbench-layout.json");
 }
 
-/** Design System Browser UX preferences (split ratio) — not research data. */
-export function getDesignSystemBrowserPreferencesPath(
-  projectPath: string
-): string {
-  return path.join(getIkranDir(projectPath), "design-system-browser.json");
-}
-
 export function getArtifactsDir(projectPath: string): string {
   return path.join(getIkranDir(projectPath), "artifacts");
 }

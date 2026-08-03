@@ -13,14 +13,19 @@ Status: needs-info
 全部适用 foundation domains 和当前 component inventory，并建立可审计的 visual
 coverage 结果。
 
+**布局前提（2026-08-03 修订）**：Design System Browser 已整体退役左右分栏
+（见 `09C-A` 退役决策）。本 issue 的 Color / Materials / Component 视觉模块一律按
+**全宽单栏页面**规划，对齐 Type Atlas 与 Layout placard 流——不再有右栏，也不再
+依赖 `VisualSamplesEmpty` 占位。
+
 本 issue 补齐：
 
 - Color：primitive、semantic role、component usage 的色板、前景/背景组合和适用的
-  contrast preview；
+  contrast preview，作为全宽页面上的视觉模块（而非分栏右栏）；
 - Materials：范围收缩——不预建测量型样本 renderer；无真实 Materials token 时
-  leaf 保持 token rows + 诚实空样本（VisualSamplesEmpty）。真实 shadow / radius
-  token 经 09B 重新抽取出现后，再单独立项补测量样本。domain-rule 的呈现归
-  09C-D04（Rules / Tokens 分区），不在本 issue；
+  leaf 只保持 token rows / Rules（无空样本右栏）。真实 shadow / radius token 经
+  09B 重新抽取出现后，再单独立项补测量样本，同样落在全宽页面。domain-rule 的
+  呈现归 09C-D04（Rules / Tokens 分区），不在本 issue；
 - 09B component inventory 中全部非 gap 组件的 presentation 与 preview outcome；
 - 对实际代码组件的 preview adapters；
 - 对可由结构化 spec 表达的 Source-generated / Schematic renderers；
@@ -37,7 +42,8 @@ Coverage 不是要求每个 entry 都生成一张独立图片，而是要求每�
 每个非 gap component 必须进入统一 Component Reader，并得到 Code-backed、
 Source-generated、Schematic 或 unavailable 中的一种结果。Unavailable 不等于失败，
 但必须指出缺少的 anatomy、variant、state、responsive behavior、code link 或 adapter，
-不能静默退化成没有内容的右栏。
+~~不能静默退化成没有内容的右栏。~~
+不能静默退化成无法解释的空白视觉区。
 
 Curated override 用于改善 sample composition、示例内容或呈现方式，不是新的 Design
 System source。它必须引用现有 entry / component identity，不能覆盖 token value、
@@ -49,14 +55,17 @@ System 内容都能得到一致、诚实、可维护的阅读与视觉结果”�
 
 ## Locked product decisions
 
-- 继续复用 09C-A 的可拖拽双栏和 09C-D03 的 Component Framework（原 09C-B 的
+- ~~继续复用 09C-A 的可拖拽双栏和 09C-D03 的 Component Framework（原 09C-B 的
   Visual Grammar 目标已按 section 拆分：Interaction 纯文本见 09C-D01，Layout
-  source capture 见 09C-D02）。
+  source capture 见 09C-D02）。~~
+- 继续复用 09C-A 的全宽 Reader 页面契约与 09C-D03 的 Component Framework（原
+  09C-B 的 Visual Grammar 目标已按 section 拆分：Interaction 纯文本见 09C-D01，
+  Layout source capture 见 09C-D02）。视觉模块按全宽页面放置，不恢复分栏。
 - Color、Materials 与 Components 仍从 DB-backed view 派生；不新增平行事实源。
-- Materials 范围已收缩（2026-08）：rows + 诚实空样本，直到真实 token 经 09B
-  重新抽取出现；不为了 coverage 指标预建 renderer。Color / Typography /
-  Materials 三页的 Rules / Tokens 分区归 09C-D04；本 issue 的 Color 工作落在
-  Tokens 区语境内。
+- Materials 范围已收缩（2026-08）：仅 rows / Rules，直到真实 token 经 09B
+  重新抽取出现；不为了 coverage 指标预建 renderer，也不渲染空样本占位。
+  Color / Typography / Materials 三页的 Rules / Tokens 分区归 09C-D04；本 issue
+  的 Color 工作落在 Tokens 区语境内的全宽视觉模块。
 - visual coverage 以适用性和可追溯性为标准，不设固定截图数量。
 - 每个 Visual Sample 记录所消费的 entry / component identities 和 origin。
 - unavailable 是诚实结果；不得为了 coverage 指标制造不受支持的视觉决定。
@@ -68,24 +77,30 @@ System 内容都能得到一致、诚实、可维护的阅读与视觉结果”�
 
 开始具体实现前需要设计师确认完整覆盖用的 Figma reference，包括 Color、
 通用 unavailable state、origin 标记、override 后的样本形态，以及当前 inventory 中
-不同组件类型的代表页面（Materials 已收缩为 rows + 诚实空样本，不在本次
-reference 范围）。取得 reference 后可把 Status 调整为 `ready-for-agent`。
+不同组件类型的代表页面——全部按**全宽单栏**构图（Materials 已收缩为 rows /
+Rules，不在本次 reference 范围）。取得 reference 后可把 Status 调整为
+`ready-for-agent`。
 
 ## Acceptance criteria
 
-- [ ] Color Reader 把 primitive、semantic 和 component usage 组织为可读左栏信息，
-      右栏呈现实际色板和适用的前景/背景组合。
+- [ ] ~~Color Reader 把 primitive、semantic 和 component usage 组织为可读左栏信息，
+      右栏呈现实际色板和适用的前景/背景组合。~~
+- [ ] Color Reader 把 primitive、semantic 和 component usage 组织为可读信息，并在
+      同一全宽页面上呈现实际色板和适用的前景/背景组合（无左右分栏）。
 - [ ] Color sample 只使用 source-backed value；candidate / gap 不会被表现成已确认
       palette。
-- [ ] Materials 不新建 renderer：leaf 维持 token rows；视觉样本位呈现诚实空态，
-      不出现伪造测量样本。
+- [ ] ~~Materials 不新建 renderer：leaf 维持 token rows；视觉样本位呈现诚实空态，
+      不出现伪造测量样本。~~
+- [ ] Materials 不新建 renderer：leaf 维持 token rows / Rules；不渲染空样本占位，
+      也不伪造测量样本。
 - [ ] 每个非 gap component inventory entry 都进入统一 Component Reader，并得到
       Code-backed、Source-generated、Schematic 或 unavailable outcome。
 - [ ] 有有效 code link 和 adapter 的组件使用真实实现；没有 adapter 时不会偷偷使用
       不相关的通用组件替代。
 - [ ] Source-generated / Schematic sample 的 anatomy、variants、states、token links
       和 responsive behavior 均能追溯到当前 spec。
-- [ ] unavailable outcome 显示具体缺失字段或 adapter，不留下无法解释的空白右栏。
+- [ ] ~~unavailable outcome 显示具体缺失字段或 adapter，不留下无法解释的空白右栏。~~
+- [ ] unavailable outcome 显示具体缺失字段或 adapter，不留下无法解释的空白视觉区。
 - [ ] visual coverage audit 能列出 consumed、supporting-detail、not-applicable 和
       unavailable 结果，并能定位对应 entry / component。
 - [ ] coverage audit 不以固定 entry 或 sample 数量作为成功标准。
@@ -113,7 +128,7 @@ reference 范围）。取得 reference 后可把 Status 调整为 `ready-for-age
 
 ## Open gaps
 
-- 完整覆盖 Figma reference 尚未提供。
+- 完整覆盖 Figma reference 尚未提供（需按全宽单栏重新确认构图）。
 - Curated override 的持久化位置、authoring 入口和版本策略尚未锁定；实现不得在这些
   决策明确前新增 source file 或旁路事实源。
 - 真实项目中哪些 code links 可以安全进入 Code-backed preview 需要在 09C-D03
@@ -131,3 +146,4 @@ reference 范围）。取得 reference 后可把 Status 调整为 `ready-for-age
 - 不让 curated override 成为可修改 Design System 规则的旁路。
 - 不生成与当前产品无关的通用组件或通用 gap。
 - 不改变 Issue 10 的 Seed reconstruction prototype 或 Issue 12 的规则更新流程。
+- 不恢复 LeafSplit / 右栏空样本占位。
