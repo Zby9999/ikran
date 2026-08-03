@@ -439,18 +439,13 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     await expect(materialsRules).toBeVisible();
     await expect(page.getByTestId("ds-tokens-zone")).toHaveCount(0);
     const noShadowRule = page.getByTestId("ds-domain-rule-1");
+    await expect(noShadowRule).toContainText("Keep material treatment flat.");
     await expect(noShadowRule).toContainText(
-      "Do not use shadows to separate regions"
+      "Do not use shadows to separate regions; use spacing and borders for hierarchy."
     );
-    const noShadowDisclosure = noShadowRule.getByRole("button", {
-      name: "Keep material treatment flat."
-    });
-    await expect(noShadowDisclosure).toHaveAttribute("aria-expanded", "false");
-    await noShadowDisclosure.click();
-    await expect(noShadowDisclosure).toHaveAttribute("aria-expanded", "true");
-    await expect(noShadowRule).toContainText(
-      "use spacing and borders for hierarchy"
-    );
+    await expect(
+      noShadowRule.getByTestId("ds-rule-edit-semantic.rule.no-shadow-regions")
+    ).toBeVisible();
     const evidenceTrigger = noShadowRule.getByRole("button", {
       name: "Evidence for domain rule semantic.rule.no-shadow-regions"
     });
@@ -815,15 +810,12 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     const quietMotion = page.getByTestId("ds-interaction-rule-1");
     await expect(quietMotion).toContainText("Animation supports comprehension.");
     await expect(quietMotion).not.toContainText("Description");
-    const quietMotionToggle = quietMotion.getByRole("button", {
-      name: "Animation supports comprehension."
-    });
-    await expect(quietMotionToggle).toHaveAttribute("aria-expanded", "false");
-    await quietMotionToggle.click();
-    await expect(quietMotionToggle).toHaveAttribute("aria-expanded", "true");
     await expect(quietMotion).toContainText(
       "Use short feedback to explain a state change"
     );
+    await expect(
+      quietMotion.getByTestId("ds-rule-edit-quiet-motion")
+    ).toBeVisible();
     await expect(quietMotion.getByTestId("ds-interaction-status")).toHaveText(
       "candidate"
     );

@@ -13,6 +13,11 @@
 //     card ids / Agent annotation ids). Non-gap entries must link at least
 //     one record; gap entries carry none — the gap declaration itself is the
 //     semantics (09A decision 4: gaps are explicit only, never derived).
+//   - Primitive color tokens are the exception to the non-empty `meaning`
+//     contract: the palette carries no usage description, so their `meaning`
+//     must be the empty string (usage semantics belong to the semantic and
+//     component layers). domain-rule entries and legacy tokens without an
+//     explicit domain keep the non-empty contract.
 //
 // These validators are pure structural checks: they never touch the DB and
 // never judge prose content. Status cross-validation against alignment
@@ -81,6 +86,7 @@ export type DesignSystemSchemaReason =
   | "legacy_rule_body_requires_prose"
   | "domain_rule_domain_required"
   | "invalid_token_domain"
+  | "primitive_color_meaning_forbidden"
   | "token_primitive_alias"
   | "token_alias_unresolvable"
   | "token_alias_invalid_layer"
@@ -172,6 +178,9 @@ function requireArray(
 /**
  * Shared entry check: id (only when `withId`), meaning, status, links and a
  * per-kind value check. `ctx` identifies the entry in failure details.
+ * `meaningMustBeEmpty` flips the meaning contract to "present, a string, and
+ * exactly empty" (primitive color tokens — usage semantics live in the
+ * semantic/component layers, never on the palette).
  */
 function checkEntry(
   raw: unknown,
@@ -181,6 +190,7 @@ function checkEntry(
     checkValue: (value: unknown, ctx: Record<string, unknown>) => DesignSystemSchemaError | null;
     allowedKinds?: readonly DesignSystemEntryKind[];
     domainRuleRequiresDomain?: boolean;
+    meaningMustBeEmpty?: boolean;
   }
 ): DesignSystemSchemaError | null {
   if (!isPlainObject(raw)) {
@@ -219,8 +229,24 @@ function checkEntry(
       return fail("domain_rule_domain_required", ctx);
     }
   }
-  const meaningFailure = requireString(raw, "meaning", ctx);
-  if (meaningFailure) return meaningFailure;
+  if (options.meaningMustBeEmpty) {
+    if (raw.meaning === undefined) {
+      return fail("missing_required_field", { ...ctx, field: "meaning" });
+    }
+    if (typeof raw.meaning !== "string") {
+      return fail("invalid_field_type", {
+        ...ctx,
+        field: "meaning",
+        expected: "string"
+      });
+    }
+    if (raw.meaning !== "") {
+      return fail("primitive_color_meaning_forbidden", ctx);
+    }
+  } else {
+    const meaningFailure = requireString(raw, "meaning", ctx);
+    if (meaningFailure) return meaningFailure;
+  }
 
   if (raw.status === undefined) {
     return fail("missing_required_field", { ...ctx, field: "status" });
@@ -308,6 +334,11 @@ function checkEntryArray(
 // primitive — sideways chains and layer-skipping back-references are
 // allowed, forward references are not. Cycles (incl. self-cycles) are
 // rejected with the offending path in details.
+//
+// Meaning contract: a primitive entry with domain "color" (and kind other
+// than "domain-rule") must carry `meaning: ""` — the palette holds no usage
+// description; `primitive_color_meaning_forbidden` rejects anything else.
+// Everywhere else `meaning` stays a required non-empty string.
 // ---------------------------------------------------------------------------
 
 // Single owner of the token layer vocabulary: ./design-system-ingest
@@ -456,6 +487,14 @@ function validateTokenJson(json: Record<string, unknown>): DesignSystemSchemaRes
         withId: false,
         allowedKinds: entryKindsAllowedIn("token.json"),
         domainRuleRequiresDomain: true,
+        // Primitive color tokens carry no usage description: meaning must be
+        // the empty string (usage semantics belong to the semantic/component
+        // layers). domain-rule entries keep their own meaning, and legacy
+        // entries without an explicit domain keep the old non-empty contract.
+        meaningMustBeEmpty:
+          layer === "primitive" &&
+          raw.domain === "color" &&
+          raw.kind !== "domain-rule",
         checkValue: (value) => {
           if (raw.kind === "domain-rule") {
             return validateRuleBody(value, ctx);

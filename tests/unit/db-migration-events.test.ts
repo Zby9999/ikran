@@ -856,12 +856,61 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
+  test("v20→v21 clears primitive color token meanings, preserving domain rules and other rows", () => {
+    withTempProject((dir) => {
+      const initialized = openProjectDb(dir);
+      closeProjectDb(initialized);
+      const dbPath = getProjectDbPath(dir);
+      const v20 = new DatabaseSync(dbPath);
+      try {
+        const insert = v20.prepare(
+          `INSERT INTO design_system_entries
+           (id, file_kind, section, entry_id, name, kind, domain, value_json,
+            meaning, status, links_json, source_artifact_path, position,
+            created_at, updated_at)
+           VALUES (?, 'token.json', ?, ?, ?, ?, ?, '"#111111"', ?, 'formalized',
+                   '["card-1"]', 'design-system/token.json', 0,
+                   '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z')`
+        );
+        insert.run("e-color", "token.primitive", "primitive.color.ink", "color.ink", "token", "color", "品牌墨色");
+        insert.run("e-color-legacy-kind", "token.primitive", "primitive.color.paper", "color.paper", null, "color", "纸张白");
+        insert.run("e-color-rule", "token.primitive", "primitive.color-rule", "color-rule", "domain-rule", "color", "Accent restraint");
+        insert.run("e-spacing", "token.primitive", "primitive.space.4", "space.4", "token", "spacing", "基础间距");
+        insert.run("e-semantic", "token.semantic", "semantic.color.primary", "color.primary", "token", "color", "语义主色");
+        v20.exec("PRAGMA user_version = 20");
+      } finally {
+        v20.close();
+      }
+
+      const migrated = openProjectDb(dir);
+      try {
+        expect(userVersion(migrated)).toBe(CURRENT_SCHEMA_VERSION);
+        const meanings = new Map(
+          (
+            migrated
+              .prepare(`SELECT id, meaning FROM design_system_entries`)
+              .all() as Array<{ id: string; meaning: string }>
+          ).map((row) => [row.id, row.meaning])
+        );
+        expect(meanings.get("e-color")).toBe("");
+        expect(meanings.get("e-color-legacy-kind")).toBe("");
+        // domain-rule entries keep their own meaning; other sections and
+        // other domains are untouched.
+        expect(meanings.get("e-color-rule")).toBe("Accent restraint");
+        expect(meanings.get("e-spacing")).toBe("基础间距");
+        expect(meanings.get("e-semantic")).toBe("语义主色");
+      } finally {
+        closeProjectDb(migrated);
+      }
+    });
+  });
+
   test("fresh DB opens at CURRENT_SCHEMA_VERSION without backup", () => {
     withTempProject((dir) => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(20);
+        expect(CURRENT_SCHEMA_VERSION).toBe(21);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([

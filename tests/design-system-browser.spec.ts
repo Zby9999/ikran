@@ -206,12 +206,24 @@ test("09A design system browser: declare → render → approve write-back", asy
           meaning: "Primary text ink",
           status: "candidate",
           links: [tokenDesignerEditedCardId]
+        },
+        "color.brand": {
+          value: "#3A93FF",
+          meaning: "Brand accent",
+          status: "candidate",
+          links: [agentAcceptedCardId]
         }
       },
       semantic: {
         "color.text-primary": {
           value: { alias: "primitive.color.ink" },
           meaning: "Default text color",
+          status: "candidate",
+          links: [tokenDesignerEditedCardId]
+        },
+        "color.surface-muted": {
+          value: "#F2F2F2",
+          meaning: "Muted surface",
           status: "candidate",
           links: [agentAcceptedCardId]
         }
@@ -344,13 +356,29 @@ test("09A design system browser: declare → render → approve write-back", asy
     await expect(page.getByTestId("ds-row-visual-language")).toBeVisible();
 
     await page.getByRole("button", { name: "Color", exact: true }).click();
-    await expect(page.getByTestId("ds-token-layer-primitive")).toBeVisible();
-    await expect(page.getByTestId("ds-token-layer-semantic")).toBeVisible();
-    const inkRow = page.getByTestId("ds-row-primitive.color.ink");
-    await expect(inkRow).toBeVisible();
-    await expect(inkRow.getByTestId("ds-status-chip")).toHaveText("candidate");
+    // Redesign: the Primitive section collapses into swatch provenance —
+    // no layer sections, no primitive rows, no "→ layer.name" alias text.
+    await expect(page.getByTestId("ds-color-group-semantic")).toBeVisible();
+    await expect(page.getByTestId("ds-token-layer-primitive")).toHaveCount(0);
+    await expect(page.getByTestId("ds-row-primitive.color.ink")).toHaveCount(0);
     const aliasRow = page.getByTestId("ds-row-semantic.color.text-primary");
-    await expect(aliasRow).toContainText("→ primitive.color.ink");
+    await expect(aliasRow).toBeVisible();
+    await expect(aliasRow.getByTestId("ds-status-chip")).toHaveText("candidate");
+    await expect(aliasRow).toContainText("Default text color");
+    await expect(aliasRow).not.toContainText("→ primitive.color.ink");
+    // The consumed primitive survives as the swatch tooltip's provenance.
+    await expect(aliasRow.getByRole("tooltip")).toContainText(
+      "color.ink · #101418"
+    );
+    // Unconsumed primitives stay visible as bare swatches — name and usage
+    // deliberately absent until something consumes them.
+    const unconsumed = page.getByTestId("ds-color-unconsumed");
+    await expect(unconsumed).toBeVisible();
+    await expect(unconsumed).toContainText("Unconsumed primitives · 1");
+    await expect(unconsumed.locator(".dsb-color-name")).toHaveCount(0);
+    await expect(
+      page.getByTestId("ds-color-swatch-color.brand")
+    ).toBeVisible();
 
     await page.getByRole("tab", { name: "Components" }).click();
     const componentCard = page.getByTestId("ds-component-card-button");
@@ -455,9 +483,9 @@ test("09A design system browser: declare → render → approve write-back", asy
     await page.getByRole("heading", { name: "Color", exact: true }).click();
     // Open the ⓘ layer via HOVER — the designed affordance.
     await page
-      .getByRole("button", { name: "Evidence for color.ink", exact: true })
+      .getByRole("button", { name: "Evidence for color.text-primary", exact: true })
       .hover();
-    const inkEvidence = page.getByTestId("ds-evidence-primitive.color.ink");
+    const inkEvidence = page.getByTestId("ds-evidence-semantic.color.text-primary");
     await expect(inkEvidence).toBeVisible();
     await expect(inkEvidence).toContainText("Question 1 for token?");
     await expect(inkEvidence).toContainText("设计师改写后的回答");
@@ -472,7 +500,7 @@ test("09A design system browser: declare → render → approve write-back", asy
     // Reopen the ⓘ layer; keyboard focus is still on the sheet root from the
     // heading click above, so Esc reaches the sheet's handler.
     await page
-      .getByRole("button", { name: "Evidence for color.ink", exact: true })
+      .getByRole("button", { name: "Evidence for color.text-primary", exact: true })
       .hover();
     await expect(inkEvidence).toBeVisible();
     await page.keyboard.press("Escape");
@@ -498,16 +526,16 @@ test("09A design system browser: declare → render → approve write-back", asy
     // ---- Approve a candidate: chip flips, DB row + source file rewritten. ----
     await page.getByRole("button", { name: "Color", exact: true }).click();
     await page
-      .getByRole("button", { name: "Evidence for color.ink", exact: true })
+      .getByRole("button", { name: "Evidence for color.text-primary", exact: true })
       .hover();
-    const approveInk = page.getByTestId("ds-approve-primitive.color.ink");
+    const approveInk = page.getByTestId("ds-approve-semantic.color.text-primary");
     await expect(approveInk).toBeVisible();
     // Moving into the popover content cancels the hover-close timer.
     await approveInk.hover();
     await approveInk.click();
     // The tray retires only after the server committed (DB + file + event).
     await expect(approveInk).toHaveCount(0);
-    await expect(inkRow.getByTestId("ds-status-chip")).toHaveText("formalized");
+    await expect(aliasRow.getByTestId("ds-status-chip")).toHaveText("formalized");
 
     const rewritten = JSON.parse(
       readFileSync(path.join(designSystemDir, "token.json"), "utf-8")
@@ -515,13 +543,13 @@ test("09A design system browser: declare → render → approve write-back", asy
       primitive: Record<string, { status: string }>;
       semantic: Record<string, { status: string }>;
     };
-    expect(rewritten.primitive["color.ink"].status).toBe("formalized");
-    expect(rewritten.semantic["color.text-primary"].status).toBe("candidate");
+    expect(rewritten.semantic["color.text-primary"].status).toBe("formalized");
+    expect(rewritten.primitive["color.ink"].status).toBe("candidate");
     expect(
       readDesignSystemEntryStatus(
         projectDir,
         "design-system/token.json",
-        "primitive.color.ink"
+        "semantic.color.text-primary"
       )
     ).toBe("formalized");
     expect(readEventTypes(projectDir)).toContain("design_system_entry_approved");
@@ -536,28 +564,33 @@ test("09A design system browser: declare → render → approve write-back", asy
     // points), while the lower pane is always clear of it.
     await page.mouse.click(300, 640);
     await expect(
-      page.getByTestId("ds-evidence-primitive.color.ink")
+      page.getByTestId("ds-evidence-semantic.color.text-primary")
     ).toHaveCount(0);
     await page
-      .getByRole("button", { name: "Evidence for color.text-primary", exact: true })
+      .getByRole("button", { name: "Evidence for color.surface-muted", exact: true })
       .hover();
-    const aliasEvidence = page.getByTestId("ds-evidence-semantic.color.text-primary");
-    await expect(aliasEvidence).toBeVisible();
-    const approveAlias = page.getByTestId("ds-approve-semantic.color.text-primary");
-    await expect(approveAlias).toBeVisible();
-    await approveAlias.hover();
-    await approveAlias.click();
+    const mutedEvidence = page.getByTestId(
+      "ds-evidence-semantic.color.surface-muted"
+    );
+    await expect(mutedEvidence).toBeVisible();
+    const approveMuted = page.getByTestId(
+      "ds-approve-semantic.color.surface-muted"
+    );
+    await expect(approveMuted).toBeVisible();
+    await approveMuted.hover();
+    await approveMuted.click();
+    const mutedRow = page.getByTestId("ds-row-semantic.color.surface-muted");
     // The row alert renders approvalErrorMessage(reason) — this exact copy
     // maps 1:1 to the typed reason `formalized_requires_designer_edited_link`.
-    await expect(aliasRow.getByRole("alert")).toContainText(
+    await expect(mutedRow.getByRole("alert")).toContainText(
       "Needs a designer-edited answered card before it can be formalized."
     );
-    await expect(aliasRow.getByTestId("ds-status-chip")).toHaveText("candidate");
+    await expect(mutedRow.getByTestId("ds-status-chip")).toHaveText("candidate");
     expect(
       readDesignSystemEntryStatus(
         projectDir,
         "design-system/token.json",
-        "semantic.color.text-primary"
+        "semantic.color.surface-muted"
       )
     ).toBe("candidate");
 

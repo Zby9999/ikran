@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 
 import {
+  ColorLeafPage,
   ComponentDetail,
   DESIGN_SYSTEM_SHEET_EXIT_MS,
   DESIGN_SYSTEM_SHEET_REDUCED_MOTION_EXIT_MS,
@@ -19,6 +20,7 @@ import {
   type RowSharedProps
 } from "../../components/workbench/design-system-browser";
 import {
+  buildColorLeafModel,
   buildDesignSystemBrowserModel,
   toRow,
   type DesignSystemEntryView,
@@ -489,21 +491,72 @@ describe("TokenLeafPage", () => {
   });
 
   test("renders layer groups with their rows", () => {
-    const model = buildDesignSystemBrowserModel(fixtureView());
-    const color = model.foundations.tokenLeaves.find(
-      (leaf) => leaf.id === "color"
-    )!;
+    const leaf = {
+      id: "materials" as const,
+      name: "Materials",
+      rules: [],
+      groups: [
+        {
+          layer: "primitive" as const,
+          rows: [
+            toRow(
+              entry({
+                entry_id: "primitive.radius.sm",
+                section: "token.primitive",
+                name: "radius.sm",
+                value: "6px",
+                meaning: "Small radius"
+              })
+            )
+          ]
+        },
+        {
+          layer: "semantic" as const,
+          rows: [
+            toRow(
+              entry({
+                entry_id: "semantic.radius.card",
+                name: "radius.card",
+                value: "10px",
+                meaning: "Card radius"
+              })
+            )
+          ]
+        }
+      ],
+      chips: []
+    };
     const html = renderToStaticMarkup(
-      createElement(TokenLeafPage, { leaf: color, rows: rowSharedProps() })
+      createElement(TokenLeafPage, { leaf, rows: rowSharedProps() })
     );
     expect(html).toContain('data-testid="ds-token-layer-primitive"');
     expect(html).toContain('data-testid="ds-token-layer-semantic"');
     expect(html).toContain("Primitive");
     expect(html).toContain("Semantic");
-    expect(html).toContain('data-testid="ds-row-primitive.ink.900"');
-    expect(html).toContain('data-testid="ds-row-semantic.text.primary"');
-    expect(html).toContain("→ primitive.ink.900");
+    expect(html).toContain('data-testid="ds-row-primitive.radius.sm"');
+    expect(html).toContain('data-testid="ds-row-semantic.radius.card"');
     expect(html).toContain("2 tokens across 2 layers");
+  });
+
+  test("color leaf: primitive layer collapses into swatch provenance", () => {
+    const html = renderToStaticMarkup(
+      createElement(ColorLeafPage, {
+        model: buildColorLeafModel(fixtureView()),
+        rows: rowSharedProps()
+      })
+    );
+    // No layer sections, no primitive row, no alias text — the consumed
+    // primitive survives only as the swatch tooltip's provenance.
+    expect(html).not.toContain("ds-token-layer-");
+    expect(html).not.toContain('data-testid="ds-row-primitive.ink.900"');
+    expect(html).not.toContain("→ primitive.ink.900");
+    expect(html).toContain('data-testid="ds-color-group-semantic"');
+    expect(html).toContain('data-testid="ds-row-semantic.text.primary"');
+    expect(html).toContain('data-testid="ds-color-swatch-text.primary"');
+    expect(html).toContain("ink.900 · #0D0D0D");
+    // ink.900 is consumed (alias target) → nothing lands in the
+    // unconsumed strip.
+    expect(html).not.toContain("ds-color-unconsumed");
   });
 });
 

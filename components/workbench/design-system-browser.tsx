@@ -67,11 +67,13 @@ import {
   TOKEN_LAYER_LABELS,
   approvalReducer,
   breadcrumbFor,
+  buildColorLeafModel,
   buildDesignSystemBrowserModel,
   componentLeafId,
   formatEntryValue,
   sheetReducer,
   sheetEscapeAction,
+  statusChips,
   toRow,
   withEntryStatus,
   type ApprovalState,
@@ -79,6 +81,8 @@ import {
   type DesignSystemEntryView,
   type DesignSystemView,
   type DsBrowserModel,
+  type DsColorLeafModel,
+  type DsColorToken,
   type DsComponentModel,
   type DsLeafId,
   type DsRoute,
@@ -1181,6 +1185,202 @@ export function TokenLeafPage({
   );
 }
 
+/* ------------------------------ color leaf ------------------------------ */
+
+/** Swatch with a lightweight hover/focus tooltip carrying the primitive
+ * provenance (terminal token name + resolved hex). The swatch is the only
+ * hover target — hex is on-demand information, not first-class. Unresolved
+ * tokens (gap, dangling alias) get a striped placeholder. */
+function ColorSwatch({
+  hex,
+  source,
+  name
+}: {
+  hex: string | null;
+  source: string | null;
+  name: string;
+}) {
+  const unresolved = hex === null;
+  const label = unresolved ? "Unresolved value" : `${source ?? name} · ${hex}`;
+  return (
+    <span className="dsb-color-swatch-wrap">
+      <span
+        className={`dsb-color-swatch${unresolved ? " dsb-color-swatch--gap" : ""}`}
+        style={unresolved ? undefined : { background: hex }}
+        tabIndex={0}
+        role="img"
+        aria-label={label}
+        data-testid={`ds-color-swatch-${name}`}
+      />
+      <span className="dsb-color-tip" role="tooltip">
+        {label}
+      </span>
+    </span>
+  );
+}
+
+/** Ledger row for one semantic/component color token: swatch | role name |
+ * usage meaning | status | ⓘ evidence. Same governance wiring as SpecRowView
+ * (approval state keyed by row.key, hover-tracked ⓘ popover). */
+function ColorRow({
+  token,
+  approval,
+  infoOpen,
+  popoverInstant,
+  portalContainer,
+  onInfoOpenChange,
+  onInfoHoverOpen,
+  onInfoHoverClose,
+  onApprove
+}: {
+  token: DsColorToken;
+  approval: ApprovalState;
+  infoOpen: boolean;
+  popoverInstant: boolean;
+  portalContainer: HTMLElement | null;
+  onInfoOpenChange: (open: boolean) => void;
+  onInfoHoverOpen: () => void;
+  onInfoHoverClose: () => void;
+  onApprove: () => void;
+}) {
+  return (
+    <div
+      className="dsb-color-row"
+      data-testid={`ds-row-${token.row.entryId}`}
+      data-approve-error={approval.kind === "error" || undefined}
+    >
+      <ColorSwatch hex={token.hex} source={token.source} name={token.name} />
+      <span className="dsb-color-name" title={token.name}>
+        {token.name}
+      </span>
+      <span className="dsb-color-meaning" title={token.meaning}>
+        {token.meaning}
+      </span>
+      <StatusChip status={token.status} />
+      <InfoPopover
+        entry={token.row.entry}
+        approval={approval}
+        infoOpen={infoOpen}
+        popoverInstant={popoverInstant}
+        portalContainer={portalContainer}
+        ariaLabel={`Evidence for ${token.name}`}
+        onInfoOpenChange={onInfoOpenChange}
+        onInfoHoverOpen={onInfoHoverOpen}
+        onInfoHoverClose={onInfoHoverClose}
+        onApprove={onApprove}
+      />
+      {approval.kind === "error" ? (
+        <span className="dsb-row-error" role="alert">
+          Approval failed: {approval.message}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function ColorRowList({
+  tokens,
+  ...rest
+}: { tokens: DsColorToken[] } & RowSharedProps) {
+  return (
+    <div className="dsb-color-rows">
+      {tokens.map((token) => (
+        <ColorRow
+          key={token.row.key}
+          token={token}
+          approval={rest.approvals[token.row.key] ?? { kind: "idle" }}
+          infoOpen={rest.infoKey === token.row.key}
+          popoverInstant={rest.popoverInstant(token.row.key)}
+          portalContainer={rest.portalContainer}
+          onInfoOpenChange={(open) => rest.onInfoKey(open ? token.row.key : null)}
+          onInfoHoverOpen={() => rest.onInfoHoverOpen(token.row.key)}
+          onInfoHoverClose={rest.onInfoHoverClose}
+          onApprove={() => rest.onApprove(token.row)}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** Color leaf (redesign): the Primitive section collapses into swatch
+ * provenance — usage is declared only by the semantic/component tokens that
+ * consume a color, so those are the page's rows. Primitives no alias points
+ * at remain visible as bare swatches, deliberately without any other
+ * information: they exist but are not consumed yet. */
+export function ColorLeafPage({
+  model,
+  rows
+}: {
+  model: DsColorLeafModel;
+  rows: RowSharedProps;
+}) {
+  const tokenCount = model.semantic.length + model.component.length;
+  const hasRules = model.rules.length > 0;
+  const hasTokens = tokenCount > 0;
+  const chips = statusChips([...model.semantic, ...model.component]);
+  return (
+    <>
+      <PageHeading
+        title="Color"
+        meta={`${hasRules ? `${model.rules.length} rules · ` : ""}${tokenCount} tokens${
+          model.unconsumed.length > 0
+            ? ` · ${model.unconsumed.length} unconsumed`
+            : ""
+        }`}
+        chips={chips}
+      />
+      {hasRules ? <DomainRulesZone rules={model.rules} rows={rows} /> : null}
+      {hasTokens ? (
+        <section className="dsb-section" data-testid="ds-tokens-zone">
+          <GroupLabel>Tokens</GroupLabel>
+          {model.semantic.length > 0 ? (
+            <section
+              className="dsb-section"
+              data-testid="ds-color-group-semantic"
+            >
+              <GroupLabel>Semantic</GroupLabel>
+              <ColorRowList tokens={model.semantic} {...rows} />
+            </section>
+          ) : null}
+          {model.component.length > 0 ? (
+            <section
+              className="dsb-section"
+              data-testid="ds-color-group-component"
+            >
+              <GroupLabel>Component</GroupLabel>
+              <ColorRowList tokens={model.component} {...rows} />
+            </section>
+          ) : null}
+        </section>
+      ) : !hasRules ? (
+        <p className="dsb-empty-body dsb-page-note">
+          No tokens classified here yet.
+        </p>
+      ) : null}
+      {model.unconsumed.length > 0 ? (
+        <section
+          className="dsb-color-unconsumed"
+          data-testid="ds-color-unconsumed"
+        >
+          <span className="dsb-color-unconsumed-label">
+            Unconsumed primitives · {model.unconsumed.length}
+          </span>
+          <div className="dsb-color-unconsumed-row">
+            {model.unconsumed.map((primitive) => (
+              <ColorSwatch
+                key={primitive.name}
+                hex={primitive.hex}
+                source={primitive.name}
+                name={primitive.name}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </>
+  );
+}
+
 function numericWeight(text: string | undefined): number | undefined {
   if (!text) return undefined;
   const parsed = Number.parseInt(text, 10);
@@ -2111,8 +2311,17 @@ export function DesignSystemBrowser({
         model.foundations.tokenLeaves.find((leaf) => leaf.id === route.leaf) ??
         null;
       if (tokenLeaf) {
-        // Typography: Reader Projection + real specimens. Color / Materials
-        // keep token rows until 09C-C visual modules land as full-width pages.
+        // Color: redesigned swatch-first ledger (primitive layer collapses
+        // into hover provenance). Typography: Reader Projection + real
+        // specimens. Materials keeps token rows until 09C-C lands.
+        if (tokenLeaf.id === "color" && view) {
+          return (
+            <ColorLeafPage
+              model={buildColorLeafModel(view)}
+              rows={rowListProps}
+            />
+          );
+        }
         if (tokenLeaf.id === "typography" && view) {
           return (
             <TypographyLeafPage

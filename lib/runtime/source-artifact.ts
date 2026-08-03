@@ -28,7 +28,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { openProjectDb, closeProjectDb, withProjectTransaction } from "./db";
 import { emitRecordEvent } from "./record-bus";
-import { logEventOnDb, logInvalidToolEvent } from "./events";
+import { logEvent, logEventOnDb, logInvalidToolEvent } from "./events";
 import {
   assertArtifactPathInProject,
   resolveProjectArtifactPath
@@ -49,6 +49,7 @@ import {
   prepareDesignSystemIngestOnDb,
   type DesignSystemIngestPlan
 } from "./design-system-ingest";
+import { repairLegacyPrimitiveColorMeaningsInFile } from "./design-system-legacy-repair";
 import { writeDesignSystemViewExport } from "./design-system-view";
 import {
   designSystemQualityDiagnostics,
@@ -335,6 +336,28 @@ export function canonicalizeArtifactPath(
   return path.relative(projectRoot, path.resolve(projectRoot, artifactPath));
 }
 
+/**
+ * Whether the artifact index already holds a row for this path — i.e. the
+ * file was declared (and schema-validated) at least once before. Used to
+ * gate legacy source repairs so freshly authored content still hard-fails.
+ */
+function wasPreviouslyDeclared(
+  projectPath: string,
+  relativePath: string
+): boolean {
+  const db = openProjectDb(projectPath);
+  try {
+    const row = db
+      .prepare(`SELECT id FROM source_artifacts WHERE path = ?`)
+      .get(relativePath) as { id: string } | undefined;
+    return row !== undefined;
+  } catch {
+    return false;
+  } finally {
+    closeProjectDb(db);
+  }
+}
+
 export function recordSourceArtifact(
   projectPath: string,
   input: unknown
@@ -369,7 +392,31 @@ export function recordSourceArtifact(
   // Class 2 / 3 deterministic file check.
   const spec = SOURCE_ARTIFACT_TYPE_REGISTRY[declaration.artifactType]!;
   const checkFile = spec.checkFile ?? CLASS_FILE_CHECKS[spec.validationClass];
-  const fileFailure = checkFile(absolutePath);
+  let fileFailure = checkFile(absolutePath);
+
+  // Legacy token.json repair (see ./design-system-legacy-repair): files
+  // accepted before the primitive-color-meaning contract are stripped of
+  // those meanings instead of bricking re-declaration. Gated on a prior
+  // declaration so newly authored content still hard-fails on the schema.
+  if (
+    fileFailure === "primitive_color_meaning_forbidden" &&
+    declaration.artifactType === "token.json" &&
+    wasPreviouslyDeclared(projectPath, relativePath)
+  ) {
+    const repair = repairLegacyPrimitiveColorMeaningsInFile(absolutePath);
+    if (repair.ok) {
+      if (repair.repaired) {
+        logEvent(projectPath, "design_system_source_repaired", {
+          source_artifact_path: relativePath,
+          file_kind: "token.json",
+          stripped: repair.stripped,
+          trigger: "record_artifact_written"
+        });
+      }
+      fileFailure = checkFile(absolutePath);
+    }
+  }
+
   if (fileFailure !== null) {
     let details: unknown;
     if (spec.validationClass === "design-system") {

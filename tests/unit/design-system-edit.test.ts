@@ -653,3 +653,155 @@ test("an approval interleaved after a source write fails closed without splittin
     }
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// Primitive color token meaning contract
+// ---------------------------------------------------------------------------
+
+function ingestTokenFile(projectPath: string): void {
+  const db = new DatabaseSync(getProjectDbPath(projectPath));
+  try {
+    db.prepare(
+      `INSERT INTO alignment_question_cards
+       (id, section, observation, question, final_answer, answer_source,
+        anchor_json, created_at, updated_at)
+       VALUES (?, 'token', 'Observed', 'Keep?', 'Yes',
+               'designer-edited', '{}', ?, ?)`
+    ).run(
+      "designer-card",
+      "2026-08-03T00:00:00.000Z",
+      "2026-08-03T00:00:00.000Z"
+    );
+  } finally {
+    db.close();
+  }
+  writeJson(projectPath, "design-system/token.json", {
+    primitive: {
+      "color.ink": {
+        kind: "token",
+        domain: "color",
+        value: "#111111",
+        meaning: "",
+        status: "formalized",
+        links: ["designer-card"]
+      },
+      "color-rule": {
+        kind: "domain-rule",
+        domain: "color",
+        value: "Reserve the ink for primary text.",
+        meaning: "Ink restraint",
+        status: "candidate",
+        links: ["designer-card"]
+      },
+      "space.4": {
+        domain: "spacing",
+        value: "16px",
+        meaning: "基础间距",
+        status: "candidate",
+        links: ["designer-card"]
+      }
+    },
+    semantic: {
+      "color.primary": {
+        domain: "color",
+        value: { alias: "primitive.color.ink" },
+        meaning: "语义主色",
+        status: "candidate",
+        links: ["designer-card"]
+      }
+    },
+    component: {}
+  });
+  const declared = recordSourceArtifact(projectPath, {
+    path: "design-system/token.json",
+    artifactType: "token.json",
+    semanticPurpose: "edit command fixture",
+    relatedRecordIds: ["designer-card"]
+  });
+  if (!declared.ok) throw new Error(JSON.stringify(declared));
+}
+
+test("meaning edits on primitive color tokens are rejected before touching the source", () => {
+  withTempProject((projectPath) => {
+    ingestTokenFile(projectPath);
+    const relativePath = "design-system/token.json";
+    const sourcePath = path.join(projectPath, relativePath);
+    const original = readFileSync(sourcePath, "utf8");
+
+    expect(
+      editDesignSystemEntry(projectPath, {
+        sourceArtifactPath: relativePath,
+        entryId: "primitive.color.ink",
+        field: "meaning",
+        text: "品牌墨色"
+      })
+    ).toEqual({ ok: false, reason: "primitive_color_meaning_forbidden" });
+    expect(readFileSync(sourcePath, "utf8")).toBe(original);
+    expect(listEvents(projectPath, "design_system_entry_edited")).toHaveLength(0);
+
+    // Value edits stay allowed on the same entry.
+    expect(
+      editDesignSystemEntry(projectPath, {
+        sourceArtifactPath: relativePath,
+        entryId: "primitive.color.ink",
+        field: "value",
+        text: "#222222"
+      })
+    ).toMatchObject({ ok: true });
+
+    // domain-rule entries and semantic-layer color tokens keep editable
+    // meanings.
+    expect(
+      editDesignSystemEntry(projectPath, {
+        sourceArtifactPath: relativePath,
+        entryId: "primitive.color-rule",
+        field: "meaning",
+        text: "Ink stays for primary text"
+      })
+    ).toMatchObject({ ok: true });
+    expect(
+      editDesignSystemEntry(projectPath, {
+        sourceArtifactPath: relativePath,
+        entryId: "semantic.color.primary",
+        field: "meaning",
+        text: "品牌主色"
+      })
+    ).toMatchObject({ ok: true });
+  });
+});
+
+test("legacy primitive color meanings in the source are repaired on the first edit", () => {
+  withTempProject((projectPath) => {
+    ingestTokenFile(projectPath);
+    const relativePath = "design-system/token.json";
+    const sourcePath = path.join(projectPath, relativePath);
+
+    // Simulate a source file written under the pre-contract schema.
+    const drifted = JSON.parse(readFileSync(sourcePath, "utf8"));
+    drifted.primitive["color.ink"].meaning = "品牌墨色";
+    writeFileSync(sourcePath, JSON.stringify(drifted), "utf8");
+
+    const result = editDesignSystemEntry(projectPath, {
+      sourceArtifactPath: relativePath,
+      entryId: "semantic.color.primary",
+      field: "meaning",
+      text: "品牌主色"
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result));
+
+    const repaired = JSON.parse(readFileSync(sourcePath, "utf8"));
+    expect(repaired.primitive["color.ink"].meaning).toBe("");
+    expect(repaired.primitive["color-rule"].meaning).toBe("Ink restraint");
+    expect(repaired.semantic["color.primary"].meaning).toBe("品牌主色");
+
+    const repairEvents = listEvents(projectPath, "design_system_source_repaired");
+    expect(repairEvents).toHaveLength(1);
+    expect(repairEvents[0].payload).toMatchObject({
+      source_artifact_path: relativePath,
+      file_kind: "token.json",
+      stripped: ["primitive.color.ink"],
+      trigger: "edit_design_system_entry"
+    });
+  });
+});

@@ -354,7 +354,8 @@ describe("design-system ingest", () => {
             kind: "token",
             domain: "color",
             value: "#111111",
-            meaning: "Primary ink",
+            // Primitive color tokens carry no usage description.
+            meaning: "",
             status: "formalized",
             links: ["card-edited"]
           }
@@ -396,6 +397,101 @@ describe("design-system ingest", () => {
       };
       expect(exportJson.tokens.primitive[0]?.kind).toBe("token");
       expect(exportJson.tokens.semantic[0]?.kind).toBe("domain-rule");
+    });
+  });
+
+  test("fresh token.json with a non-empty primitive color meaning hard-fails declaration", () => {
+    withTempProject((dir) => {
+      seedEvidenceCards(dir);
+      writeProjectFile(dir, "design-system/token.json", {
+        primitive: {
+          "color.ink": {
+            kind: "token",
+            domain: "color",
+            value: "#111111",
+            meaning: "Primary ink",
+            status: "formalized",
+            links: ["card-edited"]
+          }
+        },
+        semantic: {},
+        component: {}
+      });
+
+      const declared = declareFile(dir, "design-system/token.json", "token.json");
+      expect(declared).toMatchObject({
+        ok: false,
+        reason: "primitive_color_meaning_forbidden"
+      });
+      // No repair for newly authored content: the file is untouched and no
+      // index row / repair event was persisted.
+      const source = JSON.parse(
+        readFileSync(path.join(dir, "design-system/token.json"), "utf8")
+      );
+      expect(source.primitive["color.ink"].meaning).toBe("Primary ink");
+      expect(entryRows(dir)).toHaveLength(0);
+      expect(listEvents(dir, "design_system_source_repaired")).toHaveLength(0);
+    });
+  });
+
+  test("previously declared token.json is repaired on re-declaration instead of bricking", () => {
+    withTempProject((dir) => {
+      seedEvidenceCards(dir);
+      const rel = "design-system/token.json";
+      writeProjectFile(dir, rel, {
+        primitive: {
+          "color.ink": {
+            kind: "token",
+            domain: "color",
+            value: "#111111",
+            meaning: "",
+            status: "formalized",
+            links: ["card-edited"]
+          },
+          "color-rule": {
+            kind: "domain-rule",
+            domain: "color",
+            value: "Reserve the ink for primary text.",
+            meaning: "Ink restraint",
+            status: "candidate",
+            links: ["card-edited"]
+          }
+        },
+        semantic: {},
+        component: {}
+      });
+      const first = declareFile(dir, rel, "token.json");
+      expect(first.ok).toBe(true);
+
+      // Simulate a source file accepted under the pre-contract schema.
+      const drifted = JSON.parse(readFileSync(path.join(dir, rel), "utf8"));
+      drifted.primitive["color.ink"].meaning = "品牌墨色";
+      writeFileSync(path.join(dir, rel), JSON.stringify(drifted));
+
+      const redeclared = declareFile(dir, rel, "token.json");
+      expect(redeclared.ok).toBe(true);
+
+      const repaired = JSON.parse(readFileSync(path.join(dir, rel), "utf8"));
+      expect(repaired.primitive["color.ink"].meaning).toBe("");
+      // domain-rule entries keep their own meaning through the repair.
+      expect(repaired.primitive["color-rule"].meaning).toBe("Ink restraint");
+
+      const rows = entryRows(dir);
+      expect(
+        rows.find((row) => row.entry_id === "primitive.color.ink")?.meaning
+      ).toBe("");
+      expect(
+        rows.find((row) => row.entry_id === "primitive.color-rule")?.meaning
+      ).toBe("Ink restraint");
+
+      const repairEvents = listEvents(dir, "design_system_source_repaired");
+      expect(repairEvents).toHaveLength(1);
+      expect(repairEvents[0].payload).toMatchObject({
+        source_artifact_path: rel,
+        file_kind: "token.json",
+        stripped: ["primitive.color.ink"],
+        trigger: "record_artifact_written"
+      });
     });
   });
 

@@ -19,8 +19,10 @@ import {
 import {
   buildLoggedEvent,
   insertEvent,
+  logEvent,
   logInvalidToolEvent
 } from "./events";
+import { repairLegacyPrimitiveColorMeaningsInFile } from "./design-system-legacy-repair";
 import { emitRecordEvent } from "./record-bus";
 import { canonicalizeArtifactPath } from "./source-artifact";
 
@@ -54,6 +56,9 @@ export type DesignSystemEditResult =
 
 type EntryRow = {
   file_kind: DesignSystemFileKind;
+  section: string;
+  domain: string | null;
+  kind: string | null;
   status: DesignSystemStatus;
   meaning: string;
   value_json: string;
@@ -99,7 +104,7 @@ export function editDesignSystemEntry(
   try {
     const found = db
       .prepare(
-        `SELECT file_kind, status, meaning, value_json, links_json
+        `SELECT file_kind, section, domain, kind, status, meaning, value_json, links_json
          FROM design_system_entries
          WHERE source_artifact_path = ? AND entry_id = ?`
       )
@@ -110,6 +115,34 @@ export function editDesignSystemEntry(
     return { ok: false, reason: "db_error" };
   } finally {
     closeProjectDb(db);
+  }
+
+  // Primitive color tokens carry no usage description: a meaning edit can
+  // never satisfy the schema, so reject it before touching the source file.
+  if (
+    input.field === "meaning" &&
+    row.file_kind === "token.json" &&
+    row.section === "token.primitive" &&
+    row.domain === "color" &&
+    row.kind !== "domain-rule"
+  ) {
+    return { ok: false, reason: "primitive_color_meaning_forbidden" };
+  }
+
+  // The ingested row proves this token.json was accepted under the old
+  // contract, so strip legacy primitive-color meanings before the whole-file
+  // revalidation below would reject every edit (see
+  // ./design-system-legacy-repair).
+  if (row.file_kind === "token.json") {
+    const repair = repairLegacyPrimitiveColorMeaningsInFile(absolutePath);
+    if (repair.ok && repair.repaired) {
+      logEvent(projectPath, "design_system_source_repaired", {
+        source_artifact_path: relativePath,
+        file_kind: "token.json",
+        stripped: repair.stripped,
+        trigger: "edit_design_system_entry"
+      });
+    }
   }
 
   let originalContent: string;

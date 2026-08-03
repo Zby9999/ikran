@@ -82,7 +82,7 @@ const TYPOGRAPHY_ROLE_WRITING_STYLE = {
   ],
   rules: [
     "Represent every reusable type style as one complete composite token; keep atomic typography tokens as referenced construction facts.",
-    "Use the token identity for the stable role name and write meaning as one sentence about usage context, function, or design intent.",
+    "Semantic and component layer tokens use the token identity for the stable role name and write meaning as one sentence about usage context, function, or design intent.",
     "Do not repeat the role name with only size, role, or token appended.",
     "Do not invent usage or missing font fields; preserve unsupported facts as explicit gaps."
   ],
@@ -117,6 +117,14 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
   entry_kinds: DESIGN_SYSTEM_ENTRY_KINDS,
   entry_kind_file_ownership: DESIGN_SYSTEM_ENTRY_KIND_FILE_OWNERSHIP,
   token_domains: TOKEN_DOMAINS,
+  token_meaning_policy: {
+    rule:
+      "meaning holds usage context, function, or design intent — write that one usage sentence on semantic and component layer tokens only.",
+    primitive_color:
+      'Primitive tokens with domain "color" carry no usage description: write meaning as the empty string "" (the schema rejects anything else). 用途描述只属于 semantic / component 层，primitive 色板不写。',
+    primitive_other_domains:
+      'Primitive tokens of other domains keep the existing one-sentence meaning; legacy entries without an explicit domain keep a non-empty meaning.'
+  },
   component_spec_fields: [
     "description",
     "props",

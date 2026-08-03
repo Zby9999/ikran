@@ -675,6 +675,137 @@
   color: #b42318;
 }
 
+/* ------------------------------ color leaf ------------------------------ */
+
+.dsb-color-rows {
+  border-top: 1px solid rgb(0 0 0 / 5%);
+}
+
+.dsb-color-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgb(0 0 0 / 5%);
+}
+
+.dsb-color-row:last-child {
+  border-bottom: 0;
+}
+
+.dsb-color-row[data-approve-error] {
+  flex-wrap: wrap;
+}
+
+.dsb-color-swatch-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.dsb-color-swatch {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 10%);
+  outline: none;
+}
+
+.dsb-color-swatch:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--dsc-card),
+    0 0 0 4px var(--dsc-accent);
+}
+
+.dsb-color-swatch--gap {
+  background: repeating-linear-gradient(
+    135deg,
+    #ececec 0 5px,
+    #f7f7f7 5px 10px
+  );
+}
+
+.dsb-color-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 20;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity 150ms var(--dsc-ease),
+    transform 150ms var(--dsc-ease);
+}
+
+.dsb-color-swatch-wrap:hover .dsb-color-tip,
+.dsb-color-swatch:focus-visible + .dsb-color-tip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsb-color-tip {
+    transition: none;
+  }
+}
+
+.dsb-color-name {
+  width: 150px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.dsb-color-meaning {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  color: var(--dsc-ink-2);
+  white-space: nowrap;
+}
+
+.dsb-color-unconsumed {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid rgb(0 0 0 / 5%);
+}
+
+.dsb-color-unconsumed-label {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--dsc-ink-3);
+  white-space: nowrap;
+}
+
+.dsb-color-unconsumed-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dsb-color-unconsumed-row .dsb-color-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
 .dsb-info-trigger {
   display: flex;
   width: 20px;

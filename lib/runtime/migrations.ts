@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 20;
+export const CURRENT_SCHEMA_VERSION = 21;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1069,6 +1069,23 @@ CREATE INDEX IF NOT EXISTS idx_region_annotation_tombstones_deleted_at
           "ALTER TABLE design_system_entries ADD COLUMN source_captures_json TEXT NOT NULL DEFAULT '[]'"
         );
       }
+    }
+  },
+  {
+    version: 21,
+    up(db) {
+      // Primitive color tokens carry no usage description — the schema now
+      // requires `meaning: ""` on them (usage semantics belong to the
+      // semantic/component layers; domain-rule entries keep their own
+      // meaning). Backfill the DB rows here. On-disk token.json sources
+      // accepted under the old contract are repaired at the declaration /
+      // edit seams instead (see ./design-system-legacy-repair): migrations
+      // only receive the DB handle and cannot reach project files.
+      db.exec(
+        `UPDATE design_system_entries SET meaning = ''
+         WHERE section = 'token.primitive' AND domain = 'color'
+           AND (kind IS NULL OR kind <> 'domain-rule')`
+      );
     }
   }
 ];

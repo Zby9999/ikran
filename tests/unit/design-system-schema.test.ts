@@ -193,7 +193,10 @@ test.describe("shared entry contract", () => {
     const tokenWithRule = validTokenJson();
     Object.assign(tokenWithRule.primitive["color.blue.500"], {
       kind: "token",
-      domain: "color"
+      domain: "color",
+      // Primitive color tokens carry no usage description (see the
+      // dedicated describe block below).
+      meaning: ""
     });
     tokenWithRule.semantic["no-shadow-regions"] = {
       kind: "domain-rule",
@@ -387,6 +390,9 @@ test.describe("token.json", () => {
   test("accepts a declared token domain and rejects unknown domains", () => {
     const valid = validTokenJson();
     valid.primitive["color.blue.500"].domain = "color";
+    // domain "color" on the primitive layer also flips meaning to the
+    // empty-string contract.
+    valid.primitive["color.blue.500"].meaning = "";
     expect(validateDesignSystemJson("token.json", valid).ok).toBe(true);
 
     const invalid = validTokenJson();
@@ -396,6 +402,100 @@ test.describe("token.json", () => {
       ok: false,
       reason: "invalid_token_domain",
       details: { token: "primitive.color.blue.500", domain: "marketing" }
+    });
+  });
+
+  test.describe("primitive color meaning contract", () => {
+    test("non-empty meaning on a primitive color token → primitive_color_meaning_forbidden", () => {
+      const json = validTokenJson();
+      Object.assign(json.primitive["color.blue.500"], { domain: "color" });
+      const res = validateDesignSystemJson("token.json", json);
+      expect(res).toMatchObject({
+        ok: false,
+        reason: "primitive_color_meaning_forbidden",
+        details: { token: "primitive.color.blue.500" }
+      });
+    });
+
+    test("empty-string meaning on a primitive color token passes", () => {
+      const json = validTokenJson();
+      Object.assign(json.primitive["color.blue.500"], {
+        domain: "color",
+        meaning: ""
+      });
+      expect(validateDesignSystemJson("token.json", json).ok).toBe(true);
+    });
+
+    test("meaning must still be present and a string on primitive color tokens", () => {
+      const missing = validTokenJson();
+      Object.assign(missing.primitive["color.blue.500"], {
+        domain: "color",
+        meaning: undefined
+      });
+      expect(
+        validateDesignSystemJson("token.json", missing)
+      ).toMatchObject({ ok: false, reason: "missing_required_field" });
+
+      const wrongType = validTokenJson();
+      Object.assign(wrongType.primitive["color.blue.500"], {
+        domain: "color",
+        meaning: 42
+      });
+      expect(
+        validateDesignSystemJson("token.json", wrongType)
+      ).toMatchObject({ ok: false, reason: "invalid_field_type" });
+    });
+
+    test("semantic/component color tokens and other primitive domains keep the non-empty contract", () => {
+      const json = validTokenJson();
+      Object.assign(json.primitive["color.blue.500"], {
+        domain: "color",
+        meaning: ""
+      });
+      json.semantic["color.primary"].domain = "color";
+      json.component["button.bg"].domain = "color";
+      json.primitive["space.4"].domain = "spacing";
+      expect(validateDesignSystemJson("token.json", json).ok).toBe(true);
+
+      const semanticEmpty = validTokenJson();
+      Object.assign(semanticEmpty.primitive["color.blue.500"], {
+        domain: "color",
+        meaning: ""
+      });
+      Object.assign(semanticEmpty.semantic["color.primary"], {
+        domain: "color",
+        meaning: ""
+      });
+      expect(
+        validateDesignSystemJson("token.json", semanticEmpty)
+      ).toMatchObject({ ok: false, reason: "missing_required_field" });
+    });
+
+    test("primitive color domain-rule entries keep their own meaning", () => {
+      const json = validTokenJson();
+      Object.assign(json.primitive["color.blue.500"], {
+        domain: "color",
+        meaning: ""
+      });
+      json.primitive["color-scale-rule"] = {
+        kind: "domain-rule",
+        domain: "color",
+        value: "Reserve the 500 step for interactive accents.",
+        meaning: "Accent restraint",
+        status: "candidate",
+        links: ["card-1"]
+      };
+      expect(validateDesignSystemJson("token.json", json).ok).toBe(true);
+    });
+
+    test("legacy primitive entries without an explicit domain keep the old contract", () => {
+      const json = validTokenJson();
+      // No domain declared: non-empty meaning stays required.
+      expect(validateDesignSystemJson("token.json", json).ok).toBe(true);
+      json.primitive["color.blue.500"].meaning = "";
+      expect(
+        validateDesignSystemJson("token.json", json)
+      ).toMatchObject({ ok: false, reason: "missing_required_field" });
     });
   });
 
