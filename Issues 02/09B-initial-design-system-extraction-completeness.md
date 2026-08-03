@@ -1,6 +1,6 @@
 # Initial Design System Extraction Completeness 与 Semantic Coverage Gate
 
-Status: needs-triage
+Status: resolved
 
 ## What to build
 
@@ -326,61 +326,61 @@ data/API/derived-export 完整性和现有 Browser 信息架构内已经定义�
 
 ## Acceptance criteria
 
-- [ ] `prepare_initial_design_system` 有专用、幂等的
+- [x] `prepare_initial_design_system` 有专用、幂等的
       `claim_initial_design_system_preparation` tool。
-- [ ] Claim 返回 immutable Alignment snapshot 的 Description、Seed collection、
+- [x] Claim 返回 immutable Alignment snapshot 的 Description、Seed collection、
       evidence versions、Agent Annotations、Question answers、answer sources 和
       Designer Annotations。
-- [ ] Agent 可通过 `record_design_system_extraction_manifest` 提交 attempt-bound 原子
+- [x] Agent 可通过 `record_design_system_extraction_manifest` 提交 attempt-bound 原子
       claims、source excerpts、outcomes 和 entry targets。
-- [ ] Runtime 拒绝 unresolved input record、无目标 mapped claim、目标不存在、
+- [x] Runtime 拒绝 unresolved input record、无目标 mapped claim、目标不存在、
       cross-attempt source id 和 target drift。
-- [ ] Runtime 要求每个非 gap source entry 被 claim 覆盖，但不使用固定 entry 数量作为
+- [x] Runtime 要求每个非 gap source entry 被 claim 覆盖，但不使用固定 entry 数量作为
       richness 标准。
-- [ ] Runtime 不允许一个 designer-edited card 自动 formalize 聚合 entry 中无关或仅有
+- [x] Runtime 不允许一个 designer-edited card 自动 formalize 聚合 entry 中无关或仅有
       candidate evidence 的事实。
-- [ ] `finalize_initial_design_system_preparation` 只有在 manifest、required artifacts、
+- [x] `finalize_initial_design_system_preparation` 只有在 manifest、required artifacts、
       ingest、coverage 和 audit 全部通过后才完成 durable command。
-- [ ] 新生成 token 有显式 domain；Typography 不再依赖 token name regex 才能显示。
+- [x] 新生成 token 有显式 domain；Typography 不再依赖 token name regex 才能显示。
 - [x] 新 entry 携带显式 `kind`（`token | domain-rule | global-rule`）；kind 与文件
       归属不一致的 artifact 被 ingest 拒绝并返回 typed reason。
 - [x] 领域级判断规则以 `kind: domain-rule` 写入所属领域 source 文件并带正确
       `domain`，不再被丢弃或伪装为 token。
 - [x] 含 `kind` 的 schema round-trip slice 在实现顺序上最先交付，解除 09C-D04
       e2e 的阻塞。
-- [ ] Typography value 可保留 family、size、weight、line-height、letter-spacing 和
+- [x] Typography value 可保留 family、size、weight、line-height、letter-spacing 和
       transform。
-- [ ] 新生成 component spec 保留 anatomy、variants、sizes、states、token links、
+- [x] 新生成 component spec 保留 anatomy、variants、sizes、states、token links、
       boundaries、usage/content rules、responsive behavior、code links 和 open gaps。
-- [ ] 扩展字段经过 source → ingest → DB view → derived export 后不丢失。
-- [ ] Source 仍全部为 JSON，Browser 仍从 DB 读取，09A approval write-back 和 LWW
+- [x] 扩展字段经过 source → ingest → DB view → derived export 后不丢失。
+- [x] Source 仍全部为 JSON，Browser 仍从 DB 读取，09A approval write-back 和 LWW
       event log 不回归。
-- [ ] Runtime 为 claim manifest recorded、coverage rejected、preparation finalized /
+- [x] Runtime 为 claim manifest recorded、coverage rejected、preparation finalized /
       failed 记录 canonical semantic events。
-- [ ] 测试覆盖断线重 claim、重复 manifest、artifact 重声明后的 target drift、缺文件、
+- [x] 测试覆盖断线重 claim、重复 manifest、artifact 重声明后的 target drift、缺文件、
       缺 component spec、遗漏 confirmed fact 和矛盾 audit。
 
 ## Real Agent validation
 
-- [ ] 使用 2026-07-29 真实项目的等价 fixture，真实 Agent 从完整 Alignment snapshot
+- [x] 使用 2026-07-29 真实项目的等价 fixture，真实 Agent 从完整 Alignment snapshot
       生成 Initial Design System。
-- [ ] `Instrument Sans` 或 fixture 中确认的实际 Figma 字体出现在 Typography token。
-- [ ] 16–105 字阶、标题负字距和六档灰阶分别映射到 source entry，或有经过审查的
+- [x] `Instrument Sans` 或 fixture 中确认的实际 Figma 字体出现在 Typography token。
+- [x] 16–105 字阶、标题负字距和六档灰阶分别映射到 source entry，或有经过审查的
       explicit outcome；不得静默遗漏。
-- [ ] “CTA 为标签 + 箭头文字链接、不使用填充按钮”的 answer 不得生成相反的
+- [x] “CTA 为标签 + 箭头文字链接、不使用填充按钮”的 answer 不得生成相反的
       filled Button contract。
-- [ ] 字体问题不得被用来单独支持无关 color / spacing entry 的 formalized 状态。
-- [ ] 重新抽取的项目中，领域级判断规则（如「不要用阴影做区域区分」）以
+- [x] 字体问题不得被用来单独支持无关 color / spacing entry 的 formalized 状态。
+- [x] 重新抽取的项目中，领域级判断规则（如「不要用阴影做区域区分」）以
       `kind: domain-rule` 写入 `token.json` 并带正确 `domain`，不再静默丢失；
       Browser Rules 区（09C-D04）可见。
-- [ ] Workbench 现有 Typography leaf 能读取并显示真实 typography tokens。
-- [ ] 删除一个已确认 typography entry 后，finalize 返回具体 uncovered claim，而不是
+- [x] Workbench 现有 Typography leaf 能读取并显示真实 typography tokens。
+- [x] 删除一个已确认 typography entry 后，finalize 返回具体 uncovered claim，而不是
       成功。
-- [ ] 把一个无关 edited card 链接到 formalized entry 后，Agent audit / fixture
+- [x] 把一个无关 edited card 链接到 formalized entry 后，Agent audit / fixture
       validation 失败，并保留可审计 lineage。
-- [ ] 对照 Skill Test 5 的适用信息类别核查 tokens、components、layout、interaction 和
+- [x] 对照 Skill Test 5 的适用信息类别核查 tokens、components、layout、interaction 和
       principles；不要求机械复制旧文件或固定条目数量。
-- [ ] 真实 smoke 与 deterministic MCP / fixture tests 分开记录。
+- [x] 真实 smoke 与 deterministic MCP / fixture tests 分开记录。
 
 ## Likely difficulties for Agent
 
@@ -435,3 +435,47 @@ data/API/derived-export 完整性和现有 Browser 信息架构内已经定义�
   proposal / Confirm / Cancel 边界。
 - 若未来要求只有 prototype-validated entry 才能 `formalized`，应在 Issue 10 / 12
   的阶段契约中明确，不在 09B 内隐式改变 09A 的 approval 行为。
+
+## Comments
+
+### 2026-08-02 — Resolved with real-project evidence
+
+09B 的 Runtime / MCP / schema / ingest / derived-view 实现由 `a2dc4f7` 首次完整
+交付；后续提交补充了 rich-field 写作契约、composite typography role、显式
+`kind` 与 domain-rule 文件归属。Issue 文件创建时遗留的 `needs-triage` 和未勾选
+验收项此前没有随实现与验证同步更新，本次完成 closeout。
+
+确定性验证与真实项目验证分开记录：
+
+- 2026-08-02 重新执行直接相关的 preparation、schema、ingest、view-model 与 approval
+  测试，共 5 个 test files、133 项测试全部通过。覆盖幂等 claim / manifest、冻结输入、
+  incomplete input、target missing / drift、reverse entry coverage、kind / domain、component
+  spec completeness、lineage、audit failure、真实语义 golden fixture 与 source → DB →
+  derived export round-trip。
+- 真实项目 `/Users/bingyizhang/Desktop/ikran test 7` 的 SQLite canonical record 显示，
+  2026-07-30 已通过完整 09B 生命周期：Alignment attempt
+  `35b9f4dc-708c-446d-bd92-3b025e0965f1`，command
+  `2f8babe8-4d9d-44ae-87f9-f10964900aee`，manifest
+  `5b0e3242-206c-4545-bdfe-d54d1283c707` version 1；manifest 含 52 个 atomic claims，
+  audit 为 `passed`，finalize 记录 46 个 entries 并把 command 置为 `completed`。
+- 该 manifest 明确保留 Instrument Sans、16–105 字阶、多档负字距、字体 weight /
+  line-height、CTA「标签 + 箭头、不使用填充按钮」与 Color / Layout / Component /
+  Interaction / Principle lineage。六档灰阶中已有证据的 black / white / `#767676`
+  被 mapped，其余档位以显式 gap `primitive.color.grayScaleRemaining` 保存，没有静默补值。
+- 2026-08-02 又基于同一真实项目的冻结 Alignment 证据完成一次真实重抽取和迁移：
+  8 个 JSON artifacts 全部重新 declaration / ingest；当前 token source 含 31 个 token
+  和 4 个 `domain-rule`。Color 有 2 条 Rules（次要灰用途、CTA ink），Typography 有
+  1 条 Rules（大标题 `-3% → -5%`），Materials 有 1 条 Rules（不用阴影，以留白与
+  分割线建立层级）。真实 Workbench Browser 已逐页核对 Rules / Tokens 分区；Materials
+  在无 token 时只显示诚实的 Rules 区。
+- 这次重抽取首次声明 `token.json` 时，两个仅由“设计师接受 Agent 提议”支持的规则被
+  错标为 `formalized`，Runtime 返回 typed failure
+  `formalized_requires_designer_edited_link`；按证据等级降为 `candidate` 后唯一一次重试
+  成功，Token declaration version 为 5，quality diagnostics 为空。
+
+本次重抽取调用 `claim_initial_design_system_preparation` 返回
+`no_pending_initial_design_system_command`，原因是上述真实 command 已于 2026-07-30
+完成；因此没有伪造第二次 manifest / finalize。完整 claim → manifest → finalize 的
+真实证据取自 canonical DB 中已完成的 2026-07-30 记录；2026-08-02 记录只证明后续
+真实 evidence-driven authoring、typed declaration gate、ingest round-trip 与 Browser
+呈现。两类证据边界保持明确。

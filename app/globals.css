@@ -60,6 +60,10 @@
   );
 }
 
+.ease-motion-out {
+  transition-timing-function: var(--motion-ease-out);
+}
+
 * {
   box-sizing: border-box;
 }

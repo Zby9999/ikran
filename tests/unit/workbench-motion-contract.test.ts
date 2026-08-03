@@ -61,6 +61,20 @@ describe("Workbench motion contract", () => {
     );
   });
 
+  test("uses a named Tailwind easing utility instead of an arbitrary var candidate", () => {
+    const globals = source("app/globals.css");
+    const shared = source("components/ui/button.tsx");
+    const workbench = source("components/workbench/button.tsx");
+
+    expect(cssRule(globals, ".ease-motion-out {")).toContain(
+      "transition-timing-function: var(--motion-ease-out)"
+    );
+    for (const component of [shared, workbench]) {
+      expect(component).toContain("ease-motion-out");
+      expect(component).not.toContain("ease-[var(--motion-ease-out)]");
+    }
+  });
+
   test("does not animate Alignment layout properties or the stage-panel width", () => {
     const css = source("components/workbench/alignment-ui.module.css");
     const stage = cssRule(css, ".stagePanel {");

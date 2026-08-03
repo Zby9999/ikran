@@ -1179,7 +1179,6 @@ function typographyLedgerMetrics(
   item: TypographyAtlasItem
 ): { label: string; value: string }[] {
   return [
-    { label: "Canonical identity", value: item.canonicalIdentity },
     {
       label: "Weight",
       value: typographyLedgerValue(
@@ -1250,14 +1249,17 @@ function TypographyLedgerRow({
       </div>
       {expanded ? (
         <div className="dsb-type-details-shell" id={detailsId}>
-          <dl className="dsb-type-details">
-            {metrics.map((metric) => (
-              <div key={metric.label} className="dsb-type-detail">
-                <dt>{metric.label}</dt>
-                <dd>{metric.value}</dd>
-              </div>
-            ))}
-          </dl>
+          <div className="dsb-type-details">
+            <p className="dsb-type-identity">{item.canonicalIdentity}</p>
+            <dl className="dsb-type-metrics">
+              {metrics.map((metric) => (
+                <div key={metric.label} className="dsb-type-detail">
+                  <dt>{metric.label}</dt>
+                  <dd>{metric.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         </div>
       ) : null}
     </article>
@@ -1329,9 +1331,6 @@ export function TypographyLeafPage({
           className="dsb-section dsb-typography-atlas"
           data-testid="ds-typography-ledger"
         >
-          <p className="dsb-type-count" data-testid="ds-typography-summary">
-            {orderedItems.length} type styles
-          </p>
           <div className="dsb-type-groups">
             {groups.map((group) => (
               <section

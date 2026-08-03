@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
  * Visual surfaces stay in globals.css; this layer owns interaction feedback.
  */
 const workbenchPressable =
-  "transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-100 ease-[var(--motion-ease-out)] select-none outline-none focus-visible:outline-2 focus-visible:outline-[var(--blue)] focus-visible:outline-offset-2 disabled:cursor-not-allowed active:enabled:scale-[0.99] active:enabled:translate-y-px";
+  "transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-100 ease-motion-out select-none outline-none focus-visible:outline-2 focus-visible:outline-[var(--blue)] focus-visible:outline-offset-2 disabled:cursor-not-allowed active:enabled:scale-[0.99] active:enabled:translate-y-px";
 
 const workbenchButtonVariants = cva(workbenchPressable, {
   variants: {

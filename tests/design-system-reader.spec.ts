@@ -569,7 +569,19 @@ test("09C-A reader projection: atlas and leaf pages", async ({
       .poll(() =>
         firstRow.evaluate((element) => getComputedStyle(element).paddingTop)
       )
-      .toBe("0px");
+      .toBe("16px");
+    const componentFirstRow = componentGroup.locator(".dsb-type-row").first();
+    await expect
+      .poll(() =>
+        componentFirstRow.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            paddingTop: style.paddingTop,
+            paddingBottom: style.paddingBottom
+          };
+        })
+      )
+      .toEqual({ paddingTop: "16px", paddingBottom: "16px" });
     const compactRow = typeGroup.locator(".dsb-type-row").last();
     await expect
       .poll(() =>
@@ -587,8 +599,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         paddingBottom: "16px",
         minHeight: "0px"
       });
-    const typographySummary = page.getByTestId("ds-typography-summary");
-    await expect(typographySummary).toHaveText("4 type styles");
+    await expect(page.getByTestId("ds-typography-summary")).toHaveCount(0);
     await expect(ledger.getByText("formalized", { exact: true })).toHaveCount(0);
     await expect(ledger.getByText("Source-backed", { exact: true })).toHaveCount(0);
     await expect(page.locator('[aria-label="Order type atlas"]')).toHaveCount(0);
@@ -614,9 +625,38 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     await expect(displayCard.getByText("Letter spacing", { exact: true })).toBeVisible();
     await expect(displayCard.getByText("Size", { exact: true })).toBeVisible();
     await expect(displayCard.getByText("Typeface", { exact: true })).toBeVisible();
+    await expect(displayCard.getByText("Canonical identity", { exact: true })).toHaveCount(0);
+    await expect(displayCard.locator(".dsb-type-identity")).toHaveText(
+      "semantic.display.large"
+    );
     await expect(displayCard).toContainText("64px");
     await expect(displayCard).toContainText("700");
     await expect(displayCard).toContainText("Instrument Sans");
+    const identityStyle = await displayCard
+      .locator(".dsb-type-identity")
+      .evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          fontSize: style.fontSize,
+          paddingTop: getComputedStyle(element.parentElement!).paddingTop,
+          paddingBottom: getComputedStyle(element.parentElement!).paddingBottom,
+          gap: getComputedStyle(element.parentElement!).rowGap || getComputedStyle(element.parentElement!).gap
+        };
+      });
+    expect(identityStyle.fontSize).toBe("12px");
+    expect(identityStyle.paddingTop).toBe("16px");
+    expect(identityStyle.paddingBottom).toBe("16px");
+    expect(identityStyle.gap).toBe("16px");
+    const detailLayout = await displayCard
+      .locator(".dsb-type-detail")
+      .evaluateAll((elements) =>
+        elements.map((element) => {
+          const box = element.getBoundingClientRect();
+          return { top: box.top, width: box.width };
+        })
+      );
+    expect(detailLayout).toHaveLength(4);
+    expect(new Set(detailLayout.map(({ top }) => Math.round(top))).size).toBe(1);
     const typefaceDetailStyle = await displayCard
       .locator(".dsb-type-detail dd")
       .last()
@@ -802,7 +842,11 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     const narrowSpecimenOverflow = await narrowStatisticalDisplay
       .locator(".dsb-type-name")
       .evaluate((element) => element.scrollWidth - element.clientWidth);
-    expect(narrowSpecimenOverflow).toBeGreaterThan(0);
+    expect(narrowSpecimenOverflow).toBeLessThanOrEqual(1);
+    const narrowSpecimenHeight = await narrowStatisticalDisplay
+      .locator(".dsb-type-specimen")
+      .evaluate((element) => element.getBoundingClientRect().height);
+    expect(narrowSpecimenHeight).toBeGreaterThan(105);
     const typographyPageOverflow = await page
       .locator(".dsb-typography-page")
       .evaluate((element) => element.scrollWidth - element.clientWidth);
