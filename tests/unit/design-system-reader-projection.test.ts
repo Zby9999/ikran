@@ -59,8 +59,8 @@ describe("prose rule projection", () => {
         })
       )
     ])[0]!;
-    expect(interaction.statement).toBe("Calm feedback");
-    expect(interaction.meaning).toBe(body);
+    expect(interaction.title).toBe("Calm feedback");
+    expect(interaction.body).toBe(body);
 
     const domain = projectDomainRuleLeaf([
       toRow(
@@ -73,8 +73,8 @@ describe("prose rule projection", () => {
         })
       )
     ])[0]!;
-    expect(domain.statement).toBe("Material hierarchy");
-    expect(domain.meaning).toBe(body);
+    expect(domain.title).toBe("Material hierarchy");
+    expect(domain.body).toBe(body);
   });
 });
 
@@ -142,8 +142,8 @@ const ALL_ENTRIES = [
   FAMILY_SERIF
 ];
 
-describe("Interaction Reader Projection (09C-D01)", () => {
-  it("projects a cross-component strategy as a text rule without visual inference", () => {
+describe("Interaction rule prose", () => {
+  it("uses meaning as title and a generic readable fallback for a legacy object", () => {
     const source = entry({
       entry_id: "primary-button",
       file_kind: "interaction-rules.json",
@@ -166,23 +166,21 @@ describe("Interaction Reader Projection (09C-D01)", () => {
     expect(projectInteractionLeaf([toRow(source)])).toEqual([
       expect.objectContaining({
         anchor: 1,
-        statement: "Motion stays quiet",
-        meaning: "Motion confirms change without becoming the subject.",
+        title: "Motion confirms change without becoming the subject.",
         status: "candidate",
-        description: "Routine feedback should not compete with content.",
-        behavior: [
-          "Use motion to explain a state change.",
-          "Avoid decorative loops."
-        ],
-        accessibility: ["Preserve the same state information without motion."]
+        body:
+          "statement: Motion stays quiet\n" +
+          "description: Routine feedback should not compete with content.\n" +
+          "behavior:\n  • Use motion to explain a state change.\n  • Avoid decorative loops.\n" +
+          "accessibility:\n  • Preserve the same state information without motion."
       })
     ]);
   });
 
 });
 
-describe("Domain Rule Reader Projection (09C-D04)", () => {
-  it("uses statement as the headline and projects every other non-empty value field", () => {
+describe("Domain rule prose", () => {
+  it("does not promote a legacy statement into the title", () => {
     const source = entry({
       entry_id: "semantic.no-shadow-regions",
       kind: "domain-rule",
@@ -203,18 +201,14 @@ describe("Domain Rule Reader Projection (09C-D04)", () => {
     expect(projectDomainRuleLeaf([toRow(source)])).toEqual([
       expect.objectContaining({
         anchor: 1,
-        statement: "Do not use shadows to separate regions.",
-        meaning: "Keep material treatment flat.",
+        title: "Keep material treatment flat.",
         status: "candidate",
-        fields: [
-          { label: "rationale", text: "Hierarchy should come from spacing." },
-          { label: "alternatives", text: "spacing, border" }
-        ]
+        body: expect.stringContaining("statement: Do not use shadows")
       })
     ]);
   });
 
-  it("keeps every non-empty nested fact visible with a stable source path", () => {
+  it("keeps nested legacy content readable without dotted-path projection", () => {
     const source = entry({
       entry_id: "semantic.responsive-spacing",
       kind: "domain-rule",
@@ -232,15 +226,12 @@ describe("Domain Rule Reader Projection (09C-D04)", () => {
       }
     });
 
-    expect(projectDomainRuleLeaf([toRow(source)])[0]!.fields).toEqual([
-      { label: "constraints.desktop.min", text: "32px" },
-      { label: "constraints.desktop.max", text: "64px" },
-      { label: "constraints.mobile", text: "20px" },
-      { label: "examples[0].surface", text: "hero" },
-      { label: "examples[0].gap", text: "48px" },
-      { label: "examples[1].surface", text: "card" },
-      { label: "examples[1].gap", text: "24px" }
-    ]);
+    const body = projectDomainRuleLeaf([toRow(source)])[0]!.body;
+    expect(body).toContain("constraints:");
+    expect(body).toContain("desktop:");
+    expect(body).toContain("min: 32px");
+    expect(body).not.toContain("constraints.desktop.min");
+    expect(body).not.toContain("{");
   });
 });
 

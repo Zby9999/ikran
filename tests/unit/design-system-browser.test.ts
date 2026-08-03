@@ -530,7 +530,8 @@ describe("RulesLeafPage interaction ledger (09C-D01)", () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('aria-controls="ds-interaction-details-quiet-motion"');
     expect(html).not.toContain("Description");
-    expect(html).not.toContain("Use short feedback for state changes.");
+    expect(html).toContain("Use short feedback for state changes.");
+    expect(html).toContain("Animation supports comprehension.");
     expect(html).toContain('data-status="candidate"');
     expect(html).not.toContain('aria-label="Evidence for interaction rule quiet-motion"');
     expect(html).not.toContain("Live specimens");
@@ -1159,10 +1160,12 @@ describe("LayoutLeafPage Source Capture (09C-D02)", () => {
     expect(html).toContain("Source capture");
     expect(html).toContain("Landing / Grid");
     expect(html).toContain("captured 2026-07-30 14:05");
-    // Recognized spatial facts render as one quiet line — never raw JSON.
-    expect(html).toContain('class="dsb-placard-facts"');
+    // Main reading is title + readable body; no derived spatial-facts row.
+    expect(html).not.toContain('class="dsb-placard-facts"');
+    expect(html).toContain('class="dsb-rule-prose"');
     expect(html).toContain("1120px");
-    expect(html).toContain("→ spacing.200");
+    expect(html).toContain("alias: spacing.200");
+    expect(html).not.toContain("{&quot;");
     expect(html).not.toContain("{&quot;columns&quot;");
     // v2: the figure is a fixed-ratio locator view, orientation from nodeRect.
     expect(html).toContain('data-testid="ds-layout-figure-grid-page"');

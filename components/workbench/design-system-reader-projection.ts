@@ -97,159 +97,68 @@ export function projectObjectFields(
   }));
 }
 
-/* ---------------------------- interaction rules --------------------------- */
+/* ------------------------------- rule prose ------------------------------- */
 
-/** D01 keeps cross-component interaction strategies in this collection.
- * Component-bound states and motion are extracted into component specs, so
- * this projection deliberately has no control or visual-adapter vocabulary. */
-export interface InteractionRuleProjection {
+/**
+ * Transitional reader for pre-contract rich objects. It is deliberately
+ * generic: no rule field has display semantics, so nothing is flattened,
+ * stripped, or promoted into the title. New prose strings pass through byte
+ * for byte; legacy arrays/objects degrade to readable lines without raw JSON.
+ */
+export function formatRuleBody(value: unknown, depth = 0): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value === null || value === undefined) return "";
+  const indent = "  ".repeat(depth);
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => `${indent}• ${formatRuleBody(item, depth + 1).trimStart()}`)
+      .join("\n");
+  }
+  if (isPlainObject(value)) {
+    return Object.entries(value)
+      .filter(([key]) => key !== "sourceCaptures")
+      .map(([key, fieldValue]) => {
+        const text = formatRuleBody(fieldValue, depth + 1);
+        return Array.isArray(fieldValue) || isPlainObject(fieldValue)
+          ? `${indent}${key}:\n${text}`
+          : `${indent}${key}: ${text}`;
+      })
+      .join("\n");
+  }
+  return String(value);
+}
+
+export interface RuleProseProjection {
   key: string;
   anchor: number;
-  statement: string;
-  meaning: string;
-  description: string | null;
-  behavior: string[];
-  accessibility: string[];
-  isRich: boolean;
+  title: string;
+  body: string;
   status: DsStatus;
   row: DsRow;
+}
+
+function projectRuleProse(rows: readonly DsRow[]): RuleProseProjection[] {
+  return rows.map((row, index) => ({
+    key: row.key,
+    anchor: index + 1,
+    title: row.meaning,
+    body: formatRuleBody(row.entry.value),
+    status: row.status,
+    row
+  }));
 }
 
 export function projectInteractionLeaf(
   rows: readonly DsRow[]
-): InteractionRuleProjection[] {
-  return rows.map((row, index) => {
-    const value = row.entry.value;
-    if (typeof value === "string") {
-      return {
-        key: row.key,
-        anchor: index + 1,
-        statement: row.meaning,
-        meaning: value,
-        description: null,
-        behavior: [],
-        accessibility: [],
-        isRich: false,
-        status: row.status,
-        row
-      };
-    }
-    const rich = isPlainObject(value) && row.entry.alias === null;
-    return {
-      key: row.key,
-      anchor: index + 1,
-      statement:
-        rich && typeof value.statement === "string"
-          ? value.statement
-          : entryDisplayName(row.entry),
-      meaning: row.meaning,
-      description:
-        rich && typeof value.description === "string"
-          ? value.description
-          : null,
-      behavior: rich ? stringArrayOf(value.behavior) : [],
-      accessibility: rich ? stringArrayOf(value.accessibility) : [],
-      isRich: rich,
-      status: row.status,
-      row
-    };
-  });
+): RuleProseProjection[] {
+  return projectRuleProse(rows);
 }
 
-/* ------------------------------ domain rules ----------------------------- */
-
-export interface DomainRuleProjection {
-  key: string;
-  anchor: number;
-  statement: string;
-  meaning: string;
-  /** Non-empty value fields other than the statement headline. */
-  fields: { label: string; text: string }[];
-  status: DsStatus;
-  row: DsRow;
-}
-
-function hasDisplayContent(value: unknown): boolean {
-  if (value === null || value === undefined) return false;
-  if (typeof value === "string") return value.trim().length > 0;
-  if (Array.isArray(value)) return value.length > 0;
-  if (isPlainObject(value)) return Object.keys(value).length > 0;
-  return true;
-}
-
-function projectDomainRuleField(
-  label: string,
-  value: unknown
-): DomainRuleProjection["fields"] {
-  if (!hasDisplayContent(value)) return [];
-  if (aliasTargetOf(value) !== null) {
-    return [{ label, text: formatValueField(value) }];
-  }
-  if (Array.isArray(value)) {
-    const scalarOnly = value.every(
-      (item) =>
-        typeof item === "string" ||
-        typeof item === "number" ||
-        typeof item === "boolean"
-    );
-    if (scalarOnly) return [{ label, text: value.map(String).join(", ") }];
-    return value.flatMap((item, index) =>
-      projectDomainRuleField(`${label}[${index}]`, item)
-    );
-  }
-  if (isPlainObject(value)) {
-    return Object.entries(value).flatMap(([key, fieldValue]) =>
-      projectDomainRuleField(`${label}.${key}`, fieldValue)
-    );
-  }
-  return [{ label, text: formatValueField(value) }];
-}
-
-/** Data-driven rule-card projection for Color / Typography / Materials.
- * The source statement owns the headline; every other non-empty value field
- * remains visible without inventing a domain-specific presentation schema. */
 export function projectDomainRuleLeaf(
   rows: readonly DsRow[]
-): DomainRuleProjection[] {
-  return rows.map((row, index) => {
-    const value = row.entry.value;
-    if (typeof value === "string") {
-      return {
-        key: row.key,
-        anchor: index + 1,
-        statement: row.meaning,
-        meaning: value,
-        fields: [],
-        status: row.status,
-        row
-      };
-    }
-    const objectValue =
-      isPlainObject(value) && row.entry.alias === null ? value : null;
-    return {
-      key: row.key,
-      anchor: index + 1,
-      statement:
-        objectValue &&
-        typeof objectValue.statement === "string" &&
-        objectValue.statement.trim().length > 0
-          ? objectValue.statement
-          : entryDisplayName(row.entry),
-      meaning: row.meaning,
-      fields: objectValue
-        ? Object.entries(objectValue)
-            .filter(
-              ([key, fieldValue]) =>
-                key !== "statement" && hasDisplayContent(fieldValue)
-            )
-            .flatMap(([label, fieldValue]) =>
-              projectDomainRuleField(label, fieldValue)
-            )
-        : [],
-      status: row.status,
-      row
-    };
-  });
+): RuleProseProjection[] {
+  return projectRuleProse(rows);
 }
 
 /* ------------------------------ technical rows ---------------------------- */

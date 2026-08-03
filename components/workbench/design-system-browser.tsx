@@ -1039,8 +1039,8 @@ function RuleLedgerCardShell({
   rule: {
     key: string;
     anchor: number;
-    statement: string;
-    meaning: string;
+    title: string;
+    body: string;
     status: DsStatus;
     row: DsRow;
   };
@@ -1064,16 +1064,16 @@ function RuleLedgerCardShell({
           <button
             type="button"
             className="dsb-interaction-ledger-row"
-            aria-label={rule.statement}
+            aria-label={rule.title}
             aria-controls={detailsId}
           >
             <span className="dsb-interaction-anchor" aria-hidden>
               {rule.anchor}
             </span>
             <span className="dsb-interaction-ledger-main">
-              <span className="dsb-card-title">{rule.statement}</span>
-              {rule.meaning ? (
-                <span className="dsb-card-desc">{rule.meaning}</span>
+              <span className="dsb-card-title">{rule.title}</span>
+              {rule.body ? (
+                <span className="dsb-card-desc">{rule.body}</span>
               ) : null}
             </span>
             <StatusChip status={rule.status} testId="ds-interaction-status" />
@@ -1126,34 +1126,12 @@ function InteractionRuleCard({
   rows: RowSharedProps;
 }) {
   const safeId = safeDomId(rule.row.entryId);
-  const details = rule.isRich ? (
-    <div className="dsb-principle-fields">
-      {rule.description ? (
-        <span className="dsb-principle-field">
-          <span className="dsb-principle-field-label">Description</span>
-          <p className="dsb-principle-field-text">{rule.description}</p>
-        </span>
-      ) : null}
-      {(["behavior", "accessibility"] as const).map((field) =>
-        rule[field].length > 0 ? (
-          <span className="dsb-principle-field" key={field}>
-            <span className="dsb-principle-field-label">
-              {field[0]!.toUpperCase() + field.slice(1)}
-            </span>
-            <ul className="dsb-principle-list">
-              {rule[field].map((item) => <li key={item}>{item}</li>)}
-            </ul>
-          </span>
-        ) : null
-      )}
-    </div>
-  ) : null;
   return (
     <RuleLedgerCardShell
       rule={rule}
       approval={approval}
       rows={rows}
-      details={details}
+      details={null}
       testId={`ds-interaction-rule-${rule.anchor}`}
       detailsId={`ds-interaction-details-${safeId}`}
       evidenceAriaLabel={`Evidence for interaction rule ${rule.row.entryId}`}
@@ -1178,25 +1156,13 @@ function DomainRulesZone({
       <ol className="dsb-interaction-ledger">
         {rules.map((rule) => {
           const safeId = safeDomId(rule.row.entryId);
-          const details = rule.fields.length > 0 ? (
-            <div className="dsb-principle-fields">
-              {rule.fields.map((field) => (
-                <span className="dsb-principle-field" key={field.label}>
-                  <span className="dsb-principle-field-label">
-                    {field.label}
-                  </span>
-                  <p className="dsb-principle-field-text">{field.text}</p>
-                </span>
-              ))}
-            </div>
-          ) : null;
           return (
             <RuleLedgerCardShell
               key={rule.key}
               rule={rule}
               approval={rows.approvals[rule.key] ?? { kind: "idle" }}
               rows={rows}
-              details={details}
+              details={null}
               testId={`ds-domain-rule-${rule.anchor}`}
               detailsId={`ds-domain-rule-details-${safeId}`}
               evidenceAriaLabel={`Evidence for domain rule ${rule.row.entryId}`}
@@ -1676,16 +1642,9 @@ function LayoutPlacardBlock({
             onApprove={() => rows.onApprove(rule.row)}
           />
         </div>
-        {rule.body !== null ? (
-          <p className="dsb-rule-prose">{rule.body}</p>
-        ) : null}
+        {rule.body ? <p className="dsb-rule-prose">{rule.body}</p> : null}
         <RuleTitleEditor row={rule.row} rows={rows} />
         <RuleBodyEditor row={rule.row} rows={rows} />
-        {rule.facts.length > 0 ? (
-          <p className="dsb-placard-facts">
-            {rule.facts.map((fact) => fact.label).join("  ·  ")}
-          </p>
-        ) : null}
         <div className="dsb-placard-caption">
           {capture ? (
             <>
