@@ -4,6 +4,8 @@ import { authorize } from "../../../lib/runtime/session";
 import {
   approveDesignSystemEntryCommand,
   approveDesignSystemEntryInputSchema,
+  editDesignSystemEntryCommand,
+  editDesignSystemEntryInputSchema,
   commandErrorHttpStatus,
   getDesignSystemComponentCommand,
   getDesignSystemComponentInputSchema,
@@ -76,6 +78,22 @@ export async function POST(request: NextRequest) {
     const parsed = parseCommandInput(approveDesignSystemEntryInputSchema, raw.input);
     if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.reason }, { status: 400 });
     const result = approveDesignSystemEntryCommand(ctx.projectPath, parsed.data);
+    return result.ok
+      ? NextResponse.json(result)
+      : NextResponse.json(
+          { ok: false, error: result.reason, details: result.details },
+          { status: commandErrorHttpStatus(result.reason) }
+        );
+  }
+  if (raw.action === "edit-entry") {
+    const parsed = parseCommandInput(editDesignSystemEntryInputSchema, raw.input);
+    if (!parsed.ok) {
+      return NextResponse.json(
+        { ok: false, error: parsed.reason },
+        { status: 400 }
+      );
+    }
+    const result = editDesignSystemEntryCommand(ctx.projectPath, parsed.data);
     return result.ok
       ? NextResponse.json(result)
       : NextResponse.json(

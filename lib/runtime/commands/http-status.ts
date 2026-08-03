@@ -19,7 +19,8 @@ const CONFLICT_REASONS = new Set([
   // or DB row and source file have drifted apart).
   "already_formalized",
   "already_exists",
-  "entry_not_in_source_file"
+  "entry_not_in_source_file",
+  "concurrent_edit_superseded"
 ]);
 const NOT_FOUND_REASONS = new Set(["not_found"]);
 const GONE_REASONS = new Set(["endpoint_retired"]);

@@ -275,6 +275,36 @@ describe("SpecRowView (09A d.6: name/value/meaning/chip only)", () => {
 });
 
 describe("EvidenceInfoContent (ⓘ layer)", () => {
+  test("shows direct designer edit history as provenance", () => {
+    const html = renderToStaticMarkup(
+      createElement(EvidenceInfoContent, {
+        entry: entry({
+          evidence: {
+            question_cards: [],
+            annotations: [],
+            evidence_versions: [],
+            designer_annotations: [],
+            edit_history: [
+              {
+                id: "edit-1",
+                field: "meaning",
+                before: "Quiet transitions",
+                after: "Calm transitions",
+                created_at: "2026-08-03T00:00:00.000Z"
+              }
+            ],
+            unresolved_links: []
+          }
+        }),
+        approval: { kind: "idle" },
+        onApprove: vi.fn()
+      })
+    );
+    expect(html).toContain("Designer edits");
+    expect(html).toContain("Quiet transitions");
+    expect(html).toContain("Calm transitions");
+  });
+
   test("shows the full evidence chain, including unresolved links", () => {
     const html = renderToStaticMarkup(
       createElement(EvidenceInfoContent, {

@@ -74,12 +74,21 @@ export interface DesignSystemEvidenceDesignerAnnotation {
   created_at: string;
 }
 
+export interface DesignSystemEvidenceEdit {
+  id: string;
+  field: string;
+  before: string;
+  after: string;
+  created_at: string;
+}
+
 /** Evidence chain for one entry — nested for the ⓘ hover layer (09A d.6). */
 export interface DesignSystemEntryEvidence {
   question_cards: DesignSystemEvidenceCard[];
   annotations: DesignSystemEvidenceAnnotation[];
   evidence_versions: DesignSystemEvidenceVersion[];
   designer_annotations: DesignSystemEvidenceDesignerAnnotation[];
+  edit_history?: DesignSystemEvidenceEdit[];
   /** Links that resolve to no answered card / annotation (surfaced, not hidden). */
   unresolved_links: string[];
 }
@@ -357,6 +366,10 @@ export function getDesignSystemView(
       `SELECT id, title, body, inference, anchor_json
        FROM agent_alignment_annotations WHERE id = ?`
     );
+    const editStmt = db.prepare(
+      `SELECT event_id, payload, created_at FROM events
+       WHERE event_id = ? AND type = 'design_system_entry_edited'`
+    );
     const versionStmt = db.prepare(
       `SELECT id, frame_node_id, frame_name, created_at
        FROM figma_evidence_surfaces WHERE id = ?`
@@ -381,6 +394,7 @@ export function getDesignSystemView(
         annotations: [],
         evidence_versions: [],
         designer_annotations: [],
+        edit_history: [],
         unresolved_links: []
       };
       const versionIds: string[] = [];
@@ -427,6 +441,25 @@ export function getDesignSystemView(
             inference: annotation.inference
           });
           versionIds.push(...anchorEvidenceVersionIds(annotation.anchor_json));
+          continue;
+        }
+        const edit = editStmt.get(link) as
+          | { event_id: string; payload: string; created_at: string }
+          | undefined;
+        if (edit) {
+          let payload: Record<string, unknown> = {};
+          try {
+            payload = JSON.parse(edit.payload) as Record<string, unknown>;
+          } catch {
+            payload = {};
+          }
+          evidence.edit_history!.push({
+            id: edit.event_id,
+            field: typeof payload.field === "string" ? payload.field : "unknown",
+            before: typeof payload.before === "string" ? payload.before : "",
+            after: typeof payload.after === "string" ? payload.after : "",
+            created_at: edit.created_at
+          });
           continue;
         }
         evidence.unresolved_links.push(link);

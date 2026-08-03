@@ -80,6 +80,8 @@ export interface DesignSystemLinkIndex {
   answeredCards: ReadonlyMap<string, AnswerSource>;
   /** Agent alignment annotations: id → inference. */
   annotations: ReadonlyMap<string, "confirmed" | "reasonable">;
+  /** Direct designer edits are durable candidate-grade provenance. */
+  designerEditEvents?: ReadonlySet<string>;
 }
 
 /** Pre-fetch the lookup maps for a batch of entry checks (Task C ingest). */
@@ -100,6 +102,9 @@ export function loadDesignSystemLinkIndex(
        WHERE inference IN ('reasonable', 'confirmed')`
     )
     .all() as Array<{ id: string; inference: string }>;
+  const designerEditEvents = db
+    .prepare("SELECT event_id FROM events WHERE type = 'design_system_entry_edited'")
+    .all() as Array<{ event_id: string }>;
   return {
     answeredCards: new Map(
       cards
@@ -111,7 +116,8 @@ export function loadDesignSystemLinkIndex(
         a.id,
         a.inference as "confirmed" | "reasonable"
       ])
-    )
+    ),
+    designerEditEvents: new Set(designerEditEvents.map((event) => event.event_id))
   };
 }
 
@@ -158,7 +164,8 @@ export function checkDesignSystemEntryStatus(
   const backed = entry.links.some(
     (link) =>
       index.answeredCards.has(link) ||
-      index.annotations.has(link)
+      index.annotations.has(link) ||
+      index.designerEditEvents?.has(link) === true
   );
   return backed
     ? { ok: true }

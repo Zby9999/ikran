@@ -15,6 +15,11 @@ import {
   type ApproveDesignSystemEntryInput,
   type DesignSystemApprovalResult
 } from "../design-system-approval";
+import {
+  editDesignSystemEntry,
+  type DesignSystemEditResult,
+  type EditDesignSystemEntryInput
+} from "../design-system-edit";
 
 /**
  * The Browser's only write operation in v1 (09A decision 5): candidate →
@@ -27,6 +32,13 @@ export function approveDesignSystemEntryCommand(
   input: ApproveDesignSystemEntryInput
 ): DesignSystemApprovalResult {
   return approveDesignSystemEntry(projectPath, input);
+}
+
+export function editDesignSystemEntryCommand(
+  projectPath: string,
+  input: EditDesignSystemEntryInput
+): DesignSystemEditResult {
+  return editDesignSystemEntry(projectPath, input);
 }
 
 export function getDesignSystemViewCommand(

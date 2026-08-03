@@ -252,11 +252,13 @@ export function EvidenceInfoContent({
   onApprove: () => void;
 }) {
   const evidence = entry.evidence;
+  const editHistory = evidence.edit_history ?? [];
   const hasEvidence =
     evidence.question_cards.length > 0 ||
     evidence.annotations.length > 0 ||
     evidence.evidence_versions.length > 0 ||
     evidence.designer_annotations.length > 0 ||
+    editHistory.length > 0 ||
     evidence.unresolved_links.length > 0;
 
   return (
@@ -325,6 +327,20 @@ export function EvidenceInfoContent({
                   <span className="dsb-evidence-meta">
                     {annotation.section ?? "unscoped"} · {annotation.created_at}
                   </span>
+                </p>
+              ))}
+            </section>
+          ) : null}
+          {editHistory.length > 0 ? (
+            <section className="dsb-evidence-section">
+              <p className="dsb-evidence-label">Designer edits</p>
+              {editHistory.map((edit) => (
+                <p key={edit.id} className="dsb-evidence-item">
+                  <span className="dsb-evidence-question">{edit.field}</span>
+                  <br />
+                  {edit.before} → {edit.after}
+                  <br />
+                  <span className="dsb-evidence-meta">{edit.created_at}</span>
                 </p>
               ))}
             </section>
@@ -569,10 +585,89 @@ type RowListProps = {
   onInfoHoverOpen: (key: string) => void;
   onInfoHoverClose: () => void;
   onApprove: (row: DsRow) => void;
+  onEditEntry?: (
+    row: DsRow,
+    field: "meaning" | "value",
+    text: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
 };
 
 /** Everything RowList needs except the rows themselves — shared by all pages. */
 export type RowSharedProps = Omit<RowListProps, "rows" | "numbered">;
+
+function RuleTitleEditor({ row, rows }: { row: DsRow; rows: RowSharedProps }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(row.meaning);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!editing) setDraft(row.meaning);
+  }, [editing, row.meaning]);
+
+  if (!rows.onEditEntry) return null;
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="dsb-rule-edit-button"
+        data-testid={`ds-edit-title-${row.entryId}`}
+        onClick={() => {
+          setError(null);
+          setDraft(row.meaning);
+          setEditing(true);
+        }}
+      >
+        Edit title
+      </button>
+    );
+  }
+
+  return (
+    <form
+      className="dsb-rule-edit-form"
+      data-testid={`ds-edit-title-form-${row.entryId}`}
+      onSubmit={async (event) => {
+        event.preventDefault();
+        setPending(true);
+        setError(null);
+        const result = await rows.onEditEntry!(row, "meaning", draft);
+        setPending(false);
+        if (result.ok) setEditing(false);
+        else setError(result.error);
+      }}
+    >
+      <label className="dsb-rule-edit-label" htmlFor={`rule-title-${safeDomId(row.key)}`}>
+        Rule title
+      </label>
+      <input
+        id={`rule-title-${safeDomId(row.key)}`}
+        className="dsb-rule-edit-input"
+        value={draft}
+        disabled={pending}
+        autoFocus
+        onChange={(event) => setDraft(event.target.value)}
+      />
+      <span className="dsb-rule-edit-actions">
+        <button type="submit" disabled={pending || draft.trim().length === 0}>
+          {pending ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => {
+            setError(null);
+            setDraft(row.meaning);
+            setEditing(false);
+          }}
+        >
+          Cancel
+        </button>
+      </span>
+      {error ? <span className="dsb-rule-edit-error" role="alert">{error}</span> : null}
+    </form>
+  );
+}
 
 function RowList({ rows, numbered = false, ...rest }: RowListProps) {
   return (
@@ -919,6 +1014,7 @@ function RuleLedgerCardShell({
           <div className="dsb-interaction-ledger-details" id={detailsId}>
             {details}
             <div className="dsb-principle-footer">
+              <RuleTitleEditor row={rule.row} rows={rows} />
               <InfoPopover
                 entry={rule.row.entry}
                 approval={approval}
@@ -1504,6 +1600,7 @@ function LayoutPlacardBlock({
             onApprove={() => rows.onApprove(rule.row)}
           />
         </div>
+        <RuleTitleEditor row={rule.row} rows={rows} />
         {rule.facts.length > 0 ? (
           <p className="dsb-placard-facts">
             {rule.facts.map((fact) => fact.label).join("  ·  ")}
@@ -1796,6 +1893,48 @@ export function DesignSystemBrowser({
     [session, reload, setView]
   );
 
+  const editEntry = useCallback(
+    async (
+      row: DsRow,
+      field: "meaning" | "value",
+      text: string
+    ): Promise<{ ok: true } | { ok: false; error: string }> => {
+      try {
+        const response = await fetch("/api/design-system", {
+          method: "POST",
+          headers: {
+            "x-ikran-session": session,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            action: "edit-entry",
+            input: {
+              sourceArtifactPath: row.sourceArtifactPath,
+              entryId: row.entryId,
+              field,
+              text
+            }
+          })
+        });
+        const data = (await response.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+        };
+        if (!(response.ok && data.ok === true)) {
+          return {
+            ok: false,
+            error: typeof data.error === "string" ? data.error : "edit_failed"
+          };
+        }
+        await reload();
+        return { ok: true };
+      } catch {
+        return { ok: false, error: "network" };
+      }
+    },
+    [reload, session]
+  );
+
   const openInfo = useCallback((key: string) => {
     if (hoverCloseTimerRef.current) {
       clearTimeout(hoverCloseTimerRef.current);
@@ -1931,7 +2070,8 @@ export function DesignSystemBrowser({
     onInfoKey: setInfoKey,
     onInfoHoverOpen: openInfoTracked,
     onInfoHoverClose: closeInfoDelayed,
-    onApprove: (row) => void approve(row)
+    onApprove: (row) => void approve(row),
+    onEditEntry: editEntry
   };
 
   const renderMain = (): ReactNode => {

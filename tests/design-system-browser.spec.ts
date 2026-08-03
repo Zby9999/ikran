@@ -252,6 +252,17 @@ test("09A design system browser: declare → render → approve write-back", asy
         ]
       }
     });
+    writeSource("design-system/interaction-rules.json", {
+      rules: [
+        {
+          id: "interaction-calm-feedback",
+          value: { statement: "Feedback remains quiet and immediate." },
+          meaning: "Calm feedback",
+          status: "candidate",
+          links: [designerEditedCardId]
+        }
+      ]
+    });
 
     const declare = (artifactPath: string, artifactType: string, links: string[]) =>
       client!.callTool({
@@ -282,6 +293,11 @@ test("09A design system browser: declare → render → approve write-back", asy
       "design-system/components/button.json",
       "component-spec",
       [annotationIds["component"]]
+    ))).toMatchObject({ ok: true, record: { status: "ingested" } });
+    expect(structuredContent(await declare(
+      "design-system/interaction-rules.json",
+      "interaction-rules.json",
+      [designerEditedCardId]
     ))).toMatchObject({ ok: true, record: { status: "ingested" } });
 
     // ---- Sheet rendering: Foundations home, token leaf, Components. ----
@@ -318,6 +334,58 @@ test("09A design system browser: declare → render → approve write-back", asy
     ).toBeVisible();
     await expect(page.getByRole("cell", { name: "hover" })).toBeVisible();
     await expect(page.getByRole("cell", { name: "disabled" })).toBeVisible();
+
+    // ---- Direct rule title edit: UI → source + DB + event → SSE refresh. ----
+    await page.getByRole("tab", { name: "Foundations" }).click();
+    await page.getByRole("button", { name: "Interaction", exact: true }).click();
+    const interactionRule = page.getByTestId("ds-interaction-rule-1");
+    await interactionRule
+      .getByRole("button", { name: "Feedback remains quiet and immediate." })
+      .click();
+    await interactionRule
+      .getByTestId("ds-edit-title-interaction-calm-feedback")
+      .click();
+    const titleInput = interactionRule.getByLabel("Rule title");
+    await titleInput.fill("Measured feedback");
+    await interactionRule.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(interactionRule).toContainText("Measured feedback");
+
+    const editedInteraction = JSON.parse(
+      readFileSync(
+        path.join(designSystemDir, "interaction-rules.json"),
+        "utf-8"
+      )
+    ) as { rules: Array<{ meaning: string }> };
+    expect(editedInteraction.rules[0].meaning).toBe("Measured feedback");
+    const editDb = openIkranDb(path.join(projectDir, ".ikran", "ikran.db"));
+    try {
+      expect(
+        editDb
+          .prepare(
+            `SELECT meaning FROM design_system_entries
+             WHERE source_artifact_path = ? AND entry_id = ?`
+          )
+          .get(
+            "design-system/interaction-rules.json",
+            "interaction-calm-feedback"
+          )
+      ).toEqual({ meaning: "Measured feedback" });
+    } finally {
+      editDb.close();
+    }
+    expect(readEventTypes(projectDir)).toContain("design_system_entry_edited");
+    await interactionRule
+      .getByRole("button", {
+        name: "Evidence for interaction rule interaction-calm-feedback"
+      })
+      .hover();
+    await expect(
+      page.getByTestId("ds-evidence-interaction-calm-feedback")
+    ).toContainText("Calm feedback → Measured feedback");
+    await page.getByRole("heading", { name: "Interaction", exact: true }).hover();
+    await expect(
+      page.getByTestId("ds-evidence-interaction-calm-feedback")
+    ).toHaveCount(0);
 
     // ---- ⓘ evidence chain for a row. ----
     await page.getByRole("tab", { name: "Foundations" }).click();

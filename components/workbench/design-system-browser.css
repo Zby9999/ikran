@@ -507,6 +507,73 @@
   margin-top: 12px;
 }
 
+.dsb-rule-edit-button,
+.dsb-rule-edit-actions button {
+  border: 0;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 5%);
+  padding: 5px 9px;
+  color: var(--dsc-ink-2);
+  font: inherit;
+  font-size: 11px;
+}
+
+.dsb-rule-edit-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 8px;
+  width: min(100%, 520px);
+  margin-top: 10px;
+}
+
+.dsb-rule-edit-label {
+  grid-column: 1 / -1;
+  color: var(--dsc-ink-3);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dsb-rule-edit-input {
+  min-width: 0;
+  height: 30px;
+  border: 1px solid rgb(0 0 0 / 14%);
+  border-radius: 7px;
+  background: #fff;
+  padding: 0 9px;
+  color: var(--dsc-ink);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.dsb-rule-edit-input:focus-visible {
+  border-color: var(--dsc-accent);
+  box-shadow: 0 0 0 2px rgb(55 90 255 / 14%);
+}
+
+.dsb-rule-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dsb-rule-edit-actions button[type="submit"] {
+  background: var(--dsc-ink);
+  color: #fff;
+}
+
+.dsb-rule-edit-actions button:disabled {
+  opacity: 0.45;
+}
+
+.dsb-rule-edit-error {
+  grid-column: 1 / -1;
+  color: #b42318;
+  font-size: 11px;
+}
+
 /* Note paragraph below a page's main content (replaces ad-hoc spacing). */
 .dsb-page-note {
   margin: 0;

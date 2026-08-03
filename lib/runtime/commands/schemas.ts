@@ -225,6 +225,17 @@ export const approveDesignSystemEntryInputSchema = z.object(
   approveDesignSystemEntryInputShape
 );
 
+export const editDesignSystemEntryInputShape = {
+  sourceArtifactPath: z.string(),
+  entryId: z.string(),
+  field: z.enum(["meaning", "value"]),
+  text: z.string()
+} as const;
+
+export const editDesignSystemEntryInputSchema = z.object(
+  editDesignSystemEntryInputShape
+);
+
 const alignmentEvidenceLinkShape = {
   seedReferenceId: z.string(),
   evidenceSurfaceId: z.string(),

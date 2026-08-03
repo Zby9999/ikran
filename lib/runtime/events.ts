@@ -43,6 +43,7 @@ export type EventType =
   | "draft_design_system_generated"
   | "design_system_view_generated"
   | "design_system_entry_approved"
+  | "design_system_entry_edited"
   | "source_artifact_declared"
   | "seed_reconstruction_started"
   | "preview_started"
