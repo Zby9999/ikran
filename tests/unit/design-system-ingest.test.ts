@@ -205,7 +205,7 @@ test("prose layout rules round-trip body verbatim with structured captures", () 
     const result = getDesignSystemView(dir);
     if (!result.ok) throw new Error(result.reason);
     expect(result.view.layout[0].value).toBe(body);
-    expect(result.view.layout[0].layoutCaptures).toEqual([
+    expect(result.view.layout[0].captures).toEqual([
       expect.objectContaining({
         nodeName: "Article frame",
         artifactPath: "design-system/captures/article-frame.png",
@@ -1220,7 +1220,7 @@ describe("getDesignSystemView layout captures", () => {
       });
 
       const entry = captureOf(dir);
-      expect(entry.layoutCaptures).toEqual([
+      expect(entry.captures).toEqual([
         {
           nodeId: null,
           nodeName: "Work grid",
@@ -1291,7 +1291,7 @@ describe("getDesignSystemView layout captures", () => {
       }
 
       const entry = captureOf(dir);
-      expect(entry.layoutCaptures?.map((capture) => capture.nodeRect)).toEqual([
+      expect(entry.captures?.map((capture) => capture.nodeRect)).toEqual([
         null,
         null,
         null
@@ -1335,7 +1335,7 @@ describe("getDesignSystemView layout captures", () => {
       });
 
       const entry = captureOf(dir);
-      expect(entry.layoutCaptures?.map((capture) => capture.stale)).toEqual([
+      expect(entry.captures?.map((capture) => capture.stale)).toEqual([
         true,
         true,
         false
@@ -1347,7 +1347,7 @@ describe("getDesignSystemView layout captures", () => {
     withTempProject((dir) => {
       seedEvidenceCards(dir);
       declareLayoutRules(dir, { columns: "12" });
-      expect(captureOf(dir).layoutCaptures).toBeUndefined();
+      expect(captureOf(dir).captures).toBeUndefined();
     });
   });
 
@@ -1388,7 +1388,82 @@ describe("getDesignSystemView layout captures", () => {
       const result = getDesignSystemView(dir);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.view.foundations.principles[0]!.layoutCaptures).toBeUndefined();
+      expect(result.view.foundations.principles[0]!.captures).toBeUndefined();
+    });
+  });
+
+  test("component spec entries are decorated the same way (09C-D03)", () => {
+    withTempProject((dir) => {
+      seedEvidenceCards(dir);
+      writeProjectFile(dir, "design-system/components/button.json", {
+        id: "component-button",
+        name: "Button",
+        value: {
+          description: "Primary action.",
+          props: [],
+          boundaries: [],
+          stateMatrix: [],
+          sourceCaptures: [
+            {
+              nodeName: "Button / Primary",
+              artifactPath: "design-system/captures/button-primary.png",
+              capturedAt: "2026-08-03T12:00:00.000Z"
+            }
+          ]
+        },
+        meaning: "Button spec",
+        status: "candidate",
+        links: ["card-accepted"]
+      });
+      writeProjectFile(dir, "design-system/component-list.json", {
+        components: [
+          {
+            id: "component-button",
+            value: {
+              name: "Button",
+              specPath: "design-system/components/button.json"
+            },
+            sourceCaptures: [
+              {
+                nodeName: "Should not decorate",
+                artifactPath: "design-system/captures/inventory.png",
+                capturedAt: "2026-08-03T12:00:00.000Z"
+              }
+            ],
+            meaning: "Button",
+            status: "candidate",
+            links: ["card-accepted"]
+          }
+        ]
+      });
+      expect(
+        declareFile(dir, "design-system/components/button.json", "component-spec")
+          .ok
+      ).toBe(true);
+      expect(
+        declareFile(
+          dir,
+          "design-system/component-list.json",
+          "component-list.json"
+        ).ok
+      ).toBe(true);
+
+      const result = getDesignSystemView(dir);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.view.components.specs[0]!.captures).toEqual([
+        {
+          nodeId: null,
+          nodeName: "Button / Primary",
+          artifactPath: "design-system/captures/button-primary.png",
+          capturedAt: "2026-08-03T12:00:00.000Z",
+          surfaceId: null,
+          stale: false,
+          nodeRect: null
+        }
+      ]);
+      // Inventory entries are not capture surfaces — the hero reads the spec.
+      expect(result.view.components.inventory[0]!.captures).toBeUndefined();
     });
   });
 });

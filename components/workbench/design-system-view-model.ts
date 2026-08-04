@@ -9,7 +9,10 @@
 // Locked decisions honored here:
 //   - d.6 rows carry name / value / meaning / status chip only; the full
 //     evidence chain stays nested on the entry for the ⓘ layer.
-//   - d.7 no section collapsing — leaves are flat under their tab.
+//   - d.7 no section collapsing — leaves are flat under their tab. 09C-D03
+//     exception: the components section sidebar is two-level (group header +
+//     component items, Components group before Blocks); foundations leaves
+//     stay flat.
 //   - d.9 the entry button appears only after the six-part alignment is
 //     completed (canOpenDesignSystemBrowser is the single predicate).
 //   - token.json's 3 layers project onto Color / Typography / Materials
@@ -18,6 +21,7 @@
 import { specPathMatchesSourceArtifact } from "@/lib/runtime/design-system-spec-path";
 import type {
   DesignSystemEntryView,
+  DesignSystemLayoutCapture,
   DesignSystemView
 } from "@/lib/runtime/design-system-view";
 import type { DesignIntentAlignmentSnapshot } from "@/lib/runtime/design-intent-alignment";
@@ -25,6 +29,7 @@ import type { DesignIntentAlignmentSnapshot } from "@/lib/runtime/design-intent-
 export type {
   DesignSystemEntryView,
   DesignSystemEntryEvidence,
+  DesignSystemLayoutCapture,
   DesignSystemView
 } from "@/lib/runtime/design-system-view";
 
@@ -338,12 +343,41 @@ export function buildColorLeafModel(view: DesignSystemView): DsColorLeafModel {
 
 /* ---------------------------- component mapping ---------------------------- */
 
+/** Sidebar grouping (09C-D03): the spec's optional `value.group` declares a
+ * page-structure Block; everything else is a Component. */
+export type DsComponentGroupId = "component" | "block";
+
 export interface DsComponentProp {
   name: string;
   type: string;
   /** Optional extra columns carried verbatim when the source declares them. */
   required?: boolean;
   description?: string;
+  /** Candidate props carry the chip in the placard (only the literal
+   * "candidate" is honored — unknown status strings are dropped). */
+  status?: "candidate";
+}
+
+export type DsComponentDetailGroupId =
+  | "token-links"
+  | "anatomy"
+  | "variants"
+  | "sizes"
+  | "states-motion"
+  | "usage-rules"
+  | "content-rules"
+  | "responsive-behavior"
+  | "code-links"
+  | "open-gaps";
+
+/** One optional placard group (09B rich fields): prose lines plus object
+ * rows, both verbatim from the spec. Empty fields never reach this list —
+ * omission is silent in the UI but stays auditable in the source. */
+export interface DsComponentDetailGroup {
+  id: DsComponentDetailGroupId;
+  label: string;
+  lines: string[];
+  rows: Record<string, unknown>[];
 }
 
 export interface DsComponentDetail {
@@ -352,16 +386,78 @@ export interface DsComponentDetail {
   boundaries: string[];
   /** State matrix rows: { state, ...behavior } verbatim from the spec. */
   stateMatrix: Record<string, unknown>[];
+  /** Hero states row names: rich `states` line labels when declared, else
+   * the state matrix names. */
+  stateNames: string[];
+  /** Non-empty rich groups in fixed placard order. */
+  groups: DsComponentDetailGroup[];
 }
 
 export interface DsComponentModel {
   leafId: ComponentLeafId;
   entryId: string;
   name: string;
+  /** Sidebar grouping from the spec's `value.group` (default component). */
+  group: DsComponentGroupId;
+  /** Worst of inventory/spec (gap > candidate > formalized) — drives the
+   * sidebar status dot and the placard title chip. */
+  status: DsStatus;
   inventory: DesignSystemEntryView | null;
   spec: DesignSystemEntryView | null;
   detail: DsComponentDetail | null;
+  /** Source captures the Runtime view decorated onto the spec ([] = none). */
+  captures: DesignSystemLayoutCapture[];
   chips: string[];
+}
+
+/* ------------------------- rich detail group tables ------------------------- */
+
+const RICH_GROUP_DEFS: readonly {
+  id: DsComponentDetailGroupId;
+  label: string;
+  fields: readonly string[];
+}[] = [
+  { id: "token-links", label: "Token links", fields: ["tokenLinks"] },
+  { id: "anatomy", label: "Anatomy", fields: ["anatomy"] },
+  { id: "variants", label: "Variants", fields: ["variants"] },
+  { id: "sizes", label: "Sizes", fields: ["sizes"] },
+  { id: "states-motion", label: "States & motion", fields: ["states", "motion"] },
+  { id: "usage-rules", label: "Usage rules", fields: ["usageRules"] },
+  { id: "content-rules", label: "Content rules", fields: ["contentRules"] },
+  {
+    id: "responsive-behavior",
+    label: "Responsive behavior",
+    fields: ["responsiveBehavior"]
+  },
+  { id: "code-links", label: "Code links", fields: ["codeLinks"] },
+  { id: "open-gaps", label: "Open gaps", fields: ["openGaps"] }
+];
+
+/** Tolerant rich-field parse: real data mixes string lines and object rows;
+ * anything else (numbers, nulls, empty strings) is dropped item by item. */
+function parseRichItems(raw: unknown): {
+  lines: string[];
+  rows: Record<string, unknown>[];
+} {
+  const lines: string[] = [];
+  const rows: Record<string, unknown>[] = [];
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (typeof item === "string") {
+        if (item.trim().length > 0) lines.push(item);
+      } else if (isPlainObject(item)) {
+        rows.push(item);
+      }
+    }
+  }
+  return { lines, rows };
+}
+
+/** Hero states row: rich `states` lines lead with a "name：note" /
+ * "name: note" label — the name is the part before the first colon. */
+function stateNameOfLine(line: string): string {
+  const colon = line.search(/[：:]/);
+  return (colon === -1 ? line : line.slice(0, colon)).trim();
 }
 
 function parseComponentDetail(
@@ -382,10 +478,39 @@ function parseComponentDetail(
         ...(typeof raw.required === "boolean" ? { required: raw.required } : {}),
         ...(typeof raw.description === "string"
           ? { description: raw.description }
-          : {})
+          : {}),
+        ...(raw.status === "candidate" ? { status: "candidate" as const } : {})
       });
     }
   }
+  const stateMatrix = Array.isArray(value.stateMatrix)
+    ? value.stateMatrix.filter(isPlainObject)
+    : [];
+
+  const groups: DsComponentDetailGroup[] = [];
+  for (const def of RICH_GROUP_DEFS) {
+    const lines: string[] = [];
+    const rows: Record<string, unknown>[] = [];
+    for (const field of def.fields) {
+      const parsed = parseRichItems(value[field]);
+      lines.push(...parsed.lines);
+      rows.push(...parsed.rows);
+    }
+    if (lines.length > 0 || rows.length > 0) {
+      groups.push({ id: def.id, label: def.label, lines, rows });
+    }
+  }
+
+  const statesLines = parseRichItems(value.states).lines;
+  const stateNames =
+    statesLines.length > 0
+      ? statesLines.map(stateNameOfLine).filter((name) => name.length > 0)
+      : stateMatrix.flatMap((row) =>
+          typeof row.state === "string" && row.state.trim().length > 0
+            ? [row.state]
+            : []
+        );
+
   return {
     description:
       typeof value.description === "string" ? value.description : "",
@@ -393,10 +518,67 @@ function parseComponentDetail(
     boundaries: Array.isArray(value.boundaries)
       ? value.boundaries.filter((b): b is string => typeof b === "string")
       : [],
-    stateMatrix: Array.isArray(value.stateMatrix)
-      ? value.stateMatrix.filter(isPlainObject)
-      : []
+    stateMatrix,
+    stateNames,
+    groups
   };
+}
+
+/** Attention-first ordering: anything unapproved outranks formalized. */
+function componentStatusOf(
+  entries: readonly DesignSystemEntryView[]
+): DsStatus {
+  if (entries.some((entry) => entry.status === "gap")) return "gap";
+  if (entries.some((entry) => entry.status === "candidate")) return "candidate";
+  return "formalized";
+}
+
+/* --------------------------- sidebar projection --------------------------- */
+
+export interface DsComponentSidebarItem {
+  leafId: ComponentLeafId;
+  name: string;
+  status: DsStatus;
+  /** Candidate entries get the blue dot (#2473cc, the chip color). */
+  candidate: boolean;
+}
+
+export interface DsComponentSidebarGroup {
+  id: DsComponentGroupId;
+  name: string;
+  items: DsComponentSidebarItem[];
+  /** Group header status summary, e.g. ["1 formalized", "2 candidate"]. */
+  summary: string[];
+}
+
+const COMPONENT_GROUP_NAMES: Record<DsComponentGroupId, string> = {
+  component: "Components",
+  block: "Blocks"
+};
+
+/** Components group first, Blocks second; empty groups are omitted. The
+ * header summary counts one vote per component by its derived (worst-of)
+ * status, e.g. "2 formalized · 1 candidate". */
+export function projectComponentSidebarGroups(
+  components: readonly DsComponentModel[]
+): DsComponentSidebarGroup[] {
+  const groups: DsComponentSidebarGroup[] = [];
+  for (const id of ["component", "block"] as const) {
+    const members = components.filter((component) => component.group === id);
+    if (members.length === 0) continue;
+    groups.push({
+      id,
+      name: COMPONENT_GROUP_NAMES[id],
+      items: members.map((component) => ({
+        leafId: component.leafId,
+        name: component.name,
+        status: component.status,
+        candidate: component.status === "candidate"
+      })),
+      summary: statusChips(members)
+    });
+  }
+  return groups;
 }
 
 /* ------------------------------ whole model ------------------------------ */
@@ -417,6 +599,10 @@ export interface DsBrowserModel {
   components: {
     chips: string[];
     list: DsComponentModel[];
+    /** Components group first, Blocks second; empty groups omitted. */
+    groups: DsComponentSidebarGroup[];
+    /** Where the Components tab lands: the first component, null when empty. */
+    landingLeaf: ComponentLeafId | null;
   };
 }
 
@@ -496,6 +682,29 @@ export function buildDesignSystemBrowserModel(
   // specPathMatchesSourceArtifact). Specs with no inventory row still
   // surface (honest about what's in the DB).
   const usedSpecs = new Set<string>();
+  const toComponentModel = (
+    entry: DesignSystemEntryView | null,
+    spec: DesignSystemEntryView | null
+  ): DsComponentModel => {
+    const anchor = entry ?? spec!;
+    const entries = [entry, spec].flatMap((e) => (e ? [e] : []));
+    const group =
+      spec && isPlainObject(spec.value) && spec.value.group === "block"
+        ? ("block" as const)
+        : ("component" as const);
+    return {
+      leafId: `component:${anchor.entry_id}`,
+      entryId: anchor.entry_id,
+      name: entryDisplayName(anchor),
+      group,
+      status: componentStatusOf(entries),
+      inventory: entry,
+      spec,
+      detail: parseComponentDetail(spec),
+      captures: spec?.captures ?? [],
+      chips: statusChips(entries)
+    };
+  };
   const components: DsComponentModel[] = view.components.inventory.map(
     (entry) => {
       const specPath =
@@ -512,29 +721,12 @@ export function buildDesignSystemBrowserModel(
             )
           : undefined) ?? null;
       if (spec) usedSpecs.add(spec.entry_id);
-      const name = entryDisplayName(entry);
-      return {
-        leafId: `component:${entry.entry_id}`,
-        entryId: entry.entry_id,
-        name,
-        inventory: entry,
-        spec,
-        detail: parseComponentDetail(spec),
-        chips: statusChips(spec ? [entry, spec] : [entry])
-      };
+      return toComponentModel(entry, spec);
     }
   );
   for (const spec of view.components.specs) {
     if (usedSpecs.has(spec.entry_id)) continue;
-    components.push({
-      leafId: `component:${spec.entry_id}`,
-      entryId: spec.entry_id,
-      name: entryDisplayName(spec),
-      inventory: null,
-      spec,
-      detail: parseComponentDetail(spec),
-      chips: statusChips([spec])
-    });
+    components.push(toComponentModel(null, spec));
   }
 
   const foundationsRows = [
@@ -568,7 +760,9 @@ export function buildDesignSystemBrowserModel(
     },
     components: {
       chips: statusChips(componentRows),
-      list: components
+      list: components,
+      groups: projectComponentSidebarGroups(components),
+      landingLeaf: components[0]?.leafId ?? null
     }
   };
 }

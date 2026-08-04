@@ -104,10 +104,11 @@ export interface LayoutCaptureNodeRect {
   height: number;
 }
 
-/** One Figma node screenshot backing a layout rule (09C-D02). The Agent
- * captures the node via Figma MCP, stores the image as a project artifact,
- * and records the provenance in the rule's `value.sourceCaptures`; the view
- * layers the freshness verdict (`stale`) on top from evidence lineage. */
+/** One Figma node screenshot backing a layout rule (09C-D02) or a component
+ * spec (09C-D03 hero). The Agent captures the node via Figma MCP, stores the
+ * image as a project artifact, and records the provenance in the entry's
+ * `value.sourceCaptures`; the view layers the freshness verdict (`stale`)
+ * on top from evidence lineage. */
 export interface DesignSystemLayoutCapture {
   nodeId: string | null;
   nodeName: string;
@@ -146,10 +147,11 @@ export interface DesignSystemEntryView {
   links: string[];
   source_artifact_path: string;
   evidence: DesignSystemEntryEvidence;
-  /** Layout section only: parsed `value.sourceCaptures` with the freshness
-   * verdict joined from evidence lineage. Undefined for other sections and
-   * for layout rules that declare no captures. */
-  layoutCaptures?: DesignSystemLayoutCapture[];
+  /** Layout rules and component specs only: parsed `sourceCaptures` with the
+   * freshness verdict joined from evidence lineage (09C-D02 layout rules;
+   * 09C-D03 component spec hero). Undefined for other sections and for
+   * entries that declare no captures. */
+  captures?: DesignSystemLayoutCapture[];
 }
 
 export interface DesignSystemView {
@@ -234,11 +236,11 @@ function nodeRectOfItem(item: Record<string, unknown>): LayoutCaptureNodeRect | 
   return { x, y, width, height };
 }
 
-/** Parse a layout rule's structured source captures into view captures.
+/** Parse an entry's structured source captures into view captures.
  * Ingest schema already enforces the item shape; the view still guards item
  * by item so a hand-edited legacy row degrades to "no captures" instead of
  * breaking the whole view. */
-function layoutCapturesOfRaw(
+function capturesOfRaw(
   raw: unknown,
   staleOf: (surfaceId: string) => boolean
 ): DesignSystemLayoutCapture[] | undefined {
@@ -507,9 +509,9 @@ export function getDesignSystemView(
           links,
           source_artifact_path: row.source_artifact_path,
           evidence,
-          ...(row.section === "layout"
+          ...(row.section === "layout" || row.section === "components.spec"
             ? {
-                layoutCaptures: layoutCapturesOfRaw(
+                captures: capturesOfRaw(
                   sourceCaptures,
                   captureStaleOf
                 )

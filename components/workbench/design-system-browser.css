@@ -13,6 +13,8 @@
   --dsc-ink-2: #636363;
   --dsc-ink-3: #949494;
   --dsc-accent: #3a93ff;
+  /* Candidate blue — matches .dsb-chip[data-status="candidate"] (#2473cc). */
+  --dsc-candidate: #2473cc;
   --dsc-nav-hover: rgb(0 0 0 / 4.5%);
   --dsc-nav-active: #e3e3e3;
   --dsc-green: #11c514;
@@ -1714,4 +1716,224 @@
     animation-duration: 1ms;
   }
 
+}
+
+/* ------------------ 09C-D03: component sidebar groups + placard ------------------ */
+
+/* Sidebar groups (Components first, Blocks second): the header carries the
+ * status summary, items carry a status dot instead of an icon. */
+.dsb-navgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dsb-navgroup + .dsb-navgroup {
+  margin-top: 10px;
+}
+
+.dsb-navgroup-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px 2px;
+}
+
+.dsb-navgroup-name {
+  color: var(--dsc-ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dsb-navgroup-summary {
+  color: var(--dsc-ink-3);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.dsb-navrow-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.dsb-navrow-dot[data-status="formalized"] {
+  background: var(--dsc-green);
+}
+
+.dsb-navrow-dot[data-status="candidate"] {
+  background: var(--dsc-candidate);
+}
+
+.dsb-navrow-dot[data-status="gap"] {
+  background: var(--dsc-ink-3);
+}
+
+/* Narrow sheets: group headers collapse — the horizontal bar only carries
+ * the item rows so every component stays reachable via horizontal scroll. */
+@media (max-width: 760px) {
+  .dsb-navgroup {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 2px;
+  }
+
+  .dsb-navgroup + .dsb-navgroup {
+    margin-top: 0;
+    margin-left: 6px;
+  }
+
+  .dsb-navgroup-head {
+    display: none;
+  }
+}
+
+/* Component placard (designer-selected direction, 09C-D03): hero stage card
+ * leads the page — white card, hairline border, content centered, origin tag
+ * top-right, a read-only states name line at the bottom. */
+.dsb-component {
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+}
+
+.dsb-hero {
+  position: relative;
+  display: flex;
+  min-height: 300px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(0 0 0 / 8%);
+  border-radius: 16px;
+  background: #fff;
+  padding: 32px 32px 56px;
+}
+
+.dsb-hero-origin {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+}
+
+/* Provenance caption (bottom-left) — same visual language as the layout
+ * placard caption, including the stale verdict color. */
+.dsb-hero-caption {
+  position: absolute;
+  bottom: 14px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--dsc-ink-3);
+  font-size: 10.5px;
+}
+
+.dsb-hero-caption [data-stale] {
+  color: #9a6a00;
+}
+
+.dsb-hero-image {
+  display: block;
+  max-width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+}
+
+.dsb-hero-unavailable {
+  width: 100%;
+  align-self: stretch;
+  justify-content: center;
+}
+
+.dsb-hero-states {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  display: flex;
+  max-width: calc(100% - 48px);
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  transform: translateX(-50%);
+}
+
+/* Read-only state names this slice — capture heroes have one screenshot, so
+ * there is nothing honest to switch on hover yet. */
+.dsb-hero-state {
+  border-radius: 6px;
+  padding: 5px 10px;
+  color: var(--dsc-ink-3);
+  font-size: 12px;
+}
+
+/* Centered reading column below the hero. */
+.dsb-reader {
+  display: flex;
+  width: 100%;
+  max-width: 620px;
+  flex-direction: column;
+  gap: 40px;
+  margin: 0 auto;
+}
+
+.dsb-reader-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dsb-reader-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dsb-reader-body {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+/* Placard props: name (+ candidate chip) left, type/notes right, hairline
+ * separators — ported from the selected prototype variant. */
+.dsb-props {
+  margin: 0;
+}
+
+.dsb-prop {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 10px 0;
+  border-top: 1px solid rgb(0 0 0 / 6%);
+}
+
+.dsb-prop dt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dsb-prop dd {
+  margin: 0;
+  text-align: right;
+}
+
+.dsb-prop-type {
+  display: block;
+  font-size: 14px;
+}
+
+.dsb-prop-note {
+  display: block;
+  color: var(--dsc-ink-3);
+  font-size: 12px;
 }

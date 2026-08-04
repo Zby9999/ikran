@@ -25,6 +25,7 @@ import {
   toRow,
   type DesignSystemEntryView,
   type DesignSystemView,
+  type DsComponentModel,
   type DsRow
 } from "../../components/workbench/design-system-view-model";
 
@@ -601,30 +602,169 @@ describe("RulesLeafPage interaction ledger (09C-D01)", () => {
   });
 });
 
-describe("ComponentDetail", () => {
-  test("renders the Boundaries list AND the state matrix table", () => {
-    const model = buildDesignSystemBrowserModel(fixtureView());
-    const button = model.components.list[0]!;
-    const html = renderToStaticMarkup(
+describe("ComponentDetail (09C-D03 Placard)", () => {
+  function richComponentModel(): DsComponentModel {
+    const view = fixtureView();
+    const spec = view.components.specs[0]!;
+    spec.value = {
+      ...(spec.value as Record<string, unknown>),
+      props: [
+        {
+          name: "variant",
+          type: "string",
+          required: true,
+          status: "candidate"
+        },
+        { name: "size", type: "string" }
+      ],
+      states: ["default：静态呈现。", "hover：指针悬停。"],
+      motion: ["不自动轮播。"],
+      anatomy: ["由标签与图标组成。"],
+      variants: [{ name: "default", gap: "20px" }],
+      tokenLinks: ["semantic.color.ink"],
+      usageRules: ["每组最多一个主操作。"],
+      openGaps: ["生产组件映射待定。"]
+    };
+    return buildDesignSystemBrowserModel(view).components.list[0]!;
+  }
+
+  function renderDetail(
+    component: DsComponentModel,
+    rows: RowSharedProps = rowSharedProps()
+  ) {
+    return renderToStaticMarkup(
       createElement(ComponentDetail, {
-        component: button,
-        rows: rowSharedProps()
+        component,
+        rows,
+        session: "test-session"
       })
     );
-    // Status rows for inventory + spec.
-    expect(html).toContain("Inventory");
-    expect(html).toContain("Spec");
-    // Props table.
-    expect(html).toContain("variant");
-    // Boundaries.
+  }
+
+  test("hero leads the page; title, chip and spec groups follow in the reading column", () => {
+    const html = renderDetail(richComponentModel());
+    // Hero before the title — the component detail special case (09C-D03).
+    const heroAt = html.indexOf('data-testid="ds-component-hero"');
+    const titleAt = html.indexOf('data-testid="ds-component-title"');
+    expect(heroAt).toBeGreaterThan(-1);
+    expect(titleAt).toBeGreaterThan(heroAt);
+    expect(html).toContain(">Button</h1>");
+    // The placard title carries one status chip (worst of inventory/spec).
+    expect(html).toContain('data-testid="ds-component-status"');
+    // Purpose + spec groups.
+    expect(html).toContain("Purpose");
+    expect(html).toContain("Primary and secondary actions.");
     expect(html).toContain("Boundaries");
     expect(html).toContain("Never two primary buttons in one group");
-    // State matrix.
+    // Props: candidate entries carry a chip.
+    expect(html).toContain('data-testid="ds-component-prop-variant"');
+    expect(html).toContain('data-testid="ds-component-prop-status-variant"');
+    expect(html).not.toContain('data-testid="ds-component-prop-status-size"');
+    // Rich groups render in the fixed placard order.
+    expect(html).toContain("Token links");
+    expect(html).toContain("semantic.color.ink");
+    expect(html).toContain("Anatomy");
+    expect(html).toContain("由标签与图标组成。");
+    expect(html).toContain("Variants");
+    expect(html).toContain("States &amp; motion");
+    expect(html).toContain("不自动轮播。");
+    expect(html).toContain("Usage rules");
+    expect(html).toContain("Open gaps");
+    expect(html).toContain("生产组件映射待定。");
+    const tokenLinksAt = html.indexOf("Token links");
+    const openGapsAt = html.indexOf("Open gaps");
+    expect(tokenLinksAt).toBeGreaterThan(-1);
+    expect(openGapsAt).toBeGreaterThan(tokenLinksAt);
+  });
+
+  test("empty spec groups are silently omitted; the state matrix stays", () => {
+    const model = buildDesignSystemBrowserModel(fixtureView());
+    const html = renderDetail(model.components.list[0]!);
     expect(html).toContain("State matrix");
     expect(html).toContain("hover");
     expect(html).toContain("Darken fill");
-    expect(html).toContain("disabled");
-    expect(html).toContain("Ink 30%");
+    // No rich fields declared → none of the optional group labels appear.
+    expect(html).not.toContain("Anatomy");
+    expect(html).not.toContain("Token links");
+    expect(html).not.toContain("Open gaps");
+    expect(html).not.toContain("Usage rules");
+  });
+
+  test("the states row is a read-only name line inside the hero", () => {
+    const html = renderDetail(richComponentModel());
+    const states = html.match(
+      /<div class="dsb-hero-states"[^>]*>([\s\S]*?)<\/div>/
+    );
+    expect(states).not.toBeNull();
+    expect(states![1]).toContain("default");
+    expect(states![1]).toContain("hover");
+    // Read-only: names are text, not buttons — no hover switching this slice.
+    expect(states![1]).not.toContain("<button");
+  });
+
+  test("no capture renders the explicit unavailable hero with guidance", () => {
+    const html = renderDetail(richComponentModel());
+    expect(html).toContain('data-testid="ds-component-unavailable"');
+    expect(html).toContain('data-origin="unavailable"');
+    expect(html).toContain("No source capture");
+    // Says what is missing and what to ask for — never a blank box.
+    expect(html).toContain("ask the agent to implement this component");
+  });
+
+  test("a source capture renders the image with its origin tag and provenance", () => {
+    const view = fixtureView();
+    view.components.specs[0] = {
+      ...view.components.specs[0]!,
+      captures: [
+        {
+          nodeId: "1:99",
+          nodeName: "Button / Primary",
+          artifactPath: "design-system/captures/button.png",
+          capturedAt: "2026-08-03T12:00:00.000Z",
+          surfaceId: "surf-old",
+          stale: true,
+          nodeRect: null
+        }
+      ]
+    };
+    const model = buildDesignSystemBrowserModel(view);
+    const html = renderDetail(model.components.list[0]!);
+    expect(html).toContain(
+      "/api/artifacts/design-system/captures/button.png?session=test-session"
+    );
+    expect(html).toContain('alt="Source capture of Button / Primary"');
+    expect(html).toContain('data-origin="source-capture"');
+    expect(html).not.toContain('data-testid="ds-component-unavailable"');
+    // Provenance caption — same visual language as the layout placard,
+    // including the stale verdict.
+    expect(html).toContain('data-testid="ds-component-caption"');
+    expect(html).toContain("Button / Primary");
+    expect(html).toContain("captured 2026-08-03 12:00");
+    expect(html).toContain('data-stale="true"');
+    expect(html).toContain("· stale");
+  });
+
+  test("Status & evidence rows keep the inventory/spec approval wiring", () => {
+    const html = renderDetail(richComponentModel());
+    expect(html).toContain("Status &amp; evidence");
+    expect(html).toContain("Inventory");
+    expect(html).toContain("Spec");
+    expect(html).toContain('aria-label="Evidence for Inventory"');
+    expect(html).toContain('aria-label="Evidence for Spec"');
+  });
+
+  test("no spec keeps the honest fallback", () => {
+    const view = fixtureView();
+    view.components.inventory = [view.components.inventory[0]!];
+    view.components.inventory[0] = {
+      ...view.components.inventory[0]!,
+      value: { name: "Button" }
+    };
+    view.components.specs = [];
+    const model = buildDesignSystemBrowserModel(view);
+    const html = renderDetail(model.components.list[0]!);
+    expect(html).toContain("No spec ingested for this component yet.");
+    expect(html).not.toContain("State matrix");
   });
 });
 
@@ -1097,7 +1237,7 @@ function layoutLeafRows(): DsRow[] {
       },
       {
         meaning: "Page grid: 12 columns",
-        layoutCaptures: [
+        captures: [
           {
             nodeId: "11:20",
             nodeName: "Landing / Grid",
@@ -1127,7 +1267,7 @@ function layoutLeafRows(): DsRow[] {
       },
       {
         meaning: "Shell stacks four regions",
-        layoutCaptures: [
+        captures: [
           {
             nodeId: "11:30",
             nodeName: "Landing / Shell",

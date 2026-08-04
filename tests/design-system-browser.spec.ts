@@ -353,7 +353,7 @@ test("09A design system browser: declare → render → approve write-back", asy
     const sheet = page.getByTestId("ds-sheet");
     await expect(sheet).toHaveAttribute("data-open", "true");
     await expect(page.getByTestId("ds-principle-principle-clarity")).toBeVisible();
-    await expect(page.getByTestId("ds-row-visual-language")).toBeVisible();
+    await expect(page.getByTestId("ds-visual-language-visual-language")).toBeVisible();
 
     await page.getByRole("button", { name: "Color", exact: true }).click();
     // Redesign: the Primitive section collapses into swatch provenance —
@@ -380,13 +380,29 @@ test("09A design system browser: declare → render → approve write-back", asy
       page.getByTestId("ds-color-swatch-color.brand")
     ).toBeVisible();
 
+    // 09C-D03: no Components Home — the tab lands directly on the first
+    // component's placard detail; the sidebar carries the grouped nav with
+    // a status summary and a candidate blue dot.
     await page.getByRole("tab", { name: "Components" }).click();
-    const componentCard = page.getByTestId("ds-component-card-button");
-    await expect(componentCard).toBeVisible();
-    await componentCard.click();
+    const componentGroup = page.getByTestId("ds-navgroup-component");
+    await expect(componentGroup).toBeVisible();
+    // Group header summary counts one vote per component (worst-of status).
+    await expect(componentGroup).toContainText("1 candidate");
+    const buttonNav = componentGroup.getByRole("button", { name: "Button" });
+    await expect(buttonNav).toBeVisible();
+    await expect(buttonNav).toHaveAttribute("data-active", "true");
     await expect(
-      page.getByRole("heading", { name: "Button", exact: true })
+      buttonNav.locator('.dsb-navrow-dot[data-status="candidate"]')
     ).toBeVisible();
+    // Placard: hero leads (explicit unavailable — no capture declared), the
+    // reading column follows with the read-only states line.
+    await expect(page.getByTestId("ds-component-hero")).toBeVisible();
+    await expect(page.getByTestId("ds-component-unavailable")).toBeVisible();
+    await expect(page.getByTestId("ds-component-title")).toHaveText("Button");
+    const statesRow = page.getByTestId("ds-component-states");
+    await expect(statesRow).toBeVisible();
+    await expect(statesRow).toContainText("hover");
+    await expect(statesRow.locator("button")).toHaveCount(0);
     await expect(
       page.getByRole("heading", { name: "Boundaries" })
     ).toBeVisible();

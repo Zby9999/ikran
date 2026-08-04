@@ -759,6 +759,35 @@ test.describe("component-spec", () => {
       details: { field: "value.anatomy", expected: "array" }
     });
   });
+
+  test("group is an optional component|block enum (09C-D03 sidebar grouping)", () => {
+    // Absent (09A/09B legacy specs) stays valid.
+    expect(
+      validateDesignSystemJson("component-spec", validComponentSpec()).ok
+    ).toBe(true);
+    for (const group of ["component", "block"] as const) {
+      const spec = validComponentSpec();
+      Object.assign(spec.value, { group });
+      expect(
+        validateDesignSystemJson("component-spec", spec).ok,
+        group
+      ).toBe(true);
+    }
+    const invalidEnum = validComponentSpec();
+    Object.assign(invalidEnum.value, { group: "section" });
+    expect(
+      validateDesignSystemJson("component-spec", invalidEnum)
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: { field: "value.group" }
+    });
+    const invalidType = validComponentSpec();
+    Object.assign(invalidType.value, { group: 1 });
+    expect(validateDesignSystemJson("component-spec", invalidType).ok).toBe(
+      false
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

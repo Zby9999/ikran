@@ -668,6 +668,19 @@ function validateComponentSpec(
         const stateFailure = requireString(state, "state", { ...ctx, field: `value.stateMatrix[${i}]` });
         if (stateFailure) return stateFailure;
       }
+      // 09C-D03: optional sidebar grouping. Absent stays valid (09A/09B
+      // legacy specs); when present it is a closed enum.
+      if (
+        value.group !== undefined &&
+        value.group !== "component" &&
+        value.group !== "block"
+      ) {
+        return fail("invalid_field_type", {
+          ...ctx,
+          field: "value.group",
+          expected: '"component" | "block"'
+        });
+      }
       // Backward compatible at declaration time: 09A specs remain valid.
       // When a 09B field is present, however, it has a stable collection
       // shape so ingest/view/export can preserve it without interpretation.

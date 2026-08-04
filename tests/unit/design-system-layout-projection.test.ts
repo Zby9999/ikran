@@ -88,7 +88,7 @@ describe("projectLayoutLeaf captures", () => {
       layoutRow("grid-page", "grid.page", "Use twelve columns."),
       layoutRow("nav-mobile", "nav.mobile", "Open gap.", {
         status: "gap",
-        layoutCaptures: [capture()]
+        captures: [capture()]
       }),
       layoutRow("bp", "breakpoints", "Use evidence-backed breakpoints.")
     ]);
@@ -107,7 +107,7 @@ describe("projectLayoutLeaf captures", () => {
     ];
     const model = projectLayoutLeaf([
       layoutRow("grid-page", "grid.page", "Use the observed grid.", {
-        layoutCaptures: captures
+        captures: captures
       })
     ]);
     expect(model.rules[0]!.captures).toEqual(captures);

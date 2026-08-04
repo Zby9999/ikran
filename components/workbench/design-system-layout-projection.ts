@@ -70,7 +70,7 @@ function projectRule(row: DsRow): LayoutRuleProjection {
     headline: row.meaning.trim() !== "" ? row.meaning : row.name,
     body: formatRuleBody(value),
     concern: row.name,
-    captures: row.entry.layoutCaptures ?? []
+    captures: row.entry.captures ?? []
   };
 }
 

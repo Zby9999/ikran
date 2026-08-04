@@ -11,6 +11,10 @@
 // real time) — the sheet never reads design-system-view.json or the source
 // files (09A d.2). Refetch on the SSE "design-system" record event.
 //
+// 09C-D03: there is no Components Home — the Components tab lands directly
+// on the first component's Placard detail, and the components sidebar is a
+// grouped direct-to-detail nav (Components group, then Blocks).
+//
 // The sheet hand-rolls its scrim/focus-trap/keyboard boundary instead of
 // using components/ui/dialog: radix modal Dialog cannot drive the required
 // interruptible CSS close transition (forceMount keeps its focus/scroll
@@ -25,9 +29,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { getSvgPath } from "figma-squircle";
 import {
   ArrowDown01Icon,
-  ArrowRight01Icon,
   ColorsIcon,
-  ComponentIcon,
   Edit02Icon,
   GridViewIcon,
   Home01Icon,
@@ -84,6 +86,7 @@ import {
   type DsBrowserModel,
   type DsColorLeafModel,
   type DsColorToken,
+  type DsComponentDetailGroup,
   type DsComponentModel,
   type DsLeafId,
   type DsRoute,
@@ -217,23 +220,17 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
 
 /* ------------------------------ visual origin ------------------------------ */
 
-/** Where a visual sample comes from (09C-B/D): the outcomes must stay
- * distinguishable in the UI and the accessibility tree, so a schematic
- * composition is never mistaken for a rendered component, and a captured
- * Figma node (09C-D02) is never mistaken for either. Rendered as an
+/** Where a visual sample comes from. 09C-D03 shrank the origin chain to two
+ * evidence-grade tiers — Code-backed (a later slice) and Source capture —
+ * with everything else falling back to an explicit unavailable state; the
+ * synthetic Source-generated / Schematic tiers were retired (they were the
+ * only outcomes that could be mistaken for real pixels). Rendered as an
  * outlined tag — visually distinct from the filled status chip. */
-export type DsVisualOrigin =
-  | "code-backed"
-  | "source-generated"
-  | "source-capture"
-  | "schematic"
-  | "unavailable";
+export type DsVisualOrigin = "code-backed" | "source-capture" | "unavailable";
 
 export const DS_VISUAL_ORIGIN_LABELS: Record<DsVisualOrigin, string> = {
   "code-backed": "Code-backed",
-  "source-generated": "Source-generated",
   "source-capture": "Source capture",
-  schematic: "Schematic",
   unavailable: "Unavailable"
 };
 
@@ -962,58 +959,6 @@ export function FoundationsHomePage({
           left.
         </p>
       ) : null}
-    </>
-  );
-}
-
-export function ComponentsHomePage({
-  model,
-  onOpenLeaf
-}: {
-  model: DsBrowserModel;
-  onOpenLeaf: (leaf: ComponentLeafId) => void;
-}) {
-  return (
-    <>
-      <PageHeading
-        title="Components"
-        meta={`${model.components.list.length} component${
-          model.components.list.length === 1 ? "" : "s"
-        } inventoried`}
-        chips={model.components.chips}
-      />
-      {model.components.list.length > 0 ? (
-        <div className="dsb-cards">
-          {model.components.list.map((component) => (
-            <button
-              key={component.leafId}
-              type="button"
-              className="dsb-card"
-              data-testid={`ds-component-card-${component.entryId}`}
-              onClick={() => onOpenLeaf(component.leafId)}
-            >
-              <HugeiconsIcon
-                icon={ArrowRight01Icon}
-                size={14}
-                className="dsb-card-chevron"
-                color="currentColor"
-                strokeWidth={2}
-              />
-              <span className="dsb-card-title">{component.name}</span>
-              <span className="dsb-card-desc">
-                {component.detail?.description ||
-                  component.inventory?.meaning ||
-                  "No description yet"}
-              </span>
-              <StatDots items={component.chips} />
-            </button>
-          ))}
-        </div>
-      ) : (
-        <p className="dsb-empty-body dsb-page-note">
-          No components inventoried yet.
-        </p>
-      )}
     </>
   );
 }
@@ -2263,10 +2208,19 @@ export function DesignSystemBrowser({
     rootRef.current?.focus();
   }, [mounted, shown]);
 
-  const switchTab = useCallback((id: DsSectionId) => {
-    setSection(id);
-    setRoute({ kind: "section", section: id });
-  }, []);
+  const switchTab = useCallback(
+    (id: DsSectionId) => {
+      setSection(id);
+      // 09C-D03: no Components Home — the tab lands on the first component.
+      const landing = id === "components" ? model?.components.landingLeaf : null;
+      setRoute(
+        landing
+          ? { kind: "leaf", section: id, leaf: landing }
+          : { kind: "section", section: id }
+      );
+    },
+    [model]
+  );
   const openLeaf = useCallback((sectionId: DsSectionId, leaf: DsLeafId) => {
     setSection(sectionId);
     setRoute({ kind: "leaf", section: sectionId, leaf });
@@ -2317,17 +2271,33 @@ export function DesignSystemBrowser({
       );
     }
 
-    const sectionHome =
-      route.section === "foundations" ? (
+    // 09C-D03: the Components section has no home — it lands on the first
+    // component's detail, or renders the honest empty state.
+    const renderComponentsLanding = (): ReactNode => {
+      const landing =
+        model.components.list.find(
+          (component) => component.leafId === model.components.landingLeaf
+        ) ?? null;
+      return landing ? (
+        <ComponentDetail
+          component={landing}
+          rows={rowListProps}
+          session={session}
+        />
+      ) : (
+        <p className="dsb-empty-body dsb-page-note">
+          No components inventoried yet.
+        </p>
+      );
+    };
+
+    if (route.kind === "section") {
+      return route.section === "foundations" ? (
         <FoundationsHomePage model={model} rows={rowListProps} />
       ) : (
-        <ComponentsHomePage
-          model={model}
-          onOpenLeaf={(leaf) => openLeaf("components", leaf)}
-        />
+        renderComponentsLanding()
       );
-
-    if (route.kind === "section") return sectionHome;
+    }
 
     if (route.section === "foundations") {
       if (route.leaf === "layout") {
@@ -2374,28 +2344,31 @@ export function DesignSystemBrowser({
         }
         return <TokenLeafPage leaf={tokenLeaf} rows={rowListProps} />;
       }
-    } else {
-      const entryId = componentLeafId(route.leaf);
-      const component =
-        model.components.list.find((c) => c.entryId === entryId) ?? null;
-      if (component) {
-        return <ComponentDetail component={component} rows={rowListProps} />;
-      }
+      // Stale foundations leaf after a refetch: back to the section home.
+      return <FoundationsHomePage model={model} rows={rowListProps} />;
     }
 
-    // Stale route after a refetch (leaf/component vanished): render the
-    // section home rather than a blank main.
-    return sectionHome;
+    const entryId = componentLeafId(route.leaf);
+    const component =
+      model.components.list.find((c) => c.entryId === entryId) ?? null;
+    if (component) {
+      return (
+        <ComponentDetail
+          component={component}
+          rows={rowListProps}
+          session={session}
+        />
+      );
+    }
+
+    // Stale route after a refetch (component vanished): land on the first
+    // component rather than a blank main.
+    return renderComponentsLanding();
   };
 
   const sidebarLeaves: { id: DsLeafId; name: string; icon: IconSvgElement }[] =
-    section === "foundations"
-      ? FOUNDATIONS_LEAVES
-      : (model?.components.list.map((component) => ({
-          id: component.leafId,
-          name: component.name,
-          icon: ComponentIcon
-        })) ?? []);
+    section === "foundations" ? FOUNDATIONS_LEAVES : [];
+  const componentSidebarGroups = model?.components.groups ?? [];
 
   const mainContent = renderMain();
 
@@ -2444,42 +2417,89 @@ export function DesignSystemBrowser({
               ))}
             </div>
             <div key={section} className="dsb-enter dsb-nav-list">
-              <button
-                type="button"
-                className="dsb-navrow"
-                data-active={route.kind === "section" || undefined}
-                onClick={() => setRoute({ kind: "section", section })}
-              >
-                <HugeiconsIcon
-                  icon={Home01Icon}
-                  size={14}
-                  className="dsb-navrow-icon"
-                  color="currentColor"
-                  strokeWidth={2}
-                />
-                <span className="dsb-navrow-label">Home</span>
-              </button>
-              {sidebarLeaves.map((leaf) => (
-                <button
-                  key={leaf.id}
-                  type="button"
-                  className="dsb-navrow"
-                  data-active={
-                    (route.kind === "leaf" && route.leaf === leaf.id) ||
-                    undefined
-                  }
-                  onClick={() => openLeaf(section, leaf.id)}
-                >
-                  <HugeiconsIcon
-                    icon={leaf.icon}
-                    size={14}
-                    className="dsb-navrow-icon"
-                    color="currentColor"
-                    strokeWidth={2}
-                  />
-                  <span className="dsb-navrow-label">{leaf.name}</span>
-                </button>
-              ))}
+              {section === "foundations" ? (
+                <>
+                  <button
+                    type="button"
+                    className="dsb-navrow"
+                    data-active={route.kind === "section" || undefined}
+                    onClick={() => setRoute({ kind: "section", section })}
+                  >
+                    <HugeiconsIcon
+                      icon={Home01Icon}
+                      size={14}
+                      className="dsb-navrow-icon"
+                      color="currentColor"
+                      strokeWidth={2}
+                    />
+                    <span className="dsb-navrow-label">Home</span>
+                  </button>
+                  {sidebarLeaves.map((leaf) => (
+                    <button
+                      key={leaf.id}
+                      type="button"
+                      className="dsb-navrow"
+                      data-active={
+                        (route.kind === "leaf" && route.leaf === leaf.id) ||
+                        undefined
+                      }
+                      onClick={() => openLeaf(section, leaf.id)}
+                    >
+                      <HugeiconsIcon
+                        icon={leaf.icon}
+                        size={14}
+                        className="dsb-navrow-icon"
+                        color="currentColor"
+                        strokeWidth={2}
+                      />
+                      <span className="dsb-navrow-label">{leaf.name}</span>
+                    </button>
+                  ))}
+                </>
+              ) : (
+                // 09C-D03: no Components Home — grouped direct-to-detail nav.
+                // Components first, Blocks second; group headers carry the
+                // status summary, items carry a status dot (candidate = blue).
+                componentSidebarGroups.map((group) => (
+                  <div
+                    key={group.id}
+                    className="dsb-navgroup"
+                    data-testid={`ds-navgroup-${group.id}`}
+                  >
+                    <div className="dsb-navgroup-head">
+                      <span className="dsb-navgroup-name">{group.name}</span>
+                      <span className="dsb-navgroup-summary">
+                        {group.summary.join(" · ")}
+                      </span>
+                    </div>
+                    {group.items.map((item) => (
+                      <button
+                        key={item.leafId}
+                        type="button"
+                        className="dsb-navrow"
+                        data-active={
+                          (route.kind === "leaf" &&
+                            route.leaf === item.leafId) ||
+                          // Section-level route renders the landing detail —
+                          // mark the landing item active so the sidebar
+                          // selection matches the main pane.
+                          (route.kind === "section" &&
+                            item.leafId === model?.components.landingLeaf) ||
+                          undefined
+                        }
+                        onClick={() => openLeaf(section, item.leafId)}
+                      >
+                        <span
+                          aria-hidden
+                          className="dsb-navrow-dot"
+                          data-status={item.status}
+                        />
+                        <span className="dsb-navrow-label">{item.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))
+              )}
             </div>
           </aside>
           <main className="dsb-main">
@@ -2535,12 +2555,69 @@ export function DesignSystemBrowser({
 
 /* ----------------------------- component detail ----------------------------- */
 
+/* 09C-D03 Placard (designer-selected from app/prototypes/component-detail):
+ * a hero stage card leads — white card, hairline border, content centered,
+ * origin tag top-right, a read-only states name line at the bottom — then a
+ * centered reading column: title + status chip, Purpose, Props, Boundaries,
+ * Token links and the data-driven optional groups. Empty fields are silently
+ * omitted. Two visual origins only this slice: Source capture (the spec's
+ * screenshot) or an explicit unavailable block; code-backed is a later slice. */
+
+/** One data-driven optional group: prose lines verbatim, object rows as a
+ * single table keyed by the union of row keys. */
+function ComponentDetailGroupSection({
+  group
+}: {
+  group: DsComponentDetailGroup;
+}) {
+  const columns = [
+    ...new Set(group.rows.flatMap((row) => Object.keys(row)))
+  ];
+  return (
+    <section
+      className="dsb-section"
+      data-testid={`ds-component-group-${group.id}`}
+    >
+      <GroupLabel>{group.label}</GroupLabel>
+      {group.lines.length > 0 ? (
+        <ul className="dsb-boundaries">
+          {group.lines.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      ) : null}
+      {group.rows.length > 0 ? (
+        <table className="dsb-table">
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th key={column}>{column}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {group.rows.map((row, index) => (
+              <tr key={index}>
+                {columns.map((column) => (
+                  <td key={column}>{formatMatrixCell(row[column])}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+    </section>
+  );
+}
+
 export function ComponentDetail({
   component,
-  rows
+  rows,
+  session
 }: {
   component: DsComponentModel;
   rows: RowSharedProps;
+  session: string;
 }) {
   // Status/evidence rows for the inventory + spec entries — built on toRow
   // (single owner of the row-key derivation) with display overrides.
@@ -2563,6 +2640,7 @@ export function ComponentDetail({
   }
 
   const detail = component.detail;
+  const capture = component.captures[0] ?? null;
   const matrixColumns = detail
     ? [
         "state",
@@ -2573,97 +2651,174 @@ export function ComponentDetail({
         )
       ]
     : [];
+  const purpose =
+    detail?.description || component.inventory?.meaning || "";
 
   return (
-    <>
-      <PageHeading
-        title={component.name}
-        meta={
-          detail?.description ||
-          component.inventory?.meaning ||
-          "Component detail"
-        }
-        chips={component.chips}
-      />
-      {statusRows.length > 0 ? (
-        <section className="dsb-section">
-          <GroupLabel>Status &amp; evidence</GroupLabel>
-          <RowList rows={statusRows} {...rows} />
-        </section>
-      ) : null}
-      {detail ? (
-        <>
+    <article
+      className="dsb-component"
+      data-testid={`ds-component-${component.entryId}`}
+    >
+      <section className="dsb-hero" data-testid="ds-component-hero">
+        <span className="dsb-hero-origin">
+          <OriginTag origin={capture ? "source-capture" : "unavailable"} />
+        </span>
+        {capture ? (
+          <img
+            className="dsb-hero-image"
+            src={artifactScreenshotUrl(capture.artifactPath, session)}
+            alt={`Source capture of ${capture.nodeName}`}
+          />
+        ) : (
+          <div
+            className="dsb-placard-unavailable dsb-hero-unavailable"
+            role="img"
+            aria-label={`No source capture for ${component.name}`}
+            data-testid="ds-component-unavailable"
+          >
+            <span className="dsb-placard-unavailable-title">
+              No source capture
+            </span>
+            <span className="dsb-placard-unavailable-note">
+              This component has no capture and no live implementation yet —
+              ask the agent to implement this component for a real-time
+              preview.
+            </span>
+          </div>
+        )}
+        {capture ? (
+          <span
+            className="dsb-hero-caption"
+            data-testid="ds-component-caption"
+          >
+            <span>{capture.nodeName}</span>
+            <span data-stale={capture.stale || undefined}>
+              captured {formatCapturedAt(capture.capturedAt)}
+              {capture.stale ? " · stale" : ""}
+            </span>
+          </span>
+        ) : null}
+        {detail && detail.stateNames.length > 0 ? (
+          <div
+            className="dsb-hero-states"
+            aria-label="Declared states"
+            data-testid="ds-component-states"
+          >
+            {detail.stateNames.map((name) => (
+              <span key={name} className="dsb-hero-state">
+                {name}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </section>
+
+      <div className="dsb-reader">
+        <header className="dsb-reader-head">
+          <div className="dsb-reader-title-row">
+            <h1 className="dsb-h1" data-testid="ds-component-title">
+              {component.name}
+            </h1>
+            <StatusChip
+              status={component.status}
+              testId="ds-component-status"
+            />
+          </div>
+          <PageSummary
+            meta={
+              component.group === "block" ? "Block" : "Component"
+            }
+            chips={component.chips}
+          />
+        </header>
+        {purpose !== "" ? (
+          <section className="dsb-section">
+            <GroupLabel>Purpose</GroupLabel>
+            <p className="dsb-reader-body">{purpose}</p>
+          </section>
+        ) : null}
+        {detail && detail.props.length > 0 ? (
           <section className="dsb-section">
             <GroupLabel>Props</GroupLabel>
-            {detail.props.length > 0 ? (
-              <table className="dsb-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Type</th>
-                    <th>Required</th>
-                    <th>Description</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detail.props.map((prop) => (
-                    <tr key={prop.name}>
-                      <td>{prop.name}</td>
-                      <td>{prop.type}</td>
-                      <td>{prop.required === true ? "yes" : "—"}</td>
-                      <td>{prop.description ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p className="dsb-empty-body">No props declared.</p>
-            )}
+            <dl className="dsb-props">
+              {detail.props.map((prop) => (
+                <div
+                  className="dsb-prop"
+                  key={prop.name}
+                  data-testid={`ds-component-prop-${prop.name}`}
+                >
+                  <dt>
+                    {prop.name}
+                    {prop.status === "candidate" ? (
+                      <StatusChip
+                        status="candidate"
+                        testId={`ds-component-prop-status-${prop.name}`}
+                      />
+                    ) : null}
+                  </dt>
+                  <dd>
+                    <span className="dsb-prop-type">
+                      {prop.type}
+                      {prop.required === true ? " · required" : ""}
+                    </span>
+                    {prop.description ? (
+                      <span className="dsb-prop-note">{prop.description}</span>
+                    ) : null}
+                  </dd>
+                </div>
+              ))}
+            </dl>
           </section>
+        ) : null}
+        {detail && detail.boundaries.length > 0 ? (
           <section className="dsb-section">
             <GroupLabel>Boundaries</GroupLabel>
-            {detail.boundaries.length > 0 ? (
-              <ul className="dsb-boundaries">
-                {detail.boundaries.map((boundary) => (
-                  <li key={boundary}>{boundary}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="dsb-empty-body">No boundaries declared.</p>
-            )}
+            <ul className="dsb-boundaries">
+              {detail.boundaries.map((boundary) => (
+                <li key={boundary}>{boundary}</li>
+              ))}
+            </ul>
           </section>
+        ) : null}
+        {detail && detail.stateMatrix.length > 0 ? (
           <section className="dsb-section">
             <GroupLabel>State matrix</GroupLabel>
-            {detail.stateMatrix.length > 0 ? (
-              <table className="dsb-table">
-                <thead>
-                  <tr>
+            <table className="dsb-table">
+              <thead>
+                <tr>
+                  {matrixColumns.map((column) => (
+                    <th key={column}>{column}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {detail.stateMatrix.map((stateRow, index) => (
+                  <tr key={index}>
                     {matrixColumns.map((column) => (
-                      <th key={column}>{column}</th>
+                      <td key={column}>{formatMatrixCell(stateRow[column])}</td>
                     ))}
                   </tr>
-                </thead>
-                <tbody>
-                  {detail.stateMatrix.map((stateRow, index) => (
-                    <tr key={index}>
-                      {matrixColumns.map((column) => (
-                        <td key={column}>{formatMatrixCell(stateRow[column])}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p className="dsb-empty-body">No states declared.</p>
-            )}
+                ))}
+              </tbody>
+            </table>
           </section>
-        </>
-      ) : (
-        <p className="dsb-empty-body dsb-page-note">
-          No spec ingested for this component yet.
-        </p>
-      )}
-    </>
+        ) : null}
+        {detail?.groups.map((group) => (
+          <ComponentDetailGroupSection key={group.id} group={group} />
+        ))}
+        {statusRows.length > 0 ? (
+          <section className="dsb-section">
+            <GroupLabel>Status &amp; evidence</GroupLabel>
+            <RowList rows={statusRows} {...rows} />
+          </section>
+        ) : null}
+        {detail ? null : (
+          <p className="dsb-empty-body dsb-page-note">
+            No spec ingested for this component yet.
+          </p>
+        )}
+      </div>
+    </article>
   );
 }
 

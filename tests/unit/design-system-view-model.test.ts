@@ -624,3 +624,321 @@ describe("approval UI states", () => {
     ).toBe("some_other_reason (links: card-1)");
   });
 });
+
+
+/* ------------------- 09C-D03: component grouping + rich detail ------------------- */
+
+function richSpecEntry(
+  value: Record<string, unknown>,
+  extra: Partial<DesignSystemEntryView> = {}
+): DesignSystemEntryView {
+  return entry({
+    entry_id: "button-spec",
+    file_kind: "component-spec",
+    section: "components.spec",
+    name: "Button",
+    source_artifact_path: "design-system/components/button.json",
+    value: {
+      description: "Primary and secondary actions.",
+      props: [{ name: "variant", type: "string", required: true }],
+      boundaries: ["Never two primary buttons in one group"],
+      stateMatrix: [{ state: "hover", behavior: "Darken fill" }],
+      ...value
+    },
+    ...extra
+  });
+}
+
+function blockComponentView(): DesignSystemView {
+  const view = fixtureView();
+  view.components.inventory.push(
+    entry({
+      entry_id: "page-shell",
+      file_kind: "component-list.json",
+      section: "components.inventory",
+      name: "Page Shell",
+      value: {
+        name: "Page Shell",
+        specPath: "design-system/components/page-shell.json"
+      },
+      status: "formalized"
+    })
+  );
+  view.components.specs.push(
+    entry({
+      entry_id: "page-shell-spec",
+      file_kind: "component-spec",
+      section: "components.spec",
+      name: "Page Shell",
+      source_artifact_path: "design-system/components/page-shell.json",
+      value: {
+        description: "Page structure.",
+        props: [],
+        boundaries: [],
+        stateMatrix: [],
+        group: "block"
+      },
+      status: "formalized"
+    })
+  );
+  return view;
+}
+
+describe("component grouping + sidebar projection (09C-D03)", () => {
+  test("group defaults to component; the spec declares block via value.group", () => {
+    const model = buildDesignSystemBrowserModel(blockComponentView());
+    const [button, pageShell] = model.components.list;
+    expect(button!.group).toBe("component");
+    expect(pageShell!.group).toBe("block");
+  });
+
+  test("a non-enum group value defensively falls back to component", () => {
+    const view = blockComponentView();
+    const spec = view.components.specs.find(
+      (s) => s.entry_id === "page-shell-spec"
+    )!;
+    (spec.value as Record<string, unknown>).group = "section";
+    const model = buildDesignSystemBrowserModel(view);
+    expect(model.components.list[1]!.group).toBe("component");
+  });
+
+  test("spec captures surface on the component model", () => {
+    const view = fixtureView();
+    const captures = [
+      {
+        nodeId: "1:99",
+        nodeName: "Button / Primary",
+        artifactPath: "design-system/captures/button.png",
+        capturedAt: "2026-08-03T12:00:00.000Z",
+        surfaceId: null,
+        stale: false,
+        nodeRect: null
+      }
+    ];
+    view.components.specs[0] = { ...view.components.specs[0]!, captures };
+    const model = buildDesignSystemBrowserModel(view);
+    expect(model.components.list[0]!.captures).toEqual(captures);
+    // No captures declared → an empty list, never undefined.
+    const bare = buildDesignSystemBrowserModel(fixtureView());
+    expect(bare.components.list[0]!.captures).toEqual([]);
+  });
+
+  test("component status is the worst of inventory/spec (drives the dot)", () => {
+    // fixture: inventory candidate + spec formalized → candidate.
+    const model = buildDesignSystemBrowserModel(fixtureView());
+    expect(model.components.list[0]!.status).toBe("candidate");
+
+    const allFormalized = buildDesignSystemBrowserModel(blockComponentView());
+    expect(allFormalized.components.list[1]!.status).toBe("formalized");
+
+    const gapView = fixtureView();
+    gapView.components.inventory[0] = {
+      ...gapView.components.inventory[0]!,
+      status: "gap"
+    };
+    expect(
+      buildDesignSystemBrowserModel(gapView).components.list[0]!.status
+    ).toBe("gap");
+  });
+
+  test("sidebar groups order Components before Blocks; empty groups omitted", () => {
+    const mixed = buildDesignSystemBrowserModel(blockComponentView());
+    expect(mixed.components.groups.map((group) => group.id)).toEqual([
+      "component",
+      "block"
+    ]);
+    expect(mixed.components.groups.map((group) => group.name)).toEqual([
+      "Components",
+      "Blocks"
+    ]);
+    const [components, blocks] = mixed.components.groups;
+    expect(components!.items.map((item) => item.leafId)).toEqual([
+      "component:button"
+    ]);
+    expect(blocks!.items.map((item) => item.leafId)).toEqual([
+      "component:page-shell"
+    ]);
+    // Group header status summary: one vote per component (worst-of status).
+    expect(components!.summary).toEqual(["1 candidate"]);
+    expect(blocks!.summary).toEqual(["1 formalized"]);
+
+    // No block declared → the Blocks group does not render.
+    const plain = buildDesignSystemBrowserModel(fixtureView());
+    expect(plain.components.groups.map((group) => group.id)).toEqual([
+      "component"
+    ]);
+    // No components at all → no groups.
+    const empty = buildDesignSystemBrowserModel(emptyView());
+    expect(empty.components.groups).toEqual([]);
+  });
+
+  test("candidate items are flagged for the blue dot", () => {
+    const model = buildDesignSystemBrowserModel(blockComponentView());
+    const [components, blocks] = model.components.groups;
+    expect(components!.items[0]).toMatchObject({
+      leafId: "component:button",
+      name: "Button",
+      status: "candidate",
+      candidate: true
+    });
+    expect(blocks!.items[0]).toMatchObject({
+      status: "formalized",
+      candidate: false
+    });
+  });
+
+  test("landing leaf is the first component; null when no components", () => {
+    expect(
+      buildDesignSystemBrowserModel(blockComponentView()).components.landingLeaf
+    ).toBe("component:button");
+    expect(
+      buildDesignSystemBrowserModel(emptyView()).components.landingLeaf
+    ).toBeNull();
+  });
+});
+
+describe("rich component detail parsing (09C-D03)", () => {
+  test("parses string lines and object rows, dropping invalid items", () => {
+    const view = fixtureView();
+    view.components.specs[0] = richSpecEntry({
+      anatomy: ["由标签与图标组成。", 42, { part: "label" }, ""],
+      variants: [{ name: "default", gap: "20px" }, "text-only", null],
+      tokenLinks: ["semantic.color.ink", { alias: "primitive.space.4" }]
+    });
+    const model = buildDesignSystemBrowserModel(view);
+    const groups = model.components.list[0]!.detail!.groups;
+    const byId = new Map(groups.map((group) => [group.id, group]));
+
+    expect(byId.get("anatomy")).toEqual({
+      id: "anatomy",
+      label: "Anatomy",
+      lines: ["由标签与图标组成。"],
+      rows: [{ part: "label" }]
+    });
+    expect(byId.get("variants")).toEqual({
+      id: "variants",
+      label: "Variants",
+      lines: ["text-only"],
+      rows: [{ name: "default", gap: "20px" }]
+    });
+    expect(byId.get("token-links")).toEqual({
+      id: "token-links",
+      label: "Token links",
+      lines: ["semantic.color.ink"],
+      rows: [{ alias: "primitive.space.4" }]
+    });
+  });
+
+  test("empty rich fields are silently omitted from the groups", () => {
+    const view = fixtureView();
+    view.components.specs[0] = richSpecEntry({
+      anatomy: [],
+      usageRules: ["One primary action per group."]
+    });
+    const model = buildDesignSystemBrowserModel(view);
+    const groups = model.components.list[0]!.detail!.groups;
+    expect(groups.map((group) => group.id)).toEqual(["usage-rules"]);
+    // Legacy 09A specs have no rich fields at all.
+    const legacy = buildDesignSystemBrowserModel(fixtureView());
+    expect(legacy.components.list[0]!.detail!.groups).toEqual([]);
+  });
+
+  test("states and motion merge into one States & motion group", () => {
+    const view = fixtureView();
+    view.components.specs[0] = richSpecEntry({
+      states: ["default：静态呈现。", { state: "hover" }],
+      motion: ["不自动轮播。"]
+    });
+    const model = buildDesignSystemBrowserModel(view);
+    const groups = model.components.list[0]!.detail!.groups;
+    expect(groups).toEqual([
+      {
+        id: "states-motion",
+        label: "States & motion",
+        lines: ["default：静态呈现。", "不自动轮播。"],
+        rows: [{ state: "hover" }]
+      }
+    ]);
+  });
+
+  test("hero state names come from the states lines, else the state matrix", () => {
+    const withStates = fixtureView();
+    withStates.components.specs[0] = richSpecEntry({
+      states: ["default：静态呈现。", "hover: 指针悬停。"]
+    });
+    expect(
+      buildDesignSystemBrowserModel(withStates).components.list[0]!.detail!
+        .stateNames
+    ).toEqual(["default", "hover"]);
+
+    // No rich states → the state matrix names are the read-only row.
+    const legacy = buildDesignSystemBrowserModel(fixtureView());
+    expect(legacy.components.list[0]!.detail!.stateNames).toEqual(["hover"]);
+
+    // Neither → no states row at all.
+    const bare = fixtureView();
+    bare.components.specs[0] = richSpecEntry({ stateMatrix: [] });
+    expect(
+      buildDesignSystemBrowserModel(bare).components.list[0]!.detail!.stateNames
+    ).toEqual([]);
+  });
+
+  test("props carry an optional status chip flag", () => {
+    const view = fixtureView();
+    view.components.specs[0] = richSpecEntry({
+      props: [
+        { name: "variant", type: "string", status: "candidate" },
+        { name: "size", type: "string", status: "weird" },
+        { name: "label", type: "string" }
+      ]
+    });
+    const props = buildDesignSystemBrowserModel(view).components.list[0]!
+      .detail!.props;
+    expect(props[0]).toMatchObject({ name: "variant", status: "candidate" });
+    // Unknown status strings are dropped, not rendered.
+    expect(props[1]).toEqual({ name: "size", type: "string" });
+    expect(props[2]).toEqual({ name: "label", type: "string" });
+  });
+
+  test("group order is fixed: token links first, open gaps last", () => {
+    const view = fixtureView();
+    view.components.specs[0] = richSpecEntry({
+      openGaps: ["生产组件映射待定。"],
+      codeLinks: ["components/Button.tsx"],
+      tokenLinks: ["semantic.color.ink"],
+      anatomy: ["Label only."],
+      responsiveBehavior: ["Keep one line."],
+      contentRules: ["Verb-first labels."],
+      usageRules: ["One per group."],
+      sizes: [{ name: "sm" }],
+      variants: [{ name: "primary" }],
+      states: ["default：静态。"]
+    });
+    const groups = buildDesignSystemBrowserModel(view).components.list[0]!
+      .detail!.groups;
+    expect(groups.map((group) => group.id)).toEqual([
+      "token-links",
+      "anatomy",
+      "variants",
+      "sizes",
+      "states-motion",
+      "usage-rules",
+      "content-rules",
+      "responsive-behavior",
+      "code-links",
+      "open-gaps"
+    ]);
+    expect(groups.map((group) => group.label)).toEqual([
+      "Token links",
+      "Anatomy",
+      "Variants",
+      "Sizes",
+      "States & motion",
+      "Usage rules",
+      "Content rules",
+      "Responsive behavior",
+      "Code links",
+      "Open gaps"
+    ]);
+  });
+});
