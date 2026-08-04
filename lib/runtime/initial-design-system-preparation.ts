@@ -130,8 +130,36 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
     "props",
     "boundaries",
     "stateMatrix",
-    ...RICH_COMPONENT_SPEC_FIELDS
+    ...RICH_COMPONENT_SPEC_FIELDS,
+    "group",
+    "sourceCaptures"
   ],
+  component_group_field: {
+    field: "group",
+    values: ["component", "block"],
+    guidance:
+      "Optional sidebar grouping (09C-D03). Default \"component\"; declare " +
+      "\"block\" only for page-structure composites that are not " +
+      "independently reusable (sticky navigation bars, page shells, hero " +
+      "sections). Absent stays valid and renders with the components."
+  },
+  component_capture_field: {
+    field: "sourceCaptures",
+    item_required: LAYOUT_RULE_CAPTURE_REQUIRED_FIELDS,
+    item_optional: [
+      ...LAYOUT_RULE_CAPTURE_OPTIONAL_FIELDS,
+      LAYOUT_RULE_CAPTURE_NODE_RECT_FIELD
+    ],
+    guidance:
+      "Optional per-component captures (09C-D03, same shape and crop " +
+      "contract as layout_rule_capture_field). Two honest origins only: a " +
+      "screenshot of the source design node, or (after the first prototype) " +
+      "a code-backed capture of the real component. One primary capture per " +
+      "component is enough — show the component in context. When neither " +
+      "origin exists, omit the field and let the browser render the honest " +
+      "unavailable block — never fabricate a capture; the agent can be " +
+      "asked to produce a code-backed one later."
+  },
   rule_body: {
     applies_to: ["global-rule", "domain-rule"],
     field: "value",

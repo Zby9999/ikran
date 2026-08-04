@@ -284,3 +284,66 @@ Ledger 通栏密排行 / Inspector 工具 chrome + 分组卡片），设计师�
   capture 换图（或只读）两种情况；hero 先于标题为组件详情页特例。
 
 prototype 表面在实现晋升后按惯例删除。
+
+### 2026-08-03 — Slice 1 实现记录（commit `c2090ff`）
+
+已落地（真实 Browser，非 prototype）：
+
+- Components Home 删除；tab 直达列表第一个组件（`landingLeaf` 单一真源，
+  section 直落时侧栏同步选中态）；侧栏分组 Components 先、Blocks 后，组头
+  按**组件**计状态汇总（worst-of），条目状态点 + candidate 蓝点 #2473cc。
+- `ComponentDetail` 按 Placard 重写：hero 展台卡（capture / 显式不可得两档，
+  origin 标记右上、stale caption 左下）、只读 states 名称行；620px 居中
+  阅读栏（Purpose / Props / Boundaries / State matrix / 数据驱动可选分组 /
+  Status & evidence）；空字段静默省略。
+- spec value 新增可选 `group` 闭枚举（schema 校验，旧 spec 向后兼容）；
+  view 层 `layoutCaptures` 泛化为 `captures` 并装饰到 component spec。
+- `DsVisualOrigin` 收缩为 code-backed / source-capture / unavailable。
+- 双轴 code-review（Standards + Spec）已执行，6 项修复随本 commit 落地
+  （组头按组件计数、landing 真源统一、直落选中态、stale 标记、origin
+  收缩、头部注释同步）。
+- 验证：tsc 干净；vitest 93 文件 922 测试全绿；playwright
+  design-system-browser / design-system-reader 两个 spec 通过。附带修复了
+  4cefd78 遗留的 `ds-row-visual-language` 陈旧 e2e 断言。
+
+本 slice 未做（后续 slice）：code-backed hero 活渲染、states hover 真切换 /
+多 capture 换图、preview controls、anatomy overlay。prototype 表面
+`app/prototypes/component-detail/` 按设计师指示暂时保留；CSS `.dsb-card`
+死代码待清理。真实 Agent 验证（三类异构组件 fixture、capture 覆盖）待
+09B 重新抽取产出带 `sourceCaptures` 与 `group` 声明的真实 spec 后进行。
+
+### 2026-08-04 — 组件级真实声明与 Browser 核对（ikran test 7）
+
+范围：不做完整 09B 重抽取（需新 `prepare_initial_design_system` 命令），
+仅对既有 3 个组件 spec 补 `group` + `sourceCaptures`，走真实
+`record_artifact_written` 声明 → ingest 通道验证 D03 实现。
+
+- 抽取契约扩展（本仓库）：`INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT` 的
+  `component_spec_fields` 追加 `group` / `sourceCaptures`；新增
+  `component_group_field`（component 默认，页面结构复合体声明 block）与
+  `component_capture_field` 指引——复用 D02 裁切契约，只承认
+  source-capture / code-backed 两种诚实来源，两者皆无则省略字段、浏览器
+  诚实的 unavailable，日后再要求 Agent 产 code-backed。契约只是写作
+  指引，不影响 schema 校验与 `component_spec_fields_missing` 门禁
+  （后者仍按 `RICH_COMPONENT_SPEC_FIELDS`）。
+- capture 制作：Text Link 从 `horizontal-project-gallery-redo.png` 裁
+  480×320（3:2）含 "See Project →" 实例区块
+  （`design-system/captures/text-link-see-project.png`，nodeRect 标记
+  链接位置，nodeId 未知故省略）；Project Strip 直接复用 redo.png
+  （node 1:157）；Sticky Navigation 复用 sticky-top-bar.png 整页定位图
+  （node 1:229，附带 surfaceId 利于 stale 判定）。裁切图已读回目检。
+- spec 更新（ikran test 7，不入本仓库 git）：`value.group` =
+  component / component / block；`sourceCaptures` 顶层数组复用 D02
+  layout 声明的精确 provenance。三个声明全部 `ingested`、零
+  quality_diagnostics，DB 落库确认。
+- 真实 Browser 核对（webbridge，dev server localhost:56970）：侧栏
+  Components 组（Text Link 绿点 / Project Strip 蓝点）先于 Blocks 组
+  （Sticky Navigation 蓝点），landing 直达 Text Link；三个 Placard hero
+  均显示 capture（Source capture 标记 + 左下 caption），states 只读
+  名称行、阅读栏分组（Purpose / Props / …）与 group 标签
+  （Component / Block）全部正确。截图存档 `.scratch/dsb-verify/`。
+
+遗留：Sticky Navigation hero 用整页定位图，顶栏占比小（D02 locator
+风格，位置标记因 width=1 视为近满而不渲染）；待有真实代码后应换
+code-backed hero。声明脚本 `.scratch/declare-component-specs.ts`
+（一次性，tsx 直调 `recordArtifactWrittenCommand`）。
