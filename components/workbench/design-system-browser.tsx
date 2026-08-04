@@ -20,7 +20,7 @@
 // DOES use radix Popover (components/ui/popover), portaled into the sheet
 // root so its keydown events stay inside the isolation boundary.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { getSvgPath } from "figma-squircle";
 import {
@@ -46,6 +46,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
 import {
+  formatRuleBody,
   projectObjectFields,
   projectDomainRuleLeaf,
   projectInteractionLeaf,
@@ -164,9 +165,13 @@ export function StatusChip({
   status: DsStatus;
   testId?: string;
 }) {
+  const label =
+    status === "gap"
+      ? "Open gap"
+      : `${status.charAt(0).toUpperCase()}${status.slice(1)}`;
   return (
     <span className="dsb-chip" data-status={status} data-testid={testId}>
-      {status === "gap" ? "open gap" : status}
+      {label}
     </span>
   );
 }
@@ -390,6 +395,24 @@ export function EvidenceInfoContent({
 
 /* --------------------------------- spec row --------------------------------- */
 
+const INFO_POPOVER_WIDTH = 340;
+const INFO_POPOVER_EDGE_PAD = 16;
+
+type InfoPopoverSide = "top" | "right" | "bottom" | "left";
+
+/** Prefer horizontal placement for tall evidence panels so they stay readable. */
+function pickInfoPopoverSide(trigger: HTMLElement): InfoPopoverSide {
+  const rect = trigger.getBoundingClientRect();
+  const needW = INFO_POPOVER_WIDTH + INFO_POPOVER_EDGE_PAD;
+  const right = window.innerWidth - rect.right - INFO_POPOVER_EDGE_PAD;
+  const left = rect.left - INFO_POPOVER_EDGE_PAD;
+  const bottom = window.innerHeight - rect.bottom - INFO_POPOVER_EDGE_PAD;
+  const top = rect.top - INFO_POPOVER_EDGE_PAD;
+  if (right >= needW) return "right";
+  if (left >= needW) return "left";
+  return bottom >= top ? "bottom" : "top";
+}
+
 export function InfoPopover({
   entry,
   approval,
@@ -400,7 +423,8 @@ export function InfoPopover({
   onInfoOpenChange,
   onInfoHoverOpen,
   onInfoHoverClose,
-  onApprove
+  onApprove,
+  interactive = true
 }: {
   entry: DesignSystemEntryView;
   approval: ApprovalState;
@@ -412,14 +436,42 @@ export function InfoPopover({
   onInfoHoverOpen: () => void;
   onInfoHoverClose: () => void;
   onApprove: () => void;
+  /** When false, hover/focus still opens evidence; click does nothing. */
+  interactive?: boolean;
 }) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [side, setSide] = useState<InfoPopoverSide>("right");
+
+  useLayoutEffect(() => {
+    if (!infoOpen || !triggerRef.current) return;
+    setSide(pickInfoPopoverSide(triggerRef.current));
+  }, [infoOpen, entry.entry_id]);
+
+  const align = side === "left" || side === "right" ? "start" : "end";
+
   return (
-    <Popover open={infoOpen} onOpenChange={onInfoOpenChange}>
+    <Popover
+      open={infoOpen}
+      onOpenChange={(open) => {
+        // Hover-only: ignore click-driven opens; still allow closes.
+        if (!interactive && open) return;
+        onInfoOpenChange(open);
+      }}
+    >
       <PopoverTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           className="dsb-info-trigger"
           aria-label={ariaLabel}
+          onClick={
+            interactive
+              ? undefined
+              : (event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }
+          }
           onMouseEnter={onInfoHoverOpen}
           onMouseLeave={onInfoHoverClose}
           onFocus={onInfoHoverOpen}
@@ -436,6 +488,10 @@ export function InfoPopover({
       <PopoverContent
         className="dsb-popover"
         container={portalContainer}
+        side={side}
+        align={align}
+        collisionPadding={INFO_POPOVER_EDGE_PAD}
+        sticky="partial"
         data-instant={popoverInstant ? "" : undefined}
         onMouseEnter={onInfoHoverOpen}
         onMouseLeave={onInfoHoverClose}
@@ -746,7 +802,7 @@ function RuleInlineActions({
       >
         <HugeiconsIcon
           icon={editor.editing ? MultiplicationSignIcon : Edit02Icon}
-          size={14}
+          size={12}
           strokeWidth={1.5}
           color="currentColor"
           aria-hidden
@@ -832,51 +888,6 @@ const FOUNDATIONS_LEAVES: {
 
 /* ------------------------------- home pages ------------------------------- */
 
-/** Principle rule card: meaning is the stable title and value is prose. */
-function PrincipleCard({
-  row,
-  approval,
-  rows
-}: {
-  row: DsRow;
-  approval: ApprovalState;
-  rows: RowSharedProps;
-}) {
-  const editor = useRuleInlineEditor(row, rows);
-  return (
-    <div
-      className="dsb-card dsb-principle"
-      data-testid={`ds-principle-${row.entryId}`}
-      data-approve-error={approval.kind === "error" || undefined}
-    >
-      <RuleInlineTitle editor={editor} />
-      <RuleInlineBody editor={editor} />
-      <div className="dsb-principle-footer">
-        <StatusChip status={row.status} />
-        <RuleInlineActions row={row} editor={editor} />
-        <InfoPopover
-          entry={row.entry}
-          approval={approval}
-          infoOpen={rows.infoKey === row.key}
-          popoverInstant={rows.popoverInstant(row.key)}
-          portalContainer={rows.portalContainer}
-          ariaLabel={`Evidence for principle ${row.entryId}`}
-          onInfoOpenChange={(open) => rows.onInfoKey(open ? row.key : null)}
-          onInfoHoverOpen={() => rows.onInfoHoverOpen(row.key)}
-          onInfoHoverClose={rows.onInfoHoverClose}
-          onApprove={() => rows.onApprove(row)}
-        />
-      </div>
-      <RuleInlineError editor={editor} />
-      {approval.kind === "error" ? (
-        <span className="dsb-row-error" role="alert">
-          Approval failed: {approval.message}
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
 export function FoundationsHomePage({
   model,
   rows
@@ -885,6 +896,22 @@ export function FoundationsHomePage({
   rows: RowSharedProps;
 }) {
   const { visualLanguage, principles } = model.foundations;
+  const principleRules = useMemo(
+    () => projectDomainRuleLeaf(principles),
+    [principles]
+  );
+  const visualLanguageRule = useMemo(() => {
+    if (!visualLanguage) return null;
+    const { row, description } = visualLanguage;
+    return {
+      key: row.key,
+      anchor: 1,
+      title: row.meaning || row.name || row.entryId,
+      body: description || formatRuleBody(row.entry.value),
+      status: row.status,
+      row
+    };
+  }, [visualLanguage]);
   return (
     <>
       <PageHeading
@@ -896,31 +923,40 @@ export function FoundationsHomePage({
         }
         chips={model.foundations.chips}
       />
-      {visualLanguage ? (
-        <section className="dsb-section dsb-narrative">
+      {visualLanguageRule ? (
+        <section className="dsb-section" data-testid="ds-visual-language-zone">
           <GroupLabel>Visual language</GroupLabel>
-          <p className="dsb-narrative-text">
-            {visualLanguage.description || visualLanguage.row.value}
-          </p>
-          <RowList rows={[visualLanguage.row]} {...rows} />
+          <ol className="dsb-interaction-ledger">
+            <RuleLedgerCardShell
+              rule={visualLanguageRule}
+              approval={
+                rows.approvals[visualLanguageRule.key] ?? { kind: "idle" }
+              }
+              rows={rows}
+              testId={`ds-visual-language-${visualLanguageRule.row.entryId}`}
+              evidenceAriaLabel={`Evidence for visual language ${visualLanguageRule.row.entryId}`}
+            />
+          </ol>
         </section>
       ) : null}
-      {principles.length > 0 ? (
-        <section className="dsb-section">
+      {principleRules.length > 0 ? (
+        <section className="dsb-section" data-testid="ds-principles-zone">
           <GroupLabel>Principles</GroupLabel>
-          <div className="dsb-cards dsb-principles">
-            {principles.map((row) => (
-              <PrincipleCard
-                key={row.key}
-                row={row}
-                approval={rows.approvals[row.key] ?? { kind: "idle" }}
+          <ol className="dsb-interaction-ledger">
+            {principleRules.map((rule) => (
+              <RuleLedgerCardShell
+                key={rule.key}
+                rule={rule}
+                approval={rows.approvals[rule.key] ?? { kind: "idle" }}
                 rows={rows}
+                testId={`ds-principle-${rule.row.entryId}`}
+                evidenceAriaLabel={`Evidence for principle ${rule.row.entryId}`}
               />
             ))}
-          </div>
+          </ol>
         </section>
       ) : null}
-      {!visualLanguage && principles.length === 0 ? (
+      {!visualLanguageRule && principleRules.length === 0 ? (
         <p className="dsb-empty-body dsb-page-note">
           No principles or visual language declared yet — open a leaf on the
           left.
@@ -1017,29 +1053,34 @@ function RuleLedgerCardShell({
       data-approve-error={approval.kind === "error" || undefined}
     >
       <div className="dsb-interaction-ledger-row">
-        <span className="dsb-interaction-anchor" aria-hidden>
-          {rule.anchor}
-        </span>
-        <span className="dsb-interaction-ledger-main">
+        <div className="dsb-interaction-ledger-meta">
+          <span className="dsb-interaction-ledger-tags">
+            <span className="dsb-interaction-anchor" aria-hidden>
+              {rule.anchor}
+            </span>
+            <StatusChip status={rule.status} testId="ds-interaction-status" />
+          </span>
+          <span className="dsb-rule-row-actions">
+            <RuleInlineActions row={rule.row} editor={editor} />
+            <InfoPopover
+              entry={rule.row.entry}
+              approval={approval}
+              infoOpen={rows.infoKey === rule.key}
+              popoverInstant={rows.popoverInstant(rule.key)}
+              portalContainer={rows.portalContainer}
+              ariaLabel={evidenceAriaLabel}
+              onInfoOpenChange={(open) => rows.onInfoKey(open ? rule.key : null)}
+              onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.key)}
+              onInfoHoverClose={rows.onInfoHoverClose}
+              onApprove={() => rows.onApprove(rule.row)}
+              interactive={false}
+            />
+          </span>
+        </div>
+        <div className="dsb-interaction-ledger-main">
           <RuleInlineTitle editor={editor} />
           <RuleInlineBody editor={editor} />
-        </span>
-        <span className="dsb-rule-row-meta">
-          <StatusChip status={rule.status} testId="ds-interaction-status" />
-          <InfoPopover
-            entry={rule.row.entry}
-            approval={approval}
-            infoOpen={rows.infoKey === rule.key}
-            popoverInstant={rows.popoverInstant(rule.key)}
-            portalContainer={rows.portalContainer}
-            ariaLabel={evidenceAriaLabel}
-            onInfoOpenChange={(open) => rows.onInfoKey(open ? rule.key : null)}
-            onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.key)}
-            onInfoHoverClose={rows.onInfoHoverClose}
-            onApprove={() => rows.onApprove(rule.row)}
-          />
-        </span>
-        <RuleInlineActions row={rule.row} editor={editor} />
+        </div>
       </div>
       <RuleInlineError editor={editor} />
       {approval.kind === "error" ? (

@@ -1,6 +1,6 @@
 # Interaction Section 纯文本策略规则与抽取契约拆分
 
-Status: ready-for-human
+Status: resolved
 
 ## Parent
 
@@ -105,3 +105,7 @@ interaction-rules.json 混住了两个物种：
 schema，并经 `recordSourceArtifact` 重新声明、入库；随后在真实 Workbench 完成默认
 折叠、整行展开、详情与 evidence 入口核对。该外部项目不是本仓库的一部分，故以此
 路径与迁移清单作为版本化复核记录。
+
+### 2026-08-04 — 关闭
+
+设计师确认本 issue 已完成并关闭；状态更新为 `resolved`。

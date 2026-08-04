@@ -458,7 +458,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     await approveNoShadow.click();
     await expect(approveNoShadow).toHaveCount(0);
     await expect(noShadowRule.getByTestId("ds-interaction-status")).toHaveText(
-      "formalized"
+      "Formalized"
     );
 
     // ---- Typography leaf: quiet three-column ledger + one disclosure. ----
@@ -695,7 +695,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     await expect(gridPlacard).toContainText("Default page grid");
     await expect(
       gridPlacard.getByTestId("ds-layout-status-grid-page")
-    ).toHaveText("candidate");
+    ).toHaveText("Candidate");
     // The prose body preserves the extracted spatial facts without projection.
     const gridBody = gridPlacard.locator(".dsb-rule-prose");
     await expect(gridBody).toContainText("1120px");
@@ -761,7 +761,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     ).toBeVisible();
     await expect(
       navPlacard.getByTestId("ds-layout-status-nav-mobile")
-    ).toHaveText("open gap");
+    ).toHaveText("Open gap");
 
     // v2 retires the full-frame lightbox: no trigger, no overlay anywhere.
     await expect(
@@ -817,7 +817,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
       quietMotion.getByTestId("ds-rule-edit-quiet-motion")
     ).toBeVisible();
     await expect(quietMotion.getByTestId("ds-interaction-status")).toHaveText(
-      "candidate"
+      "Candidate"
     );
     const info = quietMotion.getByLabel(
       "Evidence for interaction rule quiet-motion"

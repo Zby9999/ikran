@@ -146,3 +146,141 @@ Page Shell / Navigation 三类异构组件的共同框架——按**全宽单栏
 
 09C-A 退役 `LeafSplit` 后，本文件原左右栏假设作废。启用前须由设计师按全宽
 单栏重新确认构图；实现不得再引入分栏 chrome 或空样本右栏。
+
+### 2026-08-03 — Components Home 画廊与 tile 形态决策（设计师确认）
+
+设计师在讨论中确认以下决策，作为组件页构图的第一批结论：
+
+1. **两阶段同一信息架构，视觉档位逐 tile 切换**。初步抽取阶段（无真实代码）
+   与首次 Prototype 完成之后，Components Home 结构不变；变化的是每个 tile
+   的视觉 origin（capture → code-backed），不引入两套页面形态。
+2. **第一阶段 Home = 画廊**（非纯文字清单）：tile = source capture + 名称 +
+   状态 chip。设计师在画廊中视觉确认抽取范围（「是不是我要的那个组件」）；
+   确认动作沿用 candidate → formalized 审批语义，两阶段不变。
+3. **页面结构类组件（Page Shell / Navigation 等）的 tile = 缩放真实上下文**：
+   第一阶段为原设计 source capture，第二阶段为真实 prototype 页面的缩略
+   渲染（页面比例缩略图）。tile 承担「认脸」，不承担讲规格；结构区划图
+   （zone 划分）收在详情页，以 anatomy overlay 形式叠加于 source capture，
+   编号对应规格区 anatomy 条目。理由：tile 尺度下骨架 zone 不可读，认脸
+   优先；区划图是生成的抽象，需 anatomy 数据成熟后上线，不阻塞 tile。
+4. **tile 可交互是 code-backed 专属的档位能力**：
+   - 有真实代码的控件 / 容器 tile 为活渲染，可交互（hover 出 state 等），
+     对齐 shadcn 首页形态；
+   - capture tile 为静态截图，交互仅有点击进详情——静态不作为「坏掉的
+     活 tile」呈现，交互能力差异本身是 origin 档位的可感知信号；
+   - 页面结构类 tile 为活渲染但指针不穿透，整块点击进详情；
+   - 深交互（从 spec 生成的 preview controls）归详情页 interactive preview
+     模块，tile 不承载控制器；
+   - 可交互 tile 需键盘等价操作与 reduced-motion 行为；code-backed adapter
+     安全装载边界完成技术验证前，静态渲染是任何时刻都成立的兜底。
+
+masonry 网格节奏：控件小方块、容器中幅、页面结构为页面比例宽幅 tile，tile
+尺寸本身传达组件尺度层级。
+
+待后续讨论：详情页全宽单栏的规格区 / 视觉区编排、五档 origin 的可辨视觉、
+组件绑定 states / motion 与 variants / sizes 的合并呈现、candidate / gap
+在视觉模块中的可辨认性。
+
+### 2026-08-03 — 详情页 hero 布局与两档 Origin 决策（设计师确认）
+
+**Origin 收缩为两档（取代五档）**。设计师判定 Source capture / Code-backed /
+Source-generated / Schematic / unavailable 五档链过于复杂，收缩为：
+
+- **Code-backed**：真实代码活渲染；
+- **Source capture**：原设计截图；
+- 其他一切情况回退为**显式无可视化**（不保留 Source-generated 与
+  Schematic 两个合成档）。理由：被删除的两档是唯一需要「防误认」标记的
+  合成像素；保留的两档都是证据型视觉（设计的照片 / 实现的照片），不存在
+  误认风险。需要可视化而信息充分的组件，用户可要求 Agent 真正实现为
+  code-backed，不需要系统合成近似外观。
+
+推论：
+
+- **显式无可视化状态**：必须说清缺什么（如无 code link、无 source
+  capture），并可指引「可要求 Agent 实现该组件以获取实时预览」；空白是
+  事故，unavailable 是结论。
+- **zone 区划图不算 Schematic，算带标注的 capture**：详情页 anatomy
+  overlay 是叠加在 source capture 上的编号标记（底子是照片、标记是证据
+  索引），不合成外观，在新规则下保留。独立线框示意图才消失。
+- **视觉可辨设计负担消失**：只需区分活 / 静，交互能力差异本身即是信号；
+  无障碍树相应简化。
+- **验收标准与 09C-C 范围影响**：本文件验收中「五种 origin outcome 可
+  区分」「renderer registry」相关条目启用时按两档重写；09C-C 不再需要
+  Source-generated / Schematic renderer，coverage audit 简化为 capture /
+  code-backed / 明确不可得三结果。
+
+**组件详情页布局（全宽单栏）**：
+
+- 顶部为 hero 视觉区（code-backed 活组件或 source capture），标题与详细
+  信息在 hero 之下——**打破 09C-A「所有 leaf 顶部先出标准 PageHeading」
+  的次序，确认为组件详情页特例**，其他 leaf 不变；
+- states 名称直接显示在 hero 视觉底部，hover 不同 state 即可观察变化；
+- states hover 按 origin 只有两种情况：code-backed → hover 切真实状态；
+  capture → 每个 state 各有一张截图则 hover 换图，只有一张则 states 名称
+  只读展示。无中间档。
+
+### 2026-08-03 — Home 画廊细化决策（设计师确认）
+
+承接上一条，Home 页剩余五个问题全部确认：
+
+1. **Tile 尺寸分级 = 混合判定 + 设计师可覆盖**。判定顺序：spec 声明的
+   scale/kind → capture 宽高比启发式（接近页面比例的宽幅 → 结构档）→
+   中幅兜底。设计师可在 tile 上就地纠偏：hover / focus 时角落出现轻量控件，
+   在「小 / 中 / 宽」三档间循环切换，画廊即时 reflow。覆盖是 **Browser 本地
+   呈现偏好**，不写回 component spec、不改分类 / 状态 / 证据链（v1 写操作
+   仍只有状态审批）；若档位错源于底层分类抽错，覆盖只是贴住症状，根因靠
+   改进抽取，不得把该控件当分类修正工具。实现注意：原 Browser 偏好持久化
+   路径已随分栏退役删除，per-component 覆盖需新的本地偏好持久化位置。
+2. **Capture 一律 fit**：完整显示 + 中性底色，不裁切（认脸优先于网格齐整）。
+3. **排序与空缺**：默认 candidate 在前、同级按名称；v1 不加筛选器、不做
+   类别聚簇（类别数据不可靠时聚簇会放大错误）。gap 组件照常进网格，tile
+   为明确空缺态：中性底 + 名称 + "No capture" + gap chip，不隐藏、不假装
+   有内容。
+4. **Tile 级不加 origin 文字徽章**：交互行为即档位信号（活 = code-backed，
+   静 = capture）；显式标记按需留给未来最易误读的 Schematic 档。详情页保留
+   完整 origin 信息。
+5. **键盘模型**：tile 对键盘为单一停靠点（整块 = 进详情链接）；state 探索
+   的键盘等价物是详情页 preview controls。此条细化（而非推翻）上一条决策
+   中「可交互 tile 需键盘等价」的原则。
+
+至此 Components Home 形态收敛。下一步：组件详情页（上一条「待后续讨论」
+清单）。
+
+### 2026-08-03 — 取消 Components 总览，侧边栏直达详情；详情页选定 Placard（设计师确认）
+
+设计师重新评估后判定：Blocks（页面结构）与 Components 作为组件的表现形式
+天然不同，强行设总览页只会制造冗杂——同放一页过长，加视图切换则形成
+「Foundations / Components」与「Components / Blocks」两层切换，交互繁琐。
+因此 **supersede 上两条 Home 画廊决策**（「Components Home 画廊与 tile 形态
+决策」第 2、3 条及「Home 画廊细化决策」全部五条）：
+
+1. **取消一切 overview**：不设 Components Home / 画廊；组件经左侧侧边栏
+   直接查看，点击即进详情页。Blocks 与 Components 表现形式不同的问题随之
+   消解——各自只有详情页，无需共处一个网格；交互层级只剩 Section Tabs
+   一层。
+2. **Foundations Home 保留**：它承载 principles 与 visual language 叙述，
+   是内容页而非目录，不受本决策影响。
+3. **侧边栏承接原 Home 的职责**：分组（Blocks / Components），组头带状态
+   汇总（n formalized · m candidate），条目带状态点；点击 Components tab
+   落在当前 / 第一个组件，侧边栏选中态即详情页。
+4. **Blocks 认脸形态不变**：页面结构类组件详情页 hero = 缩放真实上下文
+   （capture → 活页面缩略渲染）；zone 区划图仍以带标注 capture 的形式
+   收在详情页 anatomy overlay。
+5. **不损失的部分**：tile 可交互的精华（states hover 观察状态变化）已由
+   详情页 hero 的 states 条承接；两档 origin、显式不可得态维持前条决策。
+6. Home 画廊实现线程已停止；masonry 分级、tile 尺寸覆盖控件、tile 键盘
+   模型、画廊排序 / 空缺态等细化项随总览一并取消。
+
+**详情页方向选定 Placard**：经 prototype 三变体对比
+（`app/prototypes/component-detail/`：Placard 展台卡 + 居中阅读栏 /
+Ledger 通栏密排行 / Inspector 工具 chrome + 分组卡片），设计师选定
+**Placard**：
+
+- hero 为展台卡（白卡、hairline 边框、组件居中、origin 标记在右上）；
+- states 名称文字行位于 hero 底部居中，hover / focus 切换组件状态；
+- hero 之下为居中阅读栏：标题 + 状态 chip、Purpose、Props（candidate 条目
+  带 chip）、Boundaries、Token links、evidence 行；
+- 此前决策不变：states hover 按 origin 只有 code-backed 切真状态 /
+  capture 换图（或只读）两种情况；hero 先于标题为组件详情页特例。
+
+prototype 表面在实现晋升后按惯例删除。

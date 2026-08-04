@@ -205,16 +205,19 @@ function fixtureView(): DesignSystemView {
 }
 
 describe("StatusChip", () => {
-  test("gap renders as open gap; others render their name", () => {
+  test("renders title-case labels; data-status stays lowercase", () => {
     expect(
       renderToStaticMarkup(createElement(StatusChip, { status: "gap" }))
-    ).toContain("open gap");
+    ).toContain("Open gap");
+    expect(
+      renderToStaticMarkup(createElement(StatusChip, { status: "candidate" }))
+    ).toContain(">Candidate</span>");
     expect(
       renderToStaticMarkup(createElement(StatusChip, { status: "candidate" }))
     ).toContain('data-status="candidate"');
     expect(
       renderToStaticMarkup(createElement(StatusChip, { status: "formalized" }))
-    ).toContain("formalized");
+    ).toContain(">Formalized</span>");
   });
 });
 
@@ -386,7 +389,7 @@ describe("EvidenceInfoContent (ⓘ layer)", () => {
 });
 
 describe("FoundationsHomePage", () => {
-  test("renders principles as rule cards (09A: principles 规则卡)", () => {
+  test("renders principles as ledger rules (shared Rules presentation)", () => {
     const model = buildDesignSystemBrowserModel(fixtureView());
     const html = renderToStaticMarkup(
       createElement(FoundationsHomePage, {
@@ -399,7 +402,8 @@ describe("FoundationsHomePage", () => {
     expect(html).toContain("Rules must trace to seed evidence");
     expect(html).toContain('data-status="candidate"');
     expect(html).toContain('aria-label="Evidence for principle p1"');
-    // Cards, not spec rows.
+    expect(html).toContain("dsb-interaction-ledger");
+    // Ledger items, not spec rows.
     expect(html).not.toContain('data-testid="ds-row-p1"');
   });
 

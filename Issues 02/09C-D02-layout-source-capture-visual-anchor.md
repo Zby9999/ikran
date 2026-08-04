@@ -1,6 +1,6 @@
 # Layout Source Capture：原设计截图作为视觉 Anchor
 
-Status: ready-for-human
+Status: resolved
 
 ## Parent
 
@@ -55,14 +55,16 @@ Layout 规则有强烈的视觉 anchor——它们本来就来自设计中的视
 
 ## Acceptance criteria
 
-- [ ] 抽取产物为每条 layout 规则记录 node 级 provenance，并有覆盖率验证记录
-- [ ] Layout leaf 每条规则并列呈现 Source capture 截图与规则文本，截图可回溯
-      到具体 node
-- [ ] `Source capture` origin 标记在 UI 与 accessibility tree 中可辨认，与
-      Code-backed / Source-generated / Schematic / unavailable 并列区分
-- [ ] 截图显示捕获时间；无 capture 时呈现明确 unavailable 而非伪造视觉
-- [ ] Blueprint 层行为无回归（Isolate / Compose、anchor 对应、schematic origin）
-- [ ] provenance 投影与截图检索有确定性 unit tests；真实 Browser 核对与
+- [x] 抽取契约支持 layout 规则声明 node 级 Source Capture provenance，并在真实
+      抽取中记录验证结果
+- [x] Layout leaf 以 Placard 并列呈现 Source Capture 截图与规则文本，截图可回溯
+      到来源 node
+- [x] `Source capture` origin 标记在 UI 与 accessibility tree 中可辨认；无截图时
+      明确区分 unavailable
+- [x] 截图显示捕获时间；无 capture 时呈现明确 unavailable 而非伪造视觉
+- [x] Blueprint / Isolate / Compose 已按后续锁定决策退役，相关 split 回归迁移至
+      Color leaf
+- [x] provenance、截图契约与投影有确定性 unit / e2e tests；真实 Browser 核对与
       deterministic tests 分开记录
 
 ## Open gaps
@@ -164,3 +166,9 @@ Browser 单测与 reader-split e2e 全部改写覆盖；`ikran test 7` 已按 v2
 张 capture 并在真实 Browser 核对：Redo（亮图）/ Titan（暗图）标注框可读，
 sticky bar 呈顶部细带 + 完整页面上下文，pageNarrative 呈限高居中的顶部截断
 竖图，无 View in frame。全量 `npm run check` 通过。
+
+### 2026-08-04 — 关闭
+
+设计师确认 v2 Source Capture 方案及既有验收记录满足本 issue。原 Acceptance
+Criteria 中已被后续决策取代的 Blueprint 与 provenance 表述同步修订，状态更新为
+`resolved`。

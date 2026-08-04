@@ -363,7 +363,7 @@ test("09A design system browser: declare → render → approve write-back", asy
     await expect(page.getByTestId("ds-row-primitive.color.ink")).toHaveCount(0);
     const aliasRow = page.getByTestId("ds-row-semantic.color.text-primary");
     await expect(aliasRow).toBeVisible();
-    await expect(aliasRow.getByTestId("ds-status-chip")).toHaveText("candidate");
+    await expect(aliasRow.getByTestId("ds-status-chip")).toHaveText("Candidate");
     await expect(aliasRow).toContainText("Default text color");
     await expect(aliasRow).not.toContainText("→ primitive.color.ink");
     // The consumed primitive survives as the swatch tooltip's provenance.
@@ -404,17 +404,32 @@ test("09A design system browser: declare → render → approve write-back", asy
     await page.getByRole("button", { name: "Interaction", exact: true }).click();
     const interactionRule = page.getByTestId("ds-interaction-rule-1");
     await expect(interactionRule.getByRole("button", { name: "Save" })).toHaveCount(0);
+    const rowBeforeEdit = await interactionRule
+      .locator(".dsb-interaction-ledger-row")
+      .boundingBox();
+    const bodyBeforeEdit = await interactionRule.locator(".dsb-card-desc").boundingBox();
     const editButton = interactionRule.getByTestId(
       "ds-rule-edit-interaction-calm-feedback"
     );
     await editButton.click();
     await expect(editButton).toHaveAttribute("aria-pressed", "true");
+    const bodyInput = interactionRule.getByLabel("Rule body");
+    const rowAfterEdit = await interactionRule
+      .locator(".dsb-interaction-ledger-row")
+      .boundingBox();
+    const bodyAfterEdit = await bodyInput.boundingBox();
+    const bodyOffsetBefore =
+      bodyBeforeEdit && rowBeforeEdit ? bodyBeforeEdit.y - rowBeforeEdit.y : null;
+    const bodyOffsetAfter =
+      bodyAfterEdit && rowAfterEdit ? bodyAfterEdit.y - rowAfterEdit.y : null;
+    expect(bodyOffsetBefore).not.toBeNull();
+    expect(bodyOffsetAfter).not.toBeNull();
+    expect(Math.abs(bodyOffsetAfter! - bodyOffsetBefore!)).toBeLessThan(0.5);
     const titleInput = interactionRule.getByLabel("Rule title");
     await titleInput.fill("Measured feedback");
     await expect(
       interactionRule.getByTestId("ds-rule-save-interaction-calm-feedback")
     ).toBeVisible();
-    const bodyInput = interactionRule.getByLabel("Rule body");
     await bodyInput.fill(
       "Respond immediately.\nKeep feedback motion deliberately restrained."
     );
@@ -535,7 +550,7 @@ test("09A design system browser: declare → render → approve write-back", asy
     await approveInk.click();
     // The tray retires only after the server committed (DB + file + event).
     await expect(approveInk).toHaveCount(0);
-    await expect(aliasRow.getByTestId("ds-status-chip")).toHaveText("formalized");
+    await expect(aliasRow.getByTestId("ds-status-chip")).toHaveText("Formalized");
 
     const rewritten = JSON.parse(
       readFileSync(path.join(designSystemDir, "token.json"), "utf-8")
@@ -585,7 +600,7 @@ test("09A design system browser: declare → render → approve write-back", asy
     await expect(mutedRow.getByRole("alert")).toContainText(
       "Needs a designer-edited answered card before it can be formalized."
     );
-    await expect(mutedRow.getByTestId("ds-status-chip")).toHaveText("candidate");
+    await expect(mutedRow.getByTestId("ds-status-chip")).toHaveText("Candidate");
     expect(
       readDesignSystemEntryStatus(
         projectDir,
