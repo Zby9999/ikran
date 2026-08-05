@@ -1,6 +1,6 @@
 # 26 — Progressive Initial Design System Extraction
 
-Status: in-progress
+Status: resolved
 
 ## Problem
 
@@ -94,7 +94,7 @@ Browser writes.
       Runtime write paths reject edit/approval until completion.
 - [x] MCP schemas expose exact enums and discriminated work-unit shapes.
 - [x] No old atomic-manifest tool remains in the advertised MCP surface.
-- [ ] Typecheck, full Vitest, relevant Playwright, and a fresh real-Agent smoke
+- [x] Typecheck, full Vitest, relevant Playwright, and a fresh real-Agent smoke
       pass.
 
 ## Real Agent validation
@@ -107,3 +107,28 @@ The test Agent must complete the full Initial Design System extraction through
 work-unit recording, residual audit, artifact declaration, and finalize without
 manual manifest construction help. The test must not modify the main project's
 Ikran state or workflow.
+
+### Result — 2026-08-05
+
+PASS on commit `1c1efc1`. A first isolated run exposed that a top-level Zod
+union advertised an empty MCP input schema even though raw calls worked. The
+schema was changed to an advertised top-level object and the entire flow was
+rerun from a second empty project and state directory.
+
+- MCP `listTools` exposed every work-unit field, variant, outcome, and target.
+- One claim returned all 12 answered Question cards, 6 Agent Annotations, the
+  complete Seed/evidence snapshot, and the source contract before any artifact
+  was written.
+- Seven artifacts ingested without diagnostics; all six work units recorded on
+  their first version.
+- The audit checked 18 claims with no residual claims or issues, and finalize
+  completed with `readyToFinalize=true`.
+- Browser content remained readable and non-editable while pending/claimed;
+  after finalize, an edit and Candidate-to-Formalized transition both worked.
+- The test worktree finished clean and only the isolated Runtime was stopped.
+
+Preserved evidence:
+
+- Project: `/tmp/ikran-issue26-retest-project.k8b86f`
+- State and summary: `/tmp/ikran-issue26-retest-state.11jcxn`
+- Summary file: `/tmp/ikran-issue26-retest-state.11jcxn/acceptance-summary.json`
