@@ -1,18 +1,18 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { existsSync, statSync } from "node:fs";
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
 
 import { getAlignmentPreparationOnDb } from "./alignment-preparation";
 import { withProjectTransaction } from "./db";
 import {
-  ALIGNMENT_SECTIONS,
-  getDesignIntentAlignmentOnDb,
-  type AlignmentSection
+  getDesignIntentAlignmentOnDb
 } from "./design-intent-alignment";
 import { logEventOnDb } from "./events";
 import { emitRecordEvent } from "./record-bus";
 import { listDeclaredArtifacts } from "./source-artifact";
 import { specPathMatchesSourceArtifact } from "./design-system-spec-path";
+import { resolveProjectArtifactPath } from "./evidence-package";
 import {
   LAYOUT_RULE_CAPTURE_FIELD,
   LAYOUT_RULE_CAPTURE_NODE_RECT_FIELD,
@@ -154,7 +154,7 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
     guidelines:
       "Write every designer-facing usage, content, boundary, and human-readable verification rule as one guidelines row with an explicit do/dont kind.",
     unresolved_questions:
-      "Keep unresolved questions in the extraction manifest and lineage; do not repeat workflow state inside the component spec."
+      "Keep unresolved questions in residual extraction claims and lineage; do not repeat workflow state inside the component spec."
   },
   component_group_field: {
     field: "group",
@@ -265,23 +265,6 @@ export type DesignSystemExtractionOutcome =
   | "omitted"
   | "gap";
 
-export type DesignSystemExtractionTarget = {
-  artifactPath: string;
-  entryId: string;
-  jsonPointer: string;
-};
-
-export type DesignSystemExtractionClaim = {
-  claimId: string;
-  section: AlignmentSection;
-  statement: string;
-  sourceRecordIds: string[];
-  sourceExcerpts: string[];
-  confidence: "confirmed" | "reasonable";
-  outcome: DesignSystemExtractionOutcome;
-  reason?: string;
-  targets: DesignSystemExtractionTarget[];
-};
 
 export type DesignSystemExtractionAudit = {
   status: "passed" | "failed";
@@ -289,42 +272,116 @@ export type DesignSystemExtractionAudit = {
   issues: string[];
 };
 
-export type RecordDesignSystemExtractionManifestInput = {
+
+export const DESIGN_SYSTEM_EXTRACTION_WORK_UNIT_KINDS = [
+  "global",
+  "tokens",
+  "layout",
+  "interaction",
+  "component"
+] as const;
+
+export type DesignSystemExtractionWorkUnitDefinition =
+  | { kind: "global" }
+  | { kind: "tokens" }
+  | { kind: "layout" }
+  | { kind: "interaction" }
+  | {
+      kind: "component";
+      componentEntryId: string;
+      specArtifactPath?: string;
+      retire?: boolean;
+    };
+
+export type DesignSystemExtractionWorkUnitTargetInput = {
+  artifactPath: string;
+  entryId: string;
+  fieldPath?: string[];
+};
+
+export type DesignSystemExtractionWorkUnitTarget =
+  DesignSystemExtractionWorkUnitTargetInput & {
+    jsonPointer: string;
+  };
+
+export type DesignSystemExtractionWorkUnitClaimInput = {
+  claimId: string;
+  statement: string;
+  sourceRecordIds: string[];
+  sourceExcerpts: string[];
+  confidence: "confirmed" | "reasonable";
+  outcome: DesignSystemExtractionOutcome;
+  reason?: string;
+  targets: DesignSystemExtractionWorkUnitTargetInput[];
+};
+
+export type DesignSystemExtractionWorkUnitClaim = Omit<
+  DesignSystemExtractionWorkUnitClaimInput,
+  "targets"
+> & {
+  targets: DesignSystemExtractionWorkUnitTarget[];
+};
+
+export type RecordDesignSystemExtractionWorkUnitInput = {
   alignmentAttemptId: string;
   idempotencyKey: string;
-  claims: DesignSystemExtractionClaim[];
+  workUnit: DesignSystemExtractionWorkUnitDefinition;
+  claims: DesignSystemExtractionWorkUnitClaimInput[];
+};
+
+export type RecordDesignSystemExtractionAuditInput = {
+  alignmentAttemptId: string;
+  idempotencyKey: string;
+  residualClaims: DesignSystemExtractionWorkUnitClaimInput[];
   audit: DesignSystemExtractionAudit;
 };
 
-export type DesignSystemExtractionManifestRecord = {
-  id: string;
-  alignment_attempt_id: string;
-  agent_command_id: string;
-  idempotency_key: string;
-  manifest: {
-    claims: DesignSystemExtractionClaim[];
-    audit: DesignSystemExtractionAudit;
-  };
+type StoredDesignSystemExtractionWorkUnit = {
+  key: string;
+  kind: DesignSystemExtractionWorkUnitDefinition["kind"];
+  definition: DesignSystemExtractionWorkUnitDefinition;
+  claims: DesignSystemExtractionWorkUnitClaimInput[];
   version: number;
-  created_at: string;
-  updated_at: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
-type ManifestValidationFailure = {
-  ok: false;
-  reason:
-    | "invalid_manifest"
-    | "duplicate_claim_id"
-    | "invalid_manifest_source"
-    | "claim_confidence_exceeds_source"
-    | "input_coverage_incomplete"
-    | "manifest_audit_incomplete"
-    | "stale_alignment_attempt"
-    | "initial_design_system_command_not_claimed"
-    | "idempotency_conflict"
-    | "db_error";
-  details?: Record<string, unknown>;
+export type DesignSystemExtractionWorkUnitRecord = {
+  key: string;
+  kind: StoredDesignSystemExtractionWorkUnit["kind"];
+  definition: DesignSystemExtractionWorkUnitDefinition;
+  claims: DesignSystemExtractionWorkUnitClaim[];
+  version: number;
+  createdAt: string;
+  updatedAt: string;
 };
+
+export type DesignSystemExtractionWorkUnitRecoveryRecord =
+  | DesignSystemExtractionWorkUnitRecord
+  | (StoredDesignSystemExtractionWorkUnit & {
+      resolutionError: {
+        reason: "manifest_target_not_found" | "manifest_target_field_not_found";
+        details?: Record<string, unknown>;
+      };
+    });
+
+type ProgressiveDesignSystemExtractionManifest = {
+  schemaVersion: 2;
+  workUnits: StoredDesignSystemExtractionWorkUnit[];
+  residualClaims: DesignSystemExtractionWorkUnitClaimInput[];
+  audit: DesignSystemExtractionAudit | null;
+};
+
+export type DesignSystemExtractionProgress = {
+  completedWorkUnitKeys: string[];
+  consumedSourceRecordIds: string[];
+  remainingQuestionCardIds: string[];
+  remainingAgentAnnotationIds: string[];
+  remainingDesignerAnnotationIds: string[];
+  auditStatus: "pending" | "passed" | "failed";
+  readyToFinalize: boolean;
+};
+
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -394,156 +451,6 @@ function stringArray(value: unknown, allowEmpty = false): value is string[] {
   );
 }
 
-function validJsonPointer(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    (value === "" ||
-      (value.startsWith("/") && !/~(?![01])/u.test(value)))
-  );
-}
-
-function validateManifestShape(
-  input: unknown
-):
-  | { ok: true; input: RecordDesignSystemExtractionManifestInput }
-  | ManifestValidationFailure {
-  if (!isRecord(input)) return { ok: false, reason: "invalid_manifest" };
-  if (
-    !nonEmptyString(input.alignmentAttemptId) ||
-    !nonEmptyString(input.idempotencyKey) ||
-    !Array.isArray(input.claims) ||
-    input.claims.length === 0 ||
-    !isRecord(input.audit)
-  ) {
-    return { ok: false, reason: "invalid_manifest" };
-  }
-
-  const seen = new Set<string>();
-  for (const raw of input.claims) {
-    if (!isRecord(raw)) return { ok: false, reason: "invalid_manifest" };
-    if (!nonEmptyString(raw.claimId)) {
-      return { ok: false, reason: "invalid_manifest" };
-    }
-    if (seen.has(raw.claimId)) {
-      return {
-        ok: false,
-        reason: "duplicate_claim_id",
-        details: { claim_id: raw.claimId }
-      };
-    }
-    seen.add(raw.claimId);
-    if (
-      typeof raw.section !== "string" ||
-      !(ALIGNMENT_SECTIONS as readonly string[]).includes(raw.section) ||
-      !nonEmptyString(raw.statement) ||
-      !stringArray(raw.sourceRecordIds) ||
-      !stringArray(raw.sourceExcerpts) ||
-      (raw.confidence !== "confirmed" && raw.confidence !== "reasonable") ||
-      !["mapped", "conflict", "omitted", "gap"].includes(
-        String(raw.outcome)
-      ) ||
-      !Array.isArray(raw.targets)
-    ) {
-      return { ok: false, reason: "invalid_manifest" };
-    }
-    const needsTarget = raw.outcome === "mapped" || raw.outcome === "gap";
-    if (needsTarget && raw.targets.length === 0) {
-      return { ok: false, reason: "invalid_manifest" };
-    }
-    if (
-      (raw.outcome === "omitted" || raw.outcome === "conflict") &&
-      !nonEmptyString(raw.reason)
-    ) {
-      return { ok: false, reason: "invalid_manifest" };
-    }
-    for (const target of raw.targets) {
-      if (
-        !isRecord(target) ||
-        !nonEmptyString(target.artifactPath) ||
-        !nonEmptyString(target.entryId) ||
-        !validJsonPointer(target.jsonPointer)
-      ) {
-        return { ok: false, reason: "invalid_manifest" };
-      }
-    }
-  }
-
-  if (
-    (input.audit.status !== "passed" && input.audit.status !== "failed") ||
-    !stringArray(input.audit.checkedClaimIds) ||
-    !stringArray(input.audit.issues, true)
-  ) {
-    return { ok: false, reason: "invalid_manifest" };
-  }
-  const checked = new Set(input.audit.checkedClaimIds);
-  const missingAuditClaims = [...seen].filter((claimId) => !checked.has(claimId));
-  const unknownAuditClaims = [...checked].filter((claimId) => !seen.has(claimId));
-  if (missingAuditClaims.length > 0 || unknownAuditClaims.length > 0) {
-    return {
-      ok: false,
-      reason: "manifest_audit_incomplete",
-      details: {
-        missing_claim_ids: missingAuditClaims,
-        unknown_claim_ids: unknownAuditClaims
-      }
-    };
-  }
-
-  return {
-    ok: true,
-    input: input as unknown as RecordDesignSystemExtractionManifestInput
-  };
-}
-
-function mapManifestRow(
-  row: Record<string, unknown>
-): DesignSystemExtractionManifestRecord {
-  const manifest = JSON.parse(String(row.manifest_json)) as {
-    claims: DesignSystemExtractionClaim[];
-    audit: DesignSystemExtractionAudit;
-  };
-  return {
-    id: String(row.id),
-    alignment_attempt_id: String(row.alignment_attempt_id),
-    agent_command_id: String(row.agent_command_id),
-    idempotency_key: String(row.idempotency_key),
-    manifest,
-    version: Number(row.version),
-    created_at: String(row.created_at),
-    updated_at: String(row.updated_at)
-  };
-}
-
-function getManifestOnDb(
-  db: DatabaseType,
-  alignmentAttemptId: string
-): DesignSystemExtractionManifestRecord | null {
-  const row = db
-    .prepare(
-      `SELECT * FROM design_system_extraction_manifests
-       WHERE alignment_attempt_id = ?`
-    )
-    .get(alignmentAttemptId) as Record<string, unknown> | undefined;
-  return row ? mapManifestRow(row) : null;
-}
-
-function mapManifestRequestRow(
-  row: Record<string, unknown>
-): DesignSystemExtractionManifestRecord {
-  return {
-    id: String(row.manifest_id),
-    alignment_attempt_id: String(row.alignment_attempt_id),
-    agent_command_id: String(row.agent_command_id),
-    idempotency_key: String(row.idempotency_key),
-    manifest: JSON.parse(String(row.manifest_json)) as {
-      claims: DesignSystemExtractionClaim[];
-      audit: DesignSystemExtractionAudit;
-    },
-    version: Number(row.manifest_version),
-    created_at: String(row.created_at),
-    updated_at: String(row.created_at)
-  };
-}
 
 /**
  * Claim the durable Initial Design System preparation command and return its
@@ -584,7 +491,11 @@ export function claimInitialDesignSystemPreparation(
           command,
           attempt,
           frozen_input: frozenInput,
-          extraction_manifest: getManifestOnDb(db, attempt.id),
+          progressive_extraction: progressiveExtractionStateOnDb(
+            db,
+            frozenInput,
+            attempt.id
+          ),
           event_id: null
         };
       }
@@ -611,20 +522,32 @@ export function claimInitialDesignSystemPreparation(
         )!,
         attempt: updated.current_attempt!,
         frozen_input: frozenInput,
-        extraction_manifest: getManifestOnDb(db, attempt.id),
+        progressive_extraction: progressiveExtractionStateOnDb(
+          db,
+          frozenInput,
+          attempt.id
+        ),
         event_id: event.event_id
       };
     });
 
     if (!claimed.ok) return claimed;
 
-    const { frozen_input: frozenInput, ...claimRecord } = claimed;
+    const {
+      frozen_input: frozenInput,
+      progressive_extraction: progressiveExtraction,
+      ...claimRecord
+    } = claimed;
     const result = {
       ...claimRecord,
       input_snapshot: frozenInput.input_snapshot,
       annotations: frozenInput.annotations,
       question_cards: frozenInput.question_cards,
       designer_annotations: frozenInput.designer_annotations,
+      extraction_work_units: progressiveExtraction.workUnits,
+      extraction_residual_claims: progressiveExtraction.residualClaims,
+      extraction_audit: progressiveExtraction.audit,
+      extraction_progress: progressiveExtraction.progress,
       source_contract: INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT,
       required_artifacts: [...INITIAL_DESIGN_SYSTEM_REQUIRED_ARTIFACTS],
       declared_artifacts: listDeclaredArtifacts(projectPath)
@@ -647,84 +570,619 @@ export function claimInitialDesignSystemPreparation(
   }
 }
 
-export function recordDesignSystemExtractionManifest(
+
+type ProgressiveExtractionFailure = {
+  ok: false;
+  reason:
+    | "invalid_work_unit"
+    | "duplicate_claim_id"
+    | "invalid_manifest_source"
+    | "claim_confidence_exceeds_source"
+    | "work_unit_artifact_not_ingested"
+    | "work_unit_target_out_of_scope"
+    | "component_work_unit_mismatch"
+    | "component_capture_missing"
+    | "manifest_target_not_found"
+    | "manifest_target_field_not_found"
+    | "invalid_audit"
+    | "input_coverage_incomplete"
+    | "manifest_audit_incomplete"
+    | "stale_alignment_attempt"
+    | "initial_design_system_command_not_claimed"
+    | "idempotency_conflict"
+    | "db_error";
+  details?: Record<string, unknown>;
+};
+
+function progressiveManifestFromRow(
+  row: Record<string, unknown> | undefined
+): ProgressiveDesignSystemExtractionManifest {
+  if (!row) {
+    return {
+      schemaVersion: 2,
+      workUnits: [],
+      residualClaims: [],
+      audit: null
+    };
+  }
+  const parsed = JSON.parse(String(row.manifest_json)) as unknown;
+  if (
+    !isRecord(parsed) ||
+    parsed.schemaVersion !== 2 ||
+    !Array.isArray(parsed.workUnits) ||
+    !Array.isArray(parsed.residualClaims)
+  ) {
+    throw new Error("legacy_extraction_manifest_not_supported");
+  }
+  return parsed as unknown as ProgressiveDesignSystemExtractionManifest;
+}
+
+function extractionWorkUnitKey(
+  definition: DesignSystemExtractionWorkUnitDefinition
+): string {
+  return definition.kind === "component"
+    ? `component:${definition.componentEntryId}`
+    : definition.kind;
+}
+
+function workUnitArtifactPaths(
+  definition: DesignSystemExtractionWorkUnitDefinition
+): string[] {
+  if (definition.kind === "global") {
+    return ["design-system/design-system.json"];
+  }
+  if (definition.kind === "tokens") {
+    return ["design-system/token.json"];
+  }
+  if (definition.kind === "layout") {
+    return ["design-system/layout-rules.json"];
+  }
+  if (definition.kind === "interaction") {
+    return ["design-system/interaction-rules.json"];
+  }
+  return [
+    "design-system/component-list.json",
+    ...(definition.specArtifactPath ? [definition.specArtifactPath] : [])
+  ];
+}
+
+function missingComponentCaptures(
   projectPath: string,
-  rawInput: unknown
+  specEntries: DesignSystemEntryKeyRow[]
+): Array<{ entry_id: string; artifact_path: string }> {
+  return specEntries.flatMap((entry) => {
+    const value = JSON.parse(entry.value_json) as Record<string, unknown>;
+    const captures =
+      value.sourceCaptures === undefined
+        ? []
+        : Array.isArray(value.sourceCaptures)
+          ? value.sourceCaptures
+          : [value.sourceCaptures];
+    return captures.flatMap((capture) => {
+      const artifactPath =
+        isRecord(capture) && typeof capture.artifactPath === "string"
+          ? capture.artifactPath
+          : "";
+      const absolutePath = artifactPath
+        ? resolveProjectArtifactPath(projectPath, artifactPath)
+        : null;
+      let isFile = false;
+      try {
+        isFile =
+          absolutePath !== null &&
+          existsSync(absolutePath) &&
+          statSync(absolutePath).isFile();
+      } catch {
+        isFile = false;
+      }
+      return isFile
+        ? []
+        : [{ entry_id: entry.entry_id, artifact_path: artifactPath }];
+    });
+  });
+}
+
+function progressiveExtractionProgress(
+  frozenInput: FrozenInitialDesignSystemInput,
+  manifest: ProgressiveDesignSystemExtractionManifest,
+  expectedComponentWorkUnitKeys: string[] = []
+): DesignSystemExtractionProgress {
+  const claims = [
+    ...manifest.workUnits.flatMap((workUnit) => workUnit.claims),
+    ...manifest.residualClaims
+  ];
+  const consumed = new Set(claims.flatMap((claim) => claim.sourceRecordIds));
+  const remainingQuestionCardIds = frozenInput.question_cards
+    .filter((card) => card.status === "answered" && !consumed.has(card.id))
+    .map((card) => card.id);
+  const remainingAgentAnnotationIds = frozenInput.annotations
+    .filter((annotation) => !consumed.has(annotation.id))
+    .map((annotation) => annotation.id);
+  const remainingDesignerAnnotationIds = frozenInput.designer_annotations
+    .filter((annotation) => !consumed.has(annotation.id))
+    .map((annotation) => annotation.id);
+  const auditStatus = manifest.audit?.status ?? "pending";
+  const completedWorkUnitKeys = manifest.workUnits.map(
+    (workUnit) => workUnit.key
+  );
+  const requiredUnitsComplete = [
+    "global",
+    "tokens",
+    "layout",
+    "interaction",
+    ...expectedComponentWorkUnitKeys
+  ].every((key) => completedWorkUnitKeys.includes(key));
+  const hasConflict = claims.some((claim) => claim.outcome === "conflict");
+  return {
+    completedWorkUnitKeys,
+    consumedSourceRecordIds: [...consumed],
+    remainingQuestionCardIds,
+    remainingAgentAnnotationIds,
+    remainingDesignerAnnotationIds,
+    auditStatus,
+    readyToFinalize:
+      auditStatus === "passed" &&
+      (manifest.audit?.issues.length ?? 0) === 0 &&
+      requiredUnitsComplete &&
+      !hasConflict &&
+      remainingQuestionCardIds.length === 0 &&
+      remainingAgentAnnotationIds.length === 0 &&
+      remainingDesignerAnnotationIds.length === 0
+  };
+}
+
+function componentWorkUnitKeys(entries: DesignSystemEntryKeyRow[]): string[] {
+  return entries
+    .filter((entry) => entry.section === "components.inventory")
+    .map((entry) => `component:${entry.entry_id}`);
+}
+
+function componentWorkUnitKeysOnDb(db: DatabaseType): string[] {
+  const entries = db
+    .prepare(
+      `SELECT entry_id FROM design_system_entries
+       WHERE section = 'components.inventory'
+       ORDER BY entry_id ASC`
+    )
+    .all() as Array<{ entry_id: string }>;
+  return entries.map((entry) => `component:${entry.entry_id}`);
+}
+
+function progressiveClaimShapeFailure(
+  claims: DesignSystemExtractionWorkUnitClaimInput[]
+): ProgressiveExtractionFailure | null {
+  if (!Array.isArray(claims) || claims.length === 0) {
+    return { ok: false, reason: "invalid_work_unit" };
+  }
+  const seen = new Set<string>();
+  for (const claim of claims) {
+    if (
+      "section" in claim ||
+      !nonEmptyString(claim.claimId) ||
+      !nonEmptyString(claim.statement) ||
+      !stringArray(claim.sourceRecordIds) ||
+      claim.sourceRecordIds.length === 0 ||
+      !stringArray(claim.sourceExcerpts) ||
+      claim.sourceExcerpts.length === 0 ||
+      (claim.confidence !== "confirmed" && claim.confidence !== "reasonable") ||
+      !["mapped", "conflict", "omitted", "gap"].includes(claim.outcome) ||
+      !Array.isArray(claim.targets)
+    ) {
+      return { ok: false, reason: "invalid_work_unit" };
+    }
+    if (seen.has(claim.claimId)) {
+      return {
+        ok: false,
+        reason: "duplicate_claim_id",
+        details: { claim_id: claim.claimId }
+      };
+    }
+    seen.add(claim.claimId);
+    const needsTarget = claim.outcome === "mapped" || claim.outcome === "gap";
+    if (needsTarget && claim.targets.length === 0) {
+      return { ok: false, reason: "invalid_work_unit" };
+    }
+    if (
+      (claim.outcome === "omitted" || claim.outcome === "conflict") &&
+      !nonEmptyString(claim.reason)
+    ) {
+      return { ok: false, reason: "invalid_work_unit" };
+    }
+    for (const target of claim.targets) {
+      if (
+        "jsonPointer" in target ||
+        !nonEmptyString(target.artifactPath) ||
+        !nonEmptyString(target.entryId) ||
+        (target.fieldPath !== undefined &&
+          (!Array.isArray(target.fieldPath) ||
+            target.fieldPath.some((segment) => !nonEmptyString(segment))))
+      ) {
+        return { ok: false, reason: "invalid_work_unit" };
+      }
+    }
+  }
+  return null;
+}
+
+function resolveProgressiveWorkUnit(
+  entries: DesignSystemEntryKeyRow[],
+  stored: StoredDesignSystemExtractionWorkUnit
+):
+  | {
+      ok: true;
+      workUnit: DesignSystemExtractionWorkUnitRecord;
+    }
+  | ProgressiveExtractionFailure {
+  const entriesByKey = new Map(
+    entries.map((entry) => [entryKey(entry.source_artifact_path, entry.entry_id), entry])
+  );
+  const claims: DesignSystemExtractionWorkUnitClaim[] = [];
+  for (const claim of stored.claims) {
+    const targets: DesignSystemExtractionWorkUnitTarget[] = [];
+    for (const target of claim.targets) {
+      const entry = entriesByKey.get(entryKey(target.artifactPath, target.entryId));
+      if (!entry) {
+        return {
+          ok: false,
+          reason: "manifest_target_not_found",
+          details: {
+            claim_id: claim.claimId,
+            artifact_path: target.artifactPath,
+            entry_id: target.entryId
+          }
+        };
+      }
+      if (target.fieldPath && target.fieldPath.length > 0) {
+        let current: unknown = {
+          value: JSON.parse(entry.value_json) as unknown,
+          status: entry.status,
+          links: JSON.parse(entry.links_json) as unknown
+        };
+        for (const segment of target.fieldPath) {
+          if (
+            !isRecord(current) ||
+            !Object.prototype.hasOwnProperty.call(current, segment)
+          ) {
+            return {
+              ok: false,
+              reason: "manifest_target_field_not_found",
+              details: {
+                claim_id: claim.claimId,
+                artifact_path: target.artifactPath,
+                entry_id: target.entryId,
+                field_path: target.fieldPath
+              }
+            };
+          }
+          current = current[segment];
+        }
+      }
+      const fieldSuffix = (target.fieldPath ?? [])
+        .map((segment) => `/${jsonPointerSegment(segment)}`)
+        .join("");
+      targets.push({
+        ...target,
+        jsonPointer: `${expectedJsonPointer(entry)}${fieldSuffix}`
+      });
+    }
+    claims.push({ ...claim, targets });
+  }
+  return {
+    ok: true,
+    workUnit: {
+      key: stored.key,
+      kind: stored.kind,
+      definition: stored.definition,
+      claims,
+      version: stored.version,
+      createdAt: stored.createdAt,
+      updatedAt: stored.updatedAt
+    }
+  };
+}
+
+function progressiveExtractionStateOnDb(
+  db: DatabaseType,
+  frozenInput: FrozenInitialDesignSystemInput,
+  alignmentAttemptId: string
+): {
+  workUnits: DesignSystemExtractionWorkUnitRecoveryRecord[];
+  residualClaims: DesignSystemExtractionWorkUnitClaimInput[];
+  audit: DesignSystemExtractionAudit | null;
+  progress: DesignSystemExtractionProgress;
+} {
+  const row = db
+    .prepare(
+      `SELECT * FROM design_system_extraction_manifests
+       WHERE alignment_attempt_id = ?`
+    )
+    .get(alignmentAttemptId) as Record<string, unknown> | undefined;
+  const manifest = progressiveManifestFromRow(row);
+  const entries = db
+    .prepare(
+      `SELECT source_artifact_path, entry_id, section, name, kind, domain,
+              status, links_json, value_json, position
+       FROM design_system_entries`
+    )
+    .all() as unknown as DesignSystemEntryKeyRow[];
+  const workUnits = manifest.workUnits.map((stored) => {
+    const resolved = resolveProgressiveWorkUnit(entries, stored);
+    if (!resolved.ok) {
+      return {
+        ...stored,
+        resolutionError: {
+          reason:
+            resolved.reason === "manifest_target_field_not_found"
+              ? "manifest_target_field_not_found"
+              : "manifest_target_not_found",
+          ...(resolved.details ? { details: resolved.details } : {})
+        }
+      } satisfies DesignSystemExtractionWorkUnitRecoveryRecord;
+    }
+    return resolved.workUnit;
+  });
+  const progress = progressiveExtractionProgress(
+    frozenInput,
+    manifest,
+    componentWorkUnitKeys(entries)
+  );
+  const hasResolutionError = workUnits.some(
+    (workUnit) => "resolutionError" in workUnit
+  );
+  return {
+    workUnits,
+    residualClaims: manifest.residualClaims,
+    audit: manifest.audit,
+    progress: hasResolutionError
+      ? { ...progress, readyToFinalize: false }
+      : progress
+  };
+}
+
+/**
+ * Record or replace one progressive output work unit after its artifacts have
+ * been declared and ingested. Evidence may span Alignment sections; the
+ * Runtime derives source placement from record ids and output placement from
+ * stable artifact/entry identities.
+ */
+export function recordDesignSystemExtractionWorkUnit(
+  projectPath: string,
+  rawInput: RecordDesignSystemExtractionWorkUnitInput
 ):
   | {
       ok: true;
       reused: boolean;
-      manifest: DesignSystemExtractionManifestRecord;
+      retired?: false;
+      work_unit: DesignSystemExtractionWorkUnitRecord;
+      progress: DesignSystemExtractionProgress;
       event_id: string | null;
     }
-  | ManifestValidationFailure {
-  const validated = validateManifestShape(rawInput);
-  if (!validated.ok) return validated;
-  const input = validated.input;
+  | {
+      ok: true;
+      reused: boolean;
+      retired: true;
+      work_unit_key: string;
+      progress: DesignSystemExtractionProgress;
+      event_id: string | null;
+    }
+  | ProgressiveExtractionFailure {
+  if (
+    !isRecord(rawInput) ||
+    !nonEmptyString(rawInput.alignmentAttemptId) ||
+    !nonEmptyString(rawInput.idempotencyKey) ||
+    !isRecord(rawInput.workUnit) ||
+    !(DESIGN_SYSTEM_EXTRACTION_WORK_UNIT_KINDS as readonly string[]).includes(
+      String(rawInput.workUnit.kind)
+    )
+  ) {
+    return { ok: false, reason: "invalid_work_unit" };
+  }
+  const input = rawInput;
+  const definition = input.workUnit;
+  if (
+    definition.kind === "component" &&
+    !nonEmptyString(definition.componentEntryId)
+  ) {
+    return { ok: false, reason: "invalid_work_unit" };
+  }
+  const retiring =
+    definition.kind === "component" && definition.retire === true;
+  if (
+    retiring
+      ? !Array.isArray(input.claims) ||
+        input.claims.length !== 0 ||
+        definition.specArtifactPath !== undefined
+      : progressiveClaimShapeFailure(input.claims) !== null
+  ) {
+    return { ok: false, reason: "invalid_work_unit" };
+  }
+  const workUnitKey = extractionWorkUnitKey(definition);
+  const requestJson = JSON.stringify({
+    type: "work-unit",
+    workUnitKey,
+    definition,
+    claims: input.claims
+  });
 
   try {
-    const manifestJson = JSON.stringify({
-      claims: input.claims,
-      audit: input.audit
-    });
     const result = withProjectTransaction(projectPath, (db) => {
       const state = getAlignmentPreparationOnDb(db);
       const attempt = state.current_attempt;
       const command = state.commands.find(
-        (candidate) =>
-          candidate.command_type === "prepare_initial_design_system"
+        (candidate) => candidate.command_type === "prepare_initial_design_system"
       );
       if (!attempt || attempt.id !== input.alignmentAttemptId || !command) {
-        return {
-          ok: false,
-          reason: "stale_alignment_attempt"
-        } as ManifestValidationFailure;
-      }
-      const priorRequest = db
-        .prepare(
-          `SELECT * FROM design_system_extraction_manifest_requests
-           WHERE alignment_attempt_id = ? AND idempotency_key = ?`
-        )
-        .get(
-          input.alignmentAttemptId,
-          input.idempotencyKey
-        ) as Record<string, unknown> | undefined;
-      if (priorRequest) {
-        if (String(priorRequest.manifest_json) !== manifestJson) {
-          return {
-            ok: false,
-            reason: "idempotency_conflict"
-          } as ManifestValidationFailure;
-        }
-        return {
-          ok: true as const,
-          reused: true,
-          manifest: mapManifestRequestRow(priorRequest),
-          event_id: null
-        };
+        return { ok: false, reason: "stale_alignment_attempt" } as const;
       }
       if (command.status !== "claimed") {
         return {
           ok: false,
           reason: "initial_design_system_command_not_claimed"
-        } as ManifestValidationFailure;
+        } as const;
       }
       const frozenInput = ensureFrozenInputOnDb(db, state, command);
-      const sourceSections = new Map<string, string | null>([
-        ...frozenInput.question_cards.map(
-          (card) => [card.id, card.section] as const
-        ),
-        ...frozenInput.annotations.map(
-          (annotation) => [annotation.id, annotation.section] as const
-        ),
-        ...frozenInput.designer_annotations.map(
-          (annotation) => [annotation.id, annotation.section] as const
+      const existingRow = db
+        .prepare(
+          `SELECT * FROM design_system_extraction_manifests
+           WHERE alignment_attempt_id = ?`
         )
-      ]);
+        .get(input.alignmentAttemptId) as Record<string, unknown> | undefined;
+      const manifest = progressiveManifestFromRow(existingRow);
+      const priorRequest = db
+        .prepare(
+          `SELECT manifest_json FROM design_system_extraction_manifest_requests
+           WHERE alignment_attempt_id = ? AND idempotency_key = ?`
+        )
+        .get(input.alignmentAttemptId, input.idempotencyKey) as
+        | { manifest_json: string }
+        | undefined;
+      if (priorRequest) {
+        const recordedRequest = JSON.parse(priorRequest.manifest_json) as {
+          request?: unknown;
+          workUnit?: StoredDesignSystemExtractionWorkUnit;
+          retiredWorkUnitKey?: string;
+        };
+        if (recordedRequest.request !== requestJson) {
+          return { ok: false, reason: "idempotency_conflict" } as const;
+        }
+        const entries = db
+          .prepare(
+            `SELECT source_artifact_path, entry_id, section, name, kind, domain,
+                    status, links_json, value_json, position
+             FROM design_system_entries`
+          )
+          .all() as unknown as DesignSystemEntryKeyRow[];
+        if (recordedRequest.retiredWorkUnitKey) {
+          return {
+            ok: true as const,
+            reused: true,
+            retired: true as const,
+            work_unit_key: recordedRequest.retiredWorkUnitKey,
+            progress: progressiveExtractionProgress(
+              frozenInput,
+              manifest,
+              componentWorkUnitKeys(entries)
+            ),
+            event_id: null
+          };
+        }
+        const stored = recordedRequest.workUnit;
+        if (!stored) return { ok: false, reason: "db_error" } as const;
+        const resolved = resolveProgressiveWorkUnit(entries, stored);
+        if (!resolved.ok) return resolved;
+        return {
+          ok: true as const,
+          reused: true,
+          work_unit: resolved.workUnit,
+          progress: progressiveExtractionProgress(
+            frozenInput,
+            manifest,
+            componentWorkUnitKeys(entries)
+          ),
+          event_id: null
+        };
+      }
+
+      if (retiring) {
+        const previous = manifest.workUnits.find(
+          (unit) => unit.key === workUnitKey
+        );
+        if (!previous || !existingRow) {
+          return {
+            ok: false,
+            reason: "component_work_unit_mismatch",
+            details: {
+              component_entry_id: definition.componentEntryId,
+              problem: "work_unit_not_found"
+            }
+          } as const;
+        }
+        const now = new Date().toISOString();
+        const retiredSpecArtifactPath =
+          previous.definition.kind === "component"
+            ? previous.definition.specArtifactPath
+            : undefined;
+        const specStillOwned =
+          retiredSpecArtifactPath !== undefined &&
+          manifest.workUnits.some(
+            (unit) =>
+              unit.key !== workUnitKey &&
+              unit.definition.kind === "component" &&
+              unit.definition.specArtifactPath === retiredSpecArtifactPath
+          );
+        manifest.workUnits = manifest.workUnits.filter(
+          (unit) => unit.key !== workUnitKey
+        );
+        manifest.residualClaims = [];
+        manifest.audit = null;
+        if (retiredSpecArtifactPath && !specStillOwned) {
+          db.prepare(
+            "DELETE FROM design_system_entries WHERE source_artifact_path = ?"
+          ).run(retiredSpecArtifactPath);
+          db.prepare(
+            `DELETE FROM source_artifacts
+             WHERE path = ? AND artifact_type = 'component-spec'`
+          ).run(retiredSpecArtifactPath);
+        }
+        const id = String(existingRow.id);
+        const aggregateVersion = Number(existingRow.version) + 1;
+        const manifestJson = JSON.stringify(manifest);
+        db.prepare(
+          `UPDATE design_system_extraction_manifests
+           SET idempotency_key = ?, manifest_json = ?, version = ?, updated_at = ?
+           WHERE id = ?`
+        ).run(input.idempotencyKey, manifestJson, aggregateVersion, now, id);
+        db.prepare(
+          `INSERT INTO design_system_extraction_manifest_requests
+           (alignment_attempt_id, idempotency_key, manifest_id, agent_command_id,
+            manifest_json, manifest_version, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+          input.alignmentAttemptId,
+          input.idempotencyKey,
+          id,
+          command.id,
+          JSON.stringify({ request: requestJson, retiredWorkUnitKey: workUnitKey }),
+          aggregateVersion,
+          now
+        );
+        const event = logEventOnDb(
+          db,
+          "design_system_extraction_work_unit_recorded",
+          {
+            alignment_attempt_id: input.alignmentAttemptId,
+            agent_command_id: command.id,
+            manifest_id: id,
+            manifest_version: aggregateVersion,
+            work_unit_key: workUnitKey,
+            action: "retired",
+            retired_spec_artifact_path: retiredSpecArtifactPath ?? null,
+            claim_count: 0
+          }
+        );
+        const entries = db
+          .prepare(
+            `SELECT source_artifact_path, entry_id, section, name, kind, domain,
+                    status, links_json, value_json, position
+             FROM design_system_entries`
+          )
+          .all() as unknown as DesignSystemEntryKeyRow[];
+        return {
+          ok: true as const,
+          reused: false,
+          retired: true as const,
+          work_unit_key: workUnitKey,
+          progress: progressiveExtractionProgress(
+            frozenInput,
+            manifest,
+            componentWorkUnitKeys(entries)
+          ),
+          event_id: event.event_id
+        };
+      }
+
       const sourceConfidence = new Map<string, "confirmed" | "reasonable">([
-        ...frozenInput.question_cards.map(
-          (card) => [card.id, "confirmed"] as const
-        ),
+        ...frozenInput.question_cards.map((card) => [card.id, "confirmed"] as const),
         ...frozenInput.annotations.map(
           (annotation) => [annotation.id, annotation.inference] as const
         ),
@@ -732,23 +1190,15 @@ export function recordDesignSystemExtractionManifest(
           (annotation) => [annotation.id, "confirmed"] as const
         )
       ]);
-      const usedSourceIds = new Set<string>();
       for (const claim of input.claims) {
         for (const sourceId of claim.sourceRecordIds) {
-          if (
-            !sourceSections.has(sourceId) ||
-            sourceSections.get(sourceId) !== claim.section
-          ) {
+          if (!sourceConfidence.has(sourceId)) {
             return {
               ok: false,
               reason: "invalid_manifest_source",
-              details: {
-                claim_id: claim.claimId,
-                source_record_id: sourceId
-              }
-            } as ManifestValidationFailure;
+              details: { claim_id: claim.claimId, source_record_id: sourceId }
+            } as const;
           }
-          usedSourceIds.add(sourceId);
         }
         if (
           claim.confidence === "confirmed" &&
@@ -759,91 +1209,241 @@ export function recordDesignSystemExtractionManifest(
           return {
             ok: false,
             reason: "claim_confidence_exceeds_source",
-            details: {
-              claim_id: claim.claimId,
-              reasonable_source_record_ids: claim.sourceRecordIds.filter(
-                (sourceId) => sourceConfidence.get(sourceId) === "reasonable"
-              )
-            }
-          } as ManifestValidationFailure;
+            details: { claim_id: claim.claimId }
+          } as const;
         }
       }
 
-      const missingQuestionCardIds = frozenInput.question_cards
-        .filter(
-          (card) => card.status === "answered" && !usedSourceIds.has(card.id)
-        )
-        .map((card) => card.id);
-      const missingAgentAnnotationIds = frozenInput.annotations
-        .filter((annotation) => !usedSourceIds.has(annotation.id))
-        .map((annotation) => annotation.id);
-      const missingDesignerAnnotationIds = frozenInput.designer_annotations
-        .filter((annotation) => !usedSourceIds.has(annotation.id))
-        .map((annotation) => annotation.id);
-      if (
-        missingQuestionCardIds.length > 0 ||
-        missingAgentAnnotationIds.length > 0 ||
-        missingDesignerAnnotationIds.length > 0
-      ) {
+      const otherClaimIds = new Set(
+        manifest.workUnits
+          .filter((unit) => unit.key !== workUnitKey)
+          .flatMap((unit) => unit.claims.map((claim) => claim.claimId))
+          .concat(manifest.residualClaims.map((claim) => claim.claimId))
+      );
+      const duplicate = input.claims.find((claim) => otherClaimIds.has(claim.claimId));
+      if (duplicate) {
         return {
           ok: false,
-          reason: "input_coverage_incomplete",
-          details: {
-            missing_question_card_ids: missingQuestionCardIds,
-            missing_agent_annotation_ids: missingAgentAnnotationIds,
-            missing_designer_annotation_ids: missingDesignerAnnotationIds
-          }
-        } as ManifestValidationFailure;
+          reason: "duplicate_claim_id",
+          details: { claim_id: duplicate.claimId }
+        } as const;
       }
 
-      const existing = db
-        .prepare(
-          `SELECT * FROM design_system_extraction_manifests
-           WHERE alignment_attempt_id = ?`
+      const allowedArtifacts = new Set(workUnitArtifactPaths(definition));
+      const outOfScope = input.claims
+        .flatMap((claim) => claim.targets.map((target) => ({ claim, target })))
+        .find(({ target }) => !allowedArtifacts.has(target.artifactPath));
+      if (outOfScope) {
+        return {
+          ok: false,
+          reason: "work_unit_target_out_of_scope",
+          details: {
+            claim_id: outOfScope.claim.claimId,
+            artifact_path: outOfScope.target.artifactPath,
+            work_unit_key: workUnitKey
+          }
+        } as const;
+      }
+      const invalidFieldTarget = input.claims
+        .flatMap((claim) =>
+          claim.targets.map((target) => ({ claim, target }))
         )
-        .get(input.alignmentAttemptId) as Record<string, unknown> | undefined;
-      if (
-        existing &&
-        String(existing.idempotency_key) === input.idempotencyKey
-      ) {
-        if (String(existing.manifest_json) !== manifestJson) {
+        .find(
+          ({ claim, target }) =>
+            target.fieldPath !== undefined &&
+            (definition.kind !== "component" ||
+              claim.outcome !== "omitted" ||
+              target.artifactPath !== definition.specArtifactPath ||
+              target.fieldPath.length !== 2 ||
+              target.fieldPath[0] !== "value" ||
+              !(RICH_COMPONENT_SPEC_FIELDS as readonly string[]).includes(
+                target.fieldPath[1] ?? ""
+              ))
+        );
+      if (invalidFieldTarget) {
+        return {
+          ok: false,
+          reason: "invalid_work_unit",
+          details: {
+            claim_id: invalidFieldTarget.claim.claimId,
+            field_path: invalidFieldTarget.target.fieldPath,
+            expected:
+              "omitted component-spec target with fieldPath ['value', <component field>]"
+          }
+        } as const;
+      }
+      const artifactRows = db
+        .prepare("SELECT path, status FROM source_artifacts")
+        .all() as Array<{ path: string; status: string }>;
+      const artifacts = new Map(artifactRows.map((row) => [row.path, row.status]));
+      const missingArtifact = [...allowedArtifacts].find(
+        (artifactPath) => artifacts.get(artifactPath) !== "ingested"
+      );
+      if (missingArtifact) {
+        return {
+          ok: false,
+          reason: "work_unit_artifact_not_ingested",
+          details: { artifact_path: missingArtifact, work_unit_key: workUnitKey }
+        } as const;
+      }
+
+      const entries = db
+        .prepare(
+          `SELECT source_artifact_path, entry_id, section, name, kind, domain,
+                  status, links_json, value_json, position
+           FROM design_system_entries`
+        )
+        .all() as unknown as DesignSystemEntryKeyRow[];
+      if (definition.kind === "component") {
+        const inventoryEntry = entries.find(
+          (entry) =>
+            entry.source_artifact_path === "design-system/component-list.json" &&
+            entry.section === "components.inventory" &&
+            entry.entry_id === definition.componentEntryId
+        );
+        if (!inventoryEntry) {
           return {
             ok: false,
-            reason: "idempotency_conflict"
-          } as ManifestValidationFailure;
+            reason: "component_work_unit_mismatch",
+            details: {
+              component_entry_id: definition.componentEntryId,
+              problem: "inventory_entry_not_found"
+            }
+          } as const;
         }
-        db.prepare(
-          `INSERT OR IGNORE INTO design_system_extraction_manifest_requests
-           (alignment_attempt_id, idempotency_key, manifest_id,
-            agent_command_id, manifest_json, manifest_version, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).run(
-          input.alignmentAttemptId,
-          input.idempotencyKey,
-          String(existing.id),
-          command.id,
-          manifestJson,
-          Number(existing.version),
-          String(existing.updated_at)
-        );
-        return {
-          ok: true as const,
-          reused: true,
-          manifest: mapManifestRow(existing),
-          event_id: null
+        const inventoryValue = JSON.parse(inventoryEntry.value_json) as {
+          specPath?: unknown;
         };
+        const declaredSpecPath =
+          typeof inventoryValue.specPath === "string"
+            ? inventoryValue.specPath
+            : "";
+        const specEntries = definition.specArtifactPath
+          ? entries.filter(
+              (entry) =>
+                entry.source_artifact_path === definition.specArtifactPath &&
+                entry.section === "components.spec"
+            )
+          : [];
+        if (
+          inventoryEntry.status !== "gap" &&
+          (!definition.specArtifactPath ||
+            !specPathMatchesSourceArtifact(
+              declaredSpecPath,
+              definition.specArtifactPath
+            ) ||
+            specEntries.length !== 1)
+        ) {
+          return {
+            ok: false,
+            reason: "component_work_unit_mismatch",
+            details: {
+              component_entry_id: definition.componentEntryId,
+              spec_path: declaredSpecPath,
+              spec_artifact_path: definition.specArtifactPath ?? null,
+              problem: "inventory_spec_pair_missing"
+            }
+          } as const;
+        }
+        const missingCaptures = missingComponentCaptures(
+          projectPath,
+          specEntries
+        );
+        if (missingCaptures.length > 0) {
+          return {
+            ok: false,
+            reason: "component_capture_missing",
+            details: { captures: missingCaptures }
+          } as const;
+        }
+        const foreignTarget = input.claims
+          .flatMap((claim) =>
+            claim.targets.map((target) => ({ claimId: claim.claimId, target }))
+          )
+          .find(({ target }) => {
+            if (target.artifactPath === "design-system/component-list.json") {
+              return target.entryId !== definition.componentEntryId;
+            }
+            if (target.artifactPath === definition.specArtifactPath) {
+              return !specEntries.some(
+                (entry) => entry.entry_id === target.entryId
+              );
+            }
+            return false;
+          });
+        if (foreignTarget) {
+          return {
+            ok: false,
+            reason: "component_work_unit_mismatch",
+            details: {
+              component_entry_id: definition.componentEntryId,
+              claim_id: foreignTarget.claimId,
+              artifact_path: foreignTarget.target.artifactPath,
+              entry_id: foreignTarget.target.entryId,
+              problem: "target_owned_by_another_component"
+            }
+          } as const;
+        }
+        const targetedKeys = new Set(
+          input.claims.flatMap((claim) =>
+            claim.targets.map((target) =>
+              entryKey(target.artifactPath, target.entryId)
+            )
+          )
+        );
+        const inventoryTargeted = targetedKeys.has(
+          entryKey(
+            "design-system/component-list.json",
+            definition.componentEntryId
+          )
+        );
+        const specTargeted =
+          inventoryEntry.status === "gap" ||
+          specEntries.some((entry) =>
+            targetedKeys.has(
+              entryKey(entry.source_artifact_path, entry.entry_id)
+            )
+          );
+        if (!inventoryTargeted || !specTargeted) {
+          return {
+            ok: false,
+            reason: "component_work_unit_mismatch",
+            details: {
+              component_entry_id: definition.componentEntryId,
+              problem: "inventory_and_spec_must_be_targeted"
+            }
+          } as const;
+        }
       }
-
       const now = new Date().toISOString();
-      const id = existing ? String(existing.id) : randomUUID();
-      const version = existing ? Number(existing.version) + 1 : 1;
-      if (existing) {
+      const previous = manifest.workUnits.find((unit) => unit.key === workUnitKey);
+      const stored: StoredDesignSystemExtractionWorkUnit = {
+        key: workUnitKey,
+        kind: definition.kind,
+        definition,
+        claims: input.claims,
+        version: (previous?.version ?? 0) + 1,
+        createdAt: previous?.createdAt ?? now,
+        updatedAt: now
+      };
+      const resolved = resolveProgressiveWorkUnit(entries, stored);
+      if (!resolved.ok) return resolved;
+
+      manifest.workUnits = [
+        ...manifest.workUnits.filter((unit) => unit.key !== workUnitKey),
+        stored
+      ];
+      manifest.residualClaims = [];
+      manifest.audit = null;
+      const id = existingRow ? String(existingRow.id) : randomUUID();
+      const aggregateVersion = existingRow ? Number(existingRow.version) + 1 : 1;
+      const manifestJson = JSON.stringify(manifest);
+      if (existingRow) {
         db.prepare(
           `UPDATE design_system_extraction_manifests
-           SET idempotency_key = ?, manifest_json = ?, version = ?,
-               updated_at = ?
+           SET idempotency_key = ?, manifest_json = ?, version = ?, updated_at = ?
            WHERE id = ?`
-        ).run(input.idempotencyKey, manifestJson, version, now, id);
+        ).run(input.idempotencyKey, manifestJson, aggregateVersion, now, id);
       } else {
         db.prepare(
           `INSERT INTO design_system_extraction_manifests
@@ -856,45 +1456,43 @@ export function recordDesignSystemExtractionManifest(
           command.id,
           input.idempotencyKey,
           manifestJson,
-          version,
+          aggregateVersion,
           now,
           now
         );
       }
-      const event = logEventOnDb(
-        db,
-        "design_system_extraction_manifest_recorded",
-        {
-          alignment_attempt_id: input.alignmentAttemptId,
-          agent_command_id: command.id,
-          manifest_id: id,
-          manifest_version: version,
-          claim_count: input.claims.length
-        }
-      );
       db.prepare(
         `INSERT INTO design_system_extraction_manifest_requests
-         (alignment_attempt_id, idempotency_key, manifest_id,
-          agent_command_id, manifest_json, manifest_version, created_at)
+         (alignment_attempt_id, idempotency_key, manifest_id, agent_command_id,
+          manifest_json, manifest_version, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`
       ).run(
         input.alignmentAttemptId,
         input.idempotencyKey,
         id,
         command.id,
-        manifestJson,
-        version,
+        JSON.stringify({ request: requestJson, workUnit: stored }),
+        aggregateVersion,
         now
       );
-      const stored = db
-        .prepare(
-          "SELECT * FROM design_system_extraction_manifests WHERE id = ?"
-        )
-        .get(id) as Record<string, unknown>;
+      const event = logEventOnDb(db, "design_system_extraction_work_unit_recorded", {
+        alignment_attempt_id: input.alignmentAttemptId,
+        agent_command_id: command.id,
+        manifest_id: id,
+        manifest_version: aggregateVersion,
+        work_unit_key: workUnitKey,
+        work_unit_version: stored.version,
+        claim_count: stored.claims.length
+      });
       return {
         ok: true as const,
         reused: false,
-        manifest: mapManifestRow(stored),
+        work_unit: resolved.workUnit,
+        progress: progressiveExtractionProgress(
+          frozenInput,
+          manifest,
+          componentWorkUnitKeys(entries)
+        ),
         event_id: event.event_id
       };
     });
@@ -902,8 +1500,267 @@ export function recordDesignSystemExtractionManifest(
     if (result.ok && !result.reused) {
       emitRecordEvent({
         kind: "design-system",
+        action: result.retired ? "deleted" : "updated",
+        id: result.retired ? result.work_unit_key : result.work_unit.key,
+        projectPath: path.resolve(projectPath)
+      });
+    }
+    return result;
+  } catch {
+    return { ok: false, reason: "db_error" };
+  }
+}
+
+/** Record the final residual classifications and global extraction audit. */
+export function recordDesignSystemExtractionAudit(
+  projectPath: string,
+  rawInput: RecordDesignSystemExtractionAuditInput
+):
+  | {
+      ok: true;
+      reused: boolean;
+      audit: DesignSystemExtractionAudit;
+      residual_claims: DesignSystemExtractionWorkUnitClaimInput[];
+      progress: DesignSystemExtractionProgress;
+      event_id: string | null;
+    }
+  | ProgressiveExtractionFailure {
+  if (
+    !isRecord(rawInput) ||
+    !nonEmptyString(rawInput.alignmentAttemptId) ||
+    !nonEmptyString(rawInput.idempotencyKey) ||
+    !Array.isArray(rawInput.residualClaims) ||
+    !isRecord(rawInput.audit) ||
+    (rawInput.audit.status !== "passed" && rawInput.audit.status !== "failed") ||
+    !stringArray(rawInput.audit.checkedClaimIds) ||
+    !stringArray(rawInput.audit.issues, true)
+  ) {
+    return { ok: false, reason: "invalid_audit" };
+  }
+  if (rawInput.residualClaims.length > 0) {
+    const shapeFailure = progressiveClaimShapeFailure(rawInput.residualClaims);
+    if (shapeFailure) return shapeFailure;
+  }
+  const invalidResidual = rawInput.residualClaims.find(
+    (claim) =>
+      (claim.outcome !== "omitted" && claim.outcome !== "conflict") ||
+      claim.targets.length > 0
+  );
+  if (invalidResidual) {
+    return {
+      ok: false,
+      reason: "invalid_audit",
+      details: { claim_id: invalidResidual.claimId }
+    };
+  }
+  const input = rawInput;
+  const requestJson = JSON.stringify({
+    type: "audit",
+    residualClaims: input.residualClaims,
+    audit: input.audit
+  });
+
+  try {
+    const result = withProjectTransaction(projectPath, (db) => {
+      const state = getAlignmentPreparationOnDb(db);
+      const attempt = state.current_attempt;
+      const command = state.commands.find(
+        (candidate) => candidate.command_type === "prepare_initial_design_system"
+      );
+      if (!attempt || attempt.id !== input.alignmentAttemptId || !command) {
+        return { ok: false, reason: "stale_alignment_attempt" } as const;
+      }
+      if (command.status !== "claimed") {
+        return {
+          ok: false,
+          reason: "initial_design_system_command_not_claimed"
+        } as const;
+      }
+      const frozenInput = ensureFrozenInputOnDb(db, state, command);
+      const existingRow = db
+        .prepare(
+          `SELECT * FROM design_system_extraction_manifests
+           WHERE alignment_attempt_id = ?`
+        )
+        .get(input.alignmentAttemptId) as Record<string, unknown> | undefined;
+      if (!existingRow) {
+        return { ok: false, reason: "invalid_audit" } as const;
+      }
+      const manifest = progressiveManifestFromRow(existingRow);
+      const priorRequest = db
+        .prepare(
+          `SELECT manifest_json FROM design_system_extraction_manifest_requests
+           WHERE alignment_attempt_id = ? AND idempotency_key = ?`
+        )
+        .get(input.alignmentAttemptId, input.idempotencyKey) as
+        | { manifest_json: string }
+        | undefined;
+      if (priorRequest) {
+        const recorded = JSON.parse(priorRequest.manifest_json) as {
+          request?: unknown;
+        };
+        if (recorded.request !== requestJson) {
+          return { ok: false, reason: "idempotency_conflict" } as const;
+        }
+        return {
+          ok: true as const,
+          reused: true,
+          audit: manifest.audit ?? input.audit,
+          residual_claims: manifest.residualClaims,
+          progress: progressiveExtractionProgress(
+            frozenInput,
+            manifest,
+            componentWorkUnitKeysOnDb(db)
+          ),
+          event_id: null
+        };
+      }
+
+      const existingClaimIds = new Set(
+        manifest.workUnits.flatMap((unit) =>
+          unit.claims.map((claim) => claim.claimId)
+        )
+      );
+      const duplicate = input.residualClaims.find((claim) =>
+        existingClaimIds.has(claim.claimId)
+      );
+      if (duplicate) {
+        return {
+          ok: false,
+          reason: "duplicate_claim_id",
+          details: { claim_id: duplicate.claimId }
+        } as const;
+      }
+      const sourceConfidence = new Map<string, "confirmed" | "reasonable">([
+        ...frozenInput.question_cards.map((card) => [card.id, "confirmed"] as const),
+        ...frozenInput.annotations.map(
+          (annotation) => [annotation.id, annotation.inference] as const
+        ),
+        ...frozenInput.designer_annotations.map(
+          (annotation) => [annotation.id, "confirmed"] as const
+        )
+      ]);
+      for (const claim of input.residualClaims) {
+        for (const sourceId of claim.sourceRecordIds) {
+          if (!sourceConfidence.has(sourceId)) {
+            return {
+              ok: false,
+              reason: "invalid_manifest_source",
+              details: { claim_id: claim.claimId, source_record_id: sourceId }
+            } as const;
+          }
+        }
+        if (
+          claim.confidence === "confirmed" &&
+          claim.sourceRecordIds.some(
+            (sourceId) => sourceConfidence.get(sourceId) !== "confirmed"
+          )
+        ) {
+          return {
+            ok: false,
+            reason: "claim_confidence_exceeds_source",
+            details: { claim_id: claim.claimId }
+          } as const;
+        }
+      }
+
+      const candidateManifest: ProgressiveDesignSystemExtractionManifest = {
+        ...manifest,
+        residualClaims: input.residualClaims,
+        audit: input.audit
+      };
+      const progress = progressiveExtractionProgress(
+        frozenInput,
+        candidateManifest,
+        componentWorkUnitKeysOnDb(db)
+      );
+      if (
+        progress.remainingQuestionCardIds.length > 0 ||
+        progress.remainingAgentAnnotationIds.length > 0 ||
+        progress.remainingDesignerAnnotationIds.length > 0
+      ) {
+        return {
+          ok: false,
+          reason: "input_coverage_incomplete",
+          details: {
+            missing_question_card_ids: progress.remainingQuestionCardIds,
+            missing_agent_annotation_ids: progress.remainingAgentAnnotationIds,
+            missing_designer_annotation_ids:
+              progress.remainingDesignerAnnotationIds
+          }
+        } as const;
+      }
+      const allClaimIds = new Set([
+        ...existingClaimIds,
+        ...input.residualClaims.map((claim) => claim.claimId)
+      ]);
+      const checked = new Set(input.audit.checkedClaimIds);
+      const missingClaimIds = [...allClaimIds].filter(
+        (claimId) => !checked.has(claimId)
+      );
+      const unknownClaimIds = [...checked].filter(
+        (claimId) => !allClaimIds.has(claimId)
+      );
+      if (missingClaimIds.length > 0 || unknownClaimIds.length > 0) {
+        return {
+          ok: false,
+          reason: "manifest_audit_incomplete",
+          details: {
+            missing_claim_ids: missingClaimIds,
+            unknown_claim_ids: unknownClaimIds
+          }
+        } as const;
+      }
+
+      const now = new Date().toISOString();
+      const aggregateVersion = Number(existingRow.version) + 1;
+      db.prepare(
+        `UPDATE design_system_extraction_manifests
+         SET idempotency_key = ?, manifest_json = ?, version = ?, updated_at = ?
+         WHERE id = ?`
+      ).run(
+        input.idempotencyKey,
+        JSON.stringify(candidateManifest),
+        aggregateVersion,
+        now,
+        String(existingRow.id)
+      );
+      db.prepare(
+        `INSERT INTO design_system_extraction_manifest_requests
+         (alignment_attempt_id, idempotency_key, manifest_id, agent_command_id,
+          manifest_json, manifest_version, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        input.alignmentAttemptId,
+        input.idempotencyKey,
+        String(existingRow.id),
+        command.id,
+        JSON.stringify({ request: requestJson }),
+        aggregateVersion,
+        now
+      );
+      const event = logEventOnDb(db, "design_system_extraction_audit_recorded", {
+        alignment_attempt_id: input.alignmentAttemptId,
+        agent_command_id: command.id,
+        manifest_id: String(existingRow.id),
+        manifest_version: aggregateVersion,
+        residual_claim_count: input.residualClaims.length,
+        audit_status: input.audit.status
+      });
+      return {
+        ok: true as const,
+        reused: false,
+        audit: input.audit,
+        residual_claims: input.residualClaims,
+        progress,
+        event_id: event.event_id
+      };
+    });
+    if (result.ok && !result.reused) {
+      emitRecordEvent({
+        kind: "design-system",
         action: "updated",
-        id: result.manifest.id,
+        id: input.alignmentAttemptId,
         projectPath: path.resolve(projectPath)
       });
     }
@@ -918,13 +1775,13 @@ type FinalizeInitialDesignSystemFailure = {
   reason:
     | "stale_alignment_attempt"
     | "initial_design_system_command_not_claimed"
-    | "extraction_manifest_required"
+    | "extraction_work_units_incomplete"
+    | "extraction_audit_required"
     | "extraction_audit_failed"
     | "manifest_conflicts_unresolved"
     | "required_artifacts_missing"
     | "manifest_target_not_found"
-    | "manifest_target_drift"
-    | "manifest_target_section_mismatch"
+    | "manifest_target_field_not_found"
     | "manifest_outcome_status_mismatch"
     | "entry_claim_lineage_mismatch"
     | "uncovered_design_system_entries"
@@ -932,6 +1789,7 @@ type FinalizeInitialDesignSystemFailure = {
     | "token_domain_missing"
     | "required_artifacts_not_ingested"
     | "component_specs_missing"
+    | "component_capture_missing"
     | "component_spec_fields_missing"
     | "formalized_claim_support_insufficient"
     | "db_error";
@@ -981,18 +1839,6 @@ function expectedJsonPointer(entry: DesignSystemEntryKeyRow): string {
     return `/rules/${entry.position}`;
   }
   return "/";
-}
-
-function alignmentSectionForEntry(
-  entry: DesignSystemEntryKeyRow
-): AlignmentSection | null {
-  if (entry.section === "foundations.visual-language") return "visual-language";
-  if (entry.section === "foundations.principles") return "design-principle";
-  if (entry.section.startsWith("token.")) return "token";
-  if (entry.section.startsWith("components.")) return "component";
-  if (entry.section === "layout") return "layout";
-  if (entry.section === "interaction") return "interaction";
-  return null;
 }
 
 function finalizeFailure(
@@ -1047,16 +1893,23 @@ export function finalizeInitialDesignSystemPreparation(
         if (!manifestRow) {
           return {
             ok: false,
-            reason: "extraction_manifest_required"
+            reason: "extraction_work_units_incomplete"
           } as FinalizeInitialDesignSystemFailure;
         }
+        const progressive = progressiveExtractionStateOnDb(
+          db,
+          ensureFrozenInputOnDb(db, state, command),
+          alignmentAttemptId
+        );
         return {
           ok: true as const,
           reused: true,
           workflow: state.workflow,
           attempt,
           command,
-          manifest: mapManifestRow(manifestRow),
+          extraction_work_units: progressive.workUnits,
+          extraction_audit: progressive.audit,
+          extraction_progress: progressive.progress,
           event_id: null
         };
       }
@@ -1081,24 +1934,48 @@ export function finalizeInitialDesignSystemPreparation(
       if (!manifestRow) {
         return finalizeFailure(
           db,
-          "extraction_manifest_required",
+          "extraction_work_units_incomplete",
           undefined,
           context
         );
       }
-      const manifest = mapManifestRow(manifestRow);
+      const manifest = progressiveManifestFromRow(manifestRow);
+      const progress = progressiveExtractionProgress(
+        frozenInput,
+        manifest,
+        componentWorkUnitKeysOnDb(db)
+      );
+      const requiredWorkUnitKeys = ["global", "tokens", "layout", "interaction"];
+      const missingWorkUnitKeys = requiredWorkUnitKeys.filter(
+        (key) => !progress.completedWorkUnitKeys.includes(key)
+      );
+      if (missingWorkUnitKeys.length > 0) {
+        return finalizeFailure(
+          db,
+          "extraction_work_units_incomplete",
+          { missing_work_unit_keys: missingWorkUnitKeys },
+          context
+        );
+      }
+      if (!manifest.audit) {
+        return finalizeFailure(db, "extraction_audit_required", undefined, context);
+      }
       if (
-        manifest.manifest.audit.status !== "passed" ||
-        manifest.manifest.audit.issues.length > 0
+        manifest.audit.status !== "passed" ||
+        manifest.audit.issues.length > 0
       ) {
         return finalizeFailure(
           db,
           "extraction_audit_failed",
-          { issues: manifest.manifest.audit.issues },
+          { issues: manifest.audit.issues },
           context
         );
       }
-      const conflicts = manifest.manifest.claims
+      const claims = [
+        ...manifest.workUnits.flatMap((workUnit) => workUnit.claims),
+        ...manifest.residualClaims
+      ];
+      const conflicts = claims
         .filter((claim) => claim.outcome === "conflict")
         .map((claim) => claim.claimId);
       if (conflicts.length > 0) {
@@ -1171,26 +2048,24 @@ export function finalizeInitialDesignSystemPreparation(
           entry
         ])
       );
+      for (const workUnit of manifest.workUnits) {
+        const resolved = resolveProgressiveWorkUnit(entries, workUnit);
+        if (!resolved.ok) {
+          return finalizeFailure(
+            db,
+            resolved.reason === "manifest_target_field_not_found"
+              ? "manifest_target_field_not_found"
+              : "manifest_target_not_found",
+            resolved.details,
+            context
+          );
+        }
+      }
       const targetedKeys = new Set<string>();
       const missingTargets: Array<{
         claim_id: string;
         artifact_path: string;
         entry_id: string;
-        json_pointer: string;
-      }> = [];
-      const driftedTargets: Array<{
-        claim_id: string;
-        artifact_path: string;
-        entry_id: string;
-        json_pointer: string;
-        expected_json_pointer: string;
-      }> = [];
-      const sectionMismatches: Array<{
-        claim_id: string;
-        claim_section: AlignmentSection;
-        artifact_path: string;
-        entry_id: string;
-        entry_section: string;
       }> = [];
       const outcomeStatusMismatches: Array<{
         claim_id: string;
@@ -1199,7 +2074,7 @@ export function finalizeInitialDesignSystemPreparation(
         entry_id: string;
         entry_status: string;
       }> = [];
-      for (const claim of manifest.manifest.claims) {
+      for (const claim of claims) {
         if (claim.outcome !== "mapped" && claim.outcome !== "gap") {
           continue;
         }
@@ -1211,30 +2086,9 @@ export function finalizeInitialDesignSystemPreparation(
             missingTargets.push({
               claim_id: claim.claimId,
               artifact_path: target.artifactPath,
-              entry_id: target.entryId,
-              json_pointer: target.jsonPointer
+              entry_id: target.entryId
             });
             continue;
-          }
-          const expectedPointer = expectedJsonPointer(entry);
-          if (target.jsonPointer !== expectedPointer) {
-            driftedTargets.push({
-              claim_id: claim.claimId,
-              artifact_path: target.artifactPath,
-              entry_id: target.entryId,
-              json_pointer: target.jsonPointer,
-              expected_json_pointer: expectedPointer
-            });
-          }
-          const expectedSection = alignmentSectionForEntry(entry);
-          if (expectedSection !== null && claim.section !== expectedSection) {
-            sectionMismatches.push({
-              claim_id: claim.claimId,
-              claim_section: claim.section,
-              artifact_path: target.artifactPath,
-              entry_id: target.entryId,
-              entry_section: entry.section
-            });
           }
           const targetShouldBeGap = claim.outcome === "gap";
           if (targetShouldBeGap !== (entry.status === "gap")) {
@@ -1253,22 +2107,6 @@ export function finalizeInitialDesignSystemPreparation(
           db,
           "manifest_target_not_found",
           { targets: missingTargets },
-          context
-        );
-      }
-      if (driftedTargets.length > 0) {
-        return finalizeFailure(
-          db,
-          "manifest_target_drift",
-          { targets: driftedTargets },
-          context
-        );
-      }
-      if (sectionMismatches.length > 0) {
-        return finalizeFailure(
-          db,
-          "manifest_target_section_mismatch",
-          { targets: sectionMismatches },
           context
         );
       }
@@ -1295,7 +2133,7 @@ export function finalizeInitialDesignSystemPreparation(
             entry.entry_id
           );
           const targetingSourceIds = new Set(
-            manifest.manifest.claims
+            claims
               .filter(
                 (claim) =>
                   claim.outcome === "mapped" &&
@@ -1398,6 +2236,32 @@ export function finalizeInitialDesignSystemPreparation(
       const specs = entries.filter(
         (entry) => entry.section === "components.spec"
       );
+      const missingCaptures = missingComponentCaptures(projectPath, specs);
+      if (missingCaptures.length > 0) {
+        return finalizeFailure(
+          db,
+          "component_capture_missing",
+          { captures: missingCaptures },
+          context
+        );
+      }
+      const missingComponentWorkUnits = entries
+        .filter((entry) => entry.section === "components.inventory")
+        .filter(
+          (entry) =>
+            !manifest.workUnits.some(
+              (workUnit) => workUnit.key === `component:${entry.entry_id}`
+            )
+        )
+        .map((entry) => `component:${entry.entry_id}`);
+      if (missingComponentWorkUnits.length > 0) {
+        return finalizeFailure(
+          db,
+          "extraction_work_units_incomplete",
+          { missing_work_unit_keys: missingComponentWorkUnits },
+          context
+        );
+      }
       const missingComponentSpecs = entries
         .filter(
           (entry) =>
@@ -1415,20 +2279,7 @@ export function finalizeInitialDesignSystemPreparation(
               spec.source_artifact_path
             )
           );
-          const explicitlyOmitted = manifest.manifest.claims.some(
-            (claim) =>
-              claim.section === "component" &&
-              claim.outcome === "omitted" &&
-              claim.targets.some(
-                (target) =>
-                  target.jsonPointer === "" &&
-                  specPathMatchesSourceArtifact(
-                    specPath,
-                    target.artifactPath
-                  )
-              )
-          );
-          return found || explicitlyOmitted
+          return found
             ? []
             : [
                 {
@@ -1455,7 +2306,7 @@ export function finalizeInitialDesignSystemPreparation(
           (field) =>
             Array.isArray(value[field]) &&
             value[field].length === 0 &&
-            !manifest.manifest.claims.some(
+            !claims.some(
               (claim) =>
                 claim.outcome === "omitted" &&
                 claim.targets.some(
@@ -1465,8 +2316,7 @@ export function finalizeInitialDesignSystemPreparation(
                         entry.source_artifact_path,
                         entry.entry_id
                       ) &&
-                    target.jsonPointer ===
-                      `/value/${jsonPointerSegment(field)}`
+                    target.fieldPath?.join(".") === `value.${field}`
                 )
             )
         );
@@ -1503,7 +2353,7 @@ export function finalizeInitialDesignSystemPreparation(
         .filter((entry) => entry.status === "formalized")
         .flatMap((entry) => {
           const key = entryKey(entry.source_artifact_path, entry.entry_id);
-          const claims = manifest.manifest.claims.filter(
+          const entryClaims = claims.filter(
             (claim) =>
               claim.outcome === "mapped" &&
               claim.targets.some(
@@ -1512,9 +2362,9 @@ export function finalizeInitialDesignSystemPreparation(
               )
           );
           const supported =
-            claims.length > 0 &&
-            claims.every((claim) => claim.confidence === "confirmed") &&
-            claims.some((claim) =>
+            entryClaims.length > 0 &&
+            entryClaims.every((claim) => claim.confidence === "confirmed") &&
+            entryClaims.some((claim) =>
               claim.sourceRecordIds.some((id) => editedCardIds.has(id))
             );
           return supported
@@ -1547,12 +2397,17 @@ export function finalizeInitialDesignSystemPreparation(
         {
           alignment_attempt_id: alignmentAttemptId,
           agent_command_id: command.id,
-          manifest_id: manifest.id,
-          manifest_version: manifest.version,
+          manifest_id: String(manifestRow.id),
+          manifest_version: Number(manifestRow.version),
           entry_count: entries.length
         }
       );
       const completed = getAlignmentPreparationOnDb(db);
+      const progressive = progressiveExtractionStateOnDb(
+        db,
+        frozenInput,
+        alignmentAttemptId
+      );
       return {
         ok: true as const,
         reused: false,
@@ -1561,7 +2416,9 @@ export function finalizeInitialDesignSystemPreparation(
         command: completed.commands.find(
           (candidate) => candidate.id === command.id
         )!,
-        manifest,
+        extraction_work_units: progressive.workUnits,
+        extraction_audit: progressive.audit,
+        extraction_progress: progressive.progress,
         event_id: event.event_id
       };
     });
@@ -1570,7 +2427,7 @@ export function finalizeInitialDesignSystemPreparation(
       emitRecordEvent({
         kind: "design-system",
         action: "updated",
-        id: result.manifest.id,
+        id: alignmentAttemptId,
         projectPath: path.resolve(projectPath)
       });
     }

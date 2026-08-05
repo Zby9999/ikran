@@ -1,5 +1,6 @@
 export {
   claimInitialDesignSystemPreparation as claimInitialDesignSystemPreparationCommand,
   finalizeInitialDesignSystemPreparation as finalizeInitialDesignSystemPreparationCommand,
-  recordDesignSystemExtractionManifest as recordDesignSystemExtractionManifestCommand
+  recordDesignSystemExtractionAudit as recordDesignSystemExtractionAuditCommand,
+  recordDesignSystemExtractionWorkUnit as recordDesignSystemExtractionWorkUnitCommand
 } from "../initial-design-system-preparation";

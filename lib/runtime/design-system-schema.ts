@@ -786,6 +786,14 @@ function validateComponentSpec(
           expected: '"component" | "block"'
         });
       }
+      if (value.sourceCaptures !== undefined) {
+        const captures = validateSourceCaptures(
+          value.sourceCaptures,
+          "value.sourceCaptures",
+          ctx
+        );
+        if (!captures.ok) return captures;
+      }
       return null;
     }
   }) ?? { ok: true };
@@ -891,6 +899,55 @@ function validateCaptureNodeRect(
   return { ok: true };
 }
 
+function validateSourceCaptures(
+  captures: unknown,
+  field: string,
+  context: Record<string, unknown> = {}
+): DesignSystemSchemaResult {
+  if (!Array.isArray(captures)) {
+    return fail("invalid_field_type", {
+      ...context,
+      field,
+      expected: "array"
+    });
+  }
+  for (let i = 0; i < captures.length; i++) {
+    const item = captures[i];
+    const itemField = `${field}[${i}]`;
+    if (!isPlainObject(item)) {
+      return fail("invalid_field_type", {
+        ...context,
+        field: itemField,
+        expected: "object"
+      });
+    }
+    for (const requiredField of LAYOUT_RULE_CAPTURE_REQUIRED_FIELDS) {
+      if (!isNonEmptyString(item[requiredField])) {
+        return fail("invalid_field_type", {
+          ...context,
+          field: `${itemField}.${requiredField}`,
+          expected: "non-empty string"
+        });
+      }
+    }
+    for (const optionalField of LAYOUT_RULE_CAPTURE_OPTIONAL_FIELDS) {
+      if (
+        item[optionalField] !== undefined &&
+        !isNonEmptyString(item[optionalField])
+      ) {
+        return fail("invalid_field_type", {
+          ...context,
+          field: `${itemField}.${optionalField}`,
+          expected: "non-empty string"
+        });
+      }
+    }
+    const rect = validateCaptureNodeRect(item, itemField);
+    if (!rect.ok) return rect;
+  }
+  return { ok: true };
+}
+
 function validateLayoutRulesFile(
   json: Record<string, unknown>
 ): DesignSystemSchemaResult {
@@ -901,40 +958,11 @@ function validateLayoutRulesFile(
   for (const rule of rules) {
     const captures = rule[LAYOUT_RULE_CAPTURE_FIELD];
     if (captures === undefined) continue;
-    if (!Array.isArray(captures)) {
-      return fail("invalid_field_type", {
-        field: LAYOUT_RULE_CAPTURE_FIELD,
-        expected: "array"
-      });
-    }
-    for (let i = 0; i < captures.length; i++) {
-      const item = captures[i];
-      const itemField = `${LAYOUT_RULE_CAPTURE_FIELD}[${i}]`;
-      if (!isPlainObject(item)) {
-        return fail("invalid_field_type", {
-          field: itemField,
-          expected: "object"
-        });
-      }
-      for (const field of LAYOUT_RULE_CAPTURE_REQUIRED_FIELDS) {
-        if (!isNonEmptyString(item[field])) {
-          return fail("invalid_field_type", {
-            field: `${itemField}.${field}`,
-            expected: "non-empty string"
-          });
-        }
-      }
-      for (const field of LAYOUT_RULE_CAPTURE_OPTIONAL_FIELDS) {
-        if (item[field] !== undefined && !isNonEmptyString(item[field])) {
-          return fail("invalid_field_type", {
-            field: `${itemField}.${field}`,
-            expected: "non-empty string"
-          });
-        }
-      }
-      const rect = validateCaptureNodeRect(item, itemField);
-      if (!rect.ok) return rect;
-    }
+    const result = validateSourceCaptures(
+      captures,
+      LAYOUT_RULE_CAPTURE_FIELD
+    );
+    if (!result.ok) return result;
   }
   return { ok: true };
 }

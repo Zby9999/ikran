@@ -905,12 +905,82 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
+  test("v21→v22 discards atomic extraction data and reopens the command", () => {
+    withTempProject((dir) => {
+      const initialized = openProjectDb(dir);
+      closeProjectDb(initialized);
+      const dbPath = getProjectDbPath(dir);
+      const v21 = new DatabaseSync(dbPath);
+      try {
+        v21.exec(`
+          INSERT INTO alignment_input_snapshots (id, snapshot_json, created_at)
+          VALUES ('snapshot-v21', '{}', '2026-08-01T00:00:00.000Z');
+          INSERT INTO alignment_attempts
+            (id, input_snapshot_id, status, created_at, updated_at, completed_at)
+          VALUES
+            ('attempt-v21', 'snapshot-v21', 'completed',
+             '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z',
+             '2026-08-01T00:00:00.000Z');
+          INSERT INTO agent_commands
+            (id, command_type, status, alignment_attempt_id, payload_json,
+             idempotency_key, created_at, updated_at, claimed_at, completed_at)
+          VALUES
+            ('command-v21', 'prepare_initial_design_system', 'completed',
+             'attempt-v21', '{}', 'command-v21-key',
+             '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z',
+             '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z');
+          UPDATE project_workflow
+          SET stage = 'initial-design-system-preparing',
+              current_alignment_attempt_id = 'attempt-v21'
+          WHERE singleton = 1;
+          INSERT INTO design_system_extraction_manifests
+            (id, alignment_attempt_id, agent_command_id, idempotency_key,
+             manifest_json, version, created_at, updated_at)
+          VALUES
+            ('manifest-v21', 'attempt-v21', 'command-v21', 'manifest-key',
+             '{"claims":[],"audit":{"status":"passed","checkedClaimIds":[],"issues":[]}}',
+             1, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z');
+          INSERT INTO design_system_extraction_manifest_requests
+            (alignment_attempt_id, idempotency_key, manifest_id,
+             agent_command_id, manifest_json, manifest_version, created_at)
+          VALUES
+            ('attempt-v21', 'manifest-key', 'manifest-v21', 'command-v21',
+             '{}', 1, '2026-08-01T00:00:00.000Z');
+          PRAGMA user_version = 21;
+        `);
+      } finally {
+        v21.close();
+      }
+
+      const migrated = openProjectDb(dir);
+      try {
+        expect(userVersion(migrated)).toBe(CURRENT_SCHEMA_VERSION);
+        expect(
+          migrated.prepare("SELECT COUNT(*) AS count FROM design_system_extraction_manifests").get()
+        ).toEqual({ count: 0 });
+        expect(
+          migrated.prepare("SELECT COUNT(*) AS count FROM design_system_extraction_manifest_requests").get()
+        ).toEqual({ count: 0 });
+        expect(
+          migrated
+            .prepare(
+              `SELECT status, claimed_at, completed_at
+               FROM agent_commands WHERE id = 'command-v21'`
+            )
+            .get()
+        ).toEqual({ status: "pending", claimed_at: null, completed_at: null });
+      } finally {
+        closeProjectDb(migrated);
+      }
+    });
+  });
+
   test("fresh DB opens at CURRENT_SCHEMA_VERSION without backup", () => {
     withTempProject((dir) => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(21);
+        expect(CURRENT_SCHEMA_VERSION).toBe(22);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([

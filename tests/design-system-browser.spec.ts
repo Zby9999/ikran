@@ -81,6 +81,20 @@ function readEventTypes(projectDir: string): string[] {
   }
 }
 
+function markInitialDesignSystemPreparationCompleted(projectDir: string): void {
+  const db = openIkranDb(path.join(projectDir, ".ikran", "ikran.db"));
+  try {
+    const now = new Date().toISOString();
+    db.prepare(
+      `UPDATE agent_commands
+       SET status = 'completed', completed_at = ?, updated_at = ?
+       WHERE command_type = 'prepare_initial_design_system'`
+    ).run(now, now);
+  } finally {
+    db.close();
+  }
+}
+
 test("09A design system browser: declare → render → approve write-back", async ({
   page
 }) => {
@@ -374,6 +388,10 @@ test("09A design system browser: declare → render → approve write-back", asy
       "interaction-rules.json",
       [designerEditedCardId]
     ))).toMatchObject({ ok: true, record: { status: "ingested" } });
+
+    // This test exercises the post-finalize Browser write-back surface. The
+    // extraction protocol itself is covered by its Runtime/MCP tests.
+    markInitialDesignSystemPreparationCompleted(projectDir);
 
     // ---- Sheet rendering: Foundations home, token leaf, Components. ----
     await entryButton.click();

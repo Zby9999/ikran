@@ -88,7 +88,8 @@ export {
 export {
   claimInitialDesignSystemPreparationCommand,
   finalizeInitialDesignSystemPreparationCommand,
-  recordDesignSystemExtractionManifestCommand
+  recordDesignSystemExtractionAuditCommand,
+  recordDesignSystemExtractionWorkUnitCommand
 } from "./initial-design-system-preparation";
 
 export { abandonCurrentAlignmentAttemptCommand } from "./alignment-attempt-lifecycle";
@@ -133,7 +134,8 @@ export {
   createAlignmentQuestionCardInputSchema,
   finalizeAlignmentPreparationInputSchema,
   finalizeInitialDesignSystemPreparationInputSchema,
-  recordDesignSystemExtractionManifestInputSchema,
+  recordDesignSystemExtractionAuditInputSchema,
+  recordDesignSystemExtractionWorkUnitInputSchema,
   recordDesignerAnswerInputSchema,
   updateAlignmentQuestionAnchorInputSchema,
   updateAlignmentQuestionTitleInputSchema

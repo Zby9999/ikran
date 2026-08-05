@@ -389,6 +389,7 @@ export function SeedEvidenceWorkbench({
         <DesignSystemBrowser
           session={session}
           open={designSystemBrowserOpen}
+          readOnly={nextAgentCommandStatus !== "completed"}
           onClose={closeDesignSystemBrowser}
         />
       ) : null}

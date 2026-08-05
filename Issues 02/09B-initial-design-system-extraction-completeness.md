@@ -2,6 +2,15 @@
 
 Status: resolved
 
+> Protocol replacement (2026-08-05): Issue 26 replaces the atomic
+> `record_design_system_extraction_manifest` contract below with progressive
+> output work units plus a cross-section audit. The old tool, Agent-supplied
+> `section`, and Agent-supplied `jsonPointer` are removed without compatibility;
+> existing test extraction state is cleared and re-extracted. Keep the material
+> below as the historical coverage rationale, but use
+> `26-progressive-initial-design-system-extraction.md` for the current API and
+> completion behavior.
+
 ## What to build
 
 在 09 / 09A 已交付的全 JSON design-system source、DB ingest、derived

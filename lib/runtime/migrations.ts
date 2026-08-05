@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 21;
+export const CURRENT_SCHEMA_VERSION = 22;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1083,6 +1083,28 @@ CREATE INDEX IF NOT EXISTS idx_region_annotation_tombstones_deleted_at
          WHERE section = 'token.primitive' AND domain = 'color'
            AND (kind IS NULL OR kind <> 'domain-rule')`
       );
+    }
+  },
+  {
+    version: 22,
+    up(db) {
+      // Progressive extraction deliberately does not read the legacy atomic
+      // manifest payload. Test-stage projects must re-extract from their
+      // frozen Alignment input using output work units and a global audit.
+      db.exec(`
+DELETE FROM design_system_extraction_manifest_requests;
+DELETE FROM design_system_extraction_manifests;
+UPDATE agent_commands
+SET status = 'pending', claimed_at = NULL, completed_at = NULL,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE command_type = 'prepare_initial_design_system'
+  AND status = 'completed'
+  AND alignment_attempt_id = (
+    SELECT current_alignment_attempt_id
+    FROM project_workflow
+    WHERE singleton = 1
+  );
+      `);
     }
   }
 ];

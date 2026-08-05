@@ -24,6 +24,7 @@ import {
 import { emitRecordEvent } from "./record-bus";
 import { canonicalizeArtifactPath } from "./source-artifact";
 import { designSystemEntryContentDigest } from "./design-system-entry-provenance";
+import { isInitialDesignSystemWriteBlocked } from "./design-system-write-gate";
 
 export type EditableDesignSystemEntryField =
   | "meaning"
@@ -81,6 +82,9 @@ export function editDesignSystemEntry(
   input: EditDesignSystemEntryInput,
   hooks: EditDesignSystemEntryHooks = {}
 ): DesignSystemEditResult {
+  if (isInitialDesignSystemWriteBlocked(projectPath)) {
+    return { ok: false, reason: "initial_design_system_preparing" };
+  }
   const text = input.field === "meaning" ? input.text.trim() : input.text;
   if (input.text.trim().length === 0) return { ok: false, reason: "empty_text" };
   if (

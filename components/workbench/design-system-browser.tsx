@@ -193,10 +193,10 @@ export function EntryStatusChip({
 }: {
   row: DsRow;
   approval: ApprovalState;
-  onApprove: () => void;
+  onApprove?: () => void;
   testId?: string;
 }) {
-  if (row.status === "gap") {
+  if (row.status === "gap" || !onApprove) {
     return <StatusChip status={row.status} testId={testId} />;
   }
   const pending = approval.kind === "pending";
@@ -504,7 +504,7 @@ export function SpecRowView({
   onInfoOpenChange: (open: boolean) => void;
   onInfoHoverOpen: () => void;
   onInfoHoverClose: () => void;
-  onApprove: () => void;
+  onApprove?: () => void;
 }) {
   // Reader Projection (09C-A): structured object values render as labeled
   // field lines in the main reading layer — never serialized JSON. Alias
@@ -605,7 +605,7 @@ type RowListProps = {
   onInfoKey: (key: string | null) => void;
   onInfoHoverOpen: (key: string) => void;
   onInfoHoverClose: () => void;
-  onApprove: (row: DsRow) => void;
+  onApprove?: (row: DsRow) => void;
   onEditEntry?: (
     row: DsRow,
     field: "meaning" | "value" | "value.description",
@@ -825,7 +825,7 @@ function RowList({ rows, numbered = false, ...rest }: RowListProps) {
           onInfoOpenChange={(open) => rest.onInfoKey(open ? row.key : null)}
           onInfoHoverOpen={() => rest.onInfoHoverOpen(row.key)}
           onInfoHoverClose={rest.onInfoHoverClose}
-          onApprove={() => rest.onApprove(row)}
+          onApprove={rest.onApprove ? () => rest.onApprove?.(row) : undefined}
         />
       ))}
     </div>
@@ -963,7 +963,7 @@ function RuleLedgerCardShell({
             <EntryStatusChip
               row={rule.row}
               approval={approval}
-              onApprove={() => rows.onApprove(rule.row)}
+              onApprove={rows.onApprove ? () => rows.onApprove?.(rule.row) : undefined}
               testId="ds-interaction-status"
             />
           </span>
@@ -1198,7 +1198,7 @@ function ColorRow({
   onInfoOpenChange: (open: boolean) => void;
   onInfoHoverOpen: () => void;
   onInfoHoverClose: () => void;
-  onApprove: () => void;
+  onApprove?: () => void;
 }) {
   return (
     <div
@@ -1259,7 +1259,7 @@ function ColorRowList({
           onInfoOpenChange={(open) => rest.onInfoKey(open ? token.row.key : null)}
           onInfoHoverOpen={() => rest.onInfoHoverOpen(token.row.key)}
           onInfoHoverClose={rest.onInfoHoverClose}
-          onApprove={() => rest.onApprove(token.row)}
+          onApprove={rest.onApprove ? () => rest.onApprove?.(token.row) : undefined}
         />
       ))}
     </div>
@@ -1688,7 +1688,7 @@ function LayoutPlacardBlock({
             <EntryStatusChip
               row={rule.row}
               approval={approval}
-              onApprove={() => rows.onApprove(rule.row)}
+              onApprove={rows.onApprove ? () => rows.onApprove?.(rule.row) : undefined}
               testId={`ds-layout-status-${rule.row.entryId}`}
             />
             <RuleInlineActions row={rule.row} editor={editor} />
@@ -1860,10 +1860,12 @@ export function DesignSystemEntryButton({ onOpen }: { onOpen: () => void }) {
 export function DesignSystemBrowser({
   session,
   open,
+  readOnly = false,
   onClose
 }: {
   session: string;
   open: boolean;
+  readOnly?: boolean;
   onClose: (source: SheetCloseSource) => void;
 }) {
   const { view, setView, error, reload } = useDesignSystemView(session, open);
@@ -2191,8 +2193,8 @@ export function DesignSystemBrowser({
     onInfoKey: setInfoKey,
     onInfoHoverOpen: openInfoTracked,
     onInfoHoverClose: closeInfoDelayed,
-    onApprove: (row) => void approve(row),
-    onEditEntry: editEntry
+    onApprove: readOnly ? undefined : (row) => void approve(row),
+    onEditEntry: readOnly ? undefined : editEntry
   };
 
   const renderMain = (): ReactNode => {

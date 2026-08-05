@@ -313,31 +313,75 @@ export const finalizeAlignmentPreparationInputSchema = z.object({
 const designSystemExtractionTargetSchema = z.object({
   artifactPath: z.string(),
   entryId: z.string(),
-  jsonPointer: z.string()
-});
+  fieldPath: z.array(z.string()).optional()
+}).strict();
 
 const designSystemExtractionClaimSchema = z.object({
   claimId: z.string(),
-  section: z.string(),
   statement: z.string(),
   sourceRecordIds: z.array(z.string()),
   sourceExcerpts: z.array(z.string()),
-  confidence: z.string(),
-  outcome: z.string(),
+  confidence: z.enum(["confirmed", "reasonable"]),
+  outcome: z.enum(["mapped", "conflict", "omitted", "gap"]),
   reason: z.string().optional(),
   targets: z.array(designSystemExtractionTargetSchema)
-});
+}).strict();
 
-export const recordDesignSystemExtractionManifestInputSchema = z.object({
+const designSystemExtractionResidualClaimSchema = z.object({
+  claimId: z.string(),
+  statement: z.string(),
+  sourceRecordIds: z.array(z.string()),
+  sourceExcerpts: z.array(z.string()),
+  confidence: z.enum(["confirmed", "reasonable"]),
+  outcome: z.enum(["conflict", "omitted"]),
+  reason: z.string(),
+  targets: z.array(designSystemExtractionTargetSchema).length(0)
+}).strict();
+
+const designSystemExtractionActiveWorkUnitSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("global") }).strict(),
+  z.object({ kind: z.literal("tokens") }).strict(),
+  z.object({ kind: z.literal("layout") }).strict(),
+  z.object({ kind: z.literal("interaction") }).strict(),
+  z.object({
+    kind: z.literal("component"),
+    componentEntryId: z.string(),
+    specArtifactPath: z.string().optional(),
+    retire: z.literal(false).optional()
+  }).strict()
+]);
+
+const designSystemExtractionRetiredComponentWorkUnitSchema = z.object({
+  kind: z.literal("component"),
+  componentEntryId: z.string(),
+  retire: z.literal(true)
+}).strict();
+
+export const recordDesignSystemExtractionWorkUnitInputSchema = z.union([
+  z.object({
+    alignmentAttemptId: z.string(),
+    idempotencyKey: z.string(),
+    workUnit: designSystemExtractionActiveWorkUnitSchema,
+    claims: z.array(designSystemExtractionClaimSchema)
+  }).strict(),
+  z.object({
+    alignmentAttemptId: z.string(),
+    idempotencyKey: z.string(),
+    workUnit: designSystemExtractionRetiredComponentWorkUnitSchema,
+    claims: z.array(designSystemExtractionClaimSchema).length(0)
+  }).strict()
+]);
+
+export const recordDesignSystemExtractionAuditInputSchema = z.object({
   alignmentAttemptId: z.string(),
   idempotencyKey: z.string(),
-  claims: z.array(designSystemExtractionClaimSchema),
+  residualClaims: z.array(designSystemExtractionResidualClaimSchema),
   audit: z.object({
-    status: z.string(),
+    status: z.enum(["passed", "failed"]),
     checkedClaimIds: z.array(z.string()),
     issues: z.array(z.string())
-  })
-});
+  }).strict()
+}).strict();
 
 export const finalizeInitialDesignSystemPreparationInputSchema = z.object({
   alignmentAttemptId: z.string()

@@ -31,6 +31,7 @@ import {
   stageAlignmentAnswering
 } from "./helpers/alignment";
 import { enterCanvas } from "./helpers/workbench";
+import { openIkranDb } from "./helpers/db";
 
 async function patchAlignment(
   workbenchUrl: string,
@@ -45,6 +46,20 @@ async function patchAlignment(
     },
     body: JSON.stringify(body)
   });
+}
+
+function markInitialDesignSystemPreparationCompleted(projectDir: string): void {
+  const db = openIkranDb(path.join(projectDir, ".ikran", "ikran.db"));
+  try {
+    const now = new Date().toISOString();
+    db.prepare(
+      `UPDATE agent_commands
+       SET status = 'completed', completed_at = ?, updated_at = ?
+       WHERE command_type = 'prepare_initial_design_system'`
+    ).run(now, now);
+  } finally {
+    db.close();
+  }
 }
 
 test("09C-A reader projection: atlas and leaf pages", async ({
@@ -393,6 +408,10 @@ test("09C-A reader projection: atlas and leaf pages", async ({
       "design-system/interaction-rules.json",
       "interaction-rules.json"
     ))).toMatchObject({ ok: true, record: { status: "ingested" } });
+
+    // Reader projection continues into approval/edit checks below, so stage
+    // the Browser in its post-finalize writable state.
+    markInitialDesignSystemPreparationCompleted(projectDir);
 
     const viewResponse = await fetch(new URL("/api/design-system", workbenchUrl), {
       headers: { "x-ikran-session": token },

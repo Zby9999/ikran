@@ -1,6 +1,7 @@
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync
 } from "node:fs";
@@ -29,13 +30,16 @@ import {
   claimInitialDesignSystemPreparation,
   finalizeInitialDesignSystemPreparation,
   INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT,
-  recordDesignSystemExtractionManifest,
-  type DesignSystemExtractionClaim
+  recordDesignSystemExtractionAudit,
+  recordDesignSystemExtractionWorkUnit
 } from "../../lib/runtime/initial-design-system-preparation";
 import { getDesignSystemView } from "../../lib/runtime/design-system-view";
+import { approveDesignSystemEntry } from "../../lib/runtime/design-system-approval";
+import { editDesignSystemEntry } from "../../lib/runtime/design-system-edit";
 import { setDesignLanguageDescription } from "../../lib/runtime/project-readiness";
 import { registerSeedReference } from "../../lib/runtime/seed-reference";
 import { recordSourceArtifact } from "../../lib/runtime/source-artifact";
+import { recordDesignSystemExtractionWorkUnitInputSchema } from "../../lib/runtime/commands/schemas";
 
 const projects: string[] = [];
 
@@ -273,77 +277,179 @@ function declareInitialDesignSystemArtifacts(
   }
 }
 
-function completeExtractionClaims(
+
+function recordCompleteProgressiveExtraction(
+  fixture: ReturnType<typeof createCompletedAlignmentFixture>,
   claimed: Extract<
     ReturnType<typeof claimInitialDesignSystemPreparation>,
     { ok: true }
   >
 ) {
-  const targetForSection: Partial<
-    Record<
-      string,
-      { artifactPath: string; entryId: string; jsonPointer: string }
-    >
-  > = {
-    "design-principle": {
-      artifactPath: "design-system/design-system.json",
-      entryId: "principle-restraint",
-      jsonPointer: "/principles/0"
-    },
+  const recordsFor = (section: string) => [
+    ...claimed.question_cards.filter((card) => card.section === section),
+    ...claimed.annotations.filter((annotation) => annotation.section === section)
+  ];
+  const targetFor = {
     "visual-language": {
       artifactPath: "design-system/design-system.json",
-      entryId: "visual-language",
-      jsonPointer: "/visualLanguage"
+      entryId: "visual-language"
+    },
+    "design-principle": {
+      artifactPath: "design-system/design-system.json",
+      entryId: "principle-restraint"
     },
     token: {
       artifactPath: "design-system/token.json",
-      entryId: "primitive.fontFamily.instrumentSans",
-      jsonPointer: "/primitive/fontFamily.instrumentSans"
+      entryId: "primitive.fontFamily.instrumentSans"
     },
     layout: {
       artifactPath: "design-system/layout-rules.json",
-      entryId: "layout-display-hierarchy",
-      jsonPointer: "/rules/0"
+      entryId: "layout-display-hierarchy"
     },
     interaction: {
       artifactPath: "design-system/interaction-rules.json",
-      entryId: "interaction-quiet-hover",
-      jsonPointer: "/rules/0"
+      entryId: "interaction-quiet-hover"
     }
-  };
-  const mappedSections = new Set<string>();
-  const questionClaims = claimed.question_cards.map((card, index) => {
-    const target = targetForSection[card.section];
-    const shouldMap = target !== undefined && !mappedSections.has(card.section);
-    if (shouldMap) mappedSections.add(card.section);
-    return {
-      claimId: `final-question-${index + 1}`,
-      section: card.section,
-      statement: card.final_answer!,
-      sourceRecordIds: [card.id],
-      sourceExcerpts: [card.final_answer!],
-      confidence: "confirmed" as const,
-      outcome: shouldMap ? ("mapped" as const) : ("omitted" as const),
-      ...(shouldMap
-        ? { targets: [target] }
+  } as const;
+  const claimsFor = (section: keyof typeof targetFor) =>
+    recordsFor(section).map((record, index) => ({
+      claimId: `progressive-${section}-${index + 1}`,
+      statement:
+        "final_answer" in record && record.final_answer
+          ? record.final_answer
+          : "body" in record
+            ? record.body
+            : `Evidence for ${section}`,
+      sourceRecordIds: [record.id],
+      sourceExcerpts: [
+        "final_answer" in record && record.final_answer
+          ? record.final_answer
+          : "body" in record
+            ? record.body
+            : `Evidence for ${section}`
+      ],
+      confidence:
+        "inference" in record ? record.inference : ("confirmed" as const),
+      outcome: index === 0 ? ("mapped" as const) : ("omitted" as const),
+      ...(index === 0
+        ? { targets: [targetFor[section]] }
         : {
-            reason: "Redundant with the section's mapped reusable decision.",
+            reason: "The first source record already carries this output decision.",
             targets: []
           })
-    };
-  });
-  const annotationClaims = claimed.annotations.map((annotation, index) => ({
-    claimId: `final-annotation-${index + 1}`,
-    section: annotation.section!,
-    statement: annotation.body,
-    sourceRecordIds: [annotation.id],
-    sourceExcerpts: [annotation.body],
-    confidence: annotation.inference,
+    }));
+  const units = [
+    {
+      key: "global",
+      workUnit: { kind: "global" as const },
+      claims: [
+        ...claimsFor("visual-language"),
+        ...claimsFor("design-principle")
+      ]
+    },
+    {
+      key: "tokens",
+      workUnit: { kind: "tokens" as const },
+      claims: claimsFor("token")
+    },
+    {
+      key: "layout",
+      workUnit: { kind: "layout" as const },
+      claims: claimsFor("layout")
+    },
+    {
+      key: "interaction",
+      workUnit: { kind: "interaction" as const },
+      claims: claimsFor("interaction")
+    }
+  ];
+  for (const unit of units) {
+    const recorded = recordDesignSystemExtractionWorkUnit(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      idempotencyKey: `progressive-unit-${unit.key}`,
+      workUnit: unit.workUnit,
+      claims: unit.claims
+    });
+    if (!recorded.ok) throw new Error(recorded.reason);
+  }
+  const residualClaims = recordsFor("component").map((record, index) => ({
+    claimId: `progressive-component-residual-${index + 1}`,
+    statement:
+      "final_answer" in record && record.final_answer
+        ? record.final_answer
+        : "body" in record
+          ? record.body
+          : "Component evidence",
+    sourceRecordIds: [record.id],
+    sourceExcerpts: [
+      "final_answer" in record && record.final_answer
+        ? record.final_answer
+        : "body" in record
+          ? record.body
+          : "Component evidence"
+    ],
+    confidence:
+      "inference" in record ? record.inference : ("confirmed" as const),
     outcome: "omitted" as const,
-    reason: "The answered claim carries the reusable decision.",
+    reason: "The fixture intentionally contains no reusable component.",
     targets: []
   }));
-  return [...questionClaims, ...annotationClaims];
+  const checkedClaimIds = [
+    ...units.flatMap((unit) => unit.claims.map((claim) => claim.claimId)),
+    ...residualClaims.map((claim) => claim.claimId)
+  ];
+  const audit = recordDesignSystemExtractionAudit(fixture.projectPath, {
+    alignmentAttemptId: fixture.attemptId,
+    idempotencyKey: "progressive-audit-complete",
+    residualClaims,
+    audit: { status: "passed", checkedClaimIds, issues: [] }
+  });
+  if (!audit.ok) throw new Error(audit.reason);
+  return audit;
+}
+
+function recordAuditForCurrentProgress(
+  fixture: ReturnType<typeof createCompletedAlignmentFixture>,
+  idempotencyKey: string
+) {
+  const recovered = claimInitialDesignSystemPreparation(fixture.projectPath);
+  if (!recovered.ok) throw new Error(recovered.reason);
+  const remainingRecords = [
+    ...recovered.question_cards.filter((record) =>
+      recovered.extraction_progress.remainingQuestionCardIds.includes(record.id)
+    ),
+    ...recovered.annotations.filter((record) =>
+      recovered.extraction_progress.remainingAgentAnnotationIds.includes(record.id)
+    ),
+    ...recovered.designer_annotations.filter((record) =>
+      recovered.extraction_progress.remainingDesignerAnnotationIds.includes(record.id)
+    )
+  ];
+  const residualClaims = remainingRecords.map((record, index) => ({
+    claimId: `${idempotencyKey}-residual-${index + 1}`,
+    statement: "body" in record ? record.body : record.final_answer!,
+    sourceRecordIds: [record.id],
+    sourceExcerpts: ["body" in record ? record.body : record.final_answer!],
+    confidence:
+      "inference" in record ? record.inference : ("confirmed" as const),
+    outcome: "omitted" as const,
+    reason: "No additional reusable Design System decision remains.",
+    targets: []
+  }));
+  const checkedClaimIds = [
+    ...recovered.extraction_work_units.flatMap((workUnit) =>
+      workUnit.claims.map((claim) => claim.claimId)
+    ),
+    ...residualClaims.map((claim) => claim.claimId)
+  ];
+  const audit = recordDesignSystemExtractionAudit(fixture.projectPath, {
+    alignmentAttemptId: fixture.attemptId,
+    idempotencyKey,
+    residualClaims,
+    audit: { status: "passed", checkedClaimIds, issues: [] }
+  });
+  if (!audit.ok) throw new Error(audit.reason);
+  return audit;
 }
 
 afterEach(() => {
@@ -353,6 +459,894 @@ afterEach(() => {
 });
 
 describe("Initial Design System preparation", () => {
+  test("models active and retired component work units as mutually exclusive MCP inputs", () => {
+    const base = {
+      alignmentAttemptId: "attempt-1",
+      idempotencyKey: "retire-component-1"
+    };
+    expect(
+      recordDesignSystemExtractionWorkUnitInputSchema.safeParse({
+        ...base,
+        workUnit: {
+          kind: "component",
+          componentEntryId: "component-text-link",
+          retire: true
+        },
+        claims: []
+      }).success
+    ).toBe(true);
+    expect(
+      recordDesignSystemExtractionWorkUnitInputSchema.safeParse({
+        ...base,
+        workUnit: {
+          kind: "component",
+          componentEntryId: "component-text-link",
+          specArtifactPath: "design-system/components/text-link.json",
+          retire: true
+        },
+        claims: []
+      }).success
+    ).toBe(false);
+    expect(
+      recordDesignSystemExtractionWorkUnitInputSchema.safeParse({
+        ...base,
+        workUnit: {
+          kind: "component",
+          componentEntryId: "component-text-link",
+          retire: true
+        },
+        claims: [
+          {
+            claimId: "not-allowed",
+            statement: "Retirement cannot carry claims.",
+            sourceRecordIds: ["source-1"],
+            sourceExcerpts: ["source"],
+            confidence: "confirmed",
+            outcome: "omitted",
+            reason: "Not allowed.",
+            targets: []
+          }
+        ]
+      }).success
+    ).toBe(false);
+  });
+
+  test("records one output work unit from evidence spanning Alignment sections", () => {
+    const fixture = createCompletedAlignmentFixture();
+    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    if (!claimed.ok) throw new Error(claimed.reason);
+    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
+
+    const visualLanguageCard = claimed.question_cards.find(
+      (card) => card.section === "visual-language"
+    )!;
+    const principleCard = claimed.question_cards.find(
+      (card) => card.section === "design-principle"
+    )!;
+    const input = {
+      alignmentAttemptId: fixture.attemptId,
+      idempotencyKey: "global-work-unit-v1",
+      workUnit: { kind: "global" } as const,
+      claims: [
+          {
+            claimId: "global-editorial-language",
+            statement:
+              "The visual language and restraint principle form one editorial direction.",
+            sourceRecordIds: [visualLanguageCard.id, principleCard.id],
+            sourceExcerpts: [
+              visualLanguageCard.final_answer!,
+              principleCard.final_answer!
+            ],
+            confidence: "confirmed" as const,
+            outcome: "mapped" as const,
+            targets: [
+              {
+                artifactPath: "design-system/design-system.json",
+                entryId: "visual-language"
+              },
+              {
+                artifactPath: "design-system/design-system.json",
+                entryId: "principle-restraint"
+              }
+            ]
+          }
+        ]
+    };
+    const recorded = recordDesignSystemExtractionWorkUnit(
+      fixture.projectPath,
+      input
+    );
+
+    expect(recorded).toMatchObject({
+      ok: true,
+      reused: false,
+      work_unit: {
+        key: "global",
+        kind: "global",
+        claims: [
+          {
+            claimId: "global-editorial-language",
+            targets: [
+              { entryId: "visual-language", jsonPointer: "/visualLanguage" },
+              { entryId: "principle-restraint", jsonPointer: "/principles/0" }
+            ]
+          }
+        ]
+      },
+      progress: {
+        completedWorkUnitKeys: ["global"],
+        consumedSourceRecordIds: expect.arrayContaining([
+          visualLanguageCard.id,
+          principleCard.id
+        ]),
+        remainingQuestionCardIds: expect.not.arrayContaining([
+          visualLanguageCard.id,
+          principleCard.id
+        ]),
+        auditStatus: "pending",
+        readyToFinalize: false
+      }
+    });
+
+    expect(
+      recordDesignSystemExtractionWorkUnit(fixture.projectPath, input)
+    ).toMatchObject({
+      ok: true,
+      reused: true,
+      work_unit: { key: "global", version: 1 }
+    });
+
+    const resumed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    if (!resumed.ok) throw new Error(resumed.reason);
+    expect(resumed).toMatchObject({
+      extraction_work_units: [
+        {
+          key: "global",
+          version: 1,
+          claims: [
+            {
+              claimId: "global-editorial-language",
+              targets: [
+                { jsonPointer: "/visualLanguage" },
+                { jsonPointer: "/principles/0" }
+              ]
+            }
+          ]
+        }
+      ],
+      extraction_progress: {
+        completedWorkUnitKeys: ["global"],
+        auditStatus: "pending"
+      }
+    });
+  });
+
+  test("replaces one work unit without disturbing other work units and recomputes coverage", () => {
+    const fixture = createCompletedAlignmentFixture();
+    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    if (!claimed.ok) throw new Error(claimed.reason);
+    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
+    const card = (section: string) =>
+      claimed.question_cards.find((candidate) => candidate.section === section)!;
+
+    const globalV1 = recordDesignSystemExtractionWorkUnit(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      idempotencyKey: "replace-global-v1",
+      workUnit: { kind: "global" },
+      claims: [
+        {
+          claimId: "global-v1",
+          statement: "The global direction combines language and restraint.",
+          sourceRecordIds: [
+            card("visual-language").id,
+            card("design-principle").id
+          ],
+          sourceExcerpts: [
+            card("visual-language").final_answer!,
+            card("design-principle").final_answer!
+          ],
+          confidence: "confirmed",
+          outcome: "mapped",
+          targets: [
+            {
+              artifactPath: "design-system/design-system.json",
+              entryId: "visual-language"
+            }
+          ]
+        }
+      ]
+    });
+    if (!globalV1.ok) throw new Error(globalV1.reason);
+    const tokens = recordDesignSystemExtractionWorkUnit(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      idempotencyKey: "replace-tokens-v1",
+      workUnit: { kind: "tokens" },
+      claims: [
+        {
+          claimId: "token-family",
+          statement: "Instrument Sans is the interface family.",
+          sourceRecordIds: [card("token").id],
+          sourceExcerpts: [card("token").final_answer!],
+          confidence: "confirmed",
+          outcome: "mapped",
+          targets: [
+            {
+              artifactPath: "design-system/token.json",
+              entryId: "primitive.fontFamily.instrumentSans"
+            }
+          ]
+        }
+      ]
+    });
+    if (!tokens.ok) throw new Error(tokens.reason);
+
+    const replaced = recordDesignSystemExtractionWorkUnit(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      idempotencyKey: "replace-global-v2",
+      workUnit: { kind: "global" },
+      claims: [
+        {
+          claimId: "global-v2",
+          statement: "Restraint preserves hierarchy.",
+          sourceRecordIds: [card("design-principle").id],
+          sourceExcerpts: [card("design-principle").final_answer!],
+          confidence: "confirmed",
+          outcome: "mapped",
+          targets: [
+            {
+              artifactPath: "design-system/design-system.json",
+              entryId: "principle-restraint"
+            }
+          ]
+        }
+      ]
+    });
+
+    expect(replaced).toMatchObject({
+      ok: true,
+      work_unit: { key: "global", version: 2 },
+      progress: {
+        completedWorkUnitKeys: ["tokens", "global"],
+        consumedSourceRecordIds: expect.arrayContaining([
+          card("design-principle").id,
+          card("token").id
+        ]),
+        remainingQuestionCardIds: expect.arrayContaining([
+          card("visual-language").id
+        ])
+      }
+    });
+    expect(replaced.ok && replaced.progress.consumedSourceRecordIds).not.toContain(
+      card("visual-language").id
+    );
+  });
+
+  test("re-claim reports a typed recovery error when an artifact removes a recorded target", () => {
+    const fixture = createCompletedAlignmentFixture();
+    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    if (!claimed.ok) throw new Error(claimed.reason);
+    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
+    const tokenCard = claimed.question_cards.find(
+      (card) => card.section === "token"
+    )!;
+    const recorded = recordDesignSystemExtractionWorkUnit(
+      fixture.projectPath,
+      {
+        alignmentAttemptId: fixture.attemptId,
+        idempotencyKey: "recovery-token-v1",
+        workUnit: { kind: "tokens" },
+        claims: [
+          {
+            claimId: "recovery-token-family",
+            statement: tokenCard.final_answer!,
+            sourceRecordIds: [tokenCard.id],
+            sourceExcerpts: [tokenCard.final_answer!],
+            confidence: "confirmed",
+            outcome: "mapped",
+            targets: [
+              {
+                artifactPath: "design-system/token.json",
+                entryId: "primitive.fontFamily.instrumentSans"
+              }
+            ]
+          }
+        ]
+      }
+    );
+    if (!recorded.ok) throw new Error(recorded.reason);
+
+    writeJson(fixture.projectPath, "design-system/token.json", {
+      primitive: {},
+      semantic: {},
+      component: {}
+    });
+    const redeclared = recordSourceArtifact(fixture.projectPath, {
+      path: "design-system/token.json",
+      artifactType: "token.json",
+      semanticPurpose: "Remove the recorded token target",
+      relatedRecordIds: [tokenCard.id]
+    });
+    if (!redeclared.ok) throw new Error(redeclared.reason);
+
+    const recovered = claimInitialDesignSystemPreparation(fixture.projectPath);
+    expect(recovered).toMatchObject({
+      ok: true,
+      extraction_work_units: [
+        {
+          key: "tokens",
+          resolutionError: {
+            reason: "manifest_target_not_found",
+            details: {
+              claim_id: "recovery-token-family",
+              artifact_path: "design-system/token.json",
+              entry_id: "primitive.fontFamily.instrumentSans"
+            }
+          }
+        }
+      ]
+    });
+  });
+
+  test("records component inventory, spec, and field omissions as one work unit", () => {
+    const fixture = createCompletedAlignmentFixture();
+    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    if (!claimed.ok) throw new Error(claimed.reason);
+    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
+    const componentCard = claimed.question_cards.find(
+      (card) => card.section === "component"
+    )!;
+    const interactionCard = claimed.question_cards.find(
+      (card) => card.section === "interaction"
+    )!;
+
+    writeJson(fixture.projectPath, "design-system/component-list.json", {
+      components: [
+        {
+          id: "component-text-link",
+          value: { name: "TextLink", specPath: "components/text-link.json" },
+          meaning: "Inline label-and-arrow call to action",
+          status: "candidate",
+          links: [componentCard.id]
+        }
+      ]
+    });
+    const inventory = recordSourceArtifact(fixture.projectPath, {
+      path: "design-system/component-list.json",
+      artifactType: "component-list.json",
+      semanticPurpose: "Component work-unit inventory",
+      relatedRecordIds: [componentCard.id]
+    });
+    if (!inventory.ok) throw new Error(inventory.reason);
+
+    const workUnitInput = {
+      alignmentAttemptId: fixture.attemptId,
+      idempotencyKey: "component-text-link-v1",
+      workUnit: {
+        kind: "component" as const,
+        componentEntryId: "component-text-link",
+        specArtifactPath: "design-system/components/text-link.json"
+      },
+      claims: [
+        {
+          claimId: "component-text-link-contract",
+          statement:
+            "TextLink combines the component identity with its interaction behavior.",
+          sourceRecordIds: [componentCard.id, interactionCard.id],
+          sourceExcerpts: [
+            componentCard.final_answer!,
+            interactionCard.final_answer!
+          ],
+          confidence: "confirmed" as const,
+          outcome: "mapped" as const,
+          targets: [
+            {
+              artifactPath: "design-system/component-list.json",
+              entryId: "component-text-link"
+            },
+            {
+              artifactPath: "design-system/components/text-link.json",
+              entryId: "component-text-link-spec"
+            }
+          ]
+        },
+        {
+          claimId: "component-text-link-code-gap",
+          statement: "No implementation code link exists yet.",
+          sourceRecordIds: [componentCard.id],
+          sourceExcerpts: [componentCard.final_answer!],
+          confidence: "confirmed" as const,
+          outcome: "omitted" as const,
+          reason: "Initial extraction has no prototype implementation.",
+          targets: [
+            {
+              artifactPath: "design-system/components/text-link.json",
+              entryId: "component-text-link-spec",
+              fieldPath: ["value", "codeLinks"]
+            }
+          ]
+        }
+      ]
+    };
+
+    expect(
+      recordDesignSystemExtractionWorkUnit(
+        fixture.projectPath,
+        workUnitInput
+      )
+    ).toMatchObject({
+      ok: false,
+      reason: "work_unit_artifact_not_ingested",
+      details: {
+        artifact_path: "design-system/components/text-link.json"
+      }
+    });
+
+    writeJson(
+      fixture.projectPath,
+      "design-system/components/text-link.json",
+      {
+        id: "component-text-link-spec",
+        name: "TextLink",
+        value: {
+          description: "Label-and-arrow CTA",
+          props: [],
+          variants: [],
+          stateMatrix: [],
+          guidelines: [],
+          tokenLinks: [],
+          codeLinks: [],
+          sourceCaptures: {}
+        },
+        status: "candidate",
+        links: [componentCard.id]
+      }
+    );
+    expect(
+      recordSourceArtifact(fixture.projectPath, {
+        path: "design-system/components/text-link.json",
+        artifactType: "component-spec",
+        semanticPurpose: "Invalid component capture fixture",
+        relatedRecordIds: [componentCard.id]
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: { field: "value.sourceCaptures", expected: "array" }
+    });
+
+    writeJson(
+      fixture.projectPath,
+      "design-system/components/text-link.json",
+      {
+        id: "component-text-link-spec",
+        name: "TextLink",
+        value: {
+          description: "Label-and-arrow CTA",
+          props: [{ name: "label", type: "string" }],
+          variants: [{ axis: "style", name: "text-link" }],
+          stateMatrix: [
+            { state: "default", behavior: "Inline text link" },
+            { state: "hover", behavior: "Arrow shifts right" }
+          ],
+          guidelines: [
+            { kind: "dont", text: "Never render a filled background." }
+          ],
+          tokenLinks: ["semantic.text.action"],
+          codeLinks: [],
+          group: "component",
+          sourceCaptures: [
+            {
+              nodeName: "TextLink",
+              artifactPath: "design-system/captures/text-link.png",
+              capturedAt: "2026-08-05T00:00:00.000Z"
+            }
+          ]
+        },
+        status: "candidate",
+        links: [componentCard.id, interactionCard.id]
+      }
+    );
+    const spec = recordSourceArtifact(fixture.projectPath, {
+      path: "design-system/components/text-link.json",
+      artifactType: "component-spec",
+      semanticPurpose: "Component work-unit spec",
+      relatedRecordIds: [componentCard.id, interactionCard.id]
+    });
+    if (!spec.ok) throw new Error(spec.reason);
+
+    expect(
+      recordDesignSystemExtractionWorkUnit(fixture.projectPath, {
+        ...workUnitInput,
+        idempotencyKey: "component-mismatched-identity",
+        workUnit: {
+          ...workUnitInput.workUnit,
+          componentEntryId: "component-other"
+        }
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "component_work_unit_mismatch"
+    });
+    const capturePath = path.join(
+      fixture.projectPath,
+      "design-system/captures/text-link.png"
+    );
+    mkdirSync(path.dirname(capturePath), { recursive: true });
+    writeFileSync(capturePath, "fixture-png", "utf8");
+    expect(
+      recordDesignSystemExtractionWorkUnit(fixture.projectPath, {
+        ...workUnitInput,
+        idempotencyKey: "component-foreign-inventory-target",
+        claims: [
+          {
+            ...workUnitInput.claims[0],
+            targets: [
+              ...workUnitInput.claims[0].targets,
+              {
+                artifactPath: "design-system/component-list.json",
+                entryId: "component-other"
+              }
+            ]
+          },
+          workUnitInput.claims[1]
+        ]
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "component_work_unit_mismatch",
+      details: { problem: "target_owned_by_another_component" }
+    });
+    rmSync(capturePath, { force: true });
+
+    expect(
+      recordDesignSystemExtractionWorkUnit(
+        fixture.projectPath,
+        workUnitInput
+      )
+    ).toMatchObject({
+      ok: false,
+      reason: "component_capture_missing",
+      details: {
+        captures: [
+          {
+            entry_id: "component-text-link-spec",
+            artifact_path: "design-system/captures/text-link.png"
+          }
+        ]
+      }
+    });
+    writeFileSync(capturePath, "fixture-png", "utf8");
+
+    const recorded = recordDesignSystemExtractionWorkUnit(
+      fixture.projectPath,
+      workUnitInput
+    );
+    expect(recorded).toMatchObject({
+      ok: true,
+      work_unit: {
+        key: "component:component-text-link",
+        kind: "component",
+        claims: [
+          {
+            claimId: "component-text-link-contract",
+            targets: [
+              { jsonPointer: "/components/0" },
+              { jsonPointer: "" }
+            ]
+          },
+          {
+            claimId: "component-text-link-code-gap",
+            targets: [{ jsonPointer: "/value/codeLinks" }]
+          }
+        ]
+      }
+    });
+
+    writeJson(fixture.projectPath, "design-system/component-list.json", {
+      components: []
+    });
+    const removedInventory = recordSourceArtifact(fixture.projectPath, {
+      path: "design-system/component-list.json",
+      artifactType: "component-list.json",
+      semanticPurpose: "Component inventory after TextLink removal",
+      relatedRecordIds: [componentCard.id]
+    });
+    if (!removedInventory.ok) throw new Error(removedInventory.reason);
+
+    const recoveryWithObsoleteUnit = claimInitialDesignSystemPreparation(
+      fixture.projectPath
+    );
+    expect(recoveryWithObsoleteUnit).toMatchObject({
+      ok: true,
+      extraction_work_units: [
+        {
+          key: "component:component-text-link",
+          resolutionError: { reason: "manifest_target_not_found" }
+        }
+      ],
+      extraction_progress: { readyToFinalize: false }
+    });
+
+    const retirementInput = {
+      alignmentAttemptId: fixture.attemptId,
+      idempotencyKey: "component-text-link-retire",
+      workUnit: {
+        kind: "component" as const,
+        componentEntryId: "component-text-link",
+        retire: true
+      },
+      claims: []
+    };
+    const retired = recordDesignSystemExtractionWorkUnit(
+      fixture.projectPath,
+      retirementInput
+    );
+    expect(retired).toMatchObject({
+      ok: true,
+      reused: false,
+      retired: true,
+      work_unit_key: "component:component-text-link",
+      progress: {
+        completedWorkUnitKeys: [],
+        auditStatus: "pending",
+        readyToFinalize: false
+      }
+    });
+    expect(
+      recordDesignSystemExtractionWorkUnit(
+        fixture.projectPath,
+        retirementInput
+      )
+    ).toMatchObject({
+      ok: true,
+      reused: true,
+      retired: true,
+      work_unit_key: "component:component-text-link"
+    });
+
+    const recoveredAfterRetirement = claimInitialDesignSystemPreparation(
+      fixture.projectPath
+    );
+    expect(recoveredAfterRetirement).toMatchObject({
+      ok: true,
+      extraction_work_units: [],
+      extraction_residual_claims: [],
+      extraction_audit: null,
+      extraction_progress: {
+        completedWorkUnitKeys: [],
+        auditStatus: "pending",
+        readyToFinalize: false
+      }
+    });
+    const viewAfterRetirement = getDesignSystemView(fixture.projectPath);
+    expect(viewAfterRetirement).toMatchObject({ ok: true });
+    if (!viewAfterRetirement.ok) throw new Error(viewAfterRetirement.reason);
+    expect(viewAfterRetirement.view.components.specs).toEqual([]);
+
+    const auditAfterRetirement = recordCompleteProgressiveExtraction(
+      fixture,
+      claimed
+    );
+    expect(auditAfterRetirement.progress.readyToFinalize).toBe(true);
+    expect(
+      finalizeInitialDesignSystemPreparation(
+        fixture.projectPath,
+        fixture.attemptId
+      )
+    ).toMatchObject({
+      ok: true,
+      command: { status: "completed" },
+      extraction_progress: { readyToFinalize: true }
+    });
+  });
+
+  test("records the residual audit only after every frozen input is consumed", () => {
+    const fixture = createCompletedAlignmentFixture();
+    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    if (!claimed.ok) throw new Error(claimed.reason);
+    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
+    const card = (section: string) =>
+      claimed.question_cards.find((candidate) => candidate.section === section)!;
+    const units = [
+      {
+        definition: { kind: "global" as const },
+        idempotencyKey: "audit-global",
+        claimId: "audit-global-claim",
+        sources: [card("visual-language"), card("design-principle")],
+        targets: [
+          {
+            artifactPath: "design-system/design-system.json",
+            entryId: "visual-language"
+          },
+          {
+            artifactPath: "design-system/design-system.json",
+            entryId: "principle-restraint"
+          }
+        ]
+      },
+      {
+        definition: { kind: "tokens" as const },
+        idempotencyKey: "audit-tokens",
+        claimId: "audit-token-claim",
+        sources: [card("token")],
+        targets: [
+          {
+            artifactPath: "design-system/token.json",
+            entryId: "primitive.fontFamily.instrumentSans"
+          }
+        ]
+      },
+      {
+        definition: { kind: "layout" as const },
+        idempotencyKey: "audit-layout",
+        claimId: "audit-layout-claim",
+        sources: [card("layout")],
+        targets: [
+          {
+            artifactPath: "design-system/layout-rules.json",
+            entryId: "layout-display-hierarchy"
+          }
+        ]
+      },
+      {
+        definition: { kind: "interaction" as const },
+        idempotencyKey: "audit-interaction",
+        claimId: "audit-interaction-claim",
+        sources: [card("interaction")],
+        targets: [
+          {
+            artifactPath: "design-system/interaction-rules.json",
+            entryId: "interaction-quiet-hover"
+          }
+        ]
+      }
+    ];
+    for (const unit of units) {
+      const result = recordDesignSystemExtractionWorkUnit(
+        fixture.projectPath,
+        {
+          alignmentAttemptId: fixture.attemptId,
+          idempotencyKey: unit.idempotencyKey,
+          workUnit: unit.definition,
+          claims: [
+            {
+              claimId: unit.claimId,
+              statement: unit.sources.map((source) => source.final_answer).join(" "),
+              sourceRecordIds: unit.sources.map((source) => source.id),
+              sourceExcerpts: unit.sources.map((source) => source.final_answer!),
+              confidence: "confirmed",
+              outcome: "mapped",
+              targets: unit.targets
+            }
+          ]
+        }
+      );
+      if (!result.ok) throw new Error(result.reason);
+    }
+
+    expect(
+      recordDesignSystemExtractionAudit(fixture.projectPath, {
+        alignmentAttemptId: fixture.attemptId,
+        idempotencyKey: "audit-incomplete",
+        residualClaims: [],
+        audit: {
+          status: "passed",
+          checkedClaimIds: units.map((unit) => unit.claimId),
+          issues: []
+        }
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "input_coverage_incomplete",
+      details: {
+        missing_question_card_ids: expect.any(Array),
+        missing_agent_annotation_ids: expect.any(Array)
+      }
+    });
+
+    const resumed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    if (!resumed.ok) throw new Error(resumed.reason);
+    const remainingRecords = [
+      ...resumed.question_cards.filter((record) =>
+        resumed.extraction_progress.remainingQuestionCardIds.includes(record.id)
+      ),
+      ...resumed.annotations.filter((record) =>
+        resumed.extraction_progress.remainingAgentAnnotationIds.includes(record.id)
+      ),
+      ...resumed.designer_annotations.filter((record) =>
+        resumed.extraction_progress.remainingDesignerAnnotationIds.includes(record.id)
+      )
+    ];
+    const residualClaims = remainingRecords.map((record, index) => ({
+      claimId: `residual-${index + 1}`,
+      statement: "body" in record ? record.body : record.final_answer!,
+      sourceRecordIds: [record.id],
+      sourceExcerpts: ["body" in record ? record.body : record.final_answer!],
+      confidence:
+        "inference" in record ? record.inference : ("confirmed" as const),
+      outcome: "omitted" as const,
+      reason: "No additional reusable Design System decision remains.",
+      targets: []
+    }));
+    const checkedClaimIds = [
+      ...units.map((unit) => unit.claimId),
+      ...residualClaims.map((claim) => claim.claimId)
+    ];
+    const audit = recordDesignSystemExtractionAudit(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      idempotencyKey: "audit-complete",
+      residualClaims,
+      audit: {
+        status: "passed",
+        checkedClaimIds,
+        issues: []
+      }
+    });
+    expect(audit).toMatchObject({
+      ok: true,
+      reused: false,
+      audit: { status: "passed", checkedClaimIds },
+      progress: {
+        completedWorkUnitKeys: ["global", "tokens", "layout", "interaction"],
+        remainingQuestionCardIds: [],
+        remainingAgentAnnotationIds: [],
+        remainingDesignerAnnotationIds: [],
+        auditStatus: "passed",
+        readyToFinalize: true
+      }
+    });
+
+    const recoveredAudit = claimInitialDesignSystemPreparation(
+      fixture.projectPath
+    );
+    if (!recoveredAudit.ok) throw new Error(recoveredAudit.reason);
+    expect(recoveredAudit.extraction_residual_claims).toEqual(residualClaims);
+
+    const interactionUnit = units.find(
+      (unit) => unit.definition.kind === "interaction"
+    )!;
+    const replaced = recordDesignSystemExtractionWorkUnit(
+      fixture.projectPath,
+      {
+        alignmentAttemptId: fixture.attemptId,
+        idempotencyKey: "audit-interaction-replaced",
+        workUnit: interactionUnit.definition,
+        claims: [
+          {
+            claimId: interactionUnit.claimId,
+            statement: interactionUnit.sources
+              .map((source) => source.final_answer)
+              .join(" "),
+            sourceRecordIds: interactionUnit.sources.map((source) => source.id),
+            sourceExcerpts: interactionUnit.sources.map(
+              (source) => source.final_answer!
+            ),
+            confidence: "confirmed",
+            outcome: "mapped",
+            targets: interactionUnit.targets
+          }
+        ]
+      }
+    );
+    expect(replaced).toMatchObject({
+      ok: true,
+      progress: {
+        auditStatus: "pending",
+        readyToFinalize: false
+      }
+    });
+    if (!replaced.ok) throw new Error(replaced.reason);
+    expect(replaced.progress.remainingQuestionCardIds.length).toBeGreaterThan(0);
+    const recoveredReplacement = claimInitialDesignSystemPreparation(
+      fixture.projectPath
+    );
+    if (!recoveredReplacement.ok) throw new Error(recoveredReplacement.reason);
+    expect(recoveredReplacement.extraction_residual_claims).toEqual([]);
+    expect(
+      recoveredReplacement.extraction_progress.remainingQuestionCardIds.length
+    ).toBeGreaterThan(0);
+  });
+
   test("publishes the extraction writing contract through the claim payload source_contract", () => {
     // Issue 18: the writing contract's single home is the source_contract
     // payload (sourced from the schema validators), not the MCP instructions.
@@ -494,7 +1488,7 @@ describe("Initial Design System preparation", () => {
           variants: expect.stringContaining('axis: "size"'),
           states: expect.stringContaining("stateMatrix"),
           guidelines: expect.stringContaining("do/dont"),
-          unresolved_questions: expect.stringContaining("manifest")
+          unresolved_questions: expect.stringContaining("residual extraction claims")
         },
         rule_body: {
           applies_to: ["global-rule", "domain-rule"],
@@ -584,311 +1578,36 @@ describe("Initial Design System preparation", () => {
     });
   });
 
-  test("records a complete attempt-bound extraction manifest idempotently", () => {
+  test("keeps Browser writes closed until progressive extraction finalizes", () => {
     const fixture = createCompletedAlignmentFixture();
     const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
     if (!claimed.ok) throw new Error(claimed.reason);
-
-    const claims = [
-      ...claimed.question_cards.map((card, index) => ({
-        claimId: `question-claim-${index + 1}`,
-        section: card.section,
-        statement: card.final_answer!,
-        sourceRecordIds: [card.id],
-        sourceExcerpts: [card.final_answer!],
-        confidence: "confirmed" as const,
-        outcome: "mapped" as const,
-        targets: [
-          {
-            artifactPath: "design-system/design-system.json",
-            entryId: "visual-language",
-            jsonPointer: "/visualLanguage"
-          }
-        ]
-      })),
-      ...claimed.annotations.map((annotation, index) => ({
-        claimId: `annotation-claim-${index + 1}`,
-        section: annotation.section!,
-        statement: annotation.body,
-        sourceRecordIds: [annotation.id],
-        sourceExcerpts: [annotation.body],
-        confidence: annotation.inference,
-        outcome: "omitted" as const,
-        reason: "Redundant with an answered design claim.",
-        targets: []
-      }))
-    ];
-
-    const first = recordDesignSystemExtractionManifest(fixture.projectPath, {
-      alignmentAttemptId: fixture.attemptId,
-      idempotencyKey: "manifest-v1",
-      claims,
-      audit: {
-        status: "passed",
-        checkedClaimIds: claims.map((claim) => claim.claimId),
-        issues: []
-      }
-    });
-    expect(first).toMatchObject({
-      ok: true,
-      reused: false,
-      manifest: {
-        alignment_attempt_id: fixture.attemptId,
-        idempotency_key: "manifest-v1",
-        version: 1
-      }
-    });
-
-    const second = recordDesignSystemExtractionManifest(fixture.projectPath, {
-      alignmentAttemptId: fixture.attemptId,
-      idempotencyKey: "manifest-v1",
-      claims,
-      audit: {
-        status: "passed",
-        checkedClaimIds: claims.map((claim) => claim.claimId),
-        issues: []
-      }
-    });
-    expect(second).toMatchObject({
-      ok: true,
-      reused: true,
-      manifest: { version: 1 },
-      event_id: null
-    });
-
-    const revisedClaims = claims.map((claim, index) =>
-      index === 0
-        ? { ...claim, statement: `${claim.statement} (clarified)` }
-        : claim
-    );
-    expect(
-      recordDesignSystemExtractionManifest(fixture.projectPath, {
-        alignmentAttemptId: fixture.attemptId,
-        idempotencyKey: "manifest-v2",
-        claims: revisedClaims,
-        audit: {
-          status: "passed",
-          checkedClaimIds: revisedClaims.map((claim) => claim.claimId),
-          issues: []
-        }
-      })
-    ).toMatchObject({
-      ok: true,
-      reused: false,
-      manifest: { version: 2 }
-    });
-
-    expect(
-      recordDesignSystemExtractionManifest(fixture.projectPath, {
-        alignmentAttemptId: fixture.attemptId,
-        idempotencyKey: "manifest-v1",
-        claims,
-        audit: {
-          status: "passed",
-          checkedClaimIds: claims.map((claim) => claim.claimId),
-          issues: []
-        }
-      })
-    ).toMatchObject({
-      ok: true,
-      reused: true,
-      manifest: { idempotency_key: "manifest-v1", version: 1 }
-    });
-
-    expect(
-      claimInitialDesignSystemPreparation(fixture.projectPath)
-    ).toMatchObject({
-      ok: true,
-      reused: true,
-      extraction_manifest: {
-        idempotency_key: "manifest-v2",
-        version: 2
-      }
-    });
-  });
-
-  test("re-claim and manifest validation use the frozen command input", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const first = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!first.ok) throw new Error(first.reason);
-    const removedAnnotationId = first.annotations[0].id;
-
-    const db = new DatabaseSync(getProjectDbPath(fixture.projectPath));
-    try {
-      db.prepare(
-        "DELETE FROM agent_alignment_annotations WHERE id = ?"
-      ).run(removedAnnotationId);
-    } finally {
-      db.close();
-    }
-
-    const second = claimInitialDesignSystemPreparation(fixture.projectPath);
-    expect(second).toMatchObject({
-      ok: true,
-      reused: true,
-      annotations: expect.arrayContaining([
-        expect.objectContaining({ id: removedAnnotationId })
-      ])
-    });
-    if (!second.ok) return;
-    const claims = completeExtractionClaims(second);
-    expect(
-      recordDesignSystemExtractionManifest(fixture.projectPath, {
-        alignmentAttemptId: fixture.attemptId,
-        idempotencyKey: "frozen-after-live-mutation",
-        claims,
-        audit: {
-          status: "passed",
-          checkedClaimIds: claims.map((claim) => claim.claimId),
-          issues: []
-        }
-      })
-    ).toMatchObject({
-      ok: true,
-      manifest: { version: 1 }
-    });
-  });
-
-  test("rejects a manifest that silently omits an answered input record", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    const onlyCard = claimed.question_cards[0];
-
-    expect(
-      recordDesignSystemExtractionManifest(fixture.projectPath, {
-        alignmentAttemptId: fixture.attemptId,
-        idempotencyKey: "incomplete-manifest",
-        claims: [
-          {
-            claimId: "only-one-card",
-            section: onlyCard.section,
-            statement: onlyCard.final_answer!,
-            sourceRecordIds: [onlyCard.id],
-            sourceExcerpts: [onlyCard.final_answer!],
-            confidence: "confirmed",
-            outcome: "omitted",
-            reason: "Not reusable.",
-            targets: []
-          }
-        ],
-        audit: {
-          status: "passed",
-          checkedClaimIds: ["only-one-card"],
-          issues: []
-        }
-      })
-    ).toMatchObject({
-      ok: false,
-      reason: "input_coverage_incomplete",
-      details: {
-        missing_question_card_ids: expect.arrayContaining([
-          claimed.question_cards[1].id
-        ]),
-        missing_agent_annotation_ids: expect.arrayContaining([
-          claimed.annotations[0].id
-        ])
-      }
-    });
-  });
-
-  test("rejects a confirmed claim backed by a reasonable-only annotation", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    const claims = completeExtractionClaims(claimed);
-    const reasonableClaim = claims.find((claim) => {
-      const annotation = claimed.annotations.find(
-        (candidate) => claim.sourceRecordIds.includes(candidate.id)
-      );
-      return annotation?.inference === "reasonable";
-    })!;
-    const overstated = claims.map((claim) =>
-      claim.claimId === reasonableClaim.claimId
-        ? { ...claim, confidence: "confirmed" as const }
-        : claim
-    );
-
-    expect(
-      recordDesignSystemExtractionManifest(fixture.projectPath, {
-        alignmentAttemptId: fixture.attemptId,
-        idempotencyKey: "overstated-confidence",
-        claims: overstated,
-        audit: {
-          status: "passed",
-          checkedClaimIds: overstated.map((claim) => claim.claimId),
-          issues: []
-        }
-      })
-    ).toMatchObject({
-      ok: false,
-      reason: "claim_confidence_exceeds_source",
-      details: {
-        claim_id: reasonableClaim.claimId,
-        reasonable_source_record_ids: reasonableClaim.sourceRecordIds
-      }
-    });
-  });
-
-  test("finalizes only after required artifacts, target coverage, and audit pass", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    const claims = completeExtractionClaims(claimed);
-
-    const manifest = recordDesignSystemExtractionManifest(fixture.projectPath, {
-      alignmentAttemptId: fixture.attemptId,
-      idempotencyKey: "final-manifest",
-      claims,
-      audit: {
-        status: "passed",
-        checkedClaimIds: claims.map((claim) => claim.claimId),
-        issues: []
-      }
-    });
-    if (!manifest.ok) throw new Error(manifest.reason);
-
-    expect(
-      finalizeInitialDesignSystemPreparation(
-        fixture.projectPath,
-        fixture.attemptId
-      )
-    ).toMatchObject({
-      ok: false,
-      reason: "required_artifacts_missing",
-      details: {
-        missing_artifact_paths: expect.arrayContaining([
-          "design-system/token.json"
-        ])
-      }
-    });
-
     declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-    const finalized = finalizeInitialDesignSystemPreparation(
+
+    const sourcePath = path.join(
       fixture.projectPath,
-      fixture.attemptId
+      "design-system/design-system.json"
     );
-    expect(finalized).toMatchObject({
-      ok: true,
-      reused: false,
-      command: {
-        command_type: "prepare_initial_design_system",
-        status: "completed"
-      },
-      manifest: { version: 1 }
-    });
+    const before = readFileSync(sourcePath, "utf8");
     expect(
-      listEvents(
-        fixture.projectPath,
-        "design_system_extraction_manifest_recorded"
-      )
-    ).toHaveLength(1);
+      approveDesignSystemEntry(fixture.projectPath, {
+        sourceArtifactPath: "design-system/design-system.json",
+        entryId: "visual-language",
+        targetStatus: "formalized"
+      })
+    ).toEqual({ ok: false, reason: "initial_design_system_preparing" });
     expect(
-      listEvents(
-        fixture.projectPath,
-        "initial_design_system_preparation_completed"
-      )
-    ).toHaveLength(1);
+      editDesignSystemEntry(fixture.projectPath, {
+        sourceArtifactPath: "design-system/design-system.json",
+        entryId: "visual-language",
+        field: "value.description",
+        text: "A blocked edit."
+      })
+    ).toEqual({ ok: false, reason: "initial_design_system_preparing" });
+    expect(readFileSync(sourcePath, "utf8")).toBe(before);
+
+    const audit = recordCompleteProgressiveExtraction(fixture, claimed);
+    expect(audit.progress.readyToFinalize).toBe(true);
     expect(
       finalizeInitialDesignSystemPreparation(
         fixture.projectPath,
@@ -896,389 +1615,224 @@ describe("Initial Design System preparation", () => {
       )
     ).toMatchObject({
       ok: true,
-      reused: true,
       command: { status: "completed" },
-      event_id: null
+      extraction_progress: { readyToFinalize: true }
     });
 
     expect(
-      recordDesignSystemExtractionManifest(fixture.projectPath, {
-        alignmentAttemptId: fixture.attemptId,
-        idempotencyKey: "final-manifest",
-        claims,
-        audit: {
-          status: "passed",
-          checkedClaimIds: claims.map((claim) => claim.claimId),
-          issues: []
-        }
+      approveDesignSystemEntry(fixture.projectPath, {
+        sourceArtifactPath: "design-system/design-system.json",
+        entryId: "visual-language",
+        targetStatus: "formalized"
       })
-    ).toMatchObject({
-      ok: true,
-      reused: true,
-      manifest: {
-        idempotency_key: "final-manifest",
-        version: 1
-      },
-      event_id: null
-    });
-
+    ).toMatchObject({ ok: true, entry: { status: "formalized" } });
     expect(
-      recordDesignSystemExtractionManifest(fixture.projectPath, {
-        alignmentAttemptId: fixture.attemptId,
-        idempotencyKey: "final-manifest",
-        claims: claims.map((claim, index) =>
-          index === 0
-            ? {
-                ...claim,
-                statement: `${claim.statement} Conflicting replay.`
-              }
-            : claim
-        ),
-        audit: {
-          status: "passed",
-          checkedClaimIds: claims.map((claim) => claim.claimId),
-          issues: []
-        }
+      editDesignSystemEntry(fixture.projectPath, {
+        sourceArtifactPath: "design-system/design-system.json",
+        entryId: "visual-language",
+        field: "value.description",
+        text: "Designer-edited after finalize."
       })
-    ).toMatchObject({
-      ok: false,
-      reason: "idempotency_conflict"
-    });
-
-    expect(
-      recordDesignSystemExtractionManifest(fixture.projectPath, {
-        alignmentAttemptId: fixture.attemptId,
-        idempotencyKey: "new-key-after-completion",
-        claims,
-        audit: {
-          status: "passed",
-          checkedClaimIds: claims.map((claim) => claim.claimId),
-          issues: []
-        }
-      })
-    ).toMatchObject({
-      ok: false,
-      reason: "initial_design_system_command_not_claimed"
-    });
+    ).toMatchObject({ ok: true });
   });
 
-  test("reports the exact design-system entry omitted by the manifest", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-    const claims = completeExtractionClaims(claimed).map((claim) =>
-      claim.targets.some(
-        (target) =>
-          target.entryId === "primitive.fontFamily.instrumentSans"
-      )
-        ? {
-            ...claim,
-            outcome: "omitted" as const,
-            reason: "Incorrectly omitted typography.",
-            targets: []
-          }
-        : claim
-    );
-    const manifest = recordDesignSystemExtractionManifest(fixture.projectPath, {
-      alignmentAttemptId: fixture.attemptId,
-      idempotencyKey: "missing-typography",
-      claims,
-      audit: {
-        status: "passed",
-        checkedClaimIds: claims.map((claim) => claim.claimId),
-        issues: []
-      }
-    });
-    if (!manifest.ok) throw new Error(manifest.reason);
-
-    expect(
-      finalizeInitialDesignSystemPreparation(
-        fixture.projectPath,
-        fixture.attemptId
-      )
-    ).toMatchObject({
-      ok: false,
-      reason: "uncovered_design_system_entries",
-      details: {
-        entries: [
-          {
-            source_artifact_path: "design-system/token.json",
-            entry_id: "primitive.fontFamily.instrumentSans"
-          }
-        ]
-      }
-    });
-    expect(
-      listEvents(
-        fixture.projectPath,
-        "design_system_extraction_coverage_rejected"
-      ).at(-1)?.payload
-    ).toMatchObject({
-      reason: "uncovered_design_system_entries"
-    });
-    expect(
-      listEvents(
-        fixture.projectPath,
-        "initial_design_system_preparation_failed"
-      ).at(-1)?.payload
-    ).toMatchObject({
-      reason: "uncovered_design_system_entries"
-    });
-  });
-
-  test("rejects a manifest target whose JSON pointer drifted", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-    const claims = completeExtractionClaims(claimed).map((claim) => ({
-      ...claim,
-      targets: claim.targets.map((target) =>
-        target.entryId === "primitive.fontFamily.instrumentSans"
-          ? { ...target, jsonPointer: "/primitive/old-font-token" }
-          : target
-      )
-    }));
-    const manifest = recordDesignSystemExtractionManifest(fixture.projectPath, {
-      alignmentAttemptId: fixture.attemptId,
-      idempotencyKey: "drifted-pointer",
-      claims,
-      audit: {
-        status: "passed",
-        checkedClaimIds: claims.map((claim) => claim.claimId),
-        issues: []
-      }
-    });
-    if (!manifest.ok) throw new Error(manifest.reason);
-
-    expect(
-      finalizeInitialDesignSystemPreparation(
-        fixture.projectPath,
-        fixture.attemptId
-      )
-    ).toMatchObject({
-      ok: false,
-      reason: "manifest_target_drift",
-      details: {
-        targets: [
-          {
-            entry_id: "primitive.fontFamily.instrumentSans",
-            json_pointer: "/primitive/old-font-token",
-            expected_json_pointer:
-              "/primitive/fontFamily.instrumentSans"
-          }
-        ]
-      }
-    });
-  });
-
-  test("reports claim identity when artifact re-declaration removes a manifest target", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-    const claims = completeExtractionClaims(claimed);
-    const tokenClaim = claims.find((claim) =>
-      claim.targets.some(
-        (target) =>
-          target.entryId === "primitive.fontFamily.instrumentSans"
-      )
-    )!;
-    const manifest = recordDesignSystemExtractionManifest(fixture.projectPath, {
-      alignmentAttemptId: fixture.attemptId,
-      idempotencyKey: "target-before-redeclaration",
-      claims,
-      audit: {
-        status: "passed",
-        checkedClaimIds: claims.map((claim) => claim.claimId),
-        issues: []
-      }
-    });
-    if (!manifest.ok) throw new Error(manifest.reason);
-
-    writeJson(fixture.projectPath, "design-system/token.json", {
-      primitive: {},
-      semantic: {},
-      component: {}
-    });
-    const redeclared = recordSourceArtifact(fixture.projectPath, {
-      path: "design-system/token.json",
-      artifactType: "token.json",
-      semanticPurpose: "Target drift mutation",
-      relatedRecordIds: [
-        claimed.question_cards.find((card) => card.section === "token")!.id
-      ]
-    });
-    if (!redeclared.ok) throw new Error(redeclared.reason);
-
-    expect(
-      finalizeInitialDesignSystemPreparation(
-        fixture.projectPath,
-        fixture.attemptId
-      )
-    ).toMatchObject({
-      ok: false,
-      reason: "manifest_target_not_found",
-      details: {
-        targets: [
-          {
-            claim_id: tokenClaim.claimId,
-            artifact_path: "design-system/token.json",
-            entry_id: "primitive.fontFamily.instrumentSans",
-            json_pointer: "/primitive/fontFamily.instrumentSans"
-          }
-        ]
-      }
-    });
-  });
-
-  test("requires an explicit domain on tokens generated by the 09B flow", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-
-    const tokenCard = claimed.question_cards.find(
-      (card) => card.section === "token"
-    )!;
-    writeJson(fixture.projectPath, "design-system/token.json", {
-      primitive: {
+  test("finalize preserves uncovered-entry and bidirectional-lineage gates", () => {
+    for (const scenario of ["uncovered", "lineage"] as const) {
+      const fixture = createCompletedAlignmentFixture();
+      const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+      if (!claimed.ok) throw new Error(claimed.reason);
+      declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
+      recordCompleteProgressiveExtraction(fixture, claimed);
+      const tokenCards = claimed.question_cards.filter(
+        (card) => card.section === "token"
+      );
+      const primitive: Record<string, unknown> = {
         "fontFamily.instrumentSans": {
           kind: "token",
-          value: "Instrument Sans, sans-serif",
-          status: "candidate",
-          links: [tokenCard.id]
-        }
-      },
-      semantic: {},
-      component: {}
-    });
-    const redeclared = recordSourceArtifact(fixture.projectPath, {
-      path: "design-system/token.json",
-      artifactType: "token.json",
-      semanticPurpose: "Initial Design System fixture without a token domain",
-      relatedRecordIds: [tokenCard.id]
-    });
-    if (!redeclared.ok) throw new Error(redeclared.reason);
-
-    const claims = completeExtractionClaims(claimed);
-    const manifest = recordDesignSystemExtractionManifest(fixture.projectPath, {
-      alignmentAttemptId: fixture.attemptId,
-      idempotencyKey: "missing-domain",
-      claims,
-      audit: {
-        status: "passed",
-        checkedClaimIds: claims.map((claim) => claim.claimId),
-        issues: []
-      }
-    });
-    if (!manifest.ok) throw new Error(manifest.reason);
-
-    expect(
-      finalizeInitialDesignSystemPreparation(
-        fixture.projectPath,
-        fixture.attemptId
-      )
-    ).toMatchObject({
-      ok: false,
-      reason: "token_domain_missing",
-      details: {
-        entries: [
-          {
-            source_artifact_path: "design-system/token.json",
-            entry_id: "primitive.fontFamily.instrumentSans"
-          }
-        ]
-      }
-    });
-  });
-
-  test("requires an explicit kind on foundation entries generated by the 09B flow", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-
-    const tokenCard = claimed.question_cards.find(
-      (card) => card.section === "token"
-    )!;
-    writeJson(fixture.projectPath, "design-system/token.json", {
-      primitive: {
-        "fontFamily.instrumentSans": {
           domain: "typography",
           value: "Instrument Sans, sans-serif",
           status: "candidate",
-          links: [tokenCard.id]
+          links:
+            scenario === "lineage"
+              ? [tokenCards[0]!.id, tokenCards[1]!.id]
+              : [tokenCards[0]!.id]
         }
-      },
-      semantic: {},
-      component: {}
-    });
-    const redeclared = recordSourceArtifact(fixture.projectPath, {
-      path: "design-system/token.json",
-      artifactType: "token.json",
-      semanticPurpose: "Initial Design System fixture without entry kind",
-      relatedRecordIds: [tokenCard.id]
-    });
-    if (!redeclared.ok) throw new Error(redeclared.reason);
-
-    const claims = completeExtractionClaims(claimed);
-    const manifest = recordDesignSystemExtractionManifest(fixture.projectPath, {
-      alignmentAttemptId: fixture.attemptId,
-      idempotencyKey: "missing-kind",
-      claims,
-      audit: {
-        status: "passed",
-        checkedClaimIds: claims.map((claim) => claim.claimId),
-        issues: []
+      };
+      if (scenario === "uncovered") {
+        primitive["fontSize.body"] = {
+          kind: "token",
+          domain: "typography",
+          value: "16px",
+          status: "candidate",
+          links: [tokenCards[0]!.id]
+        };
       }
-    });
-    if (!manifest.ok) throw new Error(manifest.reason);
+      writeJson(fixture.projectPath, "design-system/token.json", {
+        primitive,
+        semantic: {},
+        component: {}
+      });
+      const redeclared = recordSourceArtifact(fixture.projectPath, {
+        path: "design-system/token.json",
+        artifactType: "token.json",
+        semanticPurpose: `${scenario} finalize fixture`,
+        relatedRecordIds: tokenCards.map((card) => card.id)
+      });
+      if (!redeclared.ok) throw new Error(redeclared.reason);
 
-    expect(
-      finalizeInitialDesignSystemPreparation(
-        fixture.projectPath,
-        fixture.attemptId
-      )
-    ).toMatchObject({
-      ok: false,
-      reason: "entry_kind_missing",
-      details: {
-        entries: [
-          {
-            source_artifact_path: "design-system/token.json",
-            entry_id: "primitive.fontFamily.instrumentSans"
-          }
-        ]
-      }
-    });
+
+      expect(
+        finalizeInitialDesignSystemPreparation(
+          fixture.projectPath,
+          fixture.attemptId
+        )
+      ).toMatchObject(
+        scenario === "uncovered"
+          ? {
+              ok: false,
+              reason: "uncovered_design_system_entries",
+              details: {
+                entries: [
+                  {
+                    source_artifact_path: "design-system/token.json",
+                    entry_id: "primitive.fontSize.body"
+                  }
+                ]
+              }
+            }
+          : {
+              ok: false,
+              reason: "entry_claim_lineage_mismatch",
+              details: {
+                entries: [
+                  expect.objectContaining({
+                    source_artifact_path: "design-system/token.json",
+                    entry_id: "primitive.fontFamily.instrumentSans",
+                    unclaimed_link_ids: [tokenCards[1]!.id]
+                  })
+                ]
+              }
+            }
+      );
+    }
   });
 
-  test("requires gap claims to target gap entries and mapped claims to target non-gaps", () => {
+  test("finalize preserves target, kind, and token-domain gates", () => {
+    for (const scenario of ["target", "kind", "domain"] as const) {
+      const fixture = createCompletedAlignmentFixture();
+      const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+      if (!claimed.ok) throw new Error(claimed.reason);
+      declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
+      recordCompleteProgressiveExtraction(fixture, claimed);
+      const tokenCard = claimed.question_cards.find(
+        (card) => card.section === "token"
+      )!;
+      const tokenEntry = {
+        ...(scenario === "kind" ? {} : { kind: "token" }),
+        ...(scenario === "domain" ? {} : { domain: "typography" }),
+        value: "Instrument Sans, sans-serif",
+        status: "candidate",
+        links: [tokenCard.id]
+      };
+      writeJson(fixture.projectPath, "design-system/token.json", {
+        primitive:
+          scenario === "target"
+            ? {}
+            : { "fontFamily.instrumentSans": tokenEntry },
+        semantic: {},
+        component: {}
+      });
+      const redeclared = recordSourceArtifact(fixture.projectPath, {
+        path: "design-system/token.json",
+        artifactType: "token.json",
+        semanticPurpose: `${scenario} finalize gate fixture`,
+        relatedRecordIds: [tokenCard.id]
+      });
+      if (!redeclared.ok) throw new Error(redeclared.reason);
+
+      if (scenario === "target") {
+        const recovered = claimInitialDesignSystemPreparation(
+          fixture.projectPath
+        );
+        expect(recovered).toMatchObject({
+          ok: true,
+          extraction_progress: {
+            auditStatus: "passed",
+            readyToFinalize: false
+          },
+          extraction_work_units: expect.arrayContaining([
+            expect.objectContaining({
+              key: "tokens",
+              resolutionError: expect.objectContaining({
+                reason: "manifest_target_not_found"
+              })
+            })
+          ])
+        });
+      }
+
+      expect(
+        finalizeInitialDesignSystemPreparation(
+          fixture.projectPath,
+          fixture.attemptId
+        )
+      ).toMatchObject({
+        ok: false,
+        reason:
+          scenario === "target"
+            ? "manifest_target_not_found"
+            : scenario === "kind"
+              ? "entry_kind_missing"
+              : "token_domain_missing"
+      });
+    }
+  });
+
+  test("finalize rejects a gap claim targeting a candidate entry", () => {
     const fixture = createCompletedAlignmentFixture();
     const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
     if (!claimed.ok) throw new Error(claimed.reason);
     declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-    const claims = completeExtractionClaims(claimed).map((claim) =>
-      claim.targets.some(
-        (target) =>
-          target.entryId === "primitive.fontFamily.instrumentSans"
-      )
-        ? { ...claim, outcome: "gap" as const }
-        : claim
-    );
-    const manifest = recordDesignSystemExtractionManifest(fixture.projectPath, {
-      alignmentAttemptId: fixture.attemptId,
-      idempotencyKey: "gap-status-mismatch",
-      claims,
-      audit: {
-        status: "passed",
-        checkedClaimIds: claims.map((claim) => claim.claimId),
-        issues: []
+    recordCompleteProgressiveExtraction(fixture, claimed);
+    const tokenRecords = [
+      ...claimed.question_cards.filter((record) => record.section === "token"),
+      ...claimed.annotations.filter((record) => record.section === "token")
+    ];
+    const replacement = recordDesignSystemExtractionWorkUnit(
+      fixture.projectPath,
+      {
+        alignmentAttemptId: fixture.attemptId,
+        idempotencyKey: "gap-outcome-token-unit",
+        workUnit: { kind: "tokens" },
+        claims: tokenRecords.map((record, index) => ({
+          claimId: `gap-outcome-token-${index + 1}`,
+          statement:
+            "body" in record ? record.body : record.final_answer!,
+          sourceRecordIds: [record.id],
+          sourceExcerpts: [
+            "body" in record ? record.body : record.final_answer!
+          ],
+          confidence:
+            "inference" in record ? record.inference : ("confirmed" as const),
+          outcome: index === 0 ? ("gap" as const) : ("omitted" as const),
+          ...(index === 0
+            ? {
+                targets: [
+                  {
+                    artifactPath: "design-system/token.json",
+                    entryId: "primitive.fontFamily.instrumentSans"
+                  }
+                ]
+              }
+            : {
+                reason: "The first token record carries the tested outcome.",
+                targets: []
+              })
+        }))
       }
-    });
-    if (!manifest.ok) throw new Error(manifest.reason);
+    );
+    if (!replacement.ok) throw new Error(replacement.reason);
+    recordAuditForCurrentProgress(fixture, "gap-outcome-audit");
 
     expect(
       finalizeInitialDesignSystemPreparation(
@@ -1290,731 +1844,14 @@ describe("Initial Design System preparation", () => {
       reason: "manifest_outcome_status_mismatch",
       details: {
         targets: [
-          {
+          expect.objectContaining({
             entry_id: "primitive.fontFamily.instrumentSans",
             outcome: "gap",
             entry_status: "candidate"
-          }
+          })
         ]
       }
     });
   });
 
-  test("rejects entry evidence links that are not carried by its targeting claims", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-    const tokenCard = claimed.question_cards.find(
-      (card) => card.section === "token"
-    )!;
-    const tokenAnnotation = claimed.annotations.find(
-      (annotation) => annotation.section === "token"
-    )!;
-
-    writeJson(fixture.projectPath, "design-system/token.json", {
-      primitive: {
-        "fontFamily.instrumentSans": {
-          domain: "typography",
-          value: "Instrument Sans, sans-serif",
-          status: "formalized",
-          links: [tokenCard.id, tokenAnnotation.id]
-        }
-      },
-      semantic: {},
-      component: {}
-    });
-    const redeclared = recordSourceArtifact(fixture.projectPath, {
-      path: "design-system/token.json",
-      artifactType: "token.json",
-      semanticPurpose: "Formalized typography with mixed evidence",
-      relatedRecordIds: [tokenCard.id, tokenAnnotation.id]
-    });
-    if (!redeclared.ok) throw new Error(redeclared.reason);
-
-    const claims = completeExtractionClaims(claimed).map((claim) =>
-      claim.sourceRecordIds.includes(tokenAnnotation.id)
-        ? {
-            ...claim,
-            targets: [
-              {
-                artifactPath: "design-system/token.json",
-                entryId: "primitive.fontFamily.instrumentSans",
-                jsonPointer: "/primitive/fontFamily.instrumentSans"
-              }
-            ]
-          }
-        : claim
-    );
-    const manifest = recordDesignSystemExtractionManifest(fixture.projectPath, {
-      alignmentAttemptId: fixture.attemptId,
-      idempotencyKey: "unclaimed-entry-link",
-      claims,
-      audit: {
-        status: "passed",
-        checkedClaimIds: claims.map((claim) => claim.claimId),
-        issues: []
-      }
-    });
-    if (!manifest.ok) throw new Error(manifest.reason);
-
-    expect(
-      finalizeInitialDesignSystemPreparation(
-        fixture.projectPath,
-        fixture.attemptId
-      )
-    ).toMatchObject({
-      ok: false,
-      reason: "entry_claim_lineage_mismatch",
-      details: {
-        entries: [
-          {
-            entry_id: "primitive.fontFamily.instrumentSans",
-            unclaimed_link_ids: [tokenAnnotation.id]
-          }
-        ]
-      }
-    });
-  });
-
-  test("rejects mapped claim sources omitted from the entry evidence links", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-    const tokenAnnotation = claimed.annotations.find(
-      (annotation) => annotation.section === "token"
-    )!;
-    const claims = completeExtractionClaims(claimed).map((claim) =>
-      claim.sourceRecordIds.includes(tokenAnnotation.id)
-        ? {
-            ...claim,
-            outcome: "mapped" as const,
-            reason: undefined,
-            targets: [
-              {
-                artifactPath: "design-system/token.json",
-                entryId: "primitive.fontFamily.instrumentSans",
-                jsonPointer: "/primitive/fontFamily.instrumentSans"
-              }
-            ]
-          }
-        : claim
-    );
-    const manifest = recordDesignSystemExtractionManifest(fixture.projectPath, {
-      alignmentAttemptId: fixture.attemptId,
-      idempotencyKey: "mapped-source-not-linked",
-      claims,
-      audit: {
-        status: "passed",
-        checkedClaimIds: claims.map((claim) => claim.claimId),
-        issues: []
-      }
-    });
-    if (!manifest.ok) throw new Error(manifest.reason);
-
-    expect(
-      finalizeInitialDesignSystemPreparation(
-        fixture.projectPath,
-        fixture.attemptId
-      )
-    ).toMatchObject({
-      ok: false,
-      reason: "entry_claim_lineage_mismatch",
-      details: {
-        entries: [
-          {
-            entry_id: "primitive.fontFamily.instrumentSans",
-            unlinked_mapped_source_ids: [tokenAnnotation.id]
-          }
-        ]
-      }
-    });
-  });
-
-  test("requires component inventory/spec pairing and the consolidated detail contract", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-    const componentCard = claimed.question_cards.find(
-      (card) => card.section === "component"
-    )!;
-
-    writeJson(fixture.projectPath, "design-system/component-list.json", {
-      components: [
-        {
-          id: "component-text-link",
-          value: {
-            name: "TextLink",
-            specPath: "components/text-link.json"
-          },
-          meaning: "Inline label-and-arrow call to action",
-          status: "candidate",
-          links: [componentCard.id]
-        }
-      ]
-    });
-    const inventoryDeclaration = recordSourceArtifact(fixture.projectPath, {
-      path: "design-system/component-list.json",
-      artifactType: "component-list.json",
-      semanticPurpose: "Initial component inventory",
-      relatedRecordIds: [componentCard.id]
-    });
-    if (!inventoryDeclaration.ok) {
-      throw new Error(inventoryDeclaration.reason);
-    }
-
-    const baseClaims = completeExtractionClaims(claimed);
-    const inventoryClaims = baseClaims.map((claim) =>
-      claim.section === "component" && claim.sourceRecordIds.includes(componentCard.id)
-        ? {
-            ...claim,
-            outcome: "mapped" as const,
-            reason: undefined,
-            targets: [
-              {
-                artifactPath: "design-system/component-list.json",
-                entryId: "component-text-link",
-                jsonPointer: "/components/0"
-              }
-            ]
-          }
-        : claim
-    );
-    const firstManifest = recordDesignSystemExtractionManifest(
-      fixture.projectPath,
-      {
-        alignmentAttemptId: fixture.attemptId,
-        idempotencyKey: "component-inventory-only",
-        claims: inventoryClaims,
-        audit: {
-          status: "passed",
-          checkedClaimIds: inventoryClaims.map((claim) => claim.claimId),
-          issues: []
-        }
-      }
-    );
-    if (!firstManifest.ok) throw new Error(firstManifest.reason);
-    expect(
-      finalizeInitialDesignSystemPreparation(
-        fixture.projectPath,
-        fixture.attemptId
-      )
-    ).toMatchObject({
-      ok: false,
-      reason: "component_specs_missing",
-      details: {
-        components: [
-          {
-            entry_id: "component-text-link",
-            spec_path: "components/text-link.json"
-          }
-        ]
-      }
-    });
-
-    const baseSpec = {
-      description: "Label-and-arrow CTA",
-      props: [{ name: "label", type: "string" }],
-      variants: [
-        { axis: "style", name: "text-link" },
-        { axis: "size", name: "default" }
-      ],
-      stateMatrix: [
-        {
-          state: "default",
-          behavior: "Inline text link",
-          transition: "transform 160ms ease-out"
-        }
-      ],
-      guidelines: [
-        { kind: "do", text: "Use for inline calls to action." },
-        { kind: "dont", text: "Never render a filled background." }
-      ],
-      tokenLinks: ["semantic.text.action"],
-      codeLinks: []
-    };
-    writeJson(
-      fixture.projectPath,
-      "design-system/components/text-link.json",
-      {
-        id: "component-text-link-spec",
-        name: "TextLink",
-        value: baseSpec,
-        meaning: "Inline label-and-arrow call to action",
-        status: "candidate",
-        links: [componentCard.id]
-      }
-    );
-    const specDeclaration = recordSourceArtifact(fixture.projectPath, {
-      path: "design-system/components/text-link.json",
-      artifactType: "component-spec",
-      semanticPurpose: "Initial component contract",
-      relatedRecordIds: [componentCard.id]
-    });
-    if (!specDeclaration.ok) throw new Error(specDeclaration.reason);
-
-    const completeComponentClaims = inventoryClaims.map((claim) => {
-      if (
-        claim.section === "component" &&
-        claim.sourceRecordIds.includes(componentCard.id)
-      ) {
-        return {
-          ...claim,
-          targets: [
-            ...claim.targets,
-            {
-              artifactPath: "design-system/components/text-link.json",
-              entryId: "component-text-link-spec",
-              jsonPointer: ""
-            }
-          ]
-        };
-      }
-      if (claim.section === "component" && claim.outcome === "omitted") {
-        return {
-          ...claim,
-          reason:
-            "This fixture has no code mapping or unresolved component gap.",
-          targets: [
-            {
-              artifactPath: "design-system/components/text-link.json",
-              entryId: "component-text-link-spec",
-              jsonPointer: "/value/codeLinks"
-            }
-          ]
-        };
-      }
-      return claim;
-    });
-    const secondManifest = recordDesignSystemExtractionManifest(
-      fixture.projectPath,
-      {
-        alignmentAttemptId: fixture.attemptId,
-        idempotencyKey: "component-spec-added",
-        claims: completeComponentClaims,
-        audit: {
-          status: "passed",
-          checkedClaimIds: completeComponentClaims.map(
-            (claim) => claim.claimId
-          ),
-          issues: []
-        }
-      }
-    );
-    if (!secondManifest.ok) throw new Error(secondManifest.reason);
-    expect(
-      finalizeInitialDesignSystemPreparation(
-        fixture.projectPath,
-        fixture.attemptId
-      )
-    ).toMatchObject({
-      ok: true,
-      command: { status: "completed" },
-      manifest: { version: 2 }
-    });
-  });
-
-  test("allows an explicitly targeted omitted outcome to explain a missing component spec", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-    const componentCards = claimed.question_cards.filter(
-      (card) => card.section === "component"
-    );
-
-    writeJson(fixture.projectPath, "design-system/component-list.json", {
-      components: [
-        {
-          id: "component-text-link",
-          value: {
-            name: "TextLink",
-            specPath: "components/text-link.json"
-          },
-          meaning: "Inline label-and-arrow call to action",
-          status: "candidate",
-          links: [componentCards[0].id]
-        }
-      ]
-    });
-    const declaration = recordSourceArtifact(fixture.projectPath, {
-      path: "design-system/component-list.json",
-      artifactType: "component-list.json",
-      semanticPurpose: "Initial component inventory",
-      relatedRecordIds: [componentCards[0].id]
-    });
-    if (!declaration.ok) throw new Error(declaration.reason);
-
-    const claims = completeExtractionClaims(claimed).map((claim) => {
-      if (claim.sourceRecordIds.includes(componentCards[0].id)) {
-        return {
-          ...claim,
-          outcome: "mapped" as const,
-          reason: undefined,
-          targets: [
-            {
-              artifactPath: "design-system/component-list.json",
-              entryId: "component-text-link",
-              jsonPointer: "/components/0"
-            }
-          ]
-        };
-      }
-      if (claim.sourceRecordIds.includes(componentCards[1].id)) {
-        return {
-          ...claim,
-          reason:
-            "The captured evidence defines the inventory identity but not a reusable component contract.",
-          targets: [
-            {
-              artifactPath: "design-system/components/text-link.json",
-              entryId: "component-text-link-spec",
-              jsonPointer: ""
-            }
-          ]
-        };
-      }
-      return claim;
-    });
-    const manifest = recordDesignSystemExtractionManifest(fixture.projectPath, {
-      alignmentAttemptId: fixture.attemptId,
-      idempotencyKey: "component-spec-explicitly-omitted",
-      claims,
-      audit: {
-        status: "passed",
-        checkedClaimIds: claims.map((claim) => claim.claimId),
-        issues: []
-      }
-    });
-    if (!manifest.ok) throw new Error(manifest.reason);
-
-    expect(
-      finalizeInitialDesignSystemPreparation(
-        fixture.projectPath,
-        fixture.attemptId
-      )
-    ).toMatchObject({
-      ok: true,
-      command: { status: "completed" }
-    });
-  });
-
-  test("golden fixture preserves confirmed typography, gray scale, and text-link CTA facts", () => {
-    const fixture = createCompletedAlignmentFixture({ golden: true });
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-    const tokenCard = claimed.question_cards.find(
-      (card) => card.section === "token"
-    )!;
-    const componentCards = claimed.question_cards.filter(
-      (card) => card.section === "component"
-    );
-
-    const tokenEntries = {
-      "fontFamily.instrumentSans": {
-        kind: "token",
-        domain: "typography",
-        value: "Instrument Sans, sans-serif",
-        status: "candidate",
-        links: [tokenCard.id]
-      },
-      "fontSize.seedRange": {
-        kind: "token",
-        domain: "typography",
-        value: { min: "16px", max: "105px" },
-        status: "candidate",
-        links: [tokenCard.id]
-      },
-      "letterSpacing.display": {
-        kind: "token",
-        domain: "typography",
-        value: "-0.03em",
-        status: "candidate",
-        links: [tokenCard.id]
-      },
-      "gray.seedScale": {
-        kind: "token",
-        domain: "color",
-        value: ["#111111", "#333333", "#666666", "#999999", "#cccccc", "#f5f5f5"],
-        status: "candidate",
-        links: [tokenCard.id]
-      }
-    } as const;
-    writeJson(fixture.projectPath, "design-system/token.json", {
-      primitive: tokenEntries,
-      semantic: {},
-      component: {}
-    });
-    const tokenDeclaration = recordSourceArtifact(fixture.projectPath, {
-      path: "design-system/token.json",
-      artifactType: "token.json",
-      semanticPurpose: "Golden typography and gray-scale extraction",
-      relatedRecordIds: [tokenCard.id]
-    });
-    if (!tokenDeclaration.ok) throw new Error(tokenDeclaration.reason);
-
-    writeJson(fixture.projectPath, "design-system/component-list.json", {
-      components: [
-        {
-          id: "component-text-link",
-          value: {
-            name: "TextLink",
-            specPath: "components/text-link.json"
-          },
-          meaning: "Label-and-arrow inline CTA",
-          status: "candidate",
-          links: [componentCards[0].id]
-        }
-      ]
-    });
-    const inventoryDeclaration = recordSourceArtifact(fixture.projectPath, {
-      path: "design-system/component-list.json",
-      artifactType: "component-list.json",
-      semanticPurpose: "Golden component inventory",
-      relatedRecordIds: [componentCards[0].id]
-    });
-    if (!inventoryDeclaration.ok) {
-      throw new Error(inventoryDeclaration.reason);
-    }
-
-    const componentValue = (contradictory: boolean) => ({
-      description: contradictory
-        ? "Filled primary button"
-        : "Concise label-and-arrow text link",
-      props: [{ name: "label", type: "string" }],
-      variants: [
-        { axis: "style", name: "text-link" },
-        { axis: "size", name: "default" }
-      ],
-      stateMatrix: [
-        {
-          state: "default",
-          behavior: contradictory
-            ? "Black fill with white label"
-            : "Inline label plus arrow",
-          transition: "transform 160ms ease-out"
-        }
-      ],
-      guidelines: [
-        { kind: "do", text: "Use for inline calls to action." },
-        { kind: "do", text: "Keep the label concise." },
-        {
-          kind: "dont",
-          text: contradictory
-            ? "Use a black filled background."
-            : "Never introduce a filled button background."
-        }
-      ],
-      tokenLinks: ["semantic.text.action"],
-      codeLinks: ["components/TextLink.tsx"]
-    });
-    const writeAndDeclareSpec = (contradictory: boolean) => {
-      writeJson(
-        fixture.projectPath,
-        "design-system/components/text-link.json",
-        {
-          id: "component-text-link-spec",
-          name: "TextLink",
-          value: componentValue(contradictory),
-          meaning: "Label-and-arrow inline CTA",
-          status: "candidate",
-          links: [componentCards[0].id]
-        }
-      );
-      return recordSourceArtifact(fixture.projectPath, {
-        path: "design-system/components/text-link.json",
-        artifactType: "component-spec",
-        semanticPurpose: contradictory
-          ? "Contradictory CTA mutation"
-          : "Golden text-link CTA contract",
-        relatedRecordIds: [componentCards[0].id]
-      });
-    };
-    const contradictoryDeclaration = writeAndDeclareSpec(true);
-    if (!contradictoryDeclaration.ok) {
-      throw new Error(contradictoryDeclaration.reason);
-    }
-
-    const tokenDecisions = [
-      {
-        claimId: "golden-font-family",
-        statement: "Instrument Sans is the sole interface family.",
-        name: "fontFamily.instrumentSans"
-      },
-      {
-        claimId: "golden-type-range",
-        statement: "The observed type scale spans 16–105 px.",
-        name: "fontSize.seedRange"
-      },
-      {
-        claimId: "golden-display-tracking",
-        statement: "Display typography uses negative letter spacing.",
-        name: "letterSpacing.display"
-      },
-      {
-        claimId: "golden-gray-scale",
-        statement: "The neutral palette retains six gray steps.",
-        name: "gray.seedScale"
-      }
-    ] as const;
-    const claims = completeExtractionClaims(
-      claimed
-    ).flatMap<DesignSystemExtractionClaim>((claim) => {
-      if (claim.sourceRecordIds.includes(tokenCard.id)) {
-        return tokenDecisions.map((decision) => ({
-          ...claim,
-          claimId: decision.claimId,
-          statement: decision.statement,
-          sourceExcerpts: [tokenCard.final_answer!],
-          outcome: "mapped" as const,
-          reason: undefined,
-          targets: [
-            {
-              artifactPath: "design-system/token.json",
-              entryId: `primitive.${decision.name}`,
-              jsonPointer: `/primitive/${decision.name}`
-            }
-          ]
-        }));
-      }
-      if (claim.sourceRecordIds.includes(componentCards[0].id)) {
-        return [{
-          ...claim,
-          outcome: "mapped" as const,
-          reason: undefined,
-          targets: [
-            {
-              artifactPath: "design-system/component-list.json",
-              entryId: "component-text-link",
-              jsonPointer: "/components/0"
-            },
-            {
-              artifactPath: "design-system/components/text-link.json",
-              entryId: "component-text-link-spec",
-              jsonPointer: ""
-            }
-          ]
-        }];
-      }
-      if (claim.sourceRecordIds.includes(componentCards[1].id)) {
-        return [{
-          ...claim,
-          reason: "The confirmed contract leaves no unresolved component gap.",
-          targets: []
-        }];
-      }
-      return [claim];
-    });
-    expect(
-      claims.filter((claim) => claim.claimId.startsWith("golden-"))
-    ).toMatchObject(
-      tokenDecisions.map((decision) => ({
-        claimId: decision.claimId,
-        statement: decision.statement,
-        targets: [
-          {
-            entryId: `primitive.${decision.name}`
-          }
-        ]
-      }))
-    );
-    const failedAudit = recordDesignSystemExtractionManifest(
-      fixture.projectPath,
-      {
-        alignmentAttemptId: fixture.attemptId,
-        idempotencyKey: "golden-contradiction",
-        claims,
-        audit: {
-          status: "failed",
-          checkedClaimIds: claims.map((claim) => claim.claimId),
-          issues: [
-            "CTA source contradicts the designer-confirmed text-link contract."
-          ]
-        }
-      }
-    );
-    if (!failedAudit.ok) throw new Error(failedAudit.reason);
-    expect(
-      finalizeInitialDesignSystemPreparation(
-        fixture.projectPath,
-        fixture.attemptId
-      )
-    ).toMatchObject({
-      ok: false,
-      reason: "extraction_audit_failed"
-    });
-
-    const correctedDeclaration = writeAndDeclareSpec(false);
-    if (!correctedDeclaration.ok) {
-      throw new Error(correctedDeclaration.reason);
-    }
-    const passedAudit = recordDesignSystemExtractionManifest(
-      fixture.projectPath,
-      {
-        alignmentAttemptId: fixture.attemptId,
-        idempotencyKey: "golden-corrected",
-        claims,
-        audit: {
-          status: "passed",
-          checkedClaimIds: claims.map((claim) => claim.claimId),
-          issues: []
-        }
-      }
-    );
-    if (!passedAudit.ok) throw new Error(passedAudit.reason);
-    expect(
-      finalizeInitialDesignSystemPreparation(
-        fixture.projectPath,
-        fixture.attemptId
-      )
-    ).toMatchObject({
-      ok: true,
-      command: { status: "completed" },
-      manifest: { version: 2 }
-    });
-
-    const view = getDesignSystemView(fixture.projectPath);
-    if (!view.ok) throw new Error(view.reason);
-    expect(view.view.tokens.primitive).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          entry_id: "primitive.fontFamily.instrumentSans",
-          domain: "typography",
-          value: "Instrument Sans, sans-serif"
-        }),
-        expect.objectContaining({
-          entry_id: "primitive.fontSize.seedRange",
-          value: { min: "16px", max: "105px" }
-        }),
-        expect.objectContaining({
-          entry_id: "primitive.letterSpacing.display",
-          value: "-0.03em"
-        }),
-        expect.objectContaining({
-          entry_id: "primitive.gray.seedScale",
-          domain: "color",
-          value: expect.arrayContaining([
-            "#111111",
-            "#333333",
-            "#666666",
-            "#999999",
-            "#cccccc",
-            "#f5f5f5"
-          ])
-        })
-      ])
-    );
-    expect(view.view.components.specs[0].value).toMatchObject({
-      description: "Concise label-and-arrow text link",
-      guidelines: expect.arrayContaining([
-        {
-          kind: "dont",
-          text: "Never introduce a filled button background."
-        }
-      ])
-    });
-  });
 });

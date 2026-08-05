@@ -4,8 +4,10 @@ import {
   claimInitialDesignSystemPreparationCommand,
   finalizeInitialDesignSystemPreparationCommand,
   finalizeInitialDesignSystemPreparationInputSchema,
-  recordDesignSystemExtractionManifestCommand,
-  recordDesignSystemExtractionManifestInputSchema,
+  recordDesignSystemExtractionAuditCommand,
+  recordDesignSystemExtractionAuditInputSchema,
+  recordDesignSystemExtractionWorkUnitCommand,
+  recordDesignSystemExtractionWorkUnitInputSchema,
   requireActiveProjectCommand
 } from "../runtime/commands";
 import {
@@ -33,7 +35,7 @@ export function registerInitialDesignSystemTools(
     "claim_initial_design_system_preparation",
     {
       description:
-        "Claim the current durable prepare_initial_design_system command. Returns the frozen completed Alignment input: Design Language Description, Seed References and evidence versions, Agent Annotations, answered Question cards with answer sources, Designer Annotations, the 09B source contract, required design-system JSON artifacts, already-declared artifacts, and any previously recorded extraction manifest. Safe to retry after disconnect; a repeated claim returns the same input and current recovery state. After claim, build an atomic extraction manifest before writing/finalizing source artifacts. No arguments."
+        "Claim the current durable prepare_initial_design_system command. Returns the complete frozen Alignment context in one read: Design Language Description, Seed References and evidence versions, every Agent Annotation, answered Question card with answer source, and Designer Annotation, plus the source contract, required artifacts, completed extraction work units, global audit, and resumable progress. Read and reason over this whole context before writing output section by section. Safe to retry after disconnect; a repeated claim returns the same frozen input and current recovery state. No arguments."
     },
     async () => {
       const ctx = await active("claim_initial_design_system_preparation");
@@ -50,23 +52,48 @@ export function registerInitialDesignSystemTools(
   );
 
   mcp.registerTool(
-    "record_design_system_extraction_manifest",
+    "record_design_system_extraction_work_unit",
     {
       description:
-        "Record the attempt-bound atomic Evidence-to-Decision manifest for the claimed Initial Design System command. Every answered Question card, Agent Annotation, and Designer Annotation in the immutable snapshot must be consumed by at least one claim. Each claim must be mapped to stable artifact/entry/JSON-pointer targets, or explicitly marked conflict, omitted, or gap with a reason. The Runtime validates structure and snapshot coverage but does not pretend to judge natural-language semantic relevance.",
-      inputSchema: recordDesignSystemExtractionManifestInputSchema
+        "Record or replace one completed output work unit after its artifact JSON has been declared and ingested. A unit is global, tokens, layout, interaction, or one atomic component containing its inventory entry, matching component spec, and captures. Claims may consume evidence from any Alignment section. Target stable artifactPath + entryId identities; fieldPath is only for an omitted component-spec value field. Never send JSON pointers because the Runtime derives them. Replacing a unit recomputes coverage and invalidates the previous residual claims and global audit. If a previously recorded component was removed or renamed, retire its obsolete unit with that componentEntryId, retire: true, no specArtifactPath, and claims: []; retirement is idempotent and also invalidates the previous residual claims and audit.",
+      inputSchema: recordDesignSystemExtractionWorkUnitInputSchema
     },
     async (args) => {
-      const ctx = await active("record_design_system_extraction_manifest");
+      const ctx = await active("record_design_system_extraction_work_unit");
       if (!ctx.ok) return ctx.result;
-      const result = recordDesignSystemExtractionManifestCommand(
+      const result = recordDesignSystemExtractionWorkUnitCommand(
         ctx.projectPath,
         args
       );
       return result.ok
         ? successResult(ctx.rt, result)
         : failureResult(
-            "record_design_system_extraction_manifest",
+            "record_design_system_extraction_work_unit",
+            result.reason,
+            ctx.rt,
+            result.details
+          );
+    }
+  );
+
+  mcp.registerTool(
+    "record_design_system_extraction_audit",
+    {
+      description:
+        "Record the final cross-section coverage audit after all output work units are complete. residualClaims may only describe evidence intentionally omitted or still in conflict and must have no output targets. The audit checkedClaimIds must exactly cover all work-unit and residual claims, and every frozen Question card and Annotation must be consumed. A passed issue-free audit makes the extraction ready to finalize only when all required work units are also present.",
+      inputSchema: recordDesignSystemExtractionAuditInputSchema
+    },
+    async (args) => {
+      const ctx = await active("record_design_system_extraction_audit");
+      if (!ctx.ok) return ctx.result;
+      const result = recordDesignSystemExtractionAuditCommand(
+        ctx.projectPath,
+        args
+      );
+      return result.ok
+        ? successResult(ctx.rt, result)
+        : failureResult(
+            "record_design_system_extraction_audit",
             result.reason,
             ctx.rt,
             result.details
@@ -78,7 +105,7 @@ export function registerInitialDesignSystemTools(
     "finalize_initial_design_system_preparation",
     {
       description:
-        "Complete the claimed Initial Design System command only after the extraction manifest, audit, required declared+ingested JSON artifacts, manifest targets, reverse entry coverage, component inventory/spec pairing, and formalized-claim support all pass. Returns typed failures naming the missing artifact, claim, target, or entry so the Agent can repair and safely retry.",
+        "Complete the claimed Initial Design System command only after all required output work units, the passed global audit, required declared+ingested JSON artifacts, Runtime-resolved targets, reverse entry coverage, atomic component inventory/spec pairing, and formalized-claim support all pass. Returns typed failures naming the missing artifact, work unit, claim, target, or entry so the Agent can repair and safely retry.",
       inputSchema: finalizeInitialDesignSystemPreparationInputSchema
     },
     async (args) => {

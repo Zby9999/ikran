@@ -8,6 +8,7 @@ import {
   DESIGN_SYSTEM_SHEET_EXIT_MS,
   DESIGN_SYSTEM_SHEET_REDUCED_MOTION_EXIT_MS,
   DesignSystemEntryButton,
+  EntryStatusChip,
   EvidenceInfoContent,
   FoundationsHomePage,
   LayoutLeafPage,
@@ -94,6 +95,20 @@ describe("Design System sheet motion timing", () => {
     );
     expect(DESIGN_SYSTEM_SHEET_EXIT_MS).toBe(400);
     expect(DESIGN_SYSTEM_SHEET_REDUCED_MOTION_EXIT_MS).toBe(150);
+  });
+});
+
+describe("Design System extraction read-only state", () => {
+  test("renders status as information instead of an approval action", () => {
+    const markup = renderToStaticMarkup(
+      createElement(EntryStatusChip, {
+        row: row(),
+        approval: { kind: "idle" }
+      })
+    );
+    expect(markup).toContain('data-testid="ds-status-chip"');
+    expect(markup).toContain("Candidate");
+    expect(markup).not.toContain("<button");
   });
 });
 

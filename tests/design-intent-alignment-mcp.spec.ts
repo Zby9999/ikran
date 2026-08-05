@@ -29,7 +29,8 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
         "read_design_intent_alignment",
         "wait_for_agent_command",
         "claim_initial_design_system_preparation",
-        "record_design_system_extraction_manifest",
+        "record_design_system_extraction_work_unit",
+        "record_design_system_extraction_audit",
         "finalize_initial_design_system_preparation"
       ])
     );
@@ -382,14 +383,13 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
       (claimedInitialDesignSystem.question_cards as unknown[])
     ).toHaveLength(12);
     const incompleteManifest = sc(await client.callTool({
-      name: "record_design_system_extraction_manifest",
+      name: "record_design_system_extraction_audit",
       arguments: {
         alignmentAttemptId: attemptId,
-        idempotencyKey: "incomplete-mcp-manifest",
-        claims: [
+        idempotencyKey: "incomplete-mcp-audit",
+        residualClaims: [
           {
             claimId: "only-first-card",
-            section: "design-principle",
             statement: "The first answered decision.",
             sourceRecordIds: [firstCardId],
             sourceExcerpts: ["同意"],
@@ -408,11 +408,7 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     }));
     expect(incompleteManifest).toMatchObject({
       ok: false,
-      error: "input_coverage_incomplete",
-      details: {
-        missing_question_card_ids: expect.any(Array),
-        missing_agent_annotation_ids: expect.any(Array)
-      }
+      error: "invalid_audit"
     });
     sse.close();
   } finally {
