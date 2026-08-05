@@ -106,7 +106,8 @@ const DISPLAY_LARGE = entry({
     fontFamily: { alias: "primitive.font-family-sans" },
     fontSize: "64px",
     fontWeight: "700",
-    lineHeight: "1.05"
+    lineHeight: "1.05",
+    usedFor: "Hero statement"
   }
 });
 const BODY = entry({
@@ -578,7 +579,7 @@ describe("toTechnicalDetail", () => {
     const raw = JSON.parse(detail.rawJson) as Record<string, unknown>;
     expect(raw.value).toEqual(DISPLAY_LARGE.value);
     expect(raw.status).toBe("formalized");
-    expect(raw).toHaveProperty("meaning");
+    expect(raw).not.toHaveProperty("meaning");
     expect(raw).toHaveProperty("links");
     expect(raw).not.toHaveProperty("alias");
   });
@@ -685,7 +686,7 @@ describe("typographyAtlasItems", () => {
 
     expect(display).toMatchObject({
       kind: "style",
-      usage: DISPLAY_LARGE.meaning,
+      usage: "Hero statement",
       fontFamily:
         "→ primitive.font-family-sans · Instrument Sans, system-ui, sans-serif",
       specimenFamily: '"Instrument Sans", system-ui, sans-serif',

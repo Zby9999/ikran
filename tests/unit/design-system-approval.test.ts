@@ -167,16 +167,21 @@ function tokenJsonFixture(semanticLinks: string[]) {
   return {
     primitive: {
       "color.blue.500": {
+        kind: "token",
+        domain: "color",
         value: "#3b82f6",
-        meaning: "品牌主色",
         status: "formalized",
         links: ["card-edited"]
       }
     },
     semantic: {
       "color.primary": {
-        value: { alias: "primitive.color.blue.500" },
-        meaning: "语义主色",
+        kind: "token",
+        domain: "color",
+        value: {
+          alias: "primitive.color.blue.500",
+          usage: "语义主色"
+        },
         status: "candidate",
         links: semanticLinks
       }
@@ -524,7 +529,8 @@ describe("per-kind write-back location", () => {
       expect(row?.status).toBe("formalized");
       // Alias payload persisted verbatim through the flip.
       expect(JSON.parse(row?.value_json as string)).toEqual({
-        alias: "primitive.color.blue.500"
+        alias: "primitive.color.blue.500",
+        usage: "语义主色"
       });
     });
   });

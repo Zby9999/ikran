@@ -142,6 +142,7 @@ export interface DesignSystemEntryView {
   value: unknown;
   /** Reserved token alias target ("layer.name") when `value` is an alias object. */
   alias: string | null;
+  /** Rule/component-inventory title. Empty for token entries and component specs. */
   meaning: string;
   status: DesignSystemStatus;
   links: string[];
@@ -204,13 +205,17 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-/** Reserved `alias` key projection: only a PURE alias object (exactly one
- * key, string target) exposes its target here — consistent with the schema's
- * `token_alias_reserved_key` rejection of mixed objects. */
+/** Reserved `alias` key projection. Token aliases may additionally carry the
+ * schema-approved usage / usedFor metadata inside value. */
 function aliasOf(value: unknown): string | null {
   if (!isPlainObject(value)) return null;
   const keys = Object.keys(value);
-  if (keys.length !== 1 || keys[0] !== "alias") return null;
+  if (
+    !keys.includes("alias") ||
+    keys.some((key) => !["alias", "usage", "usedFor"].includes(key))
+  ) {
+    return null;
+  }
   return typeof value.alias === "string" ? value.alias : null;
 }
 
@@ -615,6 +620,10 @@ export function writeDesignSystemViewExport(
   const { generated_at: _generatedAt, ...content } = result.view;
   const stripRowId = (entry: DesignSystemEntryView) => {
     const { id: _id, ...rest } = entry;
+    if (entry.section.startsWith("token.") && entry.kind !== "domain-rule") {
+      const { meaning: _meaning, ...tokenEntry } = rest;
+      return tokenEntry;
+    }
     return rest;
   };
   // Same bucket walk as the view projection — no second section enumeration.

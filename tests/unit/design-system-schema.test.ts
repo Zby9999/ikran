@@ -57,13 +57,13 @@ function validTokenJson(): {
     primitive: {
       "color.blue.500": {
         value: "#3b82f6",
-        meaning: "品牌主色",
+        domain: "color",
         status: "formalized",
         links: ["card-1"]
       },
       "space.4": {
         value: "16px",
-        meaning: "基础间距",
+        domain: "spacing",
         status: "candidate",
         links: ["card-1"]
       }
@@ -71,7 +71,7 @@ function validTokenJson(): {
     semantic: {
       "color.primary": {
         value: { alias: "primitive.color.blue.500" },
-        meaning: "语义主色",
+        domain: "color",
         status: "formalized",
         links: ["card-1"]
       }
@@ -79,14 +79,14 @@ function validTokenJson(): {
     component: {
       "button.bg": {
         value: { alias: "semantic.color.primary" },
-        meaning: "按钮背景",
+        domain: "color",
         status: "candidate",
         links: ["card-1"]
       },
       // Layer skip: component may alias primitive directly.
       "button.padding": {
         value: { alias: "primitive.space.4" },
-        meaning: "按钮内边距",
+        domain: "spacing",
         status: "gap",
         links: []
       }
@@ -193,10 +193,7 @@ test.describe("shared entry contract", () => {
     const tokenWithRule = validTokenJson();
     Object.assign(tokenWithRule.primitive["color.blue.500"], {
       kind: "token",
-      domain: "color",
-      // Primitive color tokens carry no usage description (see the
-      // dedicated describe block below).
-      meaning: ""
+      domain: "color"
     });
     tokenWithRule.semantic["no-shadow-regions"] = {
       kind: "domain-rule",
@@ -382,6 +379,16 @@ test.describe("design-system.json", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("token.json", () => {
+  test("token entries reject envelope meaning fail-closed", () => {
+    const json = validTokenJson();
+    json.primitive["color.blue.500"].meaning = "品牌主色";
+    expect(validateDesignSystemJson("token.json", json)).toMatchObject({
+      ok: false,
+      reason: "token_meaning_forbidden",
+      details: { token: "primitive.color.blue.500", field: "meaning" }
+    });
+  });
+
   test("valid 3-layer file incl. component → primitive layer skip", () => {
     const res = validateDesignSystemJson("token.json", validTokenJson());
     expect(res.ok).toBe(true);
@@ -389,10 +396,6 @@ test.describe("token.json", () => {
 
   test("accepts a declared token domain and rejects unknown domains", () => {
     const valid = validTokenJson();
-    valid.primitive["color.blue.500"].domain = "color";
-    // domain "color" on the primitive layer also flips meaning to the
-    // empty-string contract.
-    valid.primitive["color.blue.500"].meaning = "";
     expect(validateDesignSystemJson("token.json", valid).ok).toBe(true);
 
     const invalid = validTokenJson();
@@ -405,78 +408,9 @@ test.describe("token.json", () => {
     });
   });
 
-  test.describe("primitive color meaning contract", () => {
-    test("non-empty meaning on a primitive color token → primitive_color_meaning_forbidden", () => {
+  test.describe("token meaning retirement", () => {
+    test("domain-rule entries in token.json keep required meaning", () => {
       const json = validTokenJson();
-      Object.assign(json.primitive["color.blue.500"], { domain: "color" });
-      const res = validateDesignSystemJson("token.json", json);
-      expect(res).toMatchObject({
-        ok: false,
-        reason: "primitive_color_meaning_forbidden",
-        details: { token: "primitive.color.blue.500" }
-      });
-    });
-
-    test("empty-string meaning on a primitive color token passes", () => {
-      const json = validTokenJson();
-      Object.assign(json.primitive["color.blue.500"], {
-        domain: "color",
-        meaning: ""
-      });
-      expect(validateDesignSystemJson("token.json", json).ok).toBe(true);
-    });
-
-    test("meaning must still be present and a string on primitive color tokens", () => {
-      const missing = validTokenJson();
-      Object.assign(missing.primitive["color.blue.500"], {
-        domain: "color",
-        meaning: undefined
-      });
-      expect(
-        validateDesignSystemJson("token.json", missing)
-      ).toMatchObject({ ok: false, reason: "missing_required_field" });
-
-      const wrongType = validTokenJson();
-      Object.assign(wrongType.primitive["color.blue.500"], {
-        domain: "color",
-        meaning: 42
-      });
-      expect(
-        validateDesignSystemJson("token.json", wrongType)
-      ).toMatchObject({ ok: false, reason: "invalid_field_type" });
-    });
-
-    test("semantic/component color tokens and other primitive domains keep the non-empty contract", () => {
-      const json = validTokenJson();
-      Object.assign(json.primitive["color.blue.500"], {
-        domain: "color",
-        meaning: ""
-      });
-      json.semantic["color.primary"].domain = "color";
-      json.component["button.bg"].domain = "color";
-      json.primitive["space.4"].domain = "spacing";
-      expect(validateDesignSystemJson("token.json", json).ok).toBe(true);
-
-      const semanticEmpty = validTokenJson();
-      Object.assign(semanticEmpty.primitive["color.blue.500"], {
-        domain: "color",
-        meaning: ""
-      });
-      Object.assign(semanticEmpty.semantic["color.primary"], {
-        domain: "color",
-        meaning: ""
-      });
-      expect(
-        validateDesignSystemJson("token.json", semanticEmpty)
-      ).toMatchObject({ ok: false, reason: "missing_required_field" });
-    });
-
-    test("primitive color domain-rule entries keep their own meaning", () => {
-      const json = validTokenJson();
-      Object.assign(json.primitive["color.blue.500"], {
-        domain: "color",
-        meaning: ""
-      });
       json.primitive["color-scale-rule"] = {
         kind: "domain-rule",
         domain: "color",
@@ -486,17 +420,111 @@ test.describe("token.json", () => {
         links: ["card-1"]
       };
       expect(validateDesignSystemJson("token.json", json).ok).toBe(true);
-    });
-
-    test("legacy primitive entries without an explicit domain keep the old contract", () => {
-      const json = validTokenJson();
-      // No domain declared: non-empty meaning stays required.
-      expect(validateDesignSystemJson("token.json", json).ok).toBe(true);
-      json.primitive["color.blue.500"].meaning = "";
+      delete json.primitive["color-scale-rule"].meaning;
       expect(
         validateDesignSystemJson("token.json", json)
       ).toMatchObject({ ok: false, reason: "missing_required_field" });
     });
+  });
+
+  test("typography semantic tokens accept usedFor and reject usage", () => {
+    const valid = validTokenJson();
+    valid.primitive["fontSize.16"] = {
+      value: "16px",
+      domain: "typography",
+      status: "formalized",
+      links: ["card-1"]
+    };
+    valid.semantic["typography.body"] = {
+      value: {
+        alias: "primitive.fontSize.16",
+        usedFor: "Default reading text across content surfaces."
+      },
+      domain: "typography",
+      status: "formalized",
+      links: ["card-1"]
+    };
+    expect(validateDesignSystemJson("token.json", valid)).toEqual({ ok: true });
+
+    const wrongField = structuredClone(valid);
+    wrongField.semantic["typography.body"].value = {
+      alias: "primitive.fontSize.16",
+      usage: "Default reading text across content surfaces."
+    };
+    expect(validateDesignSystemJson("token.json", wrongField)).toMatchObject({
+      ok: false,
+      reason: "token_usage_field_forbidden",
+      details: {
+        token: "semantic.typography.body",
+        field: "value.usage",
+        expected: "value.usedFor"
+      }
+    });
+  });
+
+  test("non-typography semantic/component tokens accept usage and reject usedFor", () => {
+    const valid = validTokenJson();
+    valid.semantic["color.primary"].value = {
+      alias: "primitive.color.blue.500",
+      usage: "Default foreground for readable text."
+    };
+    valid.component["button.bg"].value = {
+      alias: "semantic.color.primary",
+      usage: "Button surface color."
+    };
+    expect(validateDesignSystemJson("token.json", valid)).toEqual({ ok: true });
+
+    const wrongField = structuredClone(valid);
+    wrongField.semantic["color.primary"].value = {
+      alias: "primitive.color.blue.500",
+      usedFor: "Default foreground for readable text."
+    };
+    expect(validateDesignSystemJson("token.json", wrongField)).toMatchObject({
+      ok: false,
+      reason: "token_usage_field_forbidden",
+      details: {
+        token: "semantic.color.primary",
+        field: "value.usedFor",
+        expected: "value.usage"
+      }
+    });
+  });
+
+  test("primitive tokens reject usage fields and usage text must be non-empty", () => {
+    const primitiveUsage = validTokenJson();
+    primitiveUsage.primitive["color.blue.500"].value = {
+      hex: "#3b82f6",
+      usage: "Palette ink"
+    };
+    expect(validateDesignSystemJson("token.json", primitiveUsage)).toMatchObject({
+      ok: false,
+      reason: "token_usage_field_forbidden",
+      details: {
+        token: "primitive.color.blue.500",
+        field: "value.usage",
+        expected: "no token usage field"
+      }
+    });
+
+    for (const invalidUsage of ["", "   ", 42]) {
+      const semanticUsage = validTokenJson();
+      semanticUsage.semantic["color.primary"].value = {
+        alias: "primitive.color.blue.500",
+        usage: invalidUsage
+      };
+      expect(
+        validateDesignSystemJson("token.json", semanticUsage),
+        String(invalidUsage)
+      ).toMatchObject({
+        ok: false,
+        reason: "invalid_field_type",
+        details: {
+          token: "semantic.color.primary",
+          field: "value.usage",
+          expected: "non-empty string"
+        }
+      });
+    }
   });
 
   test("domain rules in token.json require prose bodies", () => {
@@ -599,7 +627,7 @@ test.describe("token.json", () => {
     json.component["button.bg"].value = { alias: "component.button.fg" };
     json.component["button.fg"] = {
       value: { alias: "component.button.bg" },
-      meaning: "按钮前景",
+      domain: "color",
       status: "candidate",
       links: ["card-1"]
     };
@@ -619,7 +647,7 @@ test.describe("token.json", () => {
     const json = validTokenJson();
     json.semantic["color.accent"] = {
       value: { alias: "semantic.color.primary" },
-      meaning: "强调色",
+      domain: "color",
       status: "candidate",
       links: ["card-1"]
     };
@@ -1179,7 +1207,7 @@ test.describe("declaration wiring (deep checkFile seam)", () => {
       json.component["button.bg"].value = { alias: "component.button.fg" };
       json.component["button.fg"] = {
         value: { alias: "component.button.bg" },
-        meaning: "按钮前景",
+        domain: "color",
         status: "candidate",
         links: ["card-1"]
       };

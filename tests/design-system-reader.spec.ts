@@ -159,36 +159,36 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     writeSource("design-system/token.json", {
       primitive: {
         "font.family.sans": {
+          kind: "token",
           value: "Instrument Sans, system-ui, sans-serif",
-          meaning: "Primary typeface stack",
           status: "formalized",
           links: [designerEditedCardId],
           domain: "typography"
         },
         "font.size.400": {
+          kind: "token",
           value: "16px",
-          meaning: "Base body size",
           status: "formalized",
           links: [designerEditedCardId],
           domain: "typography"
         },
         "font.size.700": {
+          kind: "token",
           value: "32px",
-          meaning: "Alternate hero size",
           status: "formalized",
           links: [designerEditedCardId],
           domain: "typography"
         },
         "letterSpacing.hero": {
+          kind: "token",
           value: "-0.04em",
-          meaning: "Hero tracking",
           status: "formalized",
           links: [designerEditedCardId],
           domain: "typography"
         },
         "font.weight.bold": {
+          kind: "token",
           value: "700",
-          meaning: "Bold weight",
           status: "gap",
           links: [],
           domain: "typography"
@@ -196,32 +196,40 @@ test("09C-A reader projection: atlas and leaf pages", async ({
       },
       semantic: {
         body: {
-          value: { family: "Inter", size: "16px", weight: "400", tracking: "0.01em" },
-          meaning: "Default reading role",
+          kind: "token",
+          value: {
+            family: "Inter",
+            size: "16px",
+            weight: "400",
+            tracking: "0.01em",
+            usedFor: "Default reading role"
+          },
           status: "candidate",
           links: [designerEditedCardId],
           domain: "typography"
         },
         "display.large": {
+          kind: "token",
           value: {
             fontFamily: { alias: "primitive.font.family.sans" },
             fontSize: "64px",
             fontWeight: "700",
-            lineHeight: "1.05"
+            lineHeight: "1.05",
+            usedFor: "Hero display role"
           },
-          meaning: "Hero display role",
           status: "formalized",
           links: [designerEditedCardId],
           domain: "typography"
         },
         "typography.statisticalDisplay": {
+          kind: "token",
           value: {
             fontFamily: { alias: "primitive.font.family.sans" },
             fontSize: "105px",
             fontWeight: "400",
-            lineHeight: "1"
+            lineHeight: "1",
+            usedFor: "Studio proof point"
           },
-          meaning: "Studio proof point",
           status: "formalized",
           links: [designerEditedCardId],
           domain: "typography"
@@ -253,13 +261,14 @@ test("09C-A reader projection: atlas and leaf pages", async ({
       },
       component: {
         "navigation.label": {
+          kind: "token",
           value: {
             fontFamily: { alias: "primitive.font.family.sans" },
             fontSize: "20px",
             fontWeight: "400",
-            lineHeight: "1"
+            lineHeight: "1",
+            usedFor: "Top navigation and footer information"
           },
-          meaning: "Top navigation and footer information",
           status: "formalized",
           links: [designerEditedCardId],
           domain: "typography"

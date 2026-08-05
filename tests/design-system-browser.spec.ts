@@ -202,28 +202,35 @@ test("09A design system browser: declare → render → approve write-back", asy
     writeSource("design-system/token.json", {
       primitive: {
         "color.ink": {
+          kind: "token",
+          domain: "color",
           value: "#101418",
-          meaning: "Primary text ink",
           status: "candidate",
           links: [tokenDesignerEditedCardId]
         },
         "color.brand": {
+          kind: "token",
+          domain: "color",
           value: "#3A93FF",
-          meaning: "Brand accent",
           status: "candidate",
           links: [agentAcceptedCardId]
         }
       },
       semantic: {
         "color.text-primary": {
-          value: { alias: "primitive.color.ink" },
-          meaning: "Default text color",
+          kind: "token",
+          domain: "color",
+          value: {
+            alias: "primitive.color.ink",
+            usage: "Default text color"
+          },
           status: "candidate",
           links: [tokenDesignerEditedCardId]
         },
         "color.surface-muted": {
+          kind: "token",
+          domain: "color",
           value: "#F2F2F2",
-          meaning: "Muted surface",
           status: "candidate",
           links: [agentAcceptedCardId]
         }

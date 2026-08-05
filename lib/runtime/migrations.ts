@@ -1074,13 +1074,10 @@ CREATE INDEX IF NOT EXISTS idx_region_annotation_tombstones_deleted_at
   {
     version: 21,
     up(db) {
-      // Primitive color tokens carry no usage description — the schema now
-      // requires `meaning: ""` on them (usage semantics belong to the
-      // semantic/component layers; domain-rule entries keep their own
-      // meaning). Backfill the DB rows here. On-disk token.json sources
-      // accepted under the old contract are repaired at the declaration /
-      // edit seams instead (see ./design-system-legacy-repair): migrations
-      // only receive the DB handle and cannot reach project files.
+      // Historical v21 normalization: primitive color rows created before
+      // token meanings were retired stored usage prose in this column. New
+      // token source entries omit meaning entirely; domain rules still keep
+      // their rule title. The migration remains immutable for old databases.
       db.exec(
         `UPDATE design_system_entries SET meaning = ''
          WHERE section = 'token.primitive' AND domain = 'color'

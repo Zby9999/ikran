@@ -19,10 +19,8 @@ import {
 import {
   buildLoggedEvent,
   insertEvent,
-  logEvent,
   logInvalidToolEvent
 } from "./events";
-import { repairLegacyPrimitiveColorMeaningsInFile } from "./design-system-legacy-repair";
 import { emitRecordEvent } from "./record-bus";
 import { canonicalizeArtifactPath } from "./source-artifact";
 
@@ -117,32 +115,14 @@ export function editDesignSystemEntry(
     closeProjectDb(db);
   }
 
-  // Primitive color tokens carry no usage description: a meaning edit can
-  // never satisfy the schema, so reject it before touching the source file.
+  // Token semantics live in value.usage / value.usedFor. Only rules may edit
+  // the envelope meaning field, including domain rules stored in token.json.
   if (
     input.field === "meaning" &&
     row.file_kind === "token.json" &&
-    row.section === "token.primitive" &&
-    row.domain === "color" &&
     row.kind !== "domain-rule"
   ) {
-    return { ok: false, reason: "primitive_color_meaning_forbidden" };
-  }
-
-  // The ingested row proves this token.json was accepted under the old
-  // contract, so strip legacy primitive-color meanings before the whole-file
-  // revalidation below would reject every edit (see
-  // ./design-system-legacy-repair).
-  if (row.file_kind === "token.json") {
-    const repair = repairLegacyPrimitiveColorMeaningsInFile(absolutePath);
-    if (repair.ok && repair.repaired) {
-      logEvent(projectPath, "design_system_source_repaired", {
-        source_artifact_path: relativePath,
-        file_kind: "token.json",
-        stripped: repair.stripped,
-        trigger: "edit_design_system_entry"
-      });
-    }
+    return { ok: false, reason: "token_meaning_forbidden" };
   }
 
   let originalContent: string;
@@ -176,7 +156,9 @@ export function editDesignSystemEntry(
     entryObject.status === row.status ||
     (row.status === "gap" && entryObject.status === "candidate");
   const sourceMeaningCompatible =
-    input.field === "meaning" || entryObject.meaning === row.meaning;
+    input.field === "meaning" ||
+    (row.file_kind === "token.json" && row.kind !== "domain-rule") ||
+    entryObject.meaning === row.meaning;
   const sourceValueCompatible =
     input.field === "value" ||
     stableJsonStringify(entryObject.value) === stableJsonStringify(dbValue);
@@ -262,7 +244,11 @@ export function editDesignSystemEntry(
         currentEntry.status === nextStatus &&
         stableJsonStringify(currentEntry.links) === stableJsonStringify(nextLinks);
       if (!stillContainsOwnWrite || currentEntry === null) return;
-      currentEntry.meaning = row.meaning;
+      if (row.file_kind === "token.json" && row.kind !== "domain-rule") {
+        delete currentEntry.meaning;
+      } else {
+        currentEntry.meaning = row.meaning;
+      }
       currentEntry.value = dbValue;
       currentEntry.status = row.status;
       currentEntry.links = dbLinks;

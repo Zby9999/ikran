@@ -247,16 +247,21 @@ function writeSixFiles(dir: string) {
   writeProjectFile(dir, "design-system/token.json", {
     primitive: {
       "color.blue.500": {
+        kind: "token",
+        domain: "color",
         value: "#3b82f6",
-        meaning: "品牌主色",
         status: "formalized",
         links: ["card-edited"]
       }
     },
     semantic: {
       "color.primary": {
-        value: { alias: "primitive.color.blue.500" },
-        meaning: "语义主色",
+        kind: "token",
+        domain: "color",
+        value: {
+          alias: "primitive.color.blue.500",
+          usage: "语义主色"
+        },
         status: "candidate",
         links: ["ann-reasonable"]
       }
@@ -354,8 +359,6 @@ describe("design-system ingest", () => {
             kind: "token",
             domain: "color",
             value: "#111111",
-            // Primitive color tokens carry no usage description.
-            meaning: "",
             status: "formalized",
             links: ["card-edited"]
           }
@@ -400,7 +403,7 @@ describe("design-system ingest", () => {
     });
   });
 
-  test("fresh token.json with a non-empty primitive color meaning hard-fails declaration", () => {
+  test("fresh token.json with token meaning hard-fails declaration", () => {
     withTempProject((dir) => {
       seedEvidenceCards(dir);
       writeProjectFile(dir, "design-system/token.json", {
@@ -421,20 +424,18 @@ describe("design-system ingest", () => {
       const declared = declareFile(dir, "design-system/token.json", "token.json");
       expect(declared).toMatchObject({
         ok: false,
-        reason: "primitive_color_meaning_forbidden"
+        reason: "token_meaning_forbidden"
       });
-      // No repair for newly authored content: the file is untouched and no
-      // index row / repair event was persisted.
+      // The file is untouched and no index row was persisted.
       const source = JSON.parse(
         readFileSync(path.join(dir, "design-system/token.json"), "utf8")
       );
       expect(source.primitive["color.ink"].meaning).toBe("Primary ink");
       expect(entryRows(dir)).toHaveLength(0);
-      expect(listEvents(dir, "design_system_source_repaired")).toHaveLength(0);
     });
   });
 
-  test("previously declared token.json is repaired on re-declaration instead of bricking", () => {
+  test("previously declared token.json is not repaired on re-declaration", () => {
     withTempProject((dir) => {
       seedEvidenceCards(dir);
       const rel = "design-system/token.json";
@@ -444,7 +445,6 @@ describe("design-system ingest", () => {
             kind: "token",
             domain: "color",
             value: "#111111",
-            meaning: "",
             status: "formalized",
             links: ["card-edited"]
           },
@@ -469,12 +469,14 @@ describe("design-system ingest", () => {
       writeFileSync(path.join(dir, rel), JSON.stringify(drifted));
 
       const redeclared = declareFile(dir, rel, "token.json");
-      expect(redeclared.ok).toBe(true);
+      expect(redeclared).toMatchObject({
+        ok: false,
+        reason: "token_meaning_forbidden"
+      });
 
-      const repaired = JSON.parse(readFileSync(path.join(dir, rel), "utf8"));
-      expect(repaired.primitive["color.ink"].meaning).toBe("");
-      // domain-rule entries keep their own meaning through the repair.
-      expect(repaired.primitive["color-rule"].meaning).toBe("Ink restraint");
+      const unchanged = JSON.parse(readFileSync(path.join(dir, rel), "utf8"));
+      expect(unchanged.primitive["color.ink"].meaning).toBe("品牌墨色");
+      expect(unchanged.primitive["color-rule"].meaning).toBe("Ink restraint");
 
       const rows = entryRows(dir);
       expect(
@@ -484,14 +486,6 @@ describe("design-system ingest", () => {
         rows.find((row) => row.entry_id === "primitive.color-rule")?.meaning
       ).toBe("Ink restraint");
 
-      const repairEvents = listEvents(dir, "design_system_source_repaired");
-      expect(repairEvents).toHaveLength(1);
-      expect(repairEvents[0].payload).toMatchObject({
-        source_artifact_path: rel,
-        file_kind: "token.json",
-        stripped: ["primitive.color.ink"],
-        trigger: "record_artifact_written"
-      });
     });
   });
 
@@ -549,14 +543,16 @@ describe("design-system ingest", () => {
       writeProjectFile(dir, "design-system/token.json", {
         primitive: {
           "color.blue.500": {
+            kind: "token",
+            domain: "color",
             value: "#3b82f6",
-            meaning: "品牌主色",
             status: "formalized",
             links: ["card-edited"]
           },
           "space.4": {
+            kind: "token",
+            domain: "spacing",
             value: "16px",
-            meaning: "基础间距",
             status: "candidate",
             links: ["card-accepted"]
           }
@@ -573,8 +569,9 @@ describe("design-system ingest", () => {
       writeProjectFile(dir, "design-system/token.json", {
         primitive: {
           "color.blue.500": {
+            kind: "token",
+            domain: "color",
             value: "#1d4ed8",
-            meaning: "品牌主色(深)",
             status: "formalized",
             links: ["card-edited"]
           }
@@ -608,8 +605,9 @@ describe("ingest cross-validation gate", () => {
       writeProjectFile(dir, "design-system/token.json", {
         primitive: {
           "color.blue.500": {
+            kind: "token",
+            domain: "color",
             value: "#3b82f6",
-            meaning: "冒充正式的主色",
             status: "formalized",
             links: ["card-accepted"] // answered, but NOT designer-edited
           }
@@ -657,8 +655,9 @@ describe("ingest cross-validation gate", () => {
       writeProjectFile(dir, "design-system/token.json", {
         primitive: {
           "color.blue.500": {
+            kind: "token",
+            domain: "color",
             value: "#3b82f6",
-            meaning: "品牌主色",
             status: "formalized",
             links: ["card-edited"]
           }
@@ -675,8 +674,9 @@ describe("ingest cross-validation gate", () => {
       writeProjectFile(dir, "design-system/token.json", {
         primitive: {
           "color.blue.500": {
+            kind: "token",
+            domain: "color",
             value: "#3b82f6",
-            meaning: "品牌主色",
             status: "formalized",
             links: ["card-accepted"] // spoof: no designer-edited backing
           }
@@ -795,14 +795,34 @@ describe("design-system-view.json derived export", () => {
       writeProjectFile(dir, "design-system/token.json", {
         primitive: {
           "fontFamily.instrumentSans": {
+            kind: "token",
             domain: "typography",
             value: "Instrument Sans, sans-serif",
-            meaning: "System type family",
             status: "formalized",
             links: ["card-edited"]
           }
         },
-        semantic: {},
+        semantic: {
+          "typography.body": {
+            kind: "token",
+            domain: "typography",
+            value: {
+              fontFamily: "Instrument Sans",
+              fontSize: "16px",
+              usedFor: "Long-form reading across content pages."
+            },
+            status: "candidate",
+            links: ["card-accepted"]
+          },
+          "rule.reading-rhythm": {
+            kind: "domain-rule",
+            domain: "typography",
+            value: "Body roles use a relaxed line height.",
+            meaning: "Keep long-form reading calm.",
+            status: "candidate",
+            links: ["card-accepted"]
+          }
+        },
         component: {}
       });
       expect(
@@ -824,6 +844,20 @@ describe("design-system-view.json derived export", () => {
         )
       );
       expect(exported.tokens.primitive[0].domain).toBe("typography");
+      expect(exported.tokens.primitive[0]).not.toHaveProperty("meaning");
+      const exportedBody = exported.tokens.semantic.find(
+        (entry: { entry_id: string }) =>
+          entry.entry_id === "semantic.typography.body"
+      );
+      expect(exportedBody.value.usedFor).toBe(
+        "Long-form reading across content pages."
+      );
+      expect(exportedBody).not.toHaveProperty("meaning");
+      const exportedRule = exported.tokens.semantic.find(
+        (entry: { entry_id: string }) =>
+          entry.entry_id === "semantic.rule.reading-rhythm"
+      );
+      expect(exportedRule.meaning).toBe("Keep long-form reading calm.");
     });
   });
 
@@ -1023,8 +1057,9 @@ describe("design-system-view.json derived export", () => {
       writeProjectFile(dir, "design-system/token.json", {
         primitive: {
           "color.blue.500": {
+            kind: "token",
+            domain: "color",
             value: "#3b82f6",
-            meaning: "品牌主色",
             status: "formalized",
             links: ["card-edited"]
           }
@@ -1076,8 +1111,9 @@ describe("getDesignSystemView evidence join", () => {
       writeProjectFile(dir, "design-system/token.json", {
         primitive: {
           "color.blue.500": {
+            kind: "token",
+            domain: "color",
             value: "#3b82f6",
-            meaning: "品牌主色",
             status: "formalized",
             links: ["card-edited", "forged-link"]
           }
@@ -1122,16 +1158,21 @@ describe("getDesignSystemView evidence join", () => {
       writeProjectFile(dir, "design-system/token.json", {
         primitive: {
           "color.blue.500": {
+            kind: "token",
+            domain: "color",
             value: "#3b82f6",
-            meaning: "品牌主色",
             status: "formalized",
             links: ["card-edited"]
           }
         },
         semantic: {
           "color.primary": {
-            value: { alias: "primitive.color.blue.500" },
-            meaning: "语义主色",
+            kind: "token",
+            domain: "color",
+            value: {
+              alias: "primitive.color.blue.500",
+              usage: "语义主色"
+            },
             status: "candidate",
             links: ["ann-reasonable"]
           }
@@ -1582,8 +1623,9 @@ describe("record-bus emission", () => {
       writeProjectFile(dir, "design-system/token.json", {
         primitive: {
           "color.blue.500": {
+            kind: "token",
+            domain: "color",
             value: "#3b82f6",
-            meaning: "冒充",
             status: "formalized",
             links: ["card-accepted"]
           }

@@ -7,7 +7,7 @@
 // candidate → formalized approval UI states.
 //
 // Locked decisions honored here:
-//   - d.6 rows carry name / value / meaning / status chip only; the full
+//   - d.6 rows carry name / value / semantic text / status chip only; the full
 //     evidence chain stays nested on the entry for the ⓘ layer.
 //   - d.7 no section collapsing — leaves are flat under their tab. 09C-D03
 //     exception: the components section sidebar is two-level (group header +
@@ -118,6 +118,21 @@ export function entryDisplayName(entry: DesignSystemEntryView): string {
   return entry.name ?? entry.entry_id;
 }
 
+/** Rules keep their meaning title. Token semantic text lives inside value as
+ * usage (most domains) or usedFor (typography). */
+export function entrySemanticText(entry: DesignSystemEntryView): string {
+  if (
+    entry.section.startsWith("token.") &&
+    entry.kind !== "domain-rule" &&
+    isPlainObject(entry.value)
+  ) {
+    if (typeof entry.value.usage === "string") return entry.value.usage;
+    if (typeof entry.value.usedFor === "string") return entry.value.usedFor;
+    return "";
+  }
+  return entry.meaning;
+}
+
 /**
  * Single owner of the row-key derivation (`${path}::${id}`) — used by toRow
  * and by ad-hoc rows (e.g. ComponentDetail's inventory/spec status rows) so
@@ -138,7 +153,7 @@ export function toRow(entry: DesignSystemEntryView): DsRow {
     sourceArtifactPath: entry.source_artifact_path,
     name: entryDisplayName(entry),
     value,
-    meaning: entry.meaning,
+    meaning: entrySemanticText(entry),
     status: entry.status,
     swatch: entry.alias === null ? detectSwatch(value) : null,
     entry
@@ -293,7 +308,7 @@ export function buildColorLeafModel(view: DesignSystemView): DsColorLeafModel {
   const toColorToken = (entry: DesignSystemEntryView): DsColorToken => ({
     row: toRow(entry),
     name: entryDisplayName(entry),
-    meaning: entry.meaning,
+    meaning: entrySemanticText(entry),
     status: entry.status,
     ...resolve(entry)
   });

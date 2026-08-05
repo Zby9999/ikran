@@ -656,7 +656,7 @@ test("an approval interleaved after a source write fails closed without splittin
 
 
 // ---------------------------------------------------------------------------
-// Primitive color token meaning contract
+// Token meaning contract
 // ---------------------------------------------------------------------------
 
 function ingestTokenFile(projectPath: string): void {
@@ -682,7 +682,6 @@ function ingestTokenFile(projectPath: string): void {
         kind: "token",
         domain: "color",
         value: "#111111",
-        meaning: "",
         status: "formalized",
         links: ["designer-card"]
       },
@@ -695,18 +694,18 @@ function ingestTokenFile(projectPath: string): void {
         links: ["designer-card"]
       },
       "space.4": {
+        kind: "token",
         domain: "spacing",
         value: "16px",
-        meaning: "基础间距",
         status: "candidate",
         links: ["designer-card"]
       }
     },
     semantic: {
       "color.primary": {
+        kind: "token",
         domain: "color",
-        value: { alias: "primitive.color.ink" },
-        meaning: "语义主色",
+        value: { alias: "primitive.color.ink", usage: "语义主色" },
         status: "candidate",
         links: ["designer-card"]
       }
@@ -722,7 +721,7 @@ function ingestTokenFile(projectPath: string): void {
   if (!declared.ok) throw new Error(JSON.stringify(declared));
 }
 
-test("meaning edits on primitive color tokens are rejected before touching the source", () => {
+test("meaning edits on token entries are rejected before touching the source", () => {
   withTempProject((projectPath) => {
     ingestTokenFile(projectPath);
     const relativePath = "design-system/token.json";
@@ -736,7 +735,7 @@ test("meaning edits on primitive color tokens are rejected before touching the s
         field: "meaning",
         text: "品牌墨色"
       })
-    ).toEqual({ ok: false, reason: "primitive_color_meaning_forbidden" });
+    ).toEqual({ ok: false, reason: "token_meaning_forbidden" });
     expect(readFileSync(sourcePath, "utf8")).toBe(original);
     expect(listEvents(projectPath, "design_system_entry_edited")).toHaveLength(0);
 
@@ -750,8 +749,7 @@ test("meaning edits on primitive color tokens are rejected before touching the s
       })
     ).toMatchObject({ ok: true });
 
-    // domain-rule entries and semantic-layer color tokens keep editable
-    // meanings.
+    // Rules retain editable meanings.
     expect(
       editDesignSystemEntry(projectPath, {
         sourceArtifactPath: relativePath,
@@ -767,11 +765,11 @@ test("meaning edits on primitive color tokens are rejected before touching the s
         field: "meaning",
         text: "品牌主色"
       })
-    ).toMatchObject({ ok: true });
+    ).toEqual({ ok: false, reason: "token_meaning_forbidden" });
   });
 });
 
-test("legacy primitive color meanings in the source are repaired on the first edit", () => {
+test("legacy token meanings fail closed and are never repaired during edits", () => {
   withTempProject((projectPath) => {
     ingestTokenFile(projectPath);
     const relativePath = "design-system/token.json";
@@ -782,26 +780,15 @@ test("legacy primitive color meanings in the source are repaired on the first ed
     drifted.primitive["color.ink"].meaning = "品牌墨色";
     writeFileSync(sourcePath, JSON.stringify(drifted), "utf8");
 
+    const original = readFileSync(sourcePath, "utf8");
     const result = editDesignSystemEntry(projectPath, {
       sourceArtifactPath: relativePath,
-      entryId: "semantic.color.primary",
+      entryId: "primitive.color-rule",
       field: "meaning",
-      text: "品牌主色"
+      text: "Ink remains restrained"
     });
-    if (!result.ok) throw new Error(JSON.stringify(result));
-
-    const repaired = JSON.parse(readFileSync(sourcePath, "utf8"));
-    expect(repaired.primitive["color.ink"].meaning).toBe("");
-    expect(repaired.primitive["color-rule"].meaning).toBe("Ink restraint");
-    expect(repaired.semantic["color.primary"].meaning).toBe("品牌主色");
-
-    const repairEvents = listEvents(projectPath, "design_system_source_repaired");
-    expect(repairEvents).toHaveLength(1);
-    expect(repairEvents[0].payload).toMatchObject({
-      source_artifact_path: relativePath,
-      file_kind: "token.json",
-      stripped: ["primitive.color.ink"],
-      trigger: "edit_design_system_entry"
-    });
+    expect(result).toMatchObject({ ok: false, reason: "token_meaning_forbidden" });
+    expect(readFileSync(sourcePath, "utf8")).toBe(original);
+    expect(listEvents(projectPath, "design_system_entry_edited")).toHaveLength(0);
   });
 });

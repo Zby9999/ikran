@@ -174,6 +174,8 @@ export interface TechnicalDetail {
 }
 
 export function toTechnicalDetail(entry: DesignSystemEntryView): TechnicalDetail {
+  const isTokenEntry =
+    entry.section.startsWith("token.") && entry.kind !== "domain-rule";
   return {
     key: `${entry.source_artifact_path}::${entry.entry_id}`,
     entryId: entry.entry_id,
@@ -184,7 +186,7 @@ export function toTechnicalDetail(entry: DesignSystemEntryView): TechnicalDetail
       {
         value: entry.value,
         ...(entry.alias !== null ? { alias: entry.alias } : {}),
-        meaning: entry.meaning,
+        ...(!isTokenEntry ? { meaning: entry.meaning } : {}),
         status: entry.status,
         links: entry.links
       },
@@ -293,7 +295,7 @@ export interface TypographyStyleProjection {
    * Null when the style declares no usable family — the Atlas renders an
    * explicit unresolved state instead of inheriting the Browser face. */
   specimenFamily: string | null;
-  meaning: string;
+  usage: string;
   row: DsRow;
 }
 
@@ -543,7 +545,7 @@ export function projectTypographyLeaf(
           ),
           summary: "",
           specimenFamily,
-          meaning: entry.meaning,
+          usage: row.meaning,
           row
         };
         projected.summary = formatTextStyleSummary(projected);
@@ -696,7 +698,7 @@ export function typographyAtlasItems(
         style.row.entry.section === "token.component" ? "component" : "type",
       canonicalIdentity: style.row.entryId,
       label: readableTypographyRole(style.role),
-      usage: style.meaning,
+      usage: style.usage,
       fontFamily: atlasFieldDisplay(style.fontFamily),
       specimenFamily: style.specimenFamily,
       fontSize: atlasFieldDisplay(style.fontSize),

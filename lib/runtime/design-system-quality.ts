@@ -3,7 +3,7 @@ import type { DesignSystemEntryRowInput } from "./design-system-ingest";
 export type DesignSystemQualityDiagnostic = {
   severity: "warning";
   code:
-    | "typography_meaning_restates_role"
+    | "typography_used_for_restates_role"
     | "typography_composite_roles_missing";
   source_artifact_path: string;
   entry_id?: string;
@@ -37,7 +37,7 @@ const ROLE_NAME_NOISE = new Set([
   "weight"
 ]);
 
-const LOW_INFORMATION_MEANING_WORDS = new Set([
+const LOW_INFORMATION_USAGE_WORDS = new Set([
   "a",
   "an",
   "action",
@@ -76,7 +76,7 @@ function semanticWords(value: string): string[] {
   );
 }
 
-function meaningRestatesRole(entry: DesignSystemEntryRowInput): boolean {
+function usedForRestatesRole(entry: DesignSystemEntryRowInput): boolean {
   if (
     entry.domain !== "typography" ||
     entry.section === "token.primitive" ||
@@ -85,14 +85,16 @@ function meaningRestatesRole(entry: DesignSystemEntryRowInput): boolean {
     return false;
   }
   const role = semanticWords(entry.name);
-  const meaning = semanticWords(entry.meaning);
-  if (role.length === 0 || meaning.length === 0) return false;
-  if (role.join(" ") === meaning.join(" ")) return true;
-  if (!role.every((word) => meaning.includes(word))) return false;
-  const expansion = meaning.filter((word) => !role.includes(word));
+  const usedFor = isRecord(entry.value) ? entry.value.usedFor : undefined;
+  if (typeof usedFor !== "string") return false;
+  const usage = semanticWords(usedFor);
+  if (role.length === 0 || usage.length === 0) return false;
+  if (role.join(" ") === usage.join(" ")) return true;
+  if (!role.every((word) => usage.includes(word))) return false;
+  const expansion = usage.filter((word) => !role.includes(word));
   return (
     expansion.length > 0 &&
-    expansion.every((word) => LOW_INFORMATION_MEANING_WORDS.has(word))
+    expansion.every((word) => LOW_INFORMATION_USAGE_WORDS.has(word))
   );
 }
 
@@ -111,15 +113,15 @@ export function designSystemQualityDiagnostics(
 ): DesignSystemQualityDiagnostic[] {
   const typography = entries.filter((entry) => entry.domain === "typography");
   const diagnostics = typography
-    .filter(meaningRestatesRole)
+    .filter(usedForRestatesRole)
     .map(
       (entry): DesignSystemQualityDiagnostic => ({
         severity: "warning",
-        code: "typography_meaning_restates_role",
+        code: "typography_used_for_restates_role",
         source_artifact_path: sourceArtifactPath,
         entry_id: entry.entry_id,
         message:
-          "Typography meaning repeats the role identity. Describe its usage context, function, or design intent instead."
+          "Typography usedFor repeats the role identity. Describe its usage context, function, or design intent instead."
       })
     );
 

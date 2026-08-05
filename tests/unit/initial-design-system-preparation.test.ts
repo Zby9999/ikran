@@ -204,7 +204,6 @@ function declareInitialDesignSystemArtifacts(
         kind: "token",
         domain: "typography",
         value: "Instrument Sans, sans-serif",
-        meaning: "Sole interface type family",
         status: "candidate",
         links: [card("token").id]
       }
@@ -391,7 +390,7 @@ describe("Initial Design System preparation", () => {
 
     const typography = contract.typography_role_writing_style;
     expect(typography.rules.join(" ")).toContain("complete composite");
-    expect(typography.examples.bad.meaning).toBe(
+    expect(typography.examples.bad.value.usedFor).toBe(
       "Connect call-to-action heading size role."
     );
   });
@@ -443,6 +442,9 @@ describe("Initial Design System preparation", () => {
           "status",
           "links"
         ]),
+        entry_envelope_policy: {
+          meaning: expect.stringContaining("rules only")
+        },
         entry_kinds: ["token", "domain-rule", "global-rule"],
         entry_kind_file_ownership: {
           token: ["token.json"],
@@ -459,6 +461,12 @@ describe("Initial Design System preparation", () => {
           "spacing",
           "motion"
         ]),
+        token_usage_policy: {
+          primitive: expect.stringContaining("neither meaning nor a usage field"),
+          typography: expect.stringContaining("value.usedFor"),
+          other_domains: expect.stringContaining("value.usage"),
+          fail_closed: expect.stringContaining("Token meaning is forbidden")
+        },
         component_spec_fields: expect.arrayContaining([
           "anatomy",
           "variants",
@@ -513,10 +521,14 @@ describe("Initial Design System preparation", () => {
           examples: {
             good: expect.objectContaining({
               name: "typography.connectHeading",
-              meaning: "Closing-section call to action."
+              value: expect.objectContaining({
+                usedFor: "Closing-section call to action."
+              })
             }),
             bad: expect.objectContaining({
-              meaning: "Connect call-to-action heading size role."
+              value: expect.objectContaining({
+                usedFor: "Connect call-to-action heading size role."
+              })
             })
           }
         },
@@ -1122,7 +1134,6 @@ describe("Initial Design System preparation", () => {
         "fontFamily.instrumentSans": {
           kind: "token",
           value: "Instrument Sans, sans-serif",
-          meaning: "Sole interface type family",
           status: "candidate",
           links: [tokenCard.id]
         }
@@ -1184,7 +1195,6 @@ describe("Initial Design System preparation", () => {
         "fontFamily.instrumentSans": {
           domain: "typography",
           value: "Instrument Sans, sans-serif",
-          meaning: "Sole interface type family",
           status: "candidate",
           links: [tokenCard.id]
         }
@@ -1294,7 +1304,6 @@ describe("Initial Design System preparation", () => {
         "fontFamily.instrumentSans": {
           domain: "typography",
           value: "Instrument Sans, sans-serif",
-          meaning: "Sole interface type family",
           status: "formalized",
           links: [tokenCard.id, tokenAnnotation.id]
         }
@@ -1748,7 +1757,6 @@ describe("Initial Design System preparation", () => {
         kind: "token",
         domain: "typography",
         value: "Instrument Sans, sans-serif",
-        meaning: "Sole interface type family",
         status: "candidate",
         links: [tokenCard.id]
       },
@@ -1756,7 +1764,6 @@ describe("Initial Design System preparation", () => {
         kind: "token",
         domain: "typography",
         value: { min: "16px", max: "105px" },
-        meaning: "Observed Seed type scale range",
         status: "candidate",
         links: [tokenCard.id]
       },
@@ -1764,7 +1771,6 @@ describe("Initial Design System preparation", () => {
         kind: "token",
         domain: "typography",
         value: "-0.03em",
-        meaning: "Negative display tracking",
         status: "candidate",
         links: [tokenCard.id]
       },
@@ -1772,7 +1778,6 @@ describe("Initial Design System preparation", () => {
         kind: "token",
         domain: "color",
         value: ["#111111", "#333333", "#666666", "#999999", "#cccccc", "#f5f5f5"],
-        meaning: "Six-step neutral scale",
         status: "candidate",
         links: [tokenCard.id]
       }

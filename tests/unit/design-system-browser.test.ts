@@ -817,7 +817,13 @@ function typographyLayers() {
         entry({
           entry_id: "semantic.body",
           name: "body",
-          value: { family: "Inter", size: "16px", weight: "400", tracking: "0.01em" },
+          value: {
+            family: "Inter",
+            size: "16px",
+            weight: "400",
+            tracking: "0.01em",
+            usedFor: "Primary readable text"
+          },
           status: "candidate"
         }),
         entry({
@@ -827,7 +833,8 @@ function typographyLayers() {
             fontFamily: { alias: "primitive.font-family-sans" },
             fontSize: "64px",
             fontWeight: "700",
-            lineHeight: "1.05"
+            lineHeight: "1.05",
+            usedFor: "Primary readable text"
           },
           status: "formalized"
         })
@@ -1030,7 +1037,10 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
                 entry_id: "semantic.caption",
                 section: "token.semantic",
                 name: "caption",
-                value: { fontSize: "16px" },
+                value: {
+                  fontSize: "16px",
+                  usedFor: "Primary readable text"
+                },
                 status: "formalized"
               })
             ]

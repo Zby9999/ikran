@@ -29,7 +29,7 @@ function entry(
     name: "surface.page",
     value: "#FFFFFF",
     alias: null,
-    meaning: "Default page background",
+    meaning: "",
     status: "formalized",
     links: [],
     source_artifact_path: "design-system/token.json",
@@ -411,7 +411,7 @@ describe("buildColorLeafModel (color page redesign)", () => {
         kind: "token",
         domain: "typography",
         value: "16/1.6",
-        meaning: "Body text style"
+        meaning: ""
       })
     ];
     view.tokens.semantic = [
@@ -420,9 +420,12 @@ describe("buildColorLeafModel (color page redesign)", () => {
         name: "ink.primary",
         kind: "token",
         domain: "color",
-        value: { alias: "primitive.gray.800" },
+        value: {
+          alias: "primitive.gray.800",
+          usage: "主要文字与标题。"
+        },
         alias: "primitive.gray.800",
-        meaning: "主要文字与标题。"
+        meaning: ""
       }),
       entry({
         entry_id: "semantic.accent.solid",
@@ -430,15 +433,15 @@ describe("buildColorLeafModel (color page redesign)", () => {
         kind: "token",
         domain: "color",
         value: "#3A93FF",
-        meaning: "主要行动与选中态。"
+        meaning: ""
       }),
       entry({
         entry_id: "semantic.divider.subtle",
         name: "divider.subtle",
         kind: "token",
         domain: "color",
-        value: null,
-        meaning: "面板边界。",
+        value: { usage: "面板边界。" },
+        meaning: "",
         status: "gap"
       }),
       entry({
@@ -456,18 +459,24 @@ describe("buildColorLeafModel (color page redesign)", () => {
         name: "annotation.agent",
         kind: "token",
         domain: "color",
-        value: { alias: "semantic.ink.primary" },
+        value: {
+          alias: "semantic.ink.primary",
+          usage: "Agent Annotation 标注色。"
+        },
         alias: "semantic.ink.primary",
-        meaning: "Agent Annotation 标注色。"
+        meaning: ""
       }),
       entry({
         entry_id: "component.bridge.link",
         name: "bridge.link",
         kind: "token",
         domain: "color",
-        value: { alias: "primitive.missing.999" },
+        value: {
+          alias: "primitive.missing.999",
+          usage: "Bridge 连接指示。"
+        },
         alias: "primitive.missing.999",
-        meaning: "Bridge 连接指示。"
+        meaning: ""
       })
     ];
     return view;

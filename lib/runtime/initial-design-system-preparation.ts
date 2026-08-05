@@ -83,7 +83,7 @@ const TYPOGRAPHY_ROLE_WRITING_STYLE = {
   ],
   rules: [
     "Represent every reusable type style as one complete composite token; keep atomic typography tokens as referenced construction facts.",
-    "Semantic and component layer tokens use the token identity for the stable role name and write meaning as one sentence about usage context, function, or design intent.",
+    "Semantic and component layer tokens use the token identity for the stable role name and write value.usedFor as one sentence about usage context, function, or design intent.",
     "Do not repeat the role name with only size, role, or token appended.",
     "Do not invent usage or missing font fields; preserve unsupported facts as explicit gaps."
   ],
@@ -95,14 +95,16 @@ const TYPOGRAPHY_ROLE_WRITING_STYLE = {
         fontSize: { alias: "primitive.fontSize.37" },
         fontWeight: { alias: "primitive.fontWeight.regular" },
         lineHeight: { alias: "primitive.lineHeight.100" },
-        letterSpacing: { alias: "primitive.letterSpacing.tight" }
-      },
-      meaning: "Closing-section call to action."
+        letterSpacing: { alias: "primitive.letterSpacing.tight" },
+        usedFor: "Closing-section call to action."
+      }
     },
     bad: {
       name: "typography.connectHeadingSize",
-      value: { alias: "primitive.fontSize.37" },
-      meaning: "Connect call-to-action heading size role."
+      value: {
+        alias: "primitive.fontSize.37",
+        usedFor: "Connect call-to-action heading size role."
+      }
     }
   }
 } as const;
@@ -115,16 +117,22 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
     "design-system/components/<name>.json"
   ],
   entry_envelope: ["kind", "value", "meaning", "status", "links"],
+  entry_envelope_policy: {
+    meaning:
+      "meaning is a required stable title for rules only. Token entries and component specs do not write meaning."
+  },
   entry_kinds: DESIGN_SYSTEM_ENTRY_KINDS,
   entry_kind_file_ownership: DESIGN_SYSTEM_ENTRY_KIND_FILE_OWNERSHIP,
   token_domains: TOKEN_DOMAINS,
-  token_meaning_policy: {
-    rule:
-      "meaning holds usage context, function, or design intent — write that one usage sentence on semantic and component layer tokens only.",
-    primitive_color:
-      'Primitive tokens with domain "color" carry no usage description: write meaning as the empty string "" (the schema rejects anything else). 用途描述只属于 semantic / component 层，primitive 色板不写。',
-    primitive_other_domains:
-      'Primitive tokens of other domains keep the existing one-sentence meaning; legacy entries without an explicit domain keep a non-empty meaning.'
+  token_usage_policy: {
+    primitive:
+      "Primitive tokens carry construction facts only and write neither meaning nor a usage field.",
+    typography:
+      "Semantic and component typography tokens may write one non-empty value.usedFor sentence in the designer's source language.",
+    other_domains:
+      "Semantic and component tokens outside typography may write one non-empty value.usage sentence in the designer's source language.",
+    fail_closed:
+      "Token meaning is forbidden. Using usage or usedFor in the wrong layer or domain is rejected."
   },
   component_spec_fields: COMPONENT_SPEC_VALUE_FIELDS,
   component_spec_writing_policy: {

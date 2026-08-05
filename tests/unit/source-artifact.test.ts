@@ -199,41 +199,41 @@ test.describe("recordSourceArtifact (record path)", () => {
         JSON.stringify({
           primitive: {
             "fontFamily.instrumentSans": {
+              kind: "token",
               value: "Instrument Sans",
-              meaning: "System type family.",
               status: "candidate",
               links: ["card-1"],
               domain: "typography"
             },
             "fontSize.64": {
+              kind: "token",
               value: "64px",
-              meaning: "Hero statement size.",
               status: "candidate",
               links: ["card-1"],
               domain: "typography"
             },
             "fontWeight.regular": {
+              kind: "token",
               value: 400,
-              meaning: "Regular display weight.",
               status: "candidate",
               links: ["card-1"],
               domain: "typography"
             },
             "lineHeight.100": {
+              kind: "token",
               value: 1,
-              meaning: "Display line height.",
               status: "candidate",
               links: ["card-1"],
               domain: "typography"
             },
             "fontStyle.observedBundle": {
+              kind: "token",
               value: {
                 fontFamily: "Instrument Sans",
                 fontSize: "64px",
                 fontWeight: 400,
                 lineHeight: 1
               },
-              meaning: "Observed source construction, not a named semantic role.",
               status: "candidate",
               links: ["card-1"],
               domain: "typography"
@@ -241,8 +241,11 @@ test.describe("recordSourceArtifact (record path)", () => {
           },
           semantic: {
             "typography.heroStatement": {
-              value: { alias: "primitive.fontSize.64" },
-              meaning: "Hero statement size role.",
+              kind: "token",
+              value: {
+                alias: "primitive.fontSize.64",
+                usedFor: "Hero statement size role."
+              },
               status: "candidate",
               links: ["card-1"],
               domain: "typography"
@@ -263,7 +266,7 @@ test.describe("recordSourceArtifact (record path)", () => {
         quality_diagnostics: expect.arrayContaining([
           expect.objectContaining({
             severity: "warning",
-            code: "typography_meaning_restates_role",
+            code: "typography_used_for_restates_role",
             entry_id: "semantic.typography.heroStatement"
           }),
           expect.objectContaining({
@@ -284,8 +287,8 @@ test.describe("recordSourceArtifact (record path)", () => {
         JSON.stringify({
           primitive: {
             "fontSize.37": {
+              kind: "token",
               value: "37px",
-              meaning: "Observed heading size.",
               status: "candidate",
               links: ["card-1"],
               domain: "typography"
@@ -293,15 +296,21 @@ test.describe("recordSourceArtifact (record path)", () => {
           },
           semantic: {
             "typography.connectHeadingSize": {
-              value: { alias: "primitive.fontSize.37" },
-              meaning: "Connect call-to-action heading size role.",
+              kind: "token",
+              value: {
+                alias: "primitive.fontSize.37",
+                usedFor: "Connect call-to-action heading size role."
+              },
               status: "candidate",
               links: ["card-1"],
               domain: "typography"
             },
             "typography.callToAction": {
-              value: { alias: "primitive.fontSize.37" },
-              meaning: "Call-to-action role.",
+              kind: "token",
+              value: {
+                alias: "primitive.fontSize.37",
+                usedFor: "Call-to-action role."
+              },
               status: "candidate",
               links: ["card-1"],
               domain: "typography"
@@ -320,11 +329,11 @@ test.describe("recordSourceArtifact (record path)", () => {
         ok: true,
         quality_diagnostics: expect.arrayContaining([
           expect.objectContaining({
-            code: "typography_meaning_restates_role",
+            code: "typography_used_for_restates_role",
             entry_id: "semantic.typography.connectHeadingSize"
           }),
           expect.objectContaining({
-            code: "typography_meaning_restates_role",
+            code: "typography_used_for_restates_role",
             entry_id: "semantic.typography.callToAction"
           })
         ])
@@ -344,8 +353,8 @@ test.describe("recordSourceArtifact (record path)", () => {
               (name, index) => [
                 name,
                 {
+                  kind: "token",
                   value: "Unresolved",
-                  meaning: "Evidence does not establish this construction fact.",
                   status: index === 3 ? "gap" : "candidate",
                   links: index === 3 ? [] : ["card-1"],
                   domain: "typography"
@@ -376,8 +385,8 @@ test.describe("recordSourceArtifact (record path)", () => {
         JSON.stringify({
           primitive: {
             "fontWeight.bold": {
+              kind: "token",
               value: 700,
-              meaning: "Bold weight.",
               status: "candidate",
               links: ["card-1"],
               domain: "typography"
@@ -385,14 +394,15 @@ test.describe("recordSourceArtifact (record path)", () => {
           },
           semantic: {
             "typography.connectHeading": {
+              kind: "token",
               value: {
                 fontFamily: "Instrument Sans",
                 fontSize: "37px",
                 fontWeight: 400,
                 lineHeight: 1,
-                letterSpacing: "-0.05em"
+                letterSpacing: "-0.05em",
+                usedFor: "Connect heading in the closing section."
               },
-              meaning: "Connect heading in the closing section.",
               status: "candidate",
               links: ["card-1"],
               domain: "typography"

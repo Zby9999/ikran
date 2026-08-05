@@ -10,16 +10,16 @@
 //   - Every rule / token / component entry carries `value` (prose for rules,
 //     structured payload for tokens/components), `status` ("formalized" |
 //     "candidate" | "gap") and `links` (answered question card ids / Agent
-//     annotation ids). Rules, tokens, and component inventory entries also
-//     carry `meaning`; component specs use `value.description` instead.
+//     annotation ids). Rules and component inventory entries also carry
+//     `meaning`; tokens use per-domain usage fields inside `value`, while
+//     component specs use `value.description` instead.
 //     Non-gap entries must link at least one record; gap entries carry none —
 //     the gap declaration itself is the semantics (09A decision 4: gaps are
 //     explicit only, never derived).
-//   - Primitive color tokens are the exception to the non-empty `meaning`
-//     contract: the palette carries no usage description, so their `meaning`
-//     must be the empty string (usage semantics belong to the semantic and
-//     component layers). domain-rule entries and legacy tokens without an
-//     explicit domain keep the non-empty contract.
+//   - Token entries never carry envelope `meaning`: primitive tokens have no
+//     usage prose, typography roles may carry `value.usedFor`, and other
+//     semantic/component tokens may carry `value.usage`. Rules (including
+//     domain rules stored in token.json) keep required `meaning` titles.
 //
 // These validators are pure structural checks: they never touch the DB and
 // never judge prose content. Status cross-validation against alignment
@@ -88,7 +88,8 @@ export type DesignSystemSchemaReason =
   | "legacy_rule_body_requires_prose"
   | "domain_rule_domain_required"
   | "invalid_token_domain"
-  | "primitive_color_meaning_forbidden"
+  | "token_meaning_forbidden"
+  | "token_usage_field_forbidden"
   | "token_primitive_alias"
   | "token_alias_unresolvable"
   | "token_alias_invalid_layer"
@@ -181,8 +182,7 @@ function requireArray(
  * Shared entry check: id (only when `withId`), meaning, status, links and a
  * per-kind value check. `ctx` identifies the entry in failure details.
  * `meaningPolicy` names the envelope contract: non-empty by default, exactly
- * empty for primitive color tokens, or optional for component specs whose
- * prose lives in `value.description`.
+ * optional for tokens/component specs whose prose lives inside `value`.
  */
 function checkEntry(
   raw: unknown,
@@ -192,7 +192,7 @@ function checkEntry(
     checkValue: (value: unknown, ctx: Record<string, unknown>) => DesignSystemSchemaError | null;
     allowedKinds?: readonly DesignSystemEntryKind[];
     domainRuleRequiresDomain?: boolean;
-    meaningPolicy?: "required" | "must-be-empty" | "optional";
+    meaningPolicy?: "required" | "optional";
   }
 ): DesignSystemSchemaError | null {
   if (!isPlainObject(raw)) {
@@ -231,21 +231,7 @@ function checkEntry(
       return fail("domain_rule_domain_required", ctx);
     }
   }
-  if (options.meaningPolicy === "must-be-empty") {
-    if (raw.meaning === undefined) {
-      return fail("missing_required_field", { ...ctx, field: "meaning" });
-    }
-    if (typeof raw.meaning !== "string") {
-      return fail("invalid_field_type", {
-        ...ctx,
-        field: "meaning",
-        expected: "string"
-      });
-    }
-    if (raw.meaning !== "") {
-      return fail("primitive_color_meaning_forbidden", ctx);
-    }
-  } else if (options.meaningPolicy !== "optional" || raw.meaning !== undefined) {
+  if (options.meaningPolicy !== "optional" || raw.meaning !== undefined) {
     const meaningFailure = requireString(raw, "meaning", ctx);
     if (meaningFailure) return meaningFailure;
   }
@@ -337,10 +323,10 @@ function checkEntryArray(
 // allowed, forward references are not. Cycles (incl. self-cycles) are
 // rejected with the offending path in details.
 //
-// Meaning contract: a primitive entry with domain "color" (and kind other
-// than "domain-rule") must carry `meaning: ""` — the palette holds no usage
-// description; `primitive_color_meaning_forbidden` rejects anything else.
-// Everywhere else `meaning` stays a required non-empty string.
+// Usage contract: token entries never carry envelope `meaning`. Primitive
+// entries carry no usage prose. Semantic/component typography roles may use
+// `value.usedFor`; other domains may use `value.usage`. Domain rules remain
+// rules and keep required envelope `meaning`.
 // ---------------------------------------------------------------------------
 
 // Single owner of the token layer vocabulary: ./design-system-ingest
@@ -436,10 +422,11 @@ function aliasTargetOf(
   if (!isPlainObject(value) || !("alias" in value)) {
     return { ok: true, alias: null };
   }
-  if (Object.keys(value).length > 1) {
+  const keys = Object.keys(value);
+  if (keys.some((key) => !["alias", "usage", "usedFor"].includes(key))) {
     return fail("token_alias_reserved_key", {
       field: "value",
-      keys: Object.keys(value).sort()
+      keys: keys.sort()
     });
   }
   if (!isNonEmptyString(value.alias)) {
@@ -449,6 +436,42 @@ function aliasTargetOf(
     });
   }
   return { ok: true, alias: value.alias };
+}
+
+function validateTokenUsageField(
+  value: unknown,
+  layer: TokenLayer,
+  domain: unknown,
+  ctx: Record<string, unknown>
+): DesignSystemSchemaError | null {
+  if (!isPlainObject(value)) return null;
+  const usageField = domain === "typography" ? "usedFor" : "usage";
+  const wrongField = usageField === "usedFor" ? "usage" : "usedFor";
+  if (value[wrongField] !== undefined) {
+    return fail("token_usage_field_forbidden", {
+      ...ctx,
+      field: `value.${wrongField}`,
+      expected:
+        layer === "primitive" ? "no token usage field" : `value.${usageField}`
+    });
+  }
+  if (value[usageField] !== undefined) {
+    if (layer === "primitive") {
+      return fail("token_usage_field_forbidden", {
+        ...ctx,
+        field: `value.${usageField}`,
+        expected: "no token usage field"
+      });
+    }
+    if (!isNonEmptyString(value[usageField])) {
+      return fail("invalid_field_type", {
+        ...ctx,
+        field: `value.${usageField}`,
+        expected: "non-empty string"
+      });
+    }
+  }
+  return null;
 }
 
 function parseAliasRef(
@@ -494,20 +517,26 @@ function validateTokenJson(json: Record<string, unknown>): DesignSystemSchemaRes
       const alias = aliasTargetOf(raw.value);
       if (!alias.ok) return alias;
       const aliasRef = alias.alias;
+      if (raw.kind !== "domain-rule" && raw.meaning !== undefined) {
+        return fail("token_meaning_forbidden", {
+          ...ctx,
+          field: "meaning"
+        });
+      }
+      if (raw.kind !== "domain-rule") {
+        const usageFailure = validateTokenUsageField(
+          raw.value,
+          layer,
+          raw.domain,
+          ctx
+        );
+        if (usageFailure) return usageFailure;
+      }
       const entryFailure = checkEntry(raw, ctx, {
         withId: false,
         allowedKinds: entryKindsAllowedIn("token.json"),
         domainRuleRequiresDomain: true,
-        // Primitive color tokens carry no usage description: meaning must be
-        // the empty string (usage semantics belong to the semantic/component
-        // layers). domain-rule entries keep their own meaning, and legacy
-        // entries without an explicit domain keep the old non-empty contract.
-        meaningPolicy:
-          layer === "primitive" &&
-          raw.domain === "color" &&
-          raw.kind !== "domain-rule"
-            ? "must-be-empty"
-            : "required",
+        meaningPolicy: raw.kind === "domain-rule" ? "required" : "optional",
         checkValue: (value) => {
           if (raw.kind === "domain-rule") {
             return validateRuleBody(value, ctx);

@@ -193,16 +193,21 @@ test("design-system token.json declaration links an answered card and ingests", 
       `${JSON.stringify({
         primitive: {
           "color.ink": {
+            kind: "token",
+            domain: "color",
             value: "#101418",
-            meaning: "Primary text ink",
             status: "candidate",
             links: [cardId]
           }
         },
         semantic: {
           "color.text-primary": {
-            value: { alias: "primitive.color.ink" },
-            meaning: "Default text color",
+            kind: "token",
+            domain: "color",
+            value: {
+              alias: "primitive.color.ink",
+              usage: "Default text color"
+            },
             status: "candidate",
             links: [cardId]
           }
@@ -244,7 +249,7 @@ test("design-system token.json declaration links an answered card and ingests", 
     const primitive = view.view.tokens.primitive.find(
       (entry) => entry.entry_id === "primitive.color.ink"
     );
-    expect(primitive).toMatchObject({ status: "candidate", meaning: "Primary text ink" });
+    expect(primitive).toMatchObject({ status: "candidate", meaning: "" });
     expect(primitive?.evidence.question_cards.map((cardEntry) => cardEntry.id))
       .toEqual([cardId]);
     const alias = view.view.tokens.semantic.find(
@@ -323,14 +328,16 @@ test("invalid declarations return typed errors, log invalid_artifact and index n
         primitive: {},
         semantic: {
           "color.a": {
-            value: { alias: "semantic.color.b" },
-            meaning: "Cycle probe A",
+            kind: "token",
+            domain: "color",
+            value: { alias: "semantic.color.b", usage: "Cycle probe A" },
             status: "gap",
             links: []
           },
           "color.b": {
-            value: { alias: "semantic.color.a" },
-            meaning: "Cycle probe B",
+            kind: "token",
+            domain: "color",
+            value: { alias: "semantic.color.a", usage: "Cycle probe B" },
             status: "gap",
             links: []
           }
@@ -353,8 +360,9 @@ test("invalid declarations return typed errors, log invalid_artifact and index n
       `${JSON.stringify({
         primitive: {
           "color.ink": {
+            kind: "token",
+            domain: "color",
             value: "#101418",
-            meaning: "Primary text ink",
             status: "gap",
             links: []
           }
@@ -504,8 +512,9 @@ test("formalized entry without a designer-edited link is rejected at ingest", as
       `${JSON.stringify({
         primitive: {
           "color.ink": {
+            kind: "token",
+            domain: "color",
             value: "#101418",
-            meaning: "Primary text ink",
             status: "formalized",
             links: [cardId]
           }
