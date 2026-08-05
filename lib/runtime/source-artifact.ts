@@ -24,11 +24,15 @@
 // mirroring the invalid-output convention in evidence-package.ts.
 
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { openProjectDb, closeProjectDb, withProjectTransaction } from "./db";
 import { emitRecordEvent } from "./record-bus";
 import { logEvent, logEventOnDb, logInvalidToolEvent } from "./events";
+import {
+  recordSourceContentDigest,
+  sourceContentDigestOf
+} from "./source-artifact-digest";
 import {
   assertArtifactPathInProject,
   resolveProjectArtifactPath
@@ -392,6 +396,10 @@ export function recordSourceArtifact(
   try {
     const result = withProjectTransaction(projectPath, (db) => {
       let ingestPlan: DesignSystemIngestPlan | null = null;
+      // sha256 of the exact bytes ingested — the lazy file→DB sync
+      // (design-system-sync) compares against this to detect undeclared
+      // source edits. Null for non-design-system artifacts.
+      let contentDigest: string | null = null;
 
       // Design-system declarations must link answered question cards or
       // Agent annotations (09A decision 4); the DB-dependent check runs
@@ -421,6 +429,9 @@ export function recordSourceArtifact(
         });
         if (!prepared.ok) return prepared;
         ingestPlan = prepared.plan;
+        contentDigest = sourceContentDigestOf(
+          readFileSync(absolutePath, "utf8")
+        );
       }
 
       const existing = db
@@ -500,6 +511,7 @@ export function recordSourceArtifact(
       // leaves entries without their declaration.
       if (ingestPlan) {
         applyDesignSystemIngestOnDb(db, ingestPlan);
+        recordSourceContentDigest(db, record.path, contentDigest!);
       }
 
       return {

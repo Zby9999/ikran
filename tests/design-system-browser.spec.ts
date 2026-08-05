@@ -714,6 +714,44 @@ test("09A design system browser: declare → render → approve write-back", asy
       )
     ).toBe("formalized");
 
+    // ---- Lazy file→DB sync: an undeclared Agent edit converges on read. ----
+    // The Agent rewrote token.json with host-native editing and forgot to
+    // re-declare; the Browser must not keep serving the stale DB rows.
+    const tokenPath = path.join(designSystemDir, "token.json");
+    const tokenSource = JSON.parse(readFileSync(tokenPath, "utf-8")) as {
+      primitive: Record<string, { value: string }>;
+    };
+    tokenSource.primitive["color.ink"].value = "#ff0000";
+    writeFileSync(tokenPath, JSON.stringify(tokenSource));
+    // Close + reopen the sheet so the Browser re-fetches the view.
+    await page.getByTestId("ds-close").click();
+    await expect(sheet).toHaveAttribute("data-open", "false");
+    await entryButton.click();
+    await expect(sheet).toHaveAttribute("data-open", "true");
+    await page.getByRole("button", { name: "Color", exact: true }).click();
+    const syncedRow = page.getByTestId("ds-row-semantic.color.text-primary");
+    await expect(syncedRow).toBeVisible();
+    await syncedRow.getByTestId("ds-color-swatch-color.text-primary").hover();
+    await expect(page.getByRole("tooltip")).toContainText(
+      "color.ink · #ff0000"
+    );
+    await expect(page.getByTestId("ds-sync-warning")).toHaveCount(0);
+    const syncDb = openIkranDb(path.join(projectDir, ".ikran", "ikran.db"));
+    try {
+      expect(
+        syncDb
+          .prepare(
+            `SELECT value_json FROM design_system_entries
+             WHERE source_artifact_path = ? AND entry_id = ?`
+          )
+          .get("design-system/token.json", "primitive.color.ink")
+      ).toEqual({ value_json: '"#ff0000"' });
+    } finally {
+      syncDb.close();
+    }
+    // Hover-away so the tooltip does not linger into later assertions.
+    await page.getByRole("heading", { name: "Color", exact: true }).hover();
+
     // The derived export is never the Browser's source, but it is regenerated.
     expect(
       existsSync(

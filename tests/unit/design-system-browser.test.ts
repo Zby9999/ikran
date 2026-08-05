@@ -1075,7 +1075,7 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
     expect(html).not.toContain('data-testid="ds-atlas-status"');
   });
 
-  test("keeps raw source, status and technical audit content out of the surface", () => {
+  test("shows governance status on atlas rows while keeping raw source and technical audit content out", () => {
     const html = renderToStaticMarkup(
       createElement(TypographyLeafPage, {
         layers: typographyLayers(),
@@ -1084,11 +1084,37 @@ describe("TypographyLeafPage (09C-A Type Atlas)", () => {
     );
     expect(html).not.toContain("Source tokens");
     expect(html).not.toContain("Source-backed");
-    expect(html).not.toContain("formalized");
+    // Governance chrome (candidate/formalized) is now on this surface;
+    // the fixtures are fully formalized.
+    expect(html).toContain('data-testid="ds-typography-status"');
+    expect(html).toContain("Formalized");
     expect(html).not.toContain("Tokens · Primitive");
     expect(html).not.toContain('data-testid="ds-row-primitive.font-size-400"');
     expect(html).not.toContain('data-testid="ds-technical-details"');
     expect(html).not.toContain('data-testid="ds-typography-roles"');
+  });
+
+  test("atlas status chip batch-approves every contributing source row", () => {
+    const onApproveRows = vi.fn();
+    const html = renderToStaticMarkup(
+      createElement(TypographyLeafPage, {
+        layers: typographyLayers(),
+        rows: rowSharedProps({ onApproveRows })
+      })
+    );
+    // Fully-formalized style: the chip offers the revert-to-candidate switch.
+    expect(html).toContain('aria-label="Switch Display Large to Candidate"');
+  });
+
+  test("atlas status falls back to a static chip when approvals are unavailable", () => {
+    const html = renderToStaticMarkup(
+      createElement(TypographyLeafPage, {
+        layers: typographyLayers(),
+        rows: rowSharedProps({ onApprove: undefined, onApproveRows: undefined })
+      })
+    );
+    expect(html).toContain('data-testid="ds-typography-status"');
+    expect(html).not.toContain('aria-label="Switch Display Large to Candidate"');
   });
 
   test("empty typography stays honest without inventing specimens", () => {

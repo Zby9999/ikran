@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 22;
+export const CURRENT_SCHEMA_VERSION = 23;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1105,6 +1105,22 @@ WHERE command_type = 'prepare_initial_design_system'
     WHERE singleton = 1
   );
       `);
+    }
+  },
+  {
+    version: 23,
+    up(db) {
+      // Lazy file→DB sync (design-system-sync) needs the declared content
+      // digest to detect undeclared source edits. Null means "unknown" —
+      // pre-v23 rows re-ingest once on first sync and then stay current.
+      const columns = db
+        .prepare("PRAGMA table_info(source_artifacts)")
+        .all() as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === "content_digest")) {
+        db.exec(
+          "ALTER TABLE source_artifacts ADD COLUMN content_digest TEXT"
+        );
+      }
     }
   }
 ];

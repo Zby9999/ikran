@@ -13,12 +13,14 @@
 //     (getDesignIntentAlignment), never via list_region_annotations filtering
 //
 // `design-system-view.json` under `.ikran/artifacts/` is a DERIVED export
-// regenerated from the DB after each successful ingest — research export /
-// external consumption only. The Browser must never read it.
+// regenerated from the DB after each successful ingest and after a lazy
+// file→DB sync re-ingests — research export / external consumption only.
+// The Browser must never read it.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { openProjectDb, closeProjectDb } from "./db";
+import { logInvalidToolEvent } from "./events";
 import { getArtifactsDir } from "./paths";
 import {
   getDesignIntentAlignment,
@@ -35,9 +37,14 @@ import type {
 } from "./design-system-schema";
 import {
   DESIGN_SYSTEM_BUCKETS,
+  resolveEntrySourceCaptures,
   type DesignSystemBucket,
   type DesignSystemSection
 } from "./design-system-ingest";
+import {
+  syncDesignSystemSources,
+  type DesignSystemSyncWarning
+} from "./design-system-sync";
 
 // ---------------------------------------------------------------------------
 // View model shapes
@@ -174,6 +181,9 @@ export interface DesignSystemView {
     inventory: DesignSystemEntryView[];
     specs: DesignSystemEntryView[];
   };
+  /** Files that failed lazy file→DB sync this read — the view is serving
+   * their last-good DB rows. Absent when everything synced cleanly. */
+  sync_warnings?: DesignSystemSyncWarning[];
 }
 
 export type DesignSystemViewResult =
@@ -344,6 +354,11 @@ function assignEntryToView(
 export function getDesignSystemView(
   projectPath: string
 ): DesignSystemViewResult {
+  // Converge file→DB first: undeclared Agent edits are re-ingested here so
+  // the Browser never serves silently-stale rows. Failures downgrade to
+  // warnings; the view below keeps serving last-good data regardless.
+  const sync = syncDesignSystemSources(projectPath);
+
   let name = "";
   const pending: Array<{ view: DesignSystemEntryView; versionIds: string[] }> =
     [];
@@ -395,13 +410,10 @@ export function getDesignSystemView(
 
     for (const row of rows) {
       const value = JSON.parse(row.value_json) as unknown;
-      const storedCaptures = JSON.parse(row.source_captures_json) as unknown;
-      const sourceCaptures =
-        Array.isArray(storedCaptures) && storedCaptures.length > 0
-          ? storedCaptures
-          : isPlainObject(value) && Array.isArray(value.sourceCaptures)
-            ? value.sourceCaptures
-            : [];
+      const sourceCaptures = resolveEntrySourceCaptures(
+        row.source_captures_json,
+        value
+      );
       const links = JSON.parse(row.links_json) as string[];
       const evidence: DesignSystemEntryEvidence = {
         question_cards: [],
@@ -574,6 +586,29 @@ export function getDesignSystemView(
     if (!bucket) continue;
     assignEntryToView(view, bucket, entry);
   }
+  if (sync.reingested.length > 0) {
+    // Lazy sync changed the DB, so the derived export is stale. Regenerate it
+    // from the view just built — never via writeDesignSystemViewExport, which
+    // would recurse through getDesignSystemView. Best-effort with the same
+    // invalid_output audit convention as the ingest/approve/edit paths, and
+    // deliberately NO design_system_view_generated event (that event means a
+    // declared ingest; lazy sync is a convergence write).
+    const exportResult = writeDesignSystemExportFile(
+      projectPath,
+      buildDesignSystemViewExport(view)
+    );
+    if (!exportResult.ok) {
+      logInvalidToolEvent(
+        projectPath,
+        "invalid_output",
+        "design_system_view_export",
+        exportResult.reason
+      );
+    }
+  }
+  if (sync.warnings.length > 0) {
+    view.sync_warnings = sync.warnings;
+  }
   return { ok: true, view };
 }
 
@@ -606,18 +641,18 @@ export type DesignSystemViewExportResult =
   | { ok: false; reason: "db_error" | "write_failed" | string };
 
 /**
- * Regenerate the derived export from the DB (never from the source files).
- * Deterministic: volatile fields (generated_at, per-ingest row uuids) are
- * stripped and keys are sorted, so identical content yields identical bytes
- * and exports do not diff-noise.
+ * Build the deterministic export payload from a view: volatile fields
+ * (generated_at, sync_warnings, per-ingest row uuids) are stripped and the
+ * bucket walk mirrors the view projection — no second section enumeration.
  */
-export function writeDesignSystemViewExport(
-  projectPath: string
-): DesignSystemViewExportResult {
-  const result = getDesignSystemView(projectPath);
-  if (!result.ok) return { ok: false, reason: result.reason };
-
-  const { generated_at: _generatedAt, ...content } = result.view;
+function buildDesignSystemViewExport(
+  view: DesignSystemView
+): Record<string, unknown> {
+  const {
+    generated_at: _generatedAt,
+    sync_warnings: _syncWarnings,
+    ...content
+  } = view;
   const stripRowId = (entry: DesignSystemEntryView) => {
     const { id: _id, ...rest } = entry;
     if (entry.section.startsWith("token.") && entry.kind !== "domain-rule") {
@@ -626,7 +661,6 @@ export function writeDesignSystemViewExport(
     }
     return rest;
   };
-  // Same bucket walk as the view projection — no second section enumeration.
   const exportView: Record<string, unknown> = { name: content.name };
   for (const bucket of DESIGN_SYSTEM_BUCKETS) {
     if (!(bucket.group in exportView)) {
@@ -651,7 +685,13 @@ export function writeDesignSystemViewExport(
       ).map(stripRowId);
     }
   }
+  return exportView;
+}
 
+function writeDesignSystemExportFile(
+  projectPath: string,
+  exportView: Record<string, unknown>
+): DesignSystemViewExportResult {
   const outPath = path.join(
     getArtifactsDir(projectPath),
     "design-system-view.json"
@@ -663,4 +703,20 @@ export function writeDesignSystemViewExport(
   } catch {
     return { ok: false, reason: "write_failed" };
   }
+}
+
+/**
+ * Regenerate the derived export from the DB (never from the source files).
+ * Deterministic: identical content yields identical bytes, so exports do not
+ * diff-noise.
+ */
+export function writeDesignSystemViewExport(
+  projectPath: string
+): DesignSystemViewExportResult {
+  const result = getDesignSystemView(projectPath);
+  if (!result.ok) return { ok: false, reason: result.reason };
+  return writeDesignSystemExportFile(
+    projectPath,
+    buildDesignSystemViewExport(result.view)
+  );
 }

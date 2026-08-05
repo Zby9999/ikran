@@ -12,7 +12,7 @@
 //
 // Staging mirrors tests/design-system-browser.spec.ts.
 
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -583,9 +583,51 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         minHeight: "0px"
       });
     await expect(page.getByTestId("ds-typography-summary")).toHaveCount(0);
-    await expect(ledger.getByText("formalized", { exact: true })).toHaveCount(0);
     await expect(ledger.getByText("Source-backed", { exact: true })).toHaveCount(0);
     await expect(page.locator('[aria-label="Order type atlas"]')).toHaveCount(0);
+
+    // ---- Typography governance: every atlas row carries the combined
+    // status of its composite source rows; the chip flips them together. ----
+    await expect(ledger.getByTestId("ds-typography-status")).toHaveCount(4);
+    const displayStatus = page
+      .getByTestId("ds-atlas-semantic.display.large")
+      .getByTestId("ds-typography-status");
+    await expect(displayStatus).toHaveText("Formalized");
+    const bodyRow = page.getByTestId("ds-atlas-semantic.body");
+    const bodyStatus = bodyRow.getByTestId("ds-typography-status");
+    await expect(bodyStatus).toHaveText("Candidate");
+    await bodyStatus.click();
+    await expect(bodyStatus).toHaveText("Formalized");
+    // The approval round-trips through Runtime: the source file is canonical
+    // and must show the flip without any re-declaration.
+    await expect
+      .poll(() => {
+        const tokenSource = JSON.parse(
+          readFileSync(
+            path.join(projectDir, "design-system", "token.json"),
+            "utf-8"
+          )
+        ) as { semantic: Record<string, { status: string }> };
+        return tokenSource.semantic.body.status;
+      })
+      .toBe("formalized");
+    // Reverting a fully-formalized style flips every contributing row back.
+    await displayStatus.click();
+    await expect(displayStatus).toHaveText("Candidate");
+    await expect
+      .poll(() => {
+        const tokenSource = JSON.parse(
+          readFileSync(
+            path.join(projectDir, "design-system", "token.json"),
+            "utf-8"
+          )
+        ) as {
+          primitive: Record<string, { status: string }>;
+          semantic: Record<string, { status: string }>;
+        };
+        return `${tokenSource.semantic["display.large"].status}/${tokenSource.primitive["font.family.sans"].status}`;
+      })
+      .toBe("candidate/candidate");
 
     await expect(
       page.getByTestId("ds-atlas-primitive.font.size.700")

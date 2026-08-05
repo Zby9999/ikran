@@ -556,6 +556,13 @@
   margin: 0;
 }
 
+/* Sync warning above the sheet main: a source file changed but could not be
+   re-synced, so the Browser is showing its last-good version. */
+.dsb-sync-warning {
+  margin: 4px 0 8px;
+  color: rgb(146 64 14);
+}
+
 /* Spec rows — d.6: name / value / meaning / status chip (+ ⓘ) only. */
 .dsb-rows {
   margin-top: 0;
@@ -1313,9 +1320,17 @@
 .dsb-type-columns,
 .dsb-type-row {
   display: grid;
-  grid-template-columns: minmax(320px, 1.25fr) minmax(220px, 0.8fr) 36px;
   align-items: center;
   column-gap: 28px;
+}
+
+.dsb-type-columns {
+  grid-template-columns: minmax(320px, 1.25fr) minmax(220px, 0.8fr) 36px;
+}
+
+/* Rows carry a status chip between usage and the disclosure button. */
+.dsb-type-row {
+  grid-template-columns: minmax(320px, 1.25fr) minmax(220px, 0.8fr) auto 36px;
 }
 
 .dsb-type-columns {
@@ -1649,9 +1664,13 @@
 }
 
 @media (max-width: 920px) {
-  .dsb-type-columns,
-  .dsb-type-row {
+  .dsb-type-columns {
     grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.8fr) 32px;
+    column-gap: 18px;
+  }
+
+  .dsb-type-row {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.8fr) auto 32px;
     column-gap: 18px;
   }
 }

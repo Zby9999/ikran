@@ -11,6 +11,7 @@ import {
 import { logEventOnDb } from "./events";
 import { emitRecordEvent } from "./record-bus";
 import { listDeclaredArtifacts } from "./source-artifact";
+import { resolveEntrySourceCaptures } from "./design-system-ingest";
 import { specPathMatchesSourceArtifact } from "./design-system-spec-path";
 import { resolveProjectArtifactPath } from "./evidence-package";
 import {
@@ -652,12 +653,10 @@ function missingComponentCaptures(
 ): Array<{ entry_id: string; artifact_path: string }> {
   return specEntries.flatMap((entry) => {
     const value = JSON.parse(entry.value_json) as Record<string, unknown>;
-    const captures =
-      value.sourceCaptures === undefined
-        ? []
-        : Array.isArray(value.sourceCaptures)
-          ? value.sourceCaptures
-          : [value.sourceCaptures];
+    const captures = resolveEntrySourceCaptures(
+      entry.source_captures_json,
+      value
+    );
     return captures.flatMap((capture) => {
       const artifactPath =
         isRecord(capture) && typeof capture.artifactPath === "string"
@@ -901,7 +900,7 @@ function progressiveExtractionStateOnDb(
   const entries = db
     .prepare(
       `SELECT source_artifact_path, entry_id, section, name, kind, domain,
-              status, links_json, value_json, position
+              status, links_json, value_json, source_captures_json, position
        FROM design_system_entries`
     )
     .all() as unknown as DesignSystemEntryKeyRow[];
@@ -1048,7 +1047,7 @@ export function recordDesignSystemExtractionWorkUnit(
         const entries = db
           .prepare(
             `SELECT source_artifact_path, entry_id, section, name, kind, domain,
-                    status, links_json, value_json, position
+                    status, links_json, value_json, source_captures_json, position
              FROM design_system_entries`
           )
           .all() as unknown as DesignSystemEntryKeyRow[];
@@ -1163,7 +1162,7 @@ export function recordDesignSystemExtractionWorkUnit(
         const entries = db
           .prepare(
             `SELECT source_artifact_path, entry_id, section, name, kind, domain,
-                    status, links_json, value_json, position
+                    status, links_json, value_json, source_captures_json, position
              FROM design_system_entries`
           )
           .all() as unknown as DesignSystemEntryKeyRow[];
@@ -1290,7 +1289,7 @@ export function recordDesignSystemExtractionWorkUnit(
       const entries = db
         .prepare(
           `SELECT source_artifact_path, entry_id, section, name, kind, domain,
-                  status, links_json, value_json, position
+                  status, links_json, value_json, source_captures_json, position
            FROM design_system_entries`
         )
         .all() as unknown as DesignSystemEntryKeyRow[];
@@ -1806,6 +1805,7 @@ type DesignSystemEntryKeyRow = {
   status: string;
   links_json: string;
   value_json: string;
+  source_captures_json: string | null;
   position: number;
 };
 
@@ -2037,7 +2037,7 @@ export function finalizeInitialDesignSystemPreparation(
       const entries = db
         .prepare(
           `SELECT source_artifact_path, entry_id, section, name, kind, domain,
-                  status, links_json, value_json, position
+                  status, links_json, value_json, source_captures_json, position
            FROM design_system_entries
            ORDER BY source_artifact_path ASC, entry_id ASC`
         )

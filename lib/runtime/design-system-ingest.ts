@@ -169,6 +169,38 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Read an entry's source captures from storage. The source_captures column
+ * is canonical; the value.sourceCaptures fallback only serves rows ingested
+ * before value_json was stripped of that key (see stripSourceCaptures).
+ */
+export function resolveEntrySourceCaptures(
+  sourceCapturesJson: string | null,
+  value: unknown
+): unknown[] {
+  const stored =
+    typeof sourceCapturesJson === "string"
+      ? (JSON.parse(sourceCapturesJson) as unknown)
+      : null;
+  if (Array.isArray(stored) && stored.length > 0) return stored;
+  if (isPlainObject(value) && "sourceCaptures" in value) {
+    const legacy = value.sourceCaptures;
+    return Array.isArray(legacy) ? legacy : [legacy];
+  }
+  return [];
+}
+
+/** Captures live ONLY in the source_captures column (single storage).
+ * Component specs carry them inside value.sourceCaptures in the source file;
+ * strip the key from the stored value so value_json can never diverge from
+ * the column. */
+function stripSourceCaptures(
+  value: Record<string, unknown>
+): Record<string, unknown> {
+  const { sourceCaptures: _stripped, ...rest } = value;
+  return rest;
+}
+
+/**
  * Flatten a schema-validated file into ingest rows. Mirrors the shapes owned
  * by ./design-system-schema; callers must have run validateDesignSystemJson
  * first (declaration + ingest both do).
@@ -187,13 +219,19 @@ export function collectDesignSystemEntryRows(
     domain: TokenDomain | null = null
   ): DesignSystemEntryRowInput => {
     const entry = raw as RawEntry;
+    // The resolveEntrySourceCaptures value fallback stays for rows ingested
+    // before the strip rule.
+    const value =
+      isPlainObject(entry.value) && "sourceCaptures" in entry.value
+        ? stripSourceCaptures(entry.value)
+        : entry.value;
     return {
       entry_id: entryId,
       section,
       name,
       kind: entry.kind ?? null,
       domain,
-      value: entry.value,
+      value,
       source_captures: Array.isArray(entry.sourceCaptures)
         ? entry.sourceCaptures
         : isPlainObject(entry.value) && Array.isArray(entry.value.sourceCaptures)

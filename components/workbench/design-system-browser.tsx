@@ -606,6 +606,9 @@ type RowListProps = {
   onInfoHoverOpen: (key: string) => void;
   onInfoHoverClose: () => void;
   onApprove?: (row: DsRow) => void;
+  /** Batch approval for composite rows (Typography atlas): applied
+   * sequentially so same-file writes never race each other. */
+  onApproveRows?: (rows: DsRow[]) => void;
   onEditEntry?: (
     row: DsRow,
     field: "meaning" | "value" | "value.description",
@@ -1395,14 +1398,20 @@ function typographyLedgerMetrics(
 function TypographyLedgerRow({
   item,
   expanded,
-  onToggle
+  onToggle,
+  approvalPending = false,
+  onApprove
 }: {
   item: TypographyAtlasItem;
   expanded: boolean;
   onToggle: () => void;
+  approvalPending?: boolean;
+  onApprove?: () => void;
 }) {
   const metrics = typographyLedgerMetrics(item);
   const detailsId = `dsb-type-details-${safeDomId(item.key)}`;
+  const approveTarget =
+    item.status === "candidate" ? "Formalized" : "Candidate";
 
   return (
     <article
@@ -1426,6 +1435,30 @@ function TypographyLedgerRow({
         <p className="dsb-type-usage">
           {item.usage || "No usage note declared"}
         </p>
+        {item.status === "gap" || !onApprove ? (
+          <StatusChip status={item.status} testId="ds-typography-status" />
+        ) : (
+          <button
+            type="button"
+            className="dsb-chip dsb-chip-action"
+            data-status={item.status}
+            data-testid="ds-typography-status"
+            aria-label={
+              approvalPending
+                ? `Updating ${item.label} status`
+                : `Switch ${item.label} to ${approveTarget}`
+            }
+            aria-busy={approvalPending || undefined}
+            disabled={approvalPending}
+            onClick={onApprove}
+          >
+            {approvalPending
+              ? "Updating…"
+              : item.status === "candidate"
+                ? "Candidate"
+                : "Formalized"}
+          </button>
+        )}
         <Button
           className="dsb-type-expand"
           variant="outline"
@@ -1464,8 +1497,11 @@ function TypographyLedgerRow({
 
 /** Typography leaf: a quiet, visual-first ledger. Each row shows the style
  * name in its declared type treatment, its intended use, and one disclosure
- * for construction details. Evidence, approval state and source ids remain
- * outside this interaction surface. */
+ * for construction details. Governance: the row carries the combined
+ * candidate/formalized status of its composite source rows and, when writes
+ * are allowed, flips all contributing rows together (approve candidates, or
+ * revert a fully-formalized style back to candidate). Source ids and the
+ * evidence chain stay on the ⓘ surfaces of the contributing rows. */
 export function TypographyLeafPage({
   layers,
   rules = [],
@@ -1542,18 +1578,37 @@ export function TypographyLeafPage({
                   <span />
                 </div>
                 <div className="dsb-type-list">
-                  {group.items.map((item) => (
-                    <TypographyLedgerRow
-                      key={item.key}
-                      item={item}
-                      expanded={expandedKey === item.key}
-                      onToggle={() =>
-                        setExpandedKey((current) =>
-                          current === item.key ? null : item.key
-                        )
-                      }
-                    />
-                  ))}
+                  {group.items.map((item) => {
+                    const approveTargets =
+                      item.status === "candidate"
+                        ? item.sourceRows.filter(
+                            (sourceRow) => sourceRow.status === "candidate"
+                          )
+                        : item.status === "formalized"
+                          ? item.sourceRows
+                          : [];
+                    return (
+                      <TypographyLedgerRow
+                        key={item.key}
+                        item={item}
+                        expanded={expandedKey === item.key}
+                        onToggle={() =>
+                          setExpandedKey((current) =>
+                            current === item.key ? null : item.key
+                          )
+                        }
+                        approvalPending={item.sourceRows.some(
+                          (sourceRow) =>
+                            rows.approvals[sourceRow.key]?.kind === "pending"
+                        )}
+                        onApprove={
+                          rows.onApproveRows && approveTargets.length > 0
+                            ? () => rows.onApproveRows?.(approveTargets)
+                            : undefined
+                        }
+                      />
+                    );
+                  })}
                 </div>
               </section>
             ))}
@@ -2194,6 +2249,17 @@ export function DesignSystemBrowser({
     onInfoHoverOpen: openInfoTracked,
     onInfoHoverClose: closeInfoDelayed,
     onApprove: readOnly ? undefined : (row) => void approve(row),
+    onApproveRows: readOnly
+      ? undefined
+      : (rowsToApprove) => {
+          void (async () => {
+            // Sequential: composite rows often share one source file, and
+            // parallel writes would trip the concurrent-source guard.
+            for (const rowToApprove of rowsToApprove) {
+              await approve(rowToApprove);
+            }
+          })();
+        },
     onEditEntry: readOnly ? undefined : editEntry
   };
 
@@ -2533,6 +2599,17 @@ export function DesignSystemBrowser({
                   : null}
               </nav>
             </div>
+            {view?.sync_warnings && view.sync_warnings.length > 0 ? (
+              <p
+                className="dsb-page-note dsb-sync-warning"
+                data-testid="ds-sync-warning"
+                role="status"
+              >
+                {view.sync_warnings.length === 1
+                  ? `One source file could not be synced (${view.sync_warnings[0].path}) — showing its last synced version.`
+                  : `${view.sync_warnings.length} source files could not be synced — showing their last synced versions.`}
+              </p>
+            ) : null}
             <div
               key={`${route.kind}-${route.kind === "leaf" ? route.leaf : route.section}`}
               className="dsb-enter dsb-page"
