@@ -758,9 +758,6 @@ describe("component grouping + sidebar projection (09C-D03)", () => {
     expect(blocks!.items.map((item) => item.leafId)).toEqual([
       "component:page-shell"
     ]);
-    // Group header status summary: one vote per component (worst-of status).
-    expect(components!.summary).toEqual(["1 candidate"]);
-    expect(blocks!.summary).toEqual(["1 formalized"]);
 
     // No block declared → the Blocks group does not render.
     const plain = buildDesignSystemBrowserModel(fixtureView());

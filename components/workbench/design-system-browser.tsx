@@ -2458,8 +2458,8 @@ export function DesignSystemBrowser({
                 </>
               ) : (
                 // 09C-D03: no Components Home — grouped direct-to-detail nav.
-                // Components first, Blocks second; group headers carry the
-                // status summary, items carry a status dot (candidate = blue).
+                // Components first, Blocks second; items carry a status dot
+                // (candidate = blue).
                 componentSidebarGroups.map((group) => (
                   <div
                     key={group.id}
@@ -2468,9 +2468,6 @@ export function DesignSystemBrowser({
                   >
                     <div className="dsb-navgroup-head">
                       <span className="dsb-navgroup-name">{group.name}</span>
-                      <span className="dsb-navgroup-summary">
-                        {group.summary.join(" · ")}
-                      </span>
                     </div>
                     {group.items.map((item) => (
                       <button

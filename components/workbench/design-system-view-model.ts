@@ -541,8 +541,6 @@ export interface DsComponentSidebarGroup {
   id: DsComponentGroupId;
   name: string;
   items: DsComponentSidebarItem[];
-  /** Group header status summary, e.g. ["1 formalized", "2 candidate"]. */
-  summary: string[];
 }
 
 const COMPONENT_GROUP_NAMES: Record<DsComponentGroupId, string> = {
@@ -550,9 +548,7 @@ const COMPONENT_GROUP_NAMES: Record<DsComponentGroupId, string> = {
   block: "Blocks"
 };
 
-/** Components group first, Blocks second; empty groups are omitted. The
- * header summary counts one vote per component by its derived (worst-of)
- * status, e.g. "2 formalized · 1 candidate". */
+/** Components group first, Blocks second; empty groups are omitted. */
 export function projectComponentSidebarGroups(
   components: readonly DsComponentModel[]
 ): DsComponentSidebarGroup[] {
@@ -568,8 +564,7 @@ export function projectComponentSidebarGroups(
         name: component.name,
         status: component.status,
         candidate: component.status === "candidate"
-      })),
-      summary: statusChips(members)
+      }))
     });
   }
   return groups;
