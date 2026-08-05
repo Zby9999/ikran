@@ -107,6 +107,17 @@ function fixtureView(): DesignSystemView {
           name: "radius.card",
           value: "10px",
           status: "candidate"
+        }),
+        entry({
+          entry_id: "semantic.rule.open-gap.image-accent-evidence",
+          section: "token.semantic",
+          name: "rule.open-gap.image-accent-evidence",
+          kind: "domain-rule",
+          domain: "color",
+          meaning: "Image-led accent colors need broader evidence.",
+          value:
+            "Only one project image demonstrates the range. Next: inspect two more project pages before declaring reusable accent roles.",
+          status: "gap"
         })
       ],
       component: []
@@ -416,6 +427,16 @@ describe("buildColorLeafModel (color page redesign)", () => {
         meaning: ""
       }),
       entry({
+        entry_id: "primitive.gray.legacy-gap",
+        section: "token.primitive",
+        name: "gray.legacy-gap",
+        kind: "token",
+        domain: "color",
+        value: "#AAAAAA",
+        meaning: "",
+        status: "gap"
+      }),
+      entry({
         entry_id: "primitive.font.body",
         section: "token.primitive",
         name: "font.body",
@@ -454,6 +475,15 @@ describe("buildColorLeafModel (color page redesign)", () => {
         value: { usage: "面板边界。" },
         meaning: "",
         status: "gap"
+      }),
+      entry({
+        entry_id: "semantic.legacy-gap-alias",
+        name: "legacy-gap-alias",
+        kind: "token",
+        domain: "color",
+        value: { alias: "primitive.gray.legacy-gap", usage: "Legacy row." },
+        alias: "primitive.gray.legacy-gap",
+        meaning: ""
       }),
       entry({
         entry_id: "semantic.color.no-warm",
@@ -509,24 +539,20 @@ describe("buildColorLeafModel (color page redesign)", () => {
     });
   });
 
-  test("concrete tokens carry their own hex with no source; gaps and dangling aliases are unresolved", () => {
+  test("only resolved colors render; token gaps, aliases through gaps, and dangling aliases stay hidden", () => {
     const model = buildColorLeafModel(colorView());
     expect(model.semantic[1]).toMatchObject({
       name: "accent.solid",
       hex: "#3A93FF",
       source: null
     });
-    expect(model.semantic[2]).toMatchObject({
-      name: "divider.subtle",
-      hex: null,
-      source: null,
-      status: "gap"
-    });
-    expect(model.component[1]).toMatchObject({
-      name: "bridge.link",
-      hex: null,
-      source: null
-    });
+    expect(model.semantic.map((token) => token.name)).not.toContain(
+      "divider.subtle"
+    );
+    expect(model.semantic.map((token) => token.name)).not.toContain(
+      "legacy-gap-alias"
+    );
+    expect(model.component.map((token) => token.name)).not.toContain("bridge.link");
   });
 
   test("domain rules split out; rows keep the full DsRow for evidence/approval", () => {
@@ -535,25 +561,24 @@ describe("buildColorLeafModel (color page redesign)", () => {
       "semantic.color.no-warm"
     ]);
     expect(model.semantic[0]!.row.entryId).toBe("semantic.ink.primary");
-    expect(model.component).toHaveLength(2);
+    expect(model.component).toHaveLength(1);
   });
 
-  test("unconsumed = color primitives with no incoming alias, file-wide", () => {
-    const model = buildColorLeafModel(colorView());
-    // gray.800 consumed by semantic.ink.primary; blue.500 + pink.400 not
-    // referenced by any alias. font.body is not a color primitive.
-    expect(model.unconsumed).toEqual([
-      { name: "blue.500", hex: "#3A93FF", status: "formalized" },
-      { name: "pink.400", hex: "#F968AD", status: "formalized" }
+  test("projects unresolved color decisions into Rules as gap rows", () => {
+    const model = buildColorLeafModel(fixtureView());
+    expect(model.rules).toEqual([
+      expect.objectContaining({
+        status: "gap",
+        meaning: "Image-led accent colors need broader evidence."
+      })
     ]);
   });
 
-  test("empty view → empty groups, no unconsumed", () => {
+  test("empty view → empty groups and rules", () => {
     const model = buildColorLeafModel(emptyView());
     expect(model.rules).toEqual([]);
     expect(model.semantic).toEqual([]);
     expect(model.component).toEqual([]);
-    expect(model.unconsumed).toEqual([]);
   });
 });
 
@@ -628,20 +653,16 @@ describe("approval UI states", () => {
     expect(failed).toMatchObject({ kind: "error", reason: "already_formalized" });
   });
 
-  test("typed failure reasons read next to the row", () => {
-    expect(
-      approvalErrorMessage("formalized_requires_designer_edited_link")
-    ).toContain("designer-edited");
-    expect(approvalErrorMessage("gap_entry_not_approvable")).toContain(
-      "filled by the agent"
-    );
-    expect(approvalErrorMessage("already_formalized")).toContain(
-      "Already formalized"
-    );
-    expect(approvalErrorMessage("not_found")).toContain("no longer exists");
-    expect(
-      approvalErrorMessage("some_other_reason", { links: ["card-1"] })
-    ).toBe("some_other_reason (links: card-1)");
+  test("approval failures use one short retry message", () => {
+    for (const reason of [
+      "formalized_requires_designer_edited_link",
+      "gap_entry_not_approvable",
+      "already_formalized",
+      "not_found",
+      "some_other_reason"
+    ]) {
+      expect(approvalErrorMessage(reason)).toBe("Couldn't update. Try again.");
+    }
   });
 });
 

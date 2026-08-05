@@ -134,6 +134,13 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
     fail_closed:
       "Token meaning is forbidden. Using usage or usedFor in the wrong layer or domain is rejected."
   },
+  token_open_gap_policy: {
+    representation: "domain-rule",
+    status: "gap",
+    links: "Open-gap rules carry an empty links array.",
+    guidance:
+      "Write evidence-backed unresolved token decisions as domain rules in the affected domain's Rules list. Put the stable question in meaning and the known context plus next action in the prose value. Never infer a gap from an unconsumed primitive or impose a palette size without project evidence."
+  },
   component_spec_fields: COMPONENT_SPEC_VALUE_FIELDS,
   component_spec_writing_policy: {
     value_keys:

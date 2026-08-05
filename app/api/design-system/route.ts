@@ -36,7 +36,7 @@ function context(request: NextRequest) {
 // model comes from the DB with the evidence chain joined in real time — the
 // Browser never reads design-system source files or the derived view.json
 // export. POST also carries the v1 write action (09A decision 5, Task D):
-// "approve-entry" — the only Browser write, candidate → formalized.
+// "approve-entry" — direct designer candidate ↔ formalized status write.
 export async function GET(request: NextRequest) {
   const ctx = context(request);
   if ("response" in ctx) return ctx.response;
@@ -70,9 +70,9 @@ export async function POST(request: NextRequest) {
           { status: commandErrorHttpStatus(result.reason) }
         );
   }
-  // v1's only write (09A decision 5): candidate → formalized approval.
+  // Direct designer status switch: candidate ↔ formalized.
   // Writes the DB row AND the JSON source file (canonical serialization),
-  // logs design_system_entry_approved, emits the design-system record-bus
+  // logs the semantic transition, emits the design-system record-bus
   // invalidation and regenerates the derived export — all in the command.
   if (raw.action === "approve-entry") {
     const parsed = parseCommandInput(approveDesignSystemEntryInputSchema, raw.input);

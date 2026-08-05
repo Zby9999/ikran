@@ -15,9 +15,9 @@ const CONFLICT_REASONS = new Set([
   "stale_alignment_attempt",
   "no_pending_alignment_command",
   "no_active_alignment_attempt",
-  // Task D approval write-back: state conflicts (entry already formalized,
-  // or DB row and source file have drifted apart).
+  // Designer status write-back: stale target or source/DB drift.
   "already_formalized",
+  "already_candidate",
   "already_exists",
   "entry_not_in_source_file",
   "concurrent_edit_superseded",

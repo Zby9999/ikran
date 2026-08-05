@@ -22,10 +22,8 @@ import {
 } from "../design-system-edit";
 
 /**
- * The Browser's only write operation in v1 (09A decision 5): candidate →
- * formalized approval — flips the DB row and writes the JSON source file
- * back canonically, logs design_system_entry_approved, then invalidates the
- * Browser and regenerates the derived export.
+ * Apply the designer's direct candidate ↔ formalized selection to the DB and
+ * JSON source, append the semantic event, then refresh Browser projections.
  */
 export function approveDesignSystemEntryCommand(
   projectPath: string,

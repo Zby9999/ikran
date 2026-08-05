@@ -97,7 +97,7 @@ const WEIGHT_BOLD = entry({
   name: "font.weight.bold",
   section: "token.primitive",
   value: "700",
-  status: "gap"
+  status: "candidate"
 });
 const DISPLAY_LARGE = entry({
   entry_id: "semantic.display-large",
@@ -473,7 +473,7 @@ describe("projectTypographyLeaf classification", () => {
 
   it("carries status through to the chips", () => {
     const projection = projectTypographyLeaf(fixtureLayers());
-    expect(projection.chips).toEqual(["4 formalized", "1 candidate", "1 open gap"]);
+    expect(projection.chips).toEqual(["4 formalized", "2 candidate"]);
   });
 });
 

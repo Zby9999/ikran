@@ -37,6 +37,7 @@ import {
   Layers01Icon,
   MultiplicationSignIcon,
   Route01Icon,
+  SaveIcon,
   TextFontIcon,
   Tick02Icon
 } from "@hugeicons/core-free-icons";
@@ -46,7 +47,12 @@ import { subscribeRuntimeEvents } from "@/components/runtime/runtime-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+  PopoverTrigger
+} from "@/components/ui/popover";
 import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
 import {
   formatRuleBody,
@@ -77,7 +83,6 @@ import {
   formatEntryValue,
   sheetReducer,
   sheetEscapeAction,
-  statusChips,
   toRow,
   withEntryStatus,
   type ApprovalState,
@@ -180,38 +185,37 @@ export function StatusChip({
   );
 }
 
-/** The one status → dot color mapping (chips, stat dots, specimen
- * annotations all read the same three tokens). */
-function statusDotColor(status: DsStatus): string {
-  if (status === "formalized") return "var(--dsc-green)";
-  if (status === "candidate") return "var(--dsc-accent)";
-  return "var(--dsc-ink-3)";
-}
-
-function dotColor(label: string): string {
-  const status: DsStatus = label.includes("formalized")
-    ? "formalized"
-    : label.includes("candidate")
-      ? "candidate"
-      : "gap";
-  return statusDotColor(status);
-}
-
-export function StatDots({ items }: { items: string[] }) {
-  if (items.length === 0) return null;
+export function EntryStatusChip({
+  row,
+  approval,
+  onApprove,
+  testId = "ds-status-chip"
+}: {
+  row: DsRow;
+  approval: ApprovalState;
+  onApprove: () => void;
+  testId?: string;
+}) {
+  if (row.status === "gap") {
+    return <StatusChip status={row.status} testId={testId} />;
+  }
+  const pending = approval.kind === "pending";
+  const target = row.status === "candidate" ? "Formalized" : "Candidate";
   return (
-    <div className="dsb-statdots">
-      {items.map((label) => (
-        <span key={label} className="dsb-statdot">
-          <span
-            aria-hidden
-            className="dsb-statdot-dot"
-            style={{ background: dotColor(label) }}
-          />
-          {label}
-        </span>
-      ))}
-    </div>
+    <button
+      type="button"
+      className="dsb-chip dsb-chip-action"
+      data-status={row.status}
+      data-testid={testId}
+      aria-label={
+        pending ? `Updating ${row.name} status` : `Switch ${row.name} to ${target}`
+      }
+      aria-busy={pending || undefined}
+      disabled={pending}
+      onClick={onApprove}
+    >
+      {pending ? "Updating…" : row.status === "candidate" ? "Candidate" : "Formalized"}
+    </button>
   );
 }
 
@@ -246,13 +250,9 @@ export function OriginTag({ origin }: { origin: DsVisualOrigin }) {
 /* --------------------------- ⓘ evidence popover --------------------------- */
 
 export function EvidenceInfoContent({
-  entry,
-  approval,
-  onApprove
+  entry
 }: {
   entry: DesignSystemEntryView;
-  approval: ApprovalState;
-  onApprove: () => void;
 }) {
   const evidence = entry.evidence;
   const editHistory = evidence.edit_history ?? [];
@@ -360,33 +360,6 @@ export function EvidenceInfoContent({
           ) : null}
         </>
       )}
-      {/*
-        The tray is driven by the approval state machine, NOT the entry's
-        (possibly optimistically flipped) status: pending keeps the tray
-        visible with a disabled button so "Approving…" is actually seen;
-        success retires it (status is formalized); failure reverts the flip
-        and shows the typed reason here and inline on the row.
-      */}
-      {entry.status === "candidate" || approval.kind === "pending" ? (
-        <div className="dsb-approve-tray">
-          <button
-            type="button"
-            className="dsb-approve-button"
-            data-testid={`ds-approve-${entry.entry_id}`}
-            disabled={approval.kind === "pending"}
-            onClick={onApprove}
-          >
-            {approval.kind === "pending"
-              ? "Approving…"
-              : "Approve → formalized"}
-          </button>
-          {approval.kind === "error" ? (
-            <p className="dsb-approve-error" role="alert">
-              {approval.message}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -413,7 +386,6 @@ function pickInfoPopoverSide(trigger: HTMLElement): InfoPopoverSide {
 
 export function InfoPopover({
   entry,
-  approval,
   infoOpen,
   popoverInstant,
   portalContainer,
@@ -421,11 +393,9 @@ export function InfoPopover({
   onInfoOpenChange,
   onInfoHoverOpen,
   onInfoHoverClose,
-  onApprove,
   interactive = true
 }: {
   entry: DesignSystemEntryView;
-  approval: ApprovalState;
   infoOpen: boolean;
   popoverInstant: boolean;
   portalContainer: HTMLElement | null;
@@ -433,7 +403,6 @@ export function InfoPopover({
   onInfoOpenChange: (open: boolean) => void;
   onInfoHoverOpen: () => void;
   onInfoHoverClose: () => void;
-  onApprove: () => void;
   /** When false, hover/focus still opens evidence; click does nothing. */
   interactive?: boolean;
 }) {
@@ -508,11 +477,7 @@ export function InfoPopover({
         // first, sheet second) deterministically.
         onEscapeKeyDown={(event) => event.preventDefault()}
       >
-        <EvidenceInfoContent
-          entry={entry}
-          approval={approval}
-          onApprove={onApprove}
-        />
+        <EvidenceInfoContent entry={entry} />
       </PopoverContent>
     </Popover>
   );
@@ -604,10 +569,13 @@ export function SpecRowView({
       <span className="dsb-row-meaning" title={row.meaning}>
         {row.meaning}
       </span>
-      <StatusChip status={row.status} />
+      <EntryStatusChip
+        row={row}
+        approval={approval}
+        onApprove={onApprove}
+      />
       <InfoPopover
         entry={row.entry}
-        approval={approval}
         infoOpen={infoOpen}
         popoverInstant={popoverInstant}
         portalContainer={portalContainer}
@@ -615,11 +583,10 @@ export function SpecRowView({
         onInfoOpenChange={onInfoOpenChange}
         onInfoHoverOpen={onInfoHoverOpen}
         onInfoHoverClose={onInfoHoverClose}
-        onApprove={onApprove}
       />
       {approval.kind === "error" ? (
         <span className="dsb-row-error" role="alert">
-          Approval failed: {approval.message}
+          {approval.message}
         </span>
       ) : null}
     </div>
@@ -641,7 +608,7 @@ type RowListProps = {
   onApprove: (row: DsRow) => void;
   onEditEntry?: (
     row: DsRow,
-    field: "meaning" | "value",
+    field: "meaning" | "value" | "value.description",
     text: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
 };
@@ -669,7 +636,23 @@ function useRuleInlineEditor(
   rows: RowSharedProps,
   displayBody = ""
 ): RuleInlineEditor {
-  const sourceBody = typeof row.entry.value === "string" ? row.entry.value : null;
+  const value = row.entry.value;
+  const bodyField =
+    typeof value === "string"
+      ? "value"
+      : row.entry.section === "foundations.visual-language" &&
+          value !== null &&
+          typeof value === "object" &&
+          !Array.isArray(value) &&
+          typeof (value as { description?: unknown }).description === "string"
+        ? "value.description"
+        : null;
+  const sourceBody =
+    bodyField === "value"
+      ? (value as string)
+      : bodyField === "value.description"
+        ? (value as { description: string }).description
+        : null;
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(row.meaning);
   const [body, setBody] = useState(sourceBody ?? displayBody);
@@ -705,8 +688,8 @@ function useRuleInlineEditor(
         return;
       }
     }
-    if (body !== sourceBody) {
-      const result = await rows.onEditEntry(row, "value", body);
+    if (body !== sourceBody && bodyField) {
+      const result = await rows.onEditEntry(row, bodyField, body);
       if (!result.ok) {
         setError(result.error);
         setPending(false);
@@ -780,12 +763,21 @@ function RuleInlineActions({
     <span className="dsb-rule-inline-actions">
       {editor.dirty ? (
         <Button
-          size="xs"
+          variant="ghost"
+          size="icon-xs"
+          className="dsb-rule-save-icon active:scale-[0.96] active:translate-y-0"
           data-testid={`ds-rule-save-${row.entryId}`}
+          aria-label={`${editor.pending ? "Saving" : "Save"} rule ${row.meaning}`}
           disabled={editor.pending || !valid}
           onClick={() => void editor.save()}
         >
-          {editor.pending ? "Saving…" : "Save"}
+          <HugeiconsIcon
+            icon={SaveIcon}
+            size={12}
+            strokeWidth={1.5}
+            color="currentColor"
+            aria-hidden
+          />
         </Button>
       ) : null}
       <Button
@@ -840,36 +832,8 @@ function RowList({ rows, numbered = false, ...rest }: RowListProps) {
   );
 }
 
-function PageSummary({
-  meta,
-  chips
-}: {
-  meta: string;
-  chips: string[];
-}) {
-  return (
-    <div className="dsb-intro">
-      <p className="dsb-meta">{meta}</p>
-      <StatDots items={chips} />
-    </div>
-  );
-}
-
-function PageHeading({
-  title,
-  meta,
-  chips
-}: {
-  title: string;
-  meta: string;
-  chips: string[];
-}) {
-  return (
-    <>
-      <h1 className="dsb-h1">{title}</h1>
-      <PageSummary meta={meta} chips={chips} />
-    </>
-  );
+function PageHeading({ title }: { title: string }) {
+  return <h1 className="dsb-h1">{title}</h1>;
 }
 
 const FOUNDATIONS_LEAVES: {
@@ -912,15 +876,7 @@ export function FoundationsHomePage({
   }, [visualLanguage]);
   return (
     <>
-      <PageHeading
-        title="Foundations"
-        meta={
-          model.name
-            ? `${model.name} · Extracted from the six-part alignment`
-            : "Extracted from the six-part alignment"
-        }
-        chips={model.foundations.chips}
-      />
+      <PageHeading title="Foundations" />
       {visualLanguageRule ? (
         <section className="dsb-section" data-testid="ds-visual-language-zone">
           <GroupLabel>Visual language</GroupLabel>
@@ -1004,13 +960,17 @@ function RuleLedgerCardShell({
             <span className="dsb-interaction-anchor" aria-hidden>
               {rule.anchor}
             </span>
-            <StatusChip status={rule.status} testId="ds-interaction-status" />
+            <EntryStatusChip
+              row={rule.row}
+              approval={approval}
+              onApprove={() => rows.onApprove(rule.row)}
+              testId="ds-interaction-status"
+            />
           </span>
           <span className="dsb-rule-row-actions">
             <RuleInlineActions row={rule.row} editor={editor} />
             <InfoPopover
               entry={rule.row.entry}
-              approval={approval}
               infoOpen={rows.infoKey === rule.key}
               popoverInstant={rows.popoverInstant(rule.key)}
               portalContainer={rows.portalContainer}
@@ -1018,7 +978,6 @@ function RuleLedgerCardShell({
               onInfoOpenChange={(open) => rows.onInfoKey(open ? rule.key : null)}
               onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.key)}
               onInfoHoverClose={rows.onInfoHoverClose}
-              onApprove={() => rows.onApprove(rule.row)}
               interactive={false}
             />
           </span>
@@ -1031,7 +990,7 @@ function RuleLedgerCardShell({
       <RuleInlineError editor={editor} />
       {approval.kind === "error" ? (
         <span className="dsb-row-error" role="alert">
-          Approval failed: {approval.message}
+          {approval.message}
         </span>
       ) : null}
     </li>
@@ -1102,11 +1061,7 @@ export function RulesLeafPage({
   const rules = useMemo(() => projectInteractionLeaf(leaf.rows), [leaf.rows]);
   return (
     <>
-      <PageHeading
-        title="Interaction"
-        meta={`${leaf.rows.length} rules`}
-        chips={leaf.chips}
-      />
+      <PageHeading title="Interaction" />
       {leaf.rows.length > 0 ? (
         <ol className="dsb-interaction-ledger">
           {rules.map((rule) => (
@@ -1141,13 +1096,7 @@ export function TokenLeafPage({
   const hasTokens = tokenCount > 0;
   return (
     <>
-      <PageHeading
-        title={leaf.name}
-        meta={`${hasRules ? `${leaf.rules.length} rules · ` : ""}${tokenCount} tokens across ${leaf.groups.length} layer${
-          leaf.groups.length === 1 ? "" : "s"
-        }`}
-        chips={leaf.chips}
-      />
+      <PageHeading title={leaf.name} />
       {hasRules ? <DomainRulesZone rules={leaf.rules} rows={rows} /> : null}
       {hasTokens ? (
         <section className="dsb-section" data-testid="ds-tokens-zone">
@@ -1176,33 +1125,54 @@ export function TokenLeafPage({
 
 /** Swatch with a lightweight hover/focus tooltip carrying the primitive
  * provenance (terminal token name + resolved hex). The swatch is the only
- * hover target — hex is on-demand information, not first-class. Unresolved
- * tokens (gap, dangling alias) get a striped placeholder. */
+ * hover target — hex is on-demand information, not first-class. */
 function ColorSwatch({
   hex,
   source,
-  name
+  name,
+  portalContainer
 }: {
-  hex: string | null;
+  hex: string;
   source: string | null;
   name: string;
+  portalContainer: HTMLElement | null;
 }) {
-  const unresolved = hex === null;
-  const label = unresolved ? "Unresolved value" : `${source ?? name} · ${hex}`;
+  const label = `${source ?? name} · ${hex}`;
+  const [open, setOpen] = useState(false);
   return (
-    <span className="dsb-color-swatch-wrap">
-      <span
-        className={`dsb-color-swatch${unresolved ? " dsb-color-swatch--gap" : ""}`}
-        style={unresolved ? undefined : { background: hex }}
-        tabIndex={0}
-        role="img"
-        aria-label={label}
-        data-testid={`ds-color-swatch-${name}`}
-      />
-      <span className="dsb-color-tip" role="tooltip">
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverAnchor asChild>
+        <span
+          className="dsb-color-swatch-wrap"
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+        >
+          <span
+            className="dsb-color-swatch"
+            style={{ background: hex }}
+            tabIndex={0}
+            role="img"
+            aria-label={label}
+            data-testid={`ds-color-swatch-${name}`}
+            onFocus={() => setOpen(true)}
+            onBlur={() => setOpen(false)}
+          />
+        </span>
+      </PopoverAnchor>
+      <PopoverContent
+        className="dsb-color-tip"
+        container={portalContainer}
+        role="tooltip"
+        side="top"
+        align="center"
+        sideOffset={0}
+        avoidCollisions={false}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
         {label}
-      </span>
-    </span>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -1236,17 +1206,25 @@ function ColorRow({
       data-testid={`ds-row-${token.row.entryId}`}
       data-approve-error={approval.kind === "error" || undefined}
     >
-      <ColorSwatch hex={token.hex} source={token.source} name={token.name} />
+      <ColorSwatch
+        hex={token.hex}
+        source={token.source}
+        name={token.name}
+        portalContainer={portalContainer}
+      />
       <span className="dsb-color-name" title={token.name}>
         {token.name}
       </span>
       <span className="dsb-color-meaning" title={token.meaning}>
         {token.meaning}
       </span>
-      <StatusChip status={token.status} />
+      <EntryStatusChip
+        row={token.row}
+        approval={approval}
+        onApprove={onApprove}
+      />
       <InfoPopover
         entry={token.row.entry}
-        approval={approval}
         infoOpen={infoOpen}
         popoverInstant={popoverInstant}
         portalContainer={portalContainer}
@@ -1254,11 +1232,10 @@ function ColorRow({
         onInfoOpenChange={onInfoOpenChange}
         onInfoHoverOpen={onInfoHoverOpen}
         onInfoHoverClose={onInfoHoverClose}
-        onApprove={onApprove}
       />
       {approval.kind === "error" ? (
         <span className="dsb-row-error" role="alert">
-          Approval failed: {approval.message}
+          {approval.message}
         </span>
       ) : null}
     </div>
@@ -1289,11 +1266,9 @@ function ColorRowList({
   );
 }
 
-/** Color leaf (redesign): the Primitive section collapses into swatch
- * provenance — usage is declared only by the semantic/component tokens that
- * consume a color, so those are the page's rows. Primitives no alias points
- * at remain visible as bare swatches, deliberately without any other
- * information: they exist but are not consumed yet. */
+/** Color leaf: semantic/component tokens are the governed rows. Open design
+ * questions use ordinary domain rules with gap status; primitive consumption
+ * is never used as a proxy for a problem. */
 export function ColorLeafPage({
   model,
   rows
@@ -1304,18 +1279,9 @@ export function ColorLeafPage({
   const tokenCount = model.semantic.length + model.component.length;
   const hasRules = model.rules.length > 0;
   const hasTokens = tokenCount > 0;
-  const chips = statusChips([...model.semantic, ...model.component]);
   return (
     <>
-      <PageHeading
-        title="Color"
-        meta={`${hasRules ? `${model.rules.length} rules · ` : ""}${tokenCount} tokens${
-          model.unconsumed.length > 0
-            ? ` · ${model.unconsumed.length} unconsumed`
-            : ""
-        }`}
-        chips={chips}
-      />
+      <PageHeading title="Color" />
       {hasRules ? <DomainRulesZone rules={model.rules} rows={rows} /> : null}
       {hasTokens ? (
         <section className="dsb-section" data-testid="ds-tokens-zone">
@@ -1343,26 +1309,6 @@ export function ColorLeafPage({
         <p className="dsb-empty-body dsb-page-note">
           No tokens classified here yet.
         </p>
-      ) : null}
-      {model.unconsumed.length > 0 ? (
-        <section
-          className="dsb-color-unconsumed"
-          data-testid="ds-color-unconsumed"
-        >
-          <span className="dsb-color-unconsumed-label">
-            Unconsumed primitives · {model.unconsumed.length}
-          </span>
-          <div className="dsb-color-unconsumed-row">
-            {model.unconsumed.map((primitive) => (
-              <ColorSwatch
-                key={primitive.name}
-                hex={primitive.hex}
-                source={primitive.name}
-                name={primitive.name}
-              />
-            ))}
-          </div>
-        </section>
       ) : null}
     </>
   );
@@ -1739,14 +1685,15 @@ function LayoutPlacardBlock({
             <RuleInlineTitle editor={editor} />
           </span>
           <span className="dsb-rule-row-actions">
-            <StatusChip
-              status={rule.row.status}
+            <EntryStatusChip
+              row={rule.row}
+              approval={approval}
+              onApprove={() => rows.onApprove(rule.row)}
               testId={`ds-layout-status-${rule.row.entryId}`}
             />
             <RuleInlineActions row={rule.row} editor={editor} />
             <InfoPopover
               entry={rule.row.entry}
-              approval={approval}
               infoOpen={rows.infoKey === rule.row.key}
               popoverInstant={rows.popoverInstant(rule.row.key)}
               portalContainer={rows.portalContainer}
@@ -1756,7 +1703,6 @@ function LayoutPlacardBlock({
               }
               onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.row.key)}
               onInfoHoverClose={rows.onInfoHoverClose}
-              onApprove={() => rows.onApprove(rule.row)}
             />
           </span>
         </div>
@@ -1780,7 +1726,7 @@ function LayoutPlacardBlock({
         </div>
         {approval.kind === "error" ? (
           <span className="dsb-row-error" role="alert">
-            Approval failed: {approval.message}
+            {approval.message}
           </span>
         ) : null}
       </div>
@@ -1802,11 +1748,7 @@ export function LayoutLeafPage({
   const model = useMemo(() => projectLayoutLeaf(leaf.rows), [leaf.rows]);
   return (
     <>
-      <PageHeading
-        title="Layout"
-        meta={`${leaf.rows.length} rules`}
-        chips={leaf.chips}
-      />
+      <PageHeading title="Layout" />
       {model.rules.length > 0 ? (
         <div className="dsb-placard-list" data-testid="ds-layout-placards">
           {model.rules.map((rule, index) => (
@@ -1970,20 +1912,22 @@ export function DesignSystemBrowser({
 
   const approve = useCallback(
     async (row: DsRow) => {
+      const targetStatus =
+        row.status === "candidate" ? "formalized" : "candidate";
       setApprovals((prev) => ({
         ...prev,
         [row.key]: approvalReducer(prev[row.key] ?? { kind: "idle" }, {
           type: "start"
         })
       }));
-      // Optimistic flip; SSE refetch confirms, failure reverts below.
+      // Optimistic switch; SSE refetch confirms, failure reverts below.
       setView((prev) =>
         prev
           ? withEntryStatus(
               prev,
               row.sourceArtifactPath,
               row.entryId,
-              "formalized"
+              targetStatus
             )
           : prev
       );
@@ -2000,7 +1944,8 @@ export function DesignSystemBrowser({
             action: "approve-entry",
             input: {
               sourceArtifactPath: row.sourceArtifactPath,
-              entryId: row.entryId
+              entryId: row.entryId,
+              targetStatus
             }
           })
         });
@@ -2010,9 +1955,18 @@ export function DesignSystemBrowser({
           details?: unknown;
         };
         if (!(response.ok && data.ok === true)) {
-          reason =
-            typeof data.error === "string" ? data.error : "approve_failed";
-          details = data.details;
+          // A concurrent/stale click can lose after another request already
+          // committed the same transition. Treat that as the desired final
+          // state and let the authoritative reload confirm it.
+          const alreadyAtTarget =
+            (targetStatus === "formalized" &&
+              data.error === "already_formalized") ||
+            (targetStatus === "candidate" && data.error === "already_candidate");
+          if (!alreadyAtTarget) {
+            reason =
+              typeof data.error === "string" ? data.error : "approve_failed";
+            details = data.details;
+          }
         }
       } catch {
         reason = "network";
@@ -2043,7 +1997,7 @@ export function DesignSystemBrowser({
               prev,
               row.sourceArtifactPath,
               row.entryId,
-              "candidate"
+              row.status
             )
           : prev
       );
@@ -2054,7 +2008,7 @@ export function DesignSystemBrowser({
   const editEntry = useCallback(
     async (
       row: DsRow,
-      field: "meaning" | "value",
+      field: "meaning" | "value" | "value.description",
       text: string
     ): Promise<{ ok: true } | { ok: false; error: string }> => {
       try {
@@ -2370,6 +2324,37 @@ export function DesignSystemBrowser({
   const sidebarLeaves: { id: DsLeafId; name: string; icon: IconSvgElement }[] =
     section === "foundations" ? FOUNDATIONS_LEAVES : [];
   const componentSidebarGroups = model?.components.groups ?? [];
+  const homeHasCandidate = Boolean(
+    model &&
+      [
+        ...model.foundations.principles,
+        ...(model.foundations.visualLanguage
+          ? [model.foundations.visualLanguage.row]
+          : [])
+      ].some((row) => row.status === "candidate")
+  );
+  const foundationLeafHasCandidate = (leafId: DsLeafId): boolean => {
+    if (!model) return false;
+    if (leafId === "layout") {
+      return model.foundations.layout.rows.some(
+        (row) => row.status === "candidate"
+      );
+    }
+    if (leafId === "interaction") {
+      return model.foundations.interaction.rows.some(
+        (row) => row.status === "candidate"
+      );
+    }
+    const leaf = model.foundations.tokenLeaves.find(
+      (candidate) => candidate.id === leafId
+    );
+    return Boolean(
+      leaf &&
+        [...leaf.rules, ...leaf.groups.flatMap((group) => group.rows)].some(
+          (row) => row.status === "candidate"
+        )
+    );
+  };
 
   const mainContent = renderMain();
 
@@ -2424,6 +2409,7 @@ export function DesignSystemBrowser({
                     type="button"
                     className="dsb-navrow"
                     data-active={route.kind === "section" || undefined}
+                    data-candidate={homeHasCandidate || undefined}
                     onClick={() => setRoute({ kind: "section", section })}
                   >
                     <HugeiconsIcon
@@ -2434,6 +2420,9 @@ export function DesignSystemBrowser({
                       strokeWidth={2}
                     />
                     <span className="dsb-navrow-label">Home</span>
+                    {homeHasCandidate ? (
+                      <span aria-hidden className="dsb-navrow-candidate-dot" />
+                    ) : null}
                   </button>
                   {sidebarLeaves.map((leaf) => (
                     <button
@@ -2443,6 +2432,9 @@ export function DesignSystemBrowser({
                       data-active={
                         (route.kind === "leaf" && route.leaf === leaf.id) ||
                         undefined
+                      }
+                      data-candidate={
+                        foundationLeafHasCandidate(leaf.id) || undefined
                       }
                       onClick={() => openLeaf(section, leaf.id)}
                     >
@@ -2454,13 +2446,16 @@ export function DesignSystemBrowser({
                         strokeWidth={2}
                       />
                       <span className="dsb-navrow-label">{leaf.name}</span>
+                      {foundationLeafHasCandidate(leaf.id) ? (
+                        <span aria-hidden className="dsb-navrow-candidate-dot" />
+                      ) : null}
                     </button>
                   ))}
                 </>
               ) : (
                 // 09C-D03: no Components Home — grouped direct-to-detail nav.
-                // Components first, Blocks second; items carry a status dot
-                // (candidate = blue).
+                // Components first, Blocks second; candidate pages carry the
+                // same right-aligned blue dot as Foundations pages.
                 componentSidebarGroups.map((group) => (
                   <div
                     key={group.id}
@@ -2485,14 +2480,13 @@ export function DesignSystemBrowser({
                             item.leafId === model?.components.landingLeaf) ||
                           undefined
                         }
+                        data-candidate={item.candidate || undefined}
                         onClick={() => openLeaf(section, item.leafId)}
                       >
-                        <span
-                          aria-hidden
-                          className="dsb-navrow-dot"
-                          data-status={item.status}
-                        />
                         <span className="dsb-navrow-label">{item.name}</span>
+                        {item.candidate ? (
+                          <span aria-hidden className="dsb-navrow-candidate-dot" />
+                        ) : null}
                       </button>
                     ))}
                   </div>
@@ -2735,12 +2729,6 @@ export function ComponentDetail({
               testId="ds-component-status"
             />
           </div>
-          <PageSummary
-            meta={
-              component.group === "block" ? "Block" : "Component"
-            }
-            chips={component.chips}
-          />
         </header>
         {purpose !== "" ? (
           <section className="dsb-section" data-testid="ds-component-overview">

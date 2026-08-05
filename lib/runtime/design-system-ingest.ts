@@ -34,6 +34,7 @@ import {
   loadDesignSystemLinkIndex,
   type DesignSystemStatusCheckReason
 } from "./design-system-status";
+import { collectDesignSystemEntryContentDigests } from "./design-system-entry-provenance";
 
 // ---------------------------------------------------------------------------
 // Section taxonomy — the single owner of the DB section values and how they
@@ -322,9 +323,21 @@ export function prepareDesignSystemIngestOnDb(
   }
 
   const statusEntries = collectStatusEntries(args.fileKind, args.json);
+  const contentDigests = collectDesignSystemEntryContentDigests(
+    args.fileKind,
+    args.json
+  );
   const index = loadDesignSystemLinkIndex(db);
   for (const entry of statusEntries) {
-    const check = checkDesignSystemEntryStatus(entry, index);
+    const check = checkDesignSystemEntryStatus(
+      {
+        ...entry,
+        sourceArtifactPath: args.sourcePath,
+        entryId: entry.id,
+        contentDigest: contentDigests.get(entry.id)
+      },
+      index
+    );
     if (!check.ok) {
       const detailObj =
         check.details !== null &&

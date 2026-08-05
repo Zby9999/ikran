@@ -189,8 +189,8 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         "font.weight.bold": {
           kind: "token",
           value: "700",
-          status: "gap",
-          links: [],
+          status: "candidate",
+          links: [designerEditedCardId],
           domain: "typography"
         }
       },
@@ -459,13 +459,19 @@ test("09C-A reader projection: atlas and leaf pages", async ({
       name: "Evidence for domain rule semantic.rule.no-shadow-regions"
     });
     await evidenceTrigger.hover();
-    const approveNoShadow = page.getByTestId(
-      "ds-approve-semantic.rule.no-shadow-regions"
-    );
+    const approveNoShadow = noShadowRule.getByRole("button", {
+      name: "Switch rule.no-shadow-regions to Formalized",
+      exact: true
+    });
     await expect(approveNoShadow).toBeVisible();
     await approveNoShadow.hover();
     await approveNoShadow.click();
-    await expect(approveNoShadow).toHaveCount(0);
+    await expect(
+      noShadowRule.getByRole("button", {
+        name: "Switch rule.no-shadow-regions to Candidate",
+        exact: true
+      })
+    ).toBeVisible();
     await expect(noShadowRule.getByTestId("ds-interaction-status")).toHaveText(
       "Formalized"
     );

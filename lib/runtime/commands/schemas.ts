@@ -218,7 +218,9 @@ export const approveDesignSystemEntryInputShape = {
   /** Project-relative source artifact path holding the entry. */
   sourceArtifactPath: z.string(),
   /** Entry identity inside the file (layer-qualified for tokens). */
-  entryId: z.string()
+  entryId: z.string(),
+  /** Designer-selected destination status. */
+  targetStatus: z.enum(["candidate", "formalized"])
 } as const;
 
 export const approveDesignSystemEntryInputSchema = z.object(
@@ -228,7 +230,7 @@ export const approveDesignSystemEntryInputSchema = z.object(
 export const editDesignSystemEntryInputShape = {
   sourceArtifactPath: z.string(),
   entryId: z.string(),
-  field: z.enum(["meaning", "value"]),
+  field: z.enum(["meaning", "value", "value.description"]),
   text: z.string()
 } as const;
 

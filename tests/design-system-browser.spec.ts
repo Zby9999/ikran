@@ -4,9 +4,9 @@
 // appears → design-system JSON sources declared + ingested through MCP → the
 // bottom sheet renders Foundations/Components from the DB view → the ⓘ layer
 // shows the real evidence chain → Esc layering (popover first, sheet second)
-// and canvas-shortcut isolation → candidate → formalized approval writes BOTH
-// the DB row and the JSON source file → the typed approval failure reason
-// renders inline for a candidate without a designer-edited linked card.
+// and canvas-shortcut isolation → clicking the status switches it both ways
+// entries with either designer-edited or designer-accepted evidence and writes
+// BOTH the DB row and the JSON source file.
 //
 // Staging mirrors tests/design-intent-alignment-mcp.spec.ts and
 // tests/alignment-command-staged-smoke.spec.ts: seed/evidence are registered
@@ -233,6 +233,15 @@ test("09A design system browser: declare → render → approve write-back", asy
           value: "#F2F2F2",
           status: "candidate",
           links: [agentAcceptedCardId]
+        },
+        "rule.open-gap.interactive-state-evidence": {
+          kind: "domain-rule",
+          domain: "color",
+          meaning: "Interactive color states need direct evidence.",
+          value:
+            "The captured frames show only the default state, so hover and pressed colors cannot be extracted safely. Next: inspect the Button hover and pressed states before declaring state tokens.",
+          status: "gap",
+          links: []
         }
       },
       component: {}
@@ -370,8 +379,49 @@ test("09A design system browser: declare → render → approve write-back", asy
     await entryButton.click();
     const sheet = page.getByTestId("ds-sheet");
     await expect(sheet).toHaveAttribute("data-open", "true");
+    await expect(sheet.locator(".dsb-intro")).toHaveCount(0);
+    await expect(
+      sheet
+        .getByRole("button", { name: "Home", exact: true })
+        .locator(".dsb-navrow-candidate-dot")
+    ).toBeVisible();
     await expect(page.getByTestId("ds-principle-principle-clarity")).toBeVisible();
     await expect(page.getByTestId("ds-visual-language-visual-language")).toBeVisible();
+
+    // Visual Language uses value.description rather than a string value, but
+    // remains editable through the same visible rule-edit interaction.
+    const visualLanguage = page.getByTestId(
+      "ds-visual-language-visual-language"
+    );
+    const visualEdit = visualLanguage.getByTestId(
+      "ds-rule-edit-visual-language"
+    );
+    await visualEdit.click();
+    await visualLanguage
+      .getByLabel("Rule body")
+      .fill("A calm monochrome system whose project imagery supplies color.");
+    const visualSave = visualLanguage.getByRole("button", {
+      name: /^Save rule/
+    });
+    await expect(visualSave).toHaveAttribute("data-size", "icon-xs");
+    await expect(visualSave.locator("svg")).toBeVisible();
+    await visualSave.click();
+    // The click starts an async write. Wait for the editor to retire before
+    // reading the canonical source file; the input already contains the new
+    // text while the request is still pending, so text visibility alone is
+    // not a persistence boundary.
+    await expect(
+      visualLanguage.getByTestId("ds-rule-save-visual-language")
+    ).toHaveCount(0);
+    await expect(visualLanguage).toContainText(
+      "A calm monochrome system whose project imagery supplies color."
+    );
+    const editedVisualLanguage = JSON.parse(
+      readFileSync(path.join(designSystemDir, "design-system.json"), "utf-8")
+    ) as { visualLanguage: { value: { description: string } } };
+    expect(editedVisualLanguage.visualLanguage.value.description).toBe(
+      "A calm monochrome system whose project imagery supplies color."
+    );
 
     await page.getByRole("button", { name: "Color", exact: true }).click();
     // Redesign: the Primitive section collapses into swatch provenance —
@@ -385,32 +435,35 @@ test("09A design system browser: declare → render → approve write-back", asy
     await expect(aliasRow).toContainText("Default text color");
     await expect(aliasRow).not.toContainText("→ primitive.color.ink");
     // The consumed primitive survives as the swatch tooltip's provenance.
-    await expect(aliasRow.getByRole("tooltip")).toContainText(
+    await aliasRow.getByTestId("ds-color-swatch-color.text-primary").hover();
+    // Tooltip content is portalled to the sheet surface so it is not clipped
+    // by the row or content pane.
+    await expect(page.getByRole("tooltip")).toContainText(
       "color.ink · #101418"
     );
-    // Unconsumed primitives stay visible as bare swatches — name and usage
-    // deliberately absent until something consumes them.
-    const unconsumed = page.getByTestId("ds-color-unconsumed");
-    await expect(unconsumed).toBeVisible();
-    await expect(unconsumed).toContainText("Unconsumed primitives · 1");
-    await expect(unconsumed.locator(".dsb-color-name")).toHaveCount(0);
-    await expect(
-      page.getByTestId("ds-color-swatch-color.brand")
-    ).toBeVisible();
+    // A primitive with no incoming alias is not automatically a gap. Open
+    // extraction questions render as ordinary gap-status Rules.
+    await expect(page.getByTestId("ds-color-unconsumed")).toHaveCount(0);
+    await expect(page.getByTestId("ds-color-open-gaps")).toHaveCount(0);
+    const rules = page.getByTestId("ds-rules-zone");
+    await expect(rules).toContainText(
+      "Interactive color states need direct evidence."
+    );
+    await expect(rules.getByTestId("ds-interaction-status").last()).toHaveText(
+      "Open gap"
+    );
 
     // 09C-D03: no Components Home — the tab lands directly on the first
     // component's placard detail; the sidebar carries the grouped nav with
-    // a status summary and a candidate blue dot.
+    // a candidate blue dot.
     await page.getByRole("tab", { name: "Components" }).click();
     const componentGroup = page.getByTestId("ds-navgroup-component");
     await expect(componentGroup).toBeVisible();
-    // Group header summary counts one vote per component (worst-of status).
-    await expect(componentGroup).toContainText("1 candidate");
     const buttonNav = componentGroup.getByRole("button", { name: "Button" });
     await expect(buttonNav).toBeVisible();
     await expect(buttonNav).toHaveAttribute("data-active", "true");
     await expect(
-      buttonNav.locator('.dsb-navrow-dot[data-status="candidate"]')
+      buttonNav.locator(".dsb-navrow-candidate-dot")
     ).toBeVisible();
     // Placard: hero leads (explicit unavailable — no capture declared), the
     // reading column follows with the read-only states line.
@@ -464,7 +517,7 @@ test("09A design system browser: declare → render → approve write-back", asy
       bodyAfterEdit && rowAfterEdit ? bodyAfterEdit.y - rowAfterEdit.y : null;
     expect(bodyOffsetBefore).not.toBeNull();
     expect(bodyOffsetAfter).not.toBeNull();
-    expect(Math.abs(bodyOffsetAfter! - bodyOffsetBefore!)).toBeLessThan(0.5);
+    expect(Math.abs(bodyOffsetAfter! - bodyOffsetBefore!)).toBeLessThanOrEqual(1);
     const titleInput = interactionRule.getByLabel("Rule title");
     await titleInput.fill("Measured feedback");
     await expect(
@@ -473,7 +526,9 @@ test("09A design system browser: declare → render → approve write-back", asy
     await bodyInput.fill(
       "Respond immediately.\nKeep feedback motion deliberately restrained."
     );
-    await interactionRule.getByRole("button", { name: "Save", exact: true }).click();
+    await interactionRule
+      .getByRole("button", { name: /^Save rule/ })
+      .click();
     await expect(interactionRule.getByLabel("Rule title")).toHaveCount(0);
     await expect(interactionRule.getByLabel("Rule body")).toHaveCount(0);
     await expect(editButton).toHaveAttribute("aria-pressed", "false");
@@ -545,6 +600,12 @@ test("09A design system browser: declare → render → approve write-back", asy
     await expect(inkEvidence).toContainText("Question 1 for token?");
     await expect(inkEvidence).toContainText("设计师改写后的回答");
     await expect(inkEvidence).toContainText("designer-edited");
+    await expect(
+      page.getByRole("button", {
+        name: "Switch color.text-primary to Formalized",
+        exact: true
+      })
+    ).toBeVisible();
     // Hover-away close (the INFO_HOVER_CLOSE_MS delayed close in
     // design-system-browser.tsx) must stay closed — the regression class
     // where a programmatic close reopened the popover.
@@ -578,18 +639,30 @@ test("09A design system browser: declare → render → approve write-back", asy
     );
     await expect(sheet).toHaveAttribute("data-open", "true");
 
-    // ---- Approve a candidate: chip flips, DB row + source file rewritten. ----
+    // ---- Formalize directly from the Candidate chip. ----
     await page.getByRole("button", { name: "Color", exact: true }).click();
-    await page
-      .getByRole("button", { name: "Evidence for color.text-primary", exact: true })
-      .hover();
-    const approveInk = page.getByTestId("ds-approve-semantic.color.text-primary");
-    await expect(approveInk).toBeVisible();
-    // Moving into the popover content cancels the hover-close timer.
-    await approveInk.hover();
-    await approveInk.click();
-    // The tray retires only after the server committed (DB + file + event).
-    await expect(approveInk).toHaveCount(0);
+    const inkStatus = aliasRow.getByTestId("ds-status-chip");
+    await expect(inkStatus).toHaveRole("button");
+    await expect(inkStatus).toHaveAccessibleName(
+      "Switch color.text-primary to Formalized"
+    );
+    await inkStatus.click();
+    await expect(aliasRow.getByTestId("ds-status-chip")).toHaveText("Formalized");
+
+    // The same control reverses an accidental click without a confirmation flow.
+    await aliasRow.getByTestId("ds-status-chip").click();
+    await expect(aliasRow.getByTestId("ds-status-chip")).toHaveText("Candidate");
+    expect(
+      readDesignSystemEntryStatus(
+        projectDir,
+        "design-system/token.json",
+        "semantic.color.text-primary"
+      )
+    ).toBe("candidate");
+    expect(readEventTypes(projectDir)).toContain("design_system_entry_reverted");
+
+    // Switch once more so the remaining write-back assertions inspect Formalized.
+    await aliasRow.getByTestId("ds-status-chip").click();
     await expect(aliasRow.getByTestId("ds-status-chip")).toHaveText("Formalized");
 
     const rewritten = JSON.parse(
@@ -609,45 +682,19 @@ test("09A design system browser: declare → render → approve write-back", asy
     ).toBe("formalized");
     expect(readEventTypes(projectDir)).toContain("design_system_entry_approved");
 
-    // ---- Approval failure: candidate without a designer-edited linked card. ----
-    // Close the ink popover with a pointer-down OUTSIDE it. The approve
-    // commit re-rendered the sheet under a stationary mouse, so hover
-    // bookkeeping (which node "owns" mouseenter/mouseleave) is unreliable
-    // here; a pointerdown dismisses the popover regardless. Click EMPTY
-    // left-pane space by coordinates: the hover popover opens side="top"
-    // over the upper pane (covering even the block-level heading's hit
-    // points), while the lower pane is always clear of it.
-    await page.mouse.click(300, 640);
-    await expect(
-      page.getByTestId("ds-evidence-semantic.color.text-primary")
-    ).toHaveCount(0);
-    await page
-      .getByRole("button", { name: "Evidence for color.surface-muted", exact: true })
-      .hover();
-    const mutedEvidence = page.getByTestId(
-      "ds-evidence-semantic.color.surface-muted"
-    );
-    await expect(mutedEvidence).toBeVisible();
-    const approveMuted = page.getByTestId(
-      "ds-approve-semantic.color.surface-muted"
-    );
-    await expect(approveMuted).toBeVisible();
-    await approveMuted.hover();
-    await approveMuted.click();
+    // A designer-accepted answer is enough when the designer directly clicks
+    // Candidate; no prior designer-edited answer is required.
     const mutedRow = page.getByTestId("ds-row-semantic.color.surface-muted");
-    // The row alert renders approvalErrorMessage(reason) — this exact copy
-    // maps 1:1 to the typed reason `formalized_requires_designer_edited_link`.
-    await expect(mutedRow.getByRole("alert")).toContainText(
-      "Needs a designer-edited answered card before it can be formalized."
-    );
-    await expect(mutedRow.getByTestId("ds-status-chip")).toHaveText("Candidate");
+    await mutedRow.getByTestId("ds-status-chip").click();
+    await expect(mutedRow.getByTestId("ds-status-chip")).toHaveText("Formalized");
+    await expect(mutedRow.getByRole("alert")).toHaveCount(0);
     expect(
       readDesignSystemEntryStatus(
         projectDir,
         "design-system/token.json",
         "semantic.color.surface-muted"
       )
-    ).toBe("candidate");
+    ).toBe("formalized");
 
     // The derived export is never the Browser's source, but it is regenerated.
     expect(

@@ -2,10 +2,10 @@
 // Task B).
 //
 // Statuses are verified by Runtime, never self-reported by the Agent:
-//   - formalized: MUST link at least one answered question card with
-//     answer_source = "designer-edited" — otherwise the declaration/ingest
-//     is REJECTED with a typed reason (hard gate, no silent downgrade;
-//     satisfies 09A's "reject or downgrade" acceptance wording).
+//   - formalized: must either link an answered Question card with
+//     answer_source = "designer-edited" OR match a prior Browser approval
+//     event for the same source path + entry id + approved content digest.
+//     of designer intent, declaration/ingest is rejected.
 //   - candidate: must link an answered card (any answer_source) or an Agent
 //     annotation with inference = "reasonable" ("confirmed" also qualifies —
 //     it is a strictly stronger agent-attested signal of the same kind).
@@ -82,6 +82,18 @@ export interface DesignSystemLinkIndex {
   annotations: ReadonlyMap<string, "confirmed" | "reasonable">;
   /** Direct designer edits are durable candidate-grade provenance. */
   designerEditEvents?: ReadonlySet<string>;
+  /** Latest designer-authored Formalized content for each entry identity. */
+  designerApprovedEntries?: ReadonlySet<string>;
+  /** Latest direct status decision for these identities is Candidate. */
+  designerRevertedEntries?: ReadonlySet<string>;
+}
+
+export function designSystemApprovedEntryKey(
+  sourceArtifactPath: string,
+  entryId: string,
+  contentDigest: string
+): string {
+  return `${sourceArtifactPath}\u0000${entryId}\u0000${contentDigest}`;
 }
 
 /** Pre-fetch the lookup maps for a batch of entry checks (Task C ingest). */
@@ -103,8 +115,43 @@ export function loadDesignSystemLinkIndex(
     )
     .all() as Array<{ id: string; inference: string }>;
   const designerEditEvents = db
-    .prepare("SELECT event_id FROM events WHERE type = 'design_system_entry_edited'")
-    .all() as Array<{ event_id: string }>;
+    .prepare(
+      "SELECT event_id, payload FROM events WHERE type = 'design_system_entry_edited'"
+    )
+    .all() as Array<{ event_id: string; payload: string }>;
+  const designerStatusEvents = db
+    .prepare(
+      `SELECT type, payload FROM events
+       WHERE type IN (
+         'design_system_entry_approved',
+         'design_system_entry_reverted',
+         'design_system_entry_edited'
+       )
+       ORDER BY rowid`
+    )
+    .all() as Array<{ type: string; payload: string }>;
+  const currentApprovals = new Map<string, string | null>();
+  for (const event of designerStatusEvents) {
+    try {
+      const payload = JSON.parse(event.payload) as Record<string, unknown>;
+      if (
+        typeof payload.source_artifact_path !== "string" ||
+        typeof payload.entry_id !== "string"
+      ) continue;
+      const identity = `${payload.source_artifact_path}\u0000${payload.entry_id}`;
+      if (
+        event.type === "design_system_entry_reverted" ||
+        (event.type === "design_system_entry_edited" &&
+          payload.to_status !== "formalized")
+      ) {
+        currentApprovals.set(identity, null);
+      } else if (typeof payload.content_digest === "string") {
+        currentApprovals.set(identity, payload.content_digest);
+      }
+    } catch {
+      // Ignore malformed historical audit payloads; they grant no authority.
+    }
+  }
   return {
     answeredCards: new Map(
       cards
@@ -117,7 +164,17 @@ export function loadDesignSystemLinkIndex(
         a.inference as "confirmed" | "reasonable"
       ])
     ),
-    designerEditEvents: new Set(designerEditEvents.map((event) => event.event_id))
+    designerEditEvents: new Set(designerEditEvents.map((event) => event.event_id)),
+    designerApprovedEntries: new Set(
+      [...currentApprovals]
+        .filter((entry): entry is [string, string] => entry[1] !== null)
+        .map(([identity, digest]) => `${identity}\u0000${digest}`)
+    ),
+    designerRevertedEntries: new Set(
+      [...currentApprovals]
+        .filter((entry) => entry[1] === null)
+        .map(([identity]) => identity)
+    )
   };
 }
 
@@ -136,7 +193,13 @@ export type DesignSystemStatusCheckResult =
  * spoof a tier by forging ids.
  */
 export function checkDesignSystemEntryStatus(
-  entry: { status: DesignSystemStatus; links: string[] },
+  entry: {
+    status: DesignSystemStatus;
+    links: string[];
+    sourceArtifactPath?: string;
+    entryId?: string;
+    contentDigest?: string;
+  },
   index: DesignSystemLinkIndex
 ): DesignSystemStatusCheckResult {
   if (entry.status === "gap") {
@@ -149,9 +212,35 @@ export function checkDesignSystemEntryStatus(
         };
   }
   if (entry.status === "formalized") {
-    const backed = entry.links.some(
+    const identity =
+      entry.sourceArtifactPath !== undefined && entry.entryId !== undefined
+        ? `${entry.sourceArtifactPath}\u0000${entry.entryId}`
+        : null;
+    if (
+      identity !== null &&
+      index.designerRevertedEntries?.has(identity) === true
+    ) {
+      return {
+        ok: false,
+        reason: "formalized_requires_designer_edited_link",
+        details: { links: entry.links }
+      };
+    }
+    const backedByAnswer = entry.links.some(
       (link) => index.answeredCards.get(link) === "designer-edited"
     );
+    const backedByDirectApproval =
+      entry.sourceArtifactPath !== undefined &&
+      entry.entryId !== undefined &&
+      entry.contentDigest !== undefined &&
+      index.designerApprovedEntries?.has(
+        designSystemApprovedEntryKey(
+          entry.sourceArtifactPath,
+          entry.entryId,
+          entry.contentDigest
+        )
+      ) === true;
+    const backed = backedByAnswer || backedByDirectApproval;
     return backed
       ? { ok: true }
       : {

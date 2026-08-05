@@ -341,7 +341,7 @@ test.describe("recordSourceArtifact (record path)", () => {
     });
   });
 
-  test("does not treat explicit typography gaps as sufficient construction facts", () => {
+  test("rejects unresolved typography values disguised as token gaps", () => {
     withTempProject((dir) => {
       insertAnsweredCard(dir, "card-1");
       writeProjectFile(
@@ -372,7 +372,10 @@ test.describe("recordSourceArtifact (record path)", () => {
         minimalDeclaration({ relatedRecordIds: ["card-1"] })
       );
 
-      expect(result).toMatchObject({ ok: true, quality_diagnostics: [] });
+      expect(result).toMatchObject({
+        ok: false,
+        reason: "token_gap_forbidden"
+      });
     });
   });
 

@@ -339,6 +339,7 @@
 }
 
 .dsb-navrow {
+  position: relative;
   display: flex;
   width: 100%;
   height: 28px;
@@ -365,6 +366,10 @@
   font-weight: 500;
 }
 
+.dsb-navrow[data-candidate] {
+  padding-right: 22px;
+}
+
 .dsb-navrow:active {
   transform: scale(0.97);
 }
@@ -380,6 +385,17 @@
   white-space: nowrap;
 }
 
+.dsb-navrow-candidate-dot {
+  position: absolute;
+  right: 11px;
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--dsc-candidate);
+  opacity: 0.6;
+}
+
 /* --------------------------------- content --------------------------------- */
 
 .dsb-h1 {
@@ -389,44 +405,6 @@
   letter-spacing: -0.02em;
   line-height: 16px;
   color: #000;
-}
-
-.dsb-intro {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: fit-content;
-}
-
-.dsb-meta {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 400;
-  letter-spacing: -0.02em;
-  line-height: 16px;
-  color: var(--dsc-ink-2);
-}
-
-.dsb-statdots {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 14px;
-  font-size: 12px;
-  color: var(--dsc-ink-3);
-}
-
-.dsb-statdot {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.dsb-statdot-dot {
-  width: 10px;
-  height: 10px;
-  flex-shrink: 0;
-  border-radius: 4px;
 }
 
 /* Page-level sections stack via .dsb-page gap (48px). Label→content uses 8px. */
@@ -502,8 +480,22 @@
   gap: 4px;
 }
 
+.dsb-rule-inline-actions > button {
+  border-radius: 6px;
+}
+
 .dsb-rule-edit-icon {
   color: var(--dsc-ink-3);
+}
+
+.dsb-rule-save-icon {
+  background: rgb(17 197 20 / 9%);
+  color: #0f8f11;
+}
+
+.dsb-rule-save-icon:hover {
+  background: rgb(17 197 20 / 14%);
+  color: #0f8f11;
 }
 
 .dsb-rule-edit-icon[aria-pressed="true"] {
@@ -678,19 +670,7 @@
     0 0 0 4px var(--dsc-accent);
 }
 
-.dsb-color-swatch--gap {
-  background: repeating-linear-gradient(
-    135deg,
-    #ececec 0 5px,
-    #f7f7f7 5px 10px
-  );
-}
-
 .dsb-color-tip {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  z-index: 20;
   padding: 6px 8px;
   border-radius: 6px;
   background: #1a1a1a;
@@ -699,22 +679,25 @@
   line-height: 1;
   white-space: nowrap;
   pointer-events: none;
-  opacity: 0;
-  transform: translate(-50%, 4px);
-  transition:
-    opacity 150ms var(--dsc-ease),
-    transform 150ms var(--dsc-ease);
+  transform-origin: center bottom;
+  animation: dsb-color-tip-in 150ms var(--dsc-ease) both;
 }
 
-.dsb-color-swatch-wrap:hover .dsb-color-tip,
-.dsb-color-swatch:focus-visible + .dsb-color-tip {
-  opacity: 1;
-  transform: translate(-50%, 0);
+@keyframes dsb-color-tip-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .dsb-color-tip {
-    transition: none;
+    animation: none;
   }
 }
 
@@ -736,34 +719,6 @@
   font-size: 12.5px;
   color: var(--dsc-ink-2);
   white-space: nowrap;
-}
-
-.dsb-color-unconsumed {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 20px;
-  padding-top: 14px;
-  border-top: 1px solid rgb(0 0 0 / 5%);
-}
-
-.dsb-color-unconsumed-label {
-  flex-shrink: 0;
-  font-size: 11.5px;
-  color: var(--dsc-ink-3);
-  white-space: nowrap;
-}
-
-.dsb-color-unconsumed-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.dsb-color-unconsumed-row .dsb-color-swatch {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
 }
 
 .dsb-info-trigger {
@@ -820,11 +775,38 @@
   color: #2473cc;
 }
 
+.dsb-chip-action {
+  appearance: none;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    opacity 150ms ease-out,
+    transform 160ms ease-out;
+}
+
+.dsb-chip-action:focus-visible {
+  outline: 2px solid var(--dsc-accent);
+  outline-offset: 2px;
+}
+
+.dsb-chip-action:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.dsb-chip-action:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 /* ------------------------------ ⓘ popover ------------------------------- */
 
 .dsb-popover {
   width: 340px;
-  overflow: visible;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   border-radius: 10px;
   background: #fff;
   padding: 12px 14px;
@@ -895,42 +877,6 @@
   margin: 0;
   font-size: 12px;
   color: var(--dsc-ink-3);
-}
-
-.dsb-approve-tray {
-  margin-top: 12px;
-  border-top: 1px solid rgb(0 0 0 / 6%);
-  padding-top: 10px;
-}
-
-.dsb-approve-button {
-  height: 26px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--dsc-ink);
-  padding: 0 12px;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 500;
-  transition:
-    opacity 150ms ease-out,
-    transform 160ms ease-out;
-}
-
-.dsb-approve-button:active {
-  transform: scale(0.97);
-}
-
-.dsb-approve-button:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.dsb-approve-error {
-  margin: 8px 0 0;
-  font-size: 12px;
-  line-height: 1.4;
-  color: #b42318;
 }
 
 /* ------------------------------ detail tables ------------------------------ */
@@ -1077,8 +1023,14 @@
     opacity: 1;
   }
 
-  .dsb-approve-button:hover:not(:disabled) {
-    opacity: 0.85;
+  .dsb-chip-action:hover:not(:disabled) {
+    background: rgb(58 147 255 / 16%);
+    color: #155ca8;
+  }
+
+  .dsb-chip-action[data-status="formalized"]:hover:not(:disabled) {
+    background: rgb(17 197 20 / 15%);
+    color: #08750a;
   }
 }
 
@@ -1618,6 +1570,11 @@
   display: block;
 }
 
+.dsb-interaction-ledger-main .dsb-card-title,
+.dsb-interaction-ledger-main .dsb-rule-inline-title {
+  line-height: 20px;
+}
+
 .dsb-interaction-ledger-main .dsb-card-desc {
   margin-top: 3px;
 }
@@ -1720,8 +1677,7 @@
 
 /* ------------------ 09C-D03: component sidebar groups + placard ------------------ */
 
-/* Sidebar groups (Components first, Blocks second): items carry a status
- * dot instead of an icon. */
+/* Sidebar groups (Components first, Blocks second). */
 .dsb-navgroup {
   display: flex;
   flex-direction: column;
@@ -1741,25 +1697,6 @@
   font-size: 11px;
   font-weight: 500;
   letter-spacing: -0.02em;
-}
-
-.dsb-navrow-dot {
-  width: 6px;
-  height: 6px;
-  flex-shrink: 0;
-  border-radius: 50%;
-}
-
-.dsb-navrow-dot[data-status="formalized"] {
-  background: var(--dsc-green);
-}
-
-.dsb-navrow-dot[data-status="candidate"] {
-  background: var(--dsc-candidate);
-}
-
-.dsb-navrow-dot[data-status="gap"] {
-  background: var(--dsc-ink-3);
 }
 
 /* Narrow sheets: group headers collapse — the horizontal bar only carries

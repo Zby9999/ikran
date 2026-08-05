@@ -103,6 +103,43 @@ function ingestGapRule(projectPath: string): void {
   if (!declared.ok) throw new Error(JSON.stringify(declared));
 }
 
+function ingestVisualLanguage(projectPath: string): void {
+  const db = new DatabaseSync(getProjectDbPath(projectPath));
+  try {
+    db.prepare(
+      `INSERT INTO alignment_question_cards
+       (id, section, observation, question, final_answer, answer_source,
+        anchor_json, created_at, updated_at)
+       VALUES (?, 'visual-language', 'Observed', 'Keep?', 'Yes',
+               'designer-edited', '{}', ?, ?)`
+    ).run(
+      "visual-language-card",
+      "2026-08-05T00:00:00.000Z",
+      "2026-08-05T00:00:00.000Z"
+    );
+  } finally {
+    db.close();
+  }
+  writeJson(projectPath, "design-system/design-system.json", {
+    name: "Editorial Portfolio",
+    visualLanguage: {
+      id: "visual-language",
+      value: { description: "Monochrome editorial restraint." },
+      meaning: "Quiet editorial clarity",
+      status: "candidate",
+      links: ["visual-language-card"]
+    },
+    principles: []
+  });
+  const declared = recordSourceArtifact(projectPath, {
+    path: "design-system/design-system.json",
+    artifactType: "design-system.json",
+    semanticPurpose: "visual language edit fixture",
+    relatedRecordIds: ["visual-language-card"]
+  });
+  if (!declared.ok) throw new Error(JSON.stringify(declared));
+}
+
 afterEach(() => resetRecordBusForTests());
 
 test("edit-entry transport accepts only the declared command envelope", () => {
@@ -116,12 +153,71 @@ test("edit-entry transport accepts only the declared command envelope", () => {
   ).toMatchObject({ ok: true });
   expect(
     parseCommandInput(editDesignSystemEntryInputSchema, {
+      sourceArtifactPath: "design-system/design-system.json",
+      entryId: "visual-language",
+      field: "value.description",
+      text: "A revised visual language description."
+    })
+  ).toMatchObject({ ok: true });
+  expect(
+    parseCommandInput(editDesignSystemEntryInputSchema, {
       sourceArtifactPath: "design-system/interaction-rules.json",
       entryId: "interaction.transition",
       field: "status",
       text: "formalized"
     })
   ).toEqual({ ok: false, reason: "invalid_params" });
+});
+
+test("designer edits the Visual Language description through the Runtime write path", () => {
+  withTempProject((projectPath) => {
+    ingestVisualLanguage(projectPath);
+    const result = editDesignSystemEntryCommand(projectPath, {
+      sourceArtifactPath: "design-system/design-system.json",
+      entryId: "visual-language",
+      field: "value.description",
+      text: "Black-and-white structure with project-led color."
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result));
+
+    const source = JSON.parse(
+      readFileSync(
+        path.join(projectPath, "design-system/design-system.json"),
+        "utf8"
+      )
+    );
+    expect(source.visualLanguage).toMatchObject({
+      meaning: "Quiet editorial clarity",
+      value: {
+        description: "Black-and-white structure with project-led color."
+      },
+      status: "candidate"
+    });
+
+    const db = new DatabaseSync(getProjectDbPath(projectPath));
+    try {
+      const row = db
+        .prepare(
+          `SELECT value_json FROM design_system_entries
+           WHERE source_artifact_path = ? AND entry_id = ?`
+        )
+        .get("design-system/design-system.json", "visual-language") as {
+        value_json: string;
+      };
+      expect(JSON.parse(row.value_json)).toEqual({
+        description: "Black-and-white structure with project-led color."
+      });
+    } finally {
+      db.close();
+    }
+
+    expect(listEvents(projectPath, "design_system_entry_edited")[0].payload)
+      .toMatchObject({
+        field: "value.description",
+        before: "Monochrome editorial restraint.",
+        after: "Black-and-white structure with project-led color."
+      });
+  });
 });
 
 test("designer fills a gap rule title through the Runtime write path", () => {
@@ -315,6 +411,15 @@ test("edit command rejects invalid inputs without changing source or DB", () => 
         {
           sourceArtifactPath: "design-system/interaction-rules.json",
           entryId: "interaction.transition",
+          field: "value.description",
+          text: "Wrong entry shape"
+        },
+        "unsupported_field"
+      ],
+      [
+        {
+          sourceArtifactPath: "design-system/interaction-rules.json",
+          entryId: "interaction.transition",
           field: "meaning",
           text: "   "
         },
@@ -384,6 +489,36 @@ test("DB transaction failure restores the exact original source bytes", () => {
         entryId: "interaction.transition",
         field: "meaning",
         text: "Should roll back"
+      })
+    ).toEqual({ ok: false, reason: "db_error" });
+    expect(readFileSync(sourcePath, "utf8")).toBe(original);
+    expect(listEvents(projectPath, "design_system_entry_edited")).toHaveLength(0);
+  });
+});
+
+test("Visual Language DB failure restores the exact nested source bytes", () => {
+  withTempProject((projectPath) => {
+    ingestVisualLanguage(projectPath);
+    const relativePath = "design-system/design-system.json";
+    const sourcePath = path.join(projectPath, relativePath);
+    const original = readFileSync(sourcePath, "utf8");
+    const db = new DatabaseSync(getProjectDbPath(projectPath));
+    try {
+      db.exec(
+        `CREATE TRIGGER reject_visual_language_edit
+         BEFORE UPDATE ON design_system_entries
+         BEGIN SELECT RAISE(ABORT, 'injected visual edit failure'); END;`
+      );
+    } finally {
+      db.close();
+    }
+
+    expect(
+      editDesignSystemEntry(projectPath, {
+        sourceArtifactPath: relativePath,
+        entryId: "visual-language",
+        field: "value.description",
+        text: "This must roll back."
       })
     ).toEqual({ ok: false, reason: "db_error" });
     expect(readFileSync(sourcePath, "utf8")).toBe(original);
@@ -620,7 +755,8 @@ test("an approval interleaved after a source write fails closed without splittin
         beforeCommit: () => {
           approval = approveDesignSystemEntry(projectPath, {
             sourceArtifactPath: relativePath,
-            entryId: "interaction.focus"
+            entryId: "interaction.focus",
+            targetStatus: "formalized"
           });
         }
       }

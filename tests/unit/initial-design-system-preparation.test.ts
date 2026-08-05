@@ -364,6 +364,12 @@ describe("Initial Design System preparation", () => {
     });
     expect(contract.token_domains).toContain("color");
     expect(contract.token_domains).toContain("typography");
+    expect(contract.token_open_gap_policy).toEqual({
+      representation: "domain-rule",
+      status: "gap",
+      links: "Open-gap rules carry an empty links array.",
+      guidance: expect.stringContaining("Never infer a gap from an unconsumed primitive")
+    });
     expect(contract.rule_taxonomy).toEqual({
       interaction_rules: "Cross-component interaction and motion strategies.",
       component_specs: "Component-bound behavior, states, and motion.",
@@ -466,6 +472,12 @@ describe("Initial Design System preparation", () => {
           typography: expect.stringContaining("value.usedFor"),
           other_domains: expect.stringContaining("value.usage"),
           fail_closed: expect.stringContaining("Token meaning is forbidden")
+        },
+        token_open_gap_policy: {
+          representation: "domain-rule",
+          status: "gap",
+          links: expect.stringContaining("empty"),
+          guidance: expect.stringContaining("unconsumed primitive")
         },
         component_spec_fields: expect.arrayContaining([
           "description",

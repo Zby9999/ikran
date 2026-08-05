@@ -1,7 +1,7 @@
-// Design-system approval write-back (Issue 09A decisions 5 + 8, Task D).
+// Design-system designer status write-back (Issue 09A decisions 5 + 8, Task D).
 //
-// The Browser's ONLY write operation in v1 is candidate → formalized
-// approval. One approval writes BOTH sides of the 09A d.2 split:
+// The Browser lets the designer switch candidate ↔ formalized directly.
+// One transition writes BOTH sides of the 09A d.2 split:
 //   - the DB row (Runtime truth the Browser reads), and
 //   - the JSON source file (the authoring layer), with the entry's status
 //     flipped and the file re-serialized canonically — sorted keys (the
@@ -11,35 +11,28 @@
 //     one-time whole-file reformat; afterwards Runtime is the canonical
 //     writer and approval diffs are noise-free.
 //
-// Formalized invariant, enforced AT APPROVAL TIME: the entry's links must
-// satisfy the formalized cross-validation rule (checkDesignSystemEntryStatus
-// with status "formalized") — i.e. it must link an answered card with
-// answer_source "designer-edited". A candidate backed only by an Agent
-// annotation is rejected: approving it would violate the invariant every
-// formalized entry carries, and the next ingest of its own file would fail.
+// A Browser approval is itself direct designer intent. It deliberately does
+// not require an earlier designer-edited Question card: the semantic approval
+// event written in the same transaction is the durable provenance that later
+// ingests use to distinguish this path from an Agent-authored formalized claim.
 //
-// Status transitions: only candidate → formalized is allowed. A gap entry is
+// Status transitions are candidate ↔ formalized. A gap entry is
 // rejected (gap_entry_not_approvable — a gap must be filled by the Agent,
-// not approved). An already-formalized entry is REJECTED with
-// already_formalized (not a silent no-op) so the client learns its view is
-// stale instead of believing it performed a write.
+// not switched). A request already at its target is rejected with a typed
+// stale-state reason so the client can reload the authoritative view.
 //
 // Atomicity ordering (DB transaction and file write cannot share one atomic
 // unit): serialize + validate the new file content → write the file → run
-// the DB transaction (row update + formalized-invariant re-check + semantic
-// event in one commit — the hard gate is authoritative AT the commit point,
-// not just at the Phase-1 pre-check). On DB failure the original file bytes
+// the DB transaction (row status re-check + semantic event in one commit).
+// On DB failure the original file bytes
 // held in memory are restored and the failure is reported. The reverse
 // order (DB first) would leave the Browser reading a formalized entry whose
 // source file still says candidate.
 //
 // Concurrency is LWW per 09A decision 8: no etag, no locking — last write
-// wins. When the in-transaction re-check finds the entry ALREADY formalized,
-// a concurrent approval won the race: the winner's canonical formalized
-// bytes stand (the loser must NOT restore over them), and the losing
-// approval is audited (invalid_output, tool approve_design_system_entry) so
-// the conflict stays visible in the event log. Every successful approval
-// records a design_system_entry_approved event.
+// wins. If another writer reaches the requested status between the source
+// write and transaction, Runtime preserves those bytes and still commits the
+// designer's semantic status event so intent cannot be swallowed.
 //
 // The write-back never goes through recordSourceArtifact: Runtime wrote the
 // file itself and the DB is already consistent, so approval must NOT trigger
@@ -55,16 +48,12 @@ import {
   resolveProjectArtifactPath
 } from "./evidence-package";
 import { canonicalizeArtifactPath } from "./source-artifact";
+import { designSystemEntryContentDigest } from "./design-system-entry-provenance";
 import {
   parseTokenEntryRef,
   validateDesignSystemJson,
   type DesignSystemFileKind
 } from "./design-system-schema";
-import {
-  checkDesignSystemEntryStatus,
-  loadDesignSystemLinkIndex,
-  type DesignSystemStatusCheckReason
-} from "./design-system-status";
 import {
   stableJsonStringify,
   writeDesignSystemViewExport
@@ -77,6 +66,7 @@ import {
 export type DesignSystemApprovalReason =
   | "not_found"
   | "already_formalized"
+  | "already_candidate"
   | "gap_entry_not_approvable"
   | "entry_not_in_source_file"
   | "artifact_path_escape"
@@ -84,7 +74,6 @@ export type DesignSystemApprovalReason =
   | "invalid_design_system_json"
   | "write_failed"
   | "db_error"
-  | DesignSystemStatusCheckReason
   | string;
 
 export type DesignSystemApprovalResult =
@@ -93,10 +82,10 @@ export type DesignSystemApprovalResult =
       entry: {
         source_artifact_path: string;
         entry_id: string;
-        status: "formalized";
+        status: "candidate" | "formalized";
         updated_at: string;
       };
-      /** The committed design_system_entry_approved event id. */
+      /** The committed designer status-change event id. */
       event_id: string;
     }
   | { ok: false; reason: DesignSystemApprovalReason; details?: unknown };
@@ -106,6 +95,8 @@ export interface ApproveDesignSystemEntryInput {
   sourceArtifactPath: string;
   /** Stable entry identity inside the file (layer-qualified for tokens). */
   entryId: string;
+  /** Destination selected by the designer. */
+  targetStatus: "candidate" | "formalized";
 }
 
 export interface ApproveDesignSystemEntryHooks {
@@ -186,9 +177,8 @@ type EntryRow = {
 };
 
 /**
- * Approve one candidate entry: flip DB + source file to formalized, log the
- * semantic event, then (post-commit) invalidate the Browser and regenerate
- * the derived export.
+ * Apply a designer-selected candidate/formalized status to DB + source,
+ * append a semantic event, then invalidate the Browser and derived export.
  */
 export function approveDesignSystemEntry(
   projectPath: string,
@@ -210,7 +200,7 @@ export function approveDesignSystemEntry(
   );
   if (absolutePath === null) return { ok: false, reason: "artifact_path_escape" };
 
-  // -- Phase 1 (read-only): row lookup + status gate + formalized invariant.
+  // -- Phase 1 (read-only): row lookup + status gate.
   let row: EntryRow;
   {
     const db = openProjectDb(projectPath);
@@ -225,28 +215,19 @@ export function approveDesignSystemEntry(
       if (!found) return { ok: false, reason: "not_found" };
       row = found;
 
-      if (row.status === "formalized") {
-        return { ok: false, reason: "already_formalized" };
+      if (row.status === input.targetStatus) {
+        return {
+          ok: false,
+          reason:
+            input.targetStatus === "formalized"
+              ? "already_formalized"
+              : "already_candidate"
+        };
       }
       if (row.status === "gap") {
         return { ok: false, reason: "gap_entry_not_approvable" };
       }
 
-      // Formalized invariant at approval time (see module header). The links
-      // come from the DB row — the declaration-time truth cross-validated at
-      // ingest — NOT from the possibly-drifted source file on disk.
-      const links = JSON.parse(row.links_json) as string[];
-      const check = checkDesignSystemEntryStatus(
-        { status: "formalized", links },
-        loadDesignSystemLinkIndex(db)
-      );
-      if (!check.ok) {
-        return {
-          ok: false,
-          reason: check.reason,
-          details: check.details ?? { links }
-        };
-      }
     } catch {
       return { ok: false, reason: "db_error" };
     } finally {
@@ -280,8 +261,7 @@ export function approveDesignSystemEntry(
     return { ok: false, reason: "entry_not_in_source_file" };
   }
   const sourceStatusCompatible =
-    entryObject.status === row.status ||
-    (row.status === "candidate" && entryObject.status === "formalized");
+    entryObject.status === row.status || entryObject.status === input.targetStatus;
   if (!sourceStatusCompatible || JSON.stringify(entryObject.links) !== row.links_json) {
     return {
       ok: false,
@@ -289,7 +269,12 @@ export function approveDesignSystemEntry(
       details: { source_artifact_path: relativePath, entry_id: input.entryId }
     };
   }
-  entryObject.status = "formalized";
+  entryObject.status = input.targetStatus;
+  const writtenEntryDigest = designSystemEntryContentDigest(entryObject);
+  const approvedContentDigest =
+    input.targetStatus === "formalized"
+      ? writtenEntryDigest
+      : null;
 
   // Self-check: the file Runtime is about to write must pass its own schema
   // (a flip is structure-preserving, so a failure here means drift we refuse
@@ -313,17 +298,52 @@ export function approveDesignSystemEntry(
   }
 
   // -- Phase 3: DB transaction (row update + semantic event in one commit).
-  //    Re-check the row AND the formalized invariant inside the transaction
-  //    so the hard gate is authoritative at the commit point: under LWW a
-  //    concurrent approval may have landed first — last write wins, but we
-  //    never flip a row that is no longer a candidate (e.g. re-ingested as
-  //    gap) or whose links no longer back formalized, and the file is
-  //    restored on any such failure EXCEPT the already_formalized race loss
-  //    (see below).
+  //    Re-check status + links inside the transaction. A concurrent writer
+  //    that already reached the target still gets this designer decision
+  //    recorded; incompatible edits fail without overwriting their bytes.
   const now = new Date().toISOString();
-  const restoreFile = () => {
+  const targetAlreadyCommitted = () => {
+    const checkDb = openProjectDb(projectPath);
     try {
-      writeFileSync(absolutePath, originalContent, "utf-8");
+      const current = checkDb
+        .prepare(
+          `SELECT status FROM design_system_entries
+           WHERE source_artifact_path = ? AND entry_id = ?`
+        )
+        .get(relativePath, input.entryId) as { status: string } | undefined;
+      return current?.status === input.targetStatus;
+    } catch {
+      return false;
+    } finally {
+      closeProjectDb(checkDb);
+    }
+  };
+  const restoreOwnFileChange = () => {
+    try {
+      if (targetAlreadyCommitted()) return;
+      const currentContent = readFileSync(absolutePath, "utf-8");
+      if (currentContent === newContent) {
+        writeFileSync(absolutePath, originalContent, "utf-8");
+        return;
+      }
+      const currentParsed = JSON.parse(currentContent) as unknown;
+      if (!isPlainObject(currentParsed)) return;
+      const currentEntry = locateEntryObject(
+        fileKind,
+        currentParsed,
+        input.entryId
+      );
+      if (
+        currentEntry === null ||
+        currentEntry.status !== input.targetStatus ||
+        JSON.stringify(currentEntry.links) !== row.links_json
+      ) return;
+      currentEntry.status = row.status;
+      writeFileSync(
+        absolutePath,
+        `${stableJsonStringify(currentParsed)}\n`,
+        "utf-8"
+      );
     } catch {
       // Best-effort restore; the reported failure reason stands.
     }
@@ -331,13 +351,36 @@ export function approveDesignSystemEntry(
 
   hooks.beforeCommit?.();
 
+  try {
+    const currentContent = readFileSync(absolutePath, "utf-8");
+    const currentParsed = JSON.parse(currentContent) as unknown;
+    const currentEntry = isPlainObject(currentParsed)
+      ? locateEntryObject(fileKind, currentParsed, input.entryId)
+      : null;
+    if (
+      currentEntry === null ||
+      designSystemEntryContentDigest(currentEntry) !== writtenEntryDigest
+    ) {
+      restoreOwnFileChange();
+      logInvalidToolEvent(
+        projectPath,
+        "invalid_output",
+        "approve_design_system_entry",
+        "concurrent_edit_superseded",
+        { source_artifact_path: relativePath, entry_id: input.entryId }
+      );
+      return { ok: false, reason: "concurrent_edit_superseded" };
+    }
+  } catch {
+    return { ok: false, reason: "artifact_file_missing" };
+  }
+
   type TxnResult =
     | { ok: true; eventId: string }
     | {
         ok: false;
         reason:
           | "not_found"
-          | "already_formalized"
           | "gap_entry_not_approvable"
           | string;
         details?: unknown;
@@ -354,63 +397,66 @@ export function approveDesignSystemEntry(
         | { status: string; links_json: string }
         | undefined;
       if (!current) return { ok: false, reason: "not_found" };
-      if (current.status === "formalized") {
-        return { ok: false, reason: "already_formalized" };
+      if (current.status === input.targetStatus) {
+        if (
+          input.targetStatus === "formalized" &&
+          current.links_json !== row.links_json
+        ) {
+          return { ok: false, reason: "concurrent_edit_superseded" };
+        }
+        const event = logEventOnDb(
+          db,
+          input.targetStatus === "formalized"
+            ? "design_system_entry_approved"
+            : "design_system_entry_reverted",
+          {
+            source_artifact_path: relativePath,
+            entry_id: input.entryId,
+            ...(approvedContentDigest === null
+              ? {}
+              : { content_digest: approvedContentDigest }),
+            from: row.status,
+            to: input.targetStatus
+          }
+        );
+        return { ok: true, eventId: event.event_id };
       }
-      if (current.status !== "candidate") {
+      if (current.status === "gap") {
         return { ok: false, reason: "gap_entry_not_approvable" };
       }
-
-      // Formalized invariant, authoritative at the commit point (Phase 1 is
-      // only the fast-fail pre-check): links/answer sources may have changed
-      // since, on this same transaction's snapshot.
-      const links = JSON.parse(current.links_json) as string[];
-      const check = checkDesignSystemEntryStatus(
-        { status: "formalized", links },
-        loadDesignSystemLinkIndex(db)
-      );
-      if (!check.ok) {
-        return {
-          ok: false,
-          reason: check.reason,
-          details: check.details ?? { links }
-        };
+      if (current.status !== row.status || current.links_json !== row.links_json) {
+        return { ok: false, reason: "concurrent_edit_superseded" };
       }
 
       db.prepare(
         `UPDATE design_system_entries
-         SET status = 'formalized', updated_at = ?
+         SET status = ?, updated_at = ?
          WHERE source_artifact_path = ? AND entry_id = ?`
-      ).run(now, relativePath, input.entryId);
+      ).run(input.targetStatus, now, relativePath, input.entryId);
 
-      const event = logEventOnDb(db, "design_system_entry_approved", {
-        source_artifact_path: relativePath,
-        entry_id: input.entryId,
-        from: "candidate",
-        to: "formalized"
-      });
+      const event = logEventOnDb(
+        db,
+        input.targetStatus === "formalized"
+          ? "design_system_entry_approved"
+          : "design_system_entry_reverted",
+        {
+          source_artifact_path: relativePath,
+          entry_id: input.entryId,
+          ...(approvedContentDigest === null
+            ? {}
+            : { content_digest: approvedContentDigest }),
+          from: current.status,
+          to: input.targetStatus
+        }
+      );
       return { ok: true, eventId: event.event_id };
     });
   } catch {
-    restoreFile();
+    restoreOwnFileChange();
     return { ok: false, reason: "db_error" };
   }
   if (!txn.ok) {
-    if (txn.reason === "already_formalized") {
-      // Lost the LWW race: a concurrent approval already formalized this
-      // entry and wrote the canonical formalized bytes — do NOT restore our
-      // pre-write bytes over the winner's. Audit the losing approval so the
-      // conflict stays visible in the event log (09A decision 8).
-      logInvalidToolEvent(
-        projectPath,
-        "invalid_output",
-        "approve_design_system_entry",
-        "already_formalized",
-        { source_artifact_path: relativePath, entry_id: input.entryId }
-      );
-      return { ok: false, reason: "already_formalized" };
-    }
-    restoreFile();
+    restoreOwnFileChange();
     return txn.details !== undefined
       ? { ok: false, reason: txn.reason, details: txn.details }
       : { ok: false, reason: txn.reason };
@@ -444,7 +490,7 @@ export function approveDesignSystemEntry(
     entry: {
       source_artifact_path: relativePath,
       entry_id: input.entryId,
-      status: "formalized",
+      status: input.targetStatus,
       updated_at: now
     },
     event_id: txn.eventId

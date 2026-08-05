@@ -358,6 +358,61 @@ function entryRows(
 // ---------------------------------------------------------------------------
 
 describe("design-system ingest", () => {
+  test("open token questions survive as gap domain rules, never token rows", () => {
+    withTempProject((dir) => {
+      seedEvidenceCards(dir);
+      writeProjectFile(dir, "design-system/token.json", {
+        primitive: {},
+        semantic: {
+          "rule.open-gap.hover-evidence": {
+            kind: "domain-rule",
+            domain: "color",
+            meaning: "Hover color is not evidenced.",
+            value:
+              "The captured frames do not expose an interactive hover state. Next: inspect the button hover state in Figma.",
+            status: "gap",
+            links: []
+          }
+        },
+        component: {}
+      });
+
+      expect(
+        declareFile(dir, "design-system/token.json", "token.json").ok
+      ).toBe(true);
+      const row = entryRows(dir)[0]!;
+      expect(row).toMatchObject({
+        section: "token.semantic",
+        entry_id: "semantic.rule.open-gap.hover-evidence",
+        name: "rule.open-gap.hover-evidence",
+        kind: "domain-rule",
+        domain: "color",
+        status: "gap"
+      });
+
+      const view = getDesignSystemView(dir);
+      expect(view.ok).toBe(true);
+      if (!view.ok) return;
+      expect(view.view.tokens.semantic).toEqual([
+        expect.objectContaining({
+          entry_id: "semantic.rule.open-gap.hover-evidence",
+          section: "token.semantic",
+          kind: "domain-rule"
+        })
+      ]);
+
+      const exported = writeDesignSystemViewExport(dir);
+      expect(exported.ok).toBe(true);
+      if (!exported.ok) return;
+      const json = JSON.parse(readFileSync(exported.path, "utf8"));
+      expect(json.tokens.semantic[0]).toMatchObject({
+        entry_id: "semantic.rule.open-gap.hover-evidence",
+        kind: "domain-rule",
+        status: "gap"
+      });
+    });
+  });
+
   test("09B entry kind survives source ingest, DB-backed view, and derived export", () => {
     withTempProject((dir) => {
       seedEvidenceCards(dir);

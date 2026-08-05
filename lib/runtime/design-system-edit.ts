@@ -23,8 +23,12 @@ import {
 } from "./events";
 import { emitRecordEvent } from "./record-bus";
 import { canonicalizeArtifactPath } from "./source-artifact";
+import { designSystemEntryContentDigest } from "./design-system-entry-provenance";
 
-export type EditableDesignSystemEntryField = "meaning" | "value";
+export type EditableDesignSystemEntryField =
+  | "meaning"
+  | "value"
+  | "value.description";
 
 export interface EditDesignSystemEntryInput {
   sourceArtifactPath: string;
@@ -77,9 +81,13 @@ export function editDesignSystemEntry(
   input: EditDesignSystemEntryInput,
   hooks: EditDesignSystemEntryHooks = {}
 ): DesignSystemEditResult {
-  const text = input.field === "value" ? input.text : input.text.trim();
+  const text = input.field === "meaning" ? input.text.trim() : input.text;
   if (input.text.trim().length === 0) return { ok: false, reason: "empty_text" };
-  if (input.field !== "meaning" && input.field !== "value") {
+  if (
+    input.field !== "meaning" &&
+    input.field !== "value" &&
+    input.field !== "value.description"
+  ) {
     return { ok: false, reason: "unsupported_field" };
   }
   if (assertArtifactPathInProject(projectPath, input.sourceArtifactPath) !== null) {
@@ -113,6 +121,16 @@ export function editDesignSystemEntry(
     return { ok: false, reason: "db_error" };
   } finally {
     closeProjectDb(db);
+  }
+
+  if (
+    input.field === "value.description" &&
+    !(
+      row.file_kind === "design-system.json" &&
+      row.section === "foundations.visual-language"
+    )
+  ) {
+    return { ok: false, reason: "unsupported_field" };
   }
 
   // Token semantics live in value.usage / value.usedFor. Only rules may edit
@@ -185,6 +203,11 @@ export function editDesignSystemEntry(
     } catch {
       before = row.value_json;
     }
+  } else if (input.field === "value.description") {
+    if (!isPlainObject(dbValue) || typeof dbValue.description !== "string") {
+      return { ok: false, reason: "db_error" };
+    }
+    before = dbValue.description;
   }
   const nextStatus: DesignSystemStatus =
     row.status === "gap" ? "candidate" : row.status;
@@ -202,9 +225,22 @@ export function editDesignSystemEntry(
   // from leaking into the winning transaction.
   const currentLinks = dbLinks;
   const nextLinks = [...currentLinks, editEvent.event_id];
-  entryObject[input.field] = text;
+  let nextDbValue = dbValue;
+  if (input.field === "meaning") {
+    entryObject.meaning = text;
+  } else if (input.field === "value") {
+    entryObject.value = text;
+    nextDbValue = text;
+  } else {
+    if (!isPlainObject(entryObject.value) || !isPlainObject(dbValue)) {
+      return { ok: false, reason: "invalid_design_system_json" };
+    }
+    entryObject.value = { ...entryObject.value, description: text };
+    nextDbValue = { ...dbValue, description: text };
+  }
   entryObject.status = nextStatus;
   entryObject.links = nextLinks;
+  editEvent.payload.content_digest = designSystemEntryContentDigest(entryObject);
 
   const validation = validateDesignSystemJson(row.file_kind, parsed);
   if (!validation.ok) {
@@ -238,18 +274,30 @@ export function editDesignSystemEntry(
         currentParsed,
         input.entryId
       );
+      const currentFieldValue =
+        input.field === "value.description" && isPlainObject(currentEntry?.value)
+          ? currentEntry.value.description
+          : currentEntry?.[input.field];
       const stillContainsOwnWrite =
         currentEntry !== null &&
-        currentEntry[input.field] === text &&
+        currentFieldValue === text &&
         currentEntry.status === nextStatus &&
         stableJsonStringify(currentEntry.links) === stableJsonStringify(nextLinks);
       if (!stillContainsOwnWrite || currentEntry === null) return;
-      if (row.file_kind === "token.json" && row.kind !== "domain-rule") {
-        delete currentEntry.meaning;
+      if (input.field === "value.description") {
+        if (!isPlainObject(currentEntry.value) || !isPlainObject(dbValue)) return;
+        currentEntry.value = {
+          ...currentEntry.value,
+          description: dbValue.description
+        };
       } else {
-        currentEntry.meaning = row.meaning;
+        if (row.file_kind === "token.json" && row.kind !== "domain-rule") {
+          delete currentEntry.meaning;
+        } else {
+          currentEntry.meaning = row.meaning;
+        }
+        if (input.field === "value") currentEntry.value = dbValue;
       }
-      currentEntry.value = dbValue;
       currentEntry.status = row.status;
       currentEntry.links = dbLinks;
       writeFileSync(
@@ -274,9 +322,14 @@ export function editDesignSystemEntry(
             currentParsed,
             input.entryId
           );
+          const currentFieldValue =
+            input.field === "value.description" &&
+            isPlainObject(currentEntry?.value)
+              ? currentEntry.value.description
+              : currentEntry?.[input.field];
           ownWritePreserved =
             currentEntry !== null &&
-            currentEntry[input.field] === text &&
+            currentFieldValue === text &&
             currentEntry.status === nextStatus &&
             stableJsonStringify(currentEntry.links) ===
               stableJsonStringify(nextLinks);
@@ -350,7 +403,7 @@ export function editDesignSystemEntry(
              WHERE source_artifact_path = ? AND entry_id = ?`
           )
           .run(
-            JSON.stringify(text),
+            JSON.stringify(nextDbValue),
             nextStatus,
             JSON.stringify(nextLinks),
             now,

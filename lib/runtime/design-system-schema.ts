@@ -13,9 +13,11 @@
 //     annotation ids). Rules and component inventory entries also carry
 //     `meaning`; tokens use per-domain usage fields inside `value`, while
 //     component specs use `value.description` instead.
-//     Non-gap entries must link at least one record; gap entries carry none —
-//     the gap declaration itself is the semantics (09A decision 4: gaps are
-//     explicit only, never derived).
+//     Non-gap entries must link at least one record. Unresolved decisions are
+//     represented only as rule entries with status `gap` and no links; token
+//     entries always carry determined values and therefore cannot be gaps.
+//     Gaps are explicit only, never inferred from unconsumed primitives or a
+//     prescribed palette size.
 //   - Token entries never carry envelope `meaning`: primitive tokens have no
 //     usage prose, typography roles may carry `value.usedFor`, and other
 //     semantic/component tokens may carry `value.usage`. Rules (including
@@ -88,6 +90,7 @@ export type DesignSystemSchemaReason =
   | "legacy_rule_body_requires_prose"
   | "domain_rule_domain_required"
   | "invalid_token_domain"
+  | "token_gap_forbidden"
   | "token_meaning_forbidden"
   | "token_usage_field_forbidden"
   | "token_primitive_alias"
@@ -473,6 +476,12 @@ function parseAliasRef(
 }
 
 function validateTokenJson(json: Record<string, unknown>): DesignSystemSchemaResult {
+  const unknownRootField = Object.keys(json).find(
+    (field) => !(TOKEN_LAYERS as readonly string[]).includes(field)
+  );
+  if (unknownRootField) {
+    return fail("unknown_field", { field: unknownRootField });
+  }
   const layers = new Map<TokenLayer, Record<string, unknown>>();
   for (const layer of TOKEN_LAYERS) {
     const raw = json[layer];
@@ -515,6 +524,13 @@ function validateTokenJson(json: Record<string, unknown>): DesignSystemSchemaRes
           field: "meaning"
         });
       }
+      if (raw.kind !== "domain-rule" && raw.status === "gap") {
+        return fail("token_gap_forbidden", {
+          ...ctx,
+          migration:
+            "Represent the unresolved decision as a domain-rule with status gap; token entries must carry determined values."
+        });
+      }
       if (raw.kind !== "domain-rule") {
         const usageFailure = validateTokenUsageField(
           raw.value,
@@ -526,7 +542,7 @@ function validateTokenJson(json: Record<string, unknown>): DesignSystemSchemaRes
       }
       const entryFailure = checkEntry(raw, ctx, {
         withId: false,
-        allowedKinds: entryKindsAllowedIn("token.json"),
+        allowedKinds: ["token", "domain-rule"],
         domainRuleRequiresDomain: true,
         meaningPolicy: raw.kind === "domain-rule" ? "required" : "optional",
         checkValue: (value) => {
@@ -597,6 +613,7 @@ function validateTokenJson(json: Record<string, unknown>): DesignSystemSchemaRes
       return fail("token_alias_cycle", { path: cycle });
     }
   }
+
   return { ok: true };
 }
 

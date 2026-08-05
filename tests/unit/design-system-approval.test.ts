@@ -1,6 +1,5 @@
-// Unit tests for design-system approval write-back (Issue 09A decision 5,
-// Task D). The Browser's only write operation in v1 is candidate → formalized
-// approval: it flips the DB row AND writes the entry's status back into the
+// Unit tests for direct designer status write-back (Issue 09A decision 5,
+// Task D). Candidate ↔ formalized switches update the DB and source JSON
 // JSON source file with canonical serialization (sorted keys, 2-space indent,
 // trailing newline). Conflicts are LWW with a semantic event log (09A d.8).
 
@@ -18,6 +17,7 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { recordSourceArtifact } from "../../lib/runtime/source-artifact";
 import { approveDesignSystemEntry } from "../../lib/runtime/design-system-approval";
+import { editDesignSystemEntry } from "../../lib/runtime/design-system-edit";
 import {
   getDesignSystemView,
   stableJsonStringify,
@@ -161,8 +161,8 @@ function seedEvidenceCards(dir: string) {
   return { seedId, surfaceId };
 }
 
-// Shared token.json fixture; the semantic candidate's links vary per test
-// (approvable via card-edited, rejection cases via card-accepted / annotation).
+// Shared token.json fixture; the semantic candidate's evidence source varies
+// so direct designer approval covers edited and accepted answers.
 function tokenJsonFixture(semanticLinks: string[]) {
   return {
     primitive: {
@@ -191,8 +191,7 @@ function tokenJsonFixture(semanticLinks: string[]) {
 }
 
 // Approval fixtures: one candidate per file kind backed by the designer-edited
-// card (approvable), plus an annotation-only candidate and gaps for the
-// rejection paths.
+// card, plus an annotation-only candidate and explicit gaps.
 function writeApprovalFixtures(dir: string) {
   writeProjectFile(dir, "design-system/design-system.json", {
     name: "Test DS",
@@ -343,8 +342,17 @@ function entryRow(dir: string, sourcePath: string, entryId: string) {
   }
 }
 
-function approve(dir: string, sourceArtifactPath: string, entryId: string) {
-  return approveDesignSystemEntryCommand(dir, { sourceArtifactPath, entryId });
+function approve(
+  dir: string,
+  sourceArtifactPath: string,
+  entryId: string,
+  targetStatus: "candidate" | "formalized" = "formalized"
+) {
+  return approveDesignSystemEntryCommand(dir, {
+    sourceArtifactPath,
+    entryId,
+    targetStatus
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -589,7 +597,7 @@ describe("per-kind write-back location", () => {
 // Rejections — typed reasons, nothing written
 // ---------------------------------------------------------------------------
 
-describe("approval rejections", () => {
+describe("approval transitions and rejections", () => {
   test("unknown entry → not_found (bad id and unknown source path)", () => {
     withTempProject((dir) => {
       seedAndIngest(dir);
@@ -657,39 +665,121 @@ describe("approval rejections", () => {
     });
   });
 
-  test("annotation-only candidate → formalized_requires_designer_edited_link", () => {
+  test("direct designer approval formalizes an annotation-backed candidate", () => {
     withTempProject((dir) => {
       seedAndIngest(dir);
-      const fileBefore = readProjectFile(
-        dir,
-        "design-system/design-system.json"
-      );
 
       const res = approve(dir, "design-system/design-system.json", "p3");
-      expect(res.ok).toBe(false);
-      if (res.ok) return;
-      // The formalized invariant is enforced AT APPROVAL TIME: a candidate
-      // backed only by an Agent annotation cannot be formalized (its own file
-      // would fail the next ingest's cross-validation).
-      expect(res.reason).toBe("formalized_requires_designer_edited_link");
-      expect(res.details).toMatchObject({ links: ["ann-reasonable"] });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
 
       expect(
         entryRow(dir, "design-system/design-system.json", "p3")?.status
-      ).toBe("candidate");
-      expect(readProjectFile(dir, "design-system/design-system.json")).toBe(
-        fileBefore
+      ).toBe("formalized");
+      const source = JSON.parse(
+        readProjectFile(dir, "design-system/design-system.json")
       );
-      expect(listEvents(dir, "design_system_entry_approved").length).toBe(0);
+      expect(
+        source.principles.find((principle: { id: string }) => principle.id === "p3")
+          .status
+      ).toBe("formalized");
+      expect(listEvents(dir, "design_system_entry_approved")).toHaveLength(1);
     });
   });
 
-  test("candidate backed by a non-designer-edited answered card is rejected", () => {
+  test("designer can switch a formalized entry back to candidate", () => {
+    withTempProject((dir) => {
+      seedAndIngest(dir);
+      expect(
+        approve(dir, "design-system/design-system.json", "p3").ok
+      ).toBe(true);
+
+      const res = approve(
+        dir,
+        "design-system/design-system.json",
+        "p3",
+        "candidate"
+      );
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.entry.status).toBe("candidate");
+      expect(
+        entryRow(dir, "design-system/design-system.json", "p3")?.status
+      ).toBe("candidate");
+      const source = JSON.parse(
+        readProjectFile(dir, "design-system/design-system.json")
+      );
+      expect(
+        source.principles.find((principle: { id: string }) => principle.id === "p3")
+          .status
+      ).toBe("candidate");
+      expect(listEvents(dir, "design_system_entry_reverted")[0].payload).toMatchObject({
+        entry_id: "p3",
+        from: "formalized",
+        to: "candidate"
+      });
+
+      // Reverting revokes the earlier direct approval. An Agent cannot put
+      // the identical bytes back to formalized without a new designer click.
+      source.principles.find(
+        (principle: { id: string }) => principle.id === "p3"
+      ).status = "formalized";
+      writeProjectFile(dir, "design-system/design-system.json", source);
+      const reingest = recordSourceArtifact(dir, {
+        path: "design-system/design-system.json",
+        artifactType: "design-system.json",
+        semanticPurpose: "agent attempts to restore reverted approval",
+        relatedRecordIds: ["ann-reasonable"]
+      });
+      expect(reingest.ok).toBe(false);
+      if (reingest.ok) return;
+      expect(reingest.reason).toBe(
+        "formalized_requires_designer_edited_link"
+      );
+    });
+  });
+
+  test("reverting to candidate overrides an older designer-edited answer", () => {
+    withTempProject((dir) => {
+      seedAndIngest(dir);
+      expect(approve(dir, "design-system/design-system.json", "p1").ok).toBe(
+        true
+      );
+      expect(
+        approve(
+          dir,
+          "design-system/design-system.json",
+          "p1",
+          "candidate"
+        ).ok
+      ).toBe(true);
+
+      const source = JSON.parse(
+        readProjectFile(dir, "design-system/design-system.json")
+      );
+      source.principles.find(
+        (principle: { id: string }) => principle.id === "p1"
+      ).status = "formalized";
+      writeProjectFile(dir, "design-system/design-system.json", source);
+      const reingest = recordSourceArtifact(dir, {
+        path: "design-system/design-system.json",
+        artifactType: "design-system.json",
+        semanticPurpose: "agent overrides designer revert",
+        relatedRecordIds: ["card-edited"]
+      });
+      expect(reingest.ok).toBe(false);
+      if (reingest.ok) return;
+      expect(reingest.reason).toBe(
+        "formalized_requires_designer_edited_link"
+      );
+    });
+  });
+
+  test("direct designer approval formalizes a designer-accepted candidate", () => {
     withTempProject((dir) => {
       seedAndIngest(dir);
       // Rewrite the token file so the semantic candidate links card-accepted
-      // (answered, but not designer-edited) — ingest-valid as a candidate,
-      // never approvable.
+      // (answered, but not designer-edited) — ingest-valid as a candidate.
       writeProjectFile(
         dir,
         "design-system/token.json",
@@ -705,9 +795,11 @@ describe("approval rejections", () => {
       ).toBe(true);
 
       const res = approve(dir, "design-system/token.json", "semantic.color.primary");
-      expect(res.ok).toBe(false);
-      if (res.ok) return;
-      expect(res.reason).toBe("formalized_requires_designer_edited_link");
+      expect(res.ok).toBe(true);
+      expect(
+        entryRow(dir, "design-system/token.json", "semantic.color.primary")
+          ?.status
+      ).toBe("formalized");
     });
   });
 
@@ -884,6 +976,101 @@ describe("post-approval consistency", () => {
       ).toBe("formalized");
     });
   });
+
+  test("direct approval event keeps an annotation-backed entry formalized on re-ingest", () => {
+    withTempProject((dir) => {
+      seedAndIngest(dir);
+      const approval = approve(dir, "design-system/design-system.json", "p3");
+      expect(approval, JSON.stringify(approval)).toMatchObject({ ok: true });
+
+      const res = recordSourceArtifact(dir, {
+        path: "design-system/design-system.json",
+        artifactType: "design-system.json",
+        semanticPurpose: "designer-approved source",
+        relatedRecordIds: ["ann-reasonable"]
+      });
+      expect(res.ok).toBe(true);
+      expect(
+        entryRow(dir, "design-system/design-system.json", "p3")?.status
+      ).toBe("formalized");
+    });
+  });
+
+  test("editing directly approved formalized content refreshes its provenance", () => {
+    withTempProject((dir) => {
+      seedAndIngest(dir);
+      expect(approve(dir, "design-system/design-system.json", "p3").ok).toBe(
+        true
+      );
+      const previouslyApprovedSource = readProjectFile(
+        dir,
+        "design-system/design-system.json"
+      );
+      expect(
+        editDesignSystemEntry(dir, {
+          sourceArtifactPath: "design-system/design-system.json",
+          entryId: "p3",
+          field: "meaning",
+          text: "Designer refined this principle"
+        }).ok
+      ).toBe(true);
+
+      const reingest = recordSourceArtifact(dir, {
+        path: "design-system/design-system.json",
+        artifactType: "design-system.json",
+        semanticPurpose: "directly edited approved source",
+        relatedRecordIds: ["ann-reasonable"]
+      });
+      expect(reingest.ok).toBe(true);
+      expect(
+        entryRow(dir, "design-system/design-system.json", "p3")?.status
+      ).toBe("formalized");
+
+      writeProjectFile(
+        dir,
+        "design-system/design-system.json",
+        JSON.parse(previouslyApprovedSource)
+      );
+      const staleReplay = recordSourceArtifact(dir, {
+        path: "design-system/design-system.json",
+        artifactType: "design-system.json",
+        semanticPurpose: "replay superseded designer content",
+        relatedRecordIds: ["ann-reasonable"]
+      });
+      expect(staleReplay.ok).toBe(false);
+      if (staleReplay.ok) return;
+      expect(staleReplay.reason).toBe(
+        "formalized_requires_designer_edited_link"
+      );
+    });
+  });
+
+  test("direct approval does not authorize changed content under the same entry id", () => {
+    withTempProject((dir) => {
+      seedAndIngest(dir);
+      expect(
+        approve(dir, "design-system/design-system.json", "p3").ok
+      ).toBe(true);
+
+      const source = JSON.parse(
+        readProjectFile(dir, "design-system/design-system.json")
+      );
+      source.principles.find(
+        (principle: { id: string }) => principle.id === "p3"
+      ).value = "Agent replaced the approved principle.";
+      writeProjectFile(dir, "design-system/design-system.json", source);
+
+      const res = recordSourceArtifact(dir, {
+        path: "design-system/design-system.json",
+        artifactType: "design-system.json",
+        semanticPurpose: "changed agent-authored source",
+        relatedRecordIds: ["ann-reasonable"]
+      });
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("formalized_requires_designer_edited_link");
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -891,6 +1078,100 @@ describe("post-approval consistency", () => {
 // ---------------------------------------------------------------------------
 
 describe("atomicity + LWW race", () => {
+  test("concurrent ingest reaching Candidate cannot swallow the revert event", () => {
+    withTempProject((dir) => {
+      seedAndIngest(dir);
+      const relativePath = "design-system/design-system.json";
+      expect(approve(dir, relativePath, "p3").ok).toBe(true);
+
+      const reverted = approveDesignSystemEntry(
+        dir,
+        {
+          sourceArtifactPath: relativePath,
+          entryId: "p3",
+          targetStatus: "candidate"
+        },
+        {
+          beforeCommit: () => {
+            expect(
+              recordSourceArtifact(dir, {
+                path: relativePath,
+                artifactType: "design-system.json",
+                semanticPurpose: "concurrent candidate ingest",
+                relatedRecordIds: ["ann-reasonable"]
+              }).ok
+            ).toBe(true);
+          }
+        }
+      );
+      expect(reverted.ok).toBe(true);
+      expect(listEvents(dir, "design_system_entry_reverted")).toHaveLength(1);
+
+      const source = JSON.parse(readProjectFile(dir, relativePath));
+      source.principles.find(
+        (principle: { id: string }) => principle.id === "p3"
+      ).status = "formalized";
+      writeProjectFile(dir, relativePath, source);
+      const replay = recordSourceArtifact(dir, {
+        path: relativePath,
+        artifactType: "design-system.json",
+        semanticPurpose: "replay stale approval",
+        relatedRecordIds: ["ann-reasonable"]
+      });
+      expect(replay.ok).toBe(false);
+      if (replay.ok) return;
+      expect(replay.reason).toBe(
+        "formalized_requires_designer_edited_link"
+      );
+    });
+  });
+
+  test("a concurrent source-and-DB edit is preserved instead of being overwritten", () => {
+    withTempProject((dir) => {
+      seedAndIngest(dir);
+      const relativePath = "design-system/layout-rules.json";
+      const res = approveDesignSystemEntry(
+        dir,
+        {
+          sourceArtifactPath: relativePath,
+          entryId: "layout-1",
+          targetStatus: "formalized"
+        },
+        {
+          beforeCommit: () => {
+            const source = JSON.parse(readProjectFile(dir, relativePath));
+            source.rules[0].meaning = "Concurrent designer edit";
+            source.rules[0].status = "candidate";
+            writeProjectFile(dir, relativePath, source);
+            const db = new DatabaseSync(getProjectDbPath(dir));
+            try {
+              db.prepare(
+                `UPDATE design_system_entries
+                 SET meaning = 'Concurrent designer edit'
+                 WHERE source_artifact_path = ? AND entry_id = ?`
+              ).run(relativePath, "layout-1");
+            } finally {
+              db.close();
+            }
+          }
+        }
+      );
+      expect(res).toMatchObject({
+        ok: false,
+        reason: "concurrent_edit_superseded"
+      });
+      const source = JSON.parse(readProjectFile(dir, relativePath));
+      expect(source.rules[0]).toMatchObject({
+        meaning: "Concurrent designer edit",
+        status: "candidate"
+      });
+      expect(entryRow(dir, relativePath, "layout-1")).toMatchObject({
+        meaning: "Concurrent designer edit",
+        status: "candidate"
+      });
+    });
+  });
+
   test("DB failure after the file write restores the original file bytes", () => {
     withTempProject((dir) => {
       seedAndIngest(dir);
@@ -931,7 +1212,7 @@ describe("atomicity + LWW race", () => {
     });
   });
 
-  test("LWW race loser keeps the winner's formalized bytes and is audited", () => {
+  test("a concurrent writer reaching Formalized still records designer intent", () => {
     withTempProject((dir) => {
       seedAndIngest(dir);
 
@@ -942,7 +1223,8 @@ describe("atomicity + LWW race", () => {
         dir,
         {
           sourceArtifactPath: "design-system/layout-rules.json",
-          entryId: "layout-1"
+          entryId: "layout-1",
+          targetStatus: "formalized"
         },
         {
           beforeCommit: () => {
@@ -963,30 +1245,17 @@ describe("atomicity + LWW race", () => {
           }
         }
       );
-      expect(res.ok).toBe(false);
-      if (res.ok) return;
-      expect(res.reason).toBe("already_formalized");
+      expect(res.ok).toBe(true);
 
-      // The loser must NOT restore its pre-write bytes over the winner's —
-      // the file keeps the canonical formalized content.
+      // The file keeps the canonical formalized content.
       const json = JSON.parse(
         readProjectFile(dir, "design-system/layout-rules.json")
       );
       expect(json.rules[0].status).toBe("formalized");
 
-      // LWW conflict visibility (09A decision 8): the losing approval is
-      // audited; no design_system_entry_approved event for the loser.
-      const audit = listEvents(dir, "invalid_output");
-      expect(audit.length).toBe(1);
-      expect(audit[0].payload).toMatchObject({
-        tool: "approve_design_system_entry",
-        reason: "already_formalized",
-        details: {
-          source_artifact_path: "design-system/layout-rules.json",
-          entry_id: "layout-1"
-        }
-      });
-      expect(listEvents(dir, "design_system_entry_approved").length).toBe(0);
+      // Reaching the target concurrently must not swallow the semantic click.
+      expect(listEvents(dir, "invalid_output")).toHaveLength(0);
+      expect(listEvents(dir, "design_system_entry_approved")).toHaveLength(1);
     });
   });
 });

@@ -4,7 +4,7 @@
 // lib/runtime/design-system-view.ts) into the Section Tabs navigation model
 // the bottom sheet renders — plus the small pure state machines that unit
 // tests pin: sheet open/close, Esc isolation from the tldraw canvas, and the
-// candidate → formalized approval UI states.
+// candidate ↔ formalized direct-switch UI states.
 //
 // Locked decisions honored here:
 //   - d.6 rows carry name / value / semantic text / status chip only; the full
@@ -238,7 +238,7 @@ export interface DsColorToken {
   name: string;
   meaning: string;
   status: DsStatus;
-  hex: string | null;
+  hex: string;
   source: string | null;
 }
 
@@ -247,8 +247,6 @@ export interface DsColorLeafModel {
   rules: DsRow[];
   semantic: DsColorToken[];
   component: DsColorToken[];
-  /** Color primitives no alias in the file points at — shown as bare swatches. */
-  unconsumed: { name: string; hex: string | null; status: DsStatus }[];
 }
 
 /** Alias targets are "layer.name"; the name may itself contain dots, so the
@@ -279,6 +277,7 @@ export function buildColorLeafModel(view: DesignSystemView): DsColorLeafModel {
 
   const isColor = (entry: DesignSystemEntryView) =>
     entry.kind !== "domain-rule" &&
+    entry.status !== "gap" &&
     classifyToken(entry.name ?? entry.entry_id, entry.domain ?? null) === "color";
 
   const resolve = (
@@ -295,7 +294,7 @@ export function buildColorLeafModel(view: DesignSystemView): DsColorLeafModel {
     for (let depth = 0; ref !== null && depth < 8; depth += 1) {
       const target = splitTokenRef(ref);
       const next = target ? byQualified.get(`${target.layer}.${target.name}`) : undefined;
-      if (!next) return { hex: null, source: null };
+      if (!next || next.status === "gap") return { hex: null, source: null };
       terminal = next;
       ref = next.alias;
     }
@@ -305,13 +304,18 @@ export function buildColorLeafModel(view: DesignSystemView): DsColorLeafModel {
     return { hex, source: entryDisplayName(terminal) };
   };
 
-  const toColorToken = (entry: DesignSystemEntryView): DsColorToken => ({
-    row: toRow(entry),
-    name: entryDisplayName(entry),
-    meaning: entrySemanticText(entry),
-    status: entry.status,
-    ...resolve(entry)
-  });
+  const toColorToken = (entry: DesignSystemEntryView): DsColorToken | null => {
+    const resolved = resolve(entry);
+    if (resolved.hex === null) return null;
+    return {
+      row: toRow(entry),
+      name: entryDisplayName(entry),
+      meaning: entrySemanticText(entry),
+      status: entry.status,
+      hex: resolved.hex,
+      source: resolved.source
+    };
+  };
 
   const rules: DsRow[] = [];
   const semantic: DsColorToken[] = [];
@@ -320,40 +324,20 @@ export function buildColorLeafModel(view: DesignSystemView): DsColorLeafModel {
     if (entry.kind === "domain-rule" && entry.domain === "color") {
       rules.push(toRow(entry));
     } else if (isColor(entry)) {
-      semantic.push(toColorToken(entry));
+      const token = toColorToken(entry);
+      if (token) semantic.push(token);
     }
   }
   for (const entry of view.tokens.component) {
     if (entry.kind === "domain-rule" && entry.domain === "color") {
       rules.push(toRow(entry));
     } else if (isColor(entry)) {
-      component.push(toColorToken(entry));
+      const token = toColorToken(entry);
+      if (token) component.push(token);
     }
   }
 
-  // File-wide consumption: any alias target, any layer, marks its primitive
-  // as consumed. A primitive dangling aliases point at is not "consumed".
-  const consumed = new Set<string>();
-  for (const layer of TOKEN_LAYER_ORDER) {
-    for (const entry of view.tokens[layer]) {
-      if (entry.alias !== null) {
-        const target = splitTokenRef(entry.alias);
-        if (target?.layer === "primitive") consumed.add(target.name);
-      }
-    }
-  }
-  const unconsumed = view.tokens.primitive
-    .filter(
-      (entry) =>
-        isColor(entry) && !consumed.has(entry.name ?? entry.entry_id)
-    )
-    .map((entry) => ({
-      name: entryDisplayName(entry),
-      hex: detectSwatch(formatEntryValue(entry)),
-      status: entry.status
-    }));
-
-  return { rules, semantic, component, unconsumed };
+  return { rules, semantic, component };
 }
 
 /* ---------------------------- component mapping ---------------------------- */
@@ -630,6 +614,9 @@ export function buildDesignSystemBrowserModel(
       // A global rule cannot legally live in token.json. Defensive DB reads
       // omit it instead of disguising it as a token via name classification.
       if (entry.kind === "global-rule") continue;
+      // Legacy DB rows may predate the schema gate. Never surface an
+      // unresolved value as a token; unresolved decisions belong in Rules.
+      if (entry.status === "gap") continue;
       const leafId = classifyToken(
         entryDisplayName(entry),
         entry.domain ?? null
@@ -852,43 +839,17 @@ export function approvalReducer(
   }
 }
 
-/** Typed approval failure → readable reason shown in place (never toast-only). */
+/** Status-write failure → short retry guidance shown beside the row. */
 export function approvalErrorMessage(
-  reason: string,
-  details?: unknown
+  _reason: string,
+  _details?: unknown
 ): string {
-  switch (reason) {
-    case "formalized_requires_designer_edited_link":
-      return "Needs a designer-edited answered card before it can be formalized.";
-    case "already_formalized":
-      return "Already formalized — refresh to see the latest state.";
-    case "not_found":
-      return "Entry no longer exists — the design system was re-ingested.";
-    case "gap_entry_not_approvable":
-      return "Open gaps must be filled by the agent, not approved.";
-    case "entry_not_in_source_file":
-      return "Entry is missing from its source file — reload the browser.";
-    case "artifact_path_escape":
-      return "Source artifact path is outside the project.";
-    case "artifact_file_missing":
-      return "Source artifact file is missing on disk.";
-    case "invalid_design_system_json":
-      return "Source file no longer passes the design-system schema.";
-    case "db_error":
-      return "Runtime database error — try again.";
-    default: {
-      const detailLinks =
-        isPlainObject(details) && Array.isArray(details.links)
-          ? ` (links: ${(details.links as unknown[]).join(", ")})`
-          : "";
-      return `${reason}${detailLinks}`;
-    }
-  }
+  return "Couldn't update. Try again.";
 }
 
 /**
- * Optimistic status flip for the approval flow: returns a new view with the
- * matching entry's status replaced. On approval failure the caller applies
+ * Optimistic direct status switch: returns a new view with the matching
+ * entry's status replaced. On failure the caller applies
  * the same helper with the previous status to revert; on success the SSE
  * design-system event refetches the authoritative view anyway.
  */

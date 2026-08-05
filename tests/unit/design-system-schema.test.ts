@@ -87,8 +87,8 @@ function validTokenJson(): {
       "button.padding": {
         value: { alias: "primitive.space.4" },
         domain: "spacing",
-        status: "gap",
-        links: []
+        status: "candidate",
+        links: ["card-1"]
       }
     }
   };
@@ -392,6 +392,47 @@ test.describe("design-system.json", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("token.json", () => {
+  test("represents unresolved token decisions as gap domain rules", () => {
+    const json = validTokenJson();
+    json.semantic["rule.open-gap.image-accent-evidence"] = {
+      kind: "domain-rule",
+      domain: "color",
+      meaning: "Image-led accent colors need broader evidence.",
+      value:
+        "Only one project image demonstrates the range. Next: inspect two more project pages before declaring reusable accent roles.",
+      status: "gap",
+      links: []
+    };
+
+    expect(validateDesignSystemJson("token.json", json)).toEqual({ ok: true });
+  });
+
+  test("rejects unresolved values in token entries and a parallel gaps collection", () => {
+    const tokenGap = validTokenJson();
+    tokenGap.semantic["color.hover"] = {
+      kind: "token",
+      domain: "color",
+      value: "unresolved",
+      status: "gap",
+      links: []
+    };
+    expect(validateDesignSystemJson("token.json", tokenGap)).toMatchObject({
+      ok: false,
+      reason: "token_gap_forbidden",
+      details: { token: "semantic.color.hover" }
+    });
+
+    const parallelCollection = {
+      ...validTokenJson(),
+      gaps: []
+    };
+    expect(validateDesignSystemJson("token.json", parallelCollection)).toMatchObject({
+      ok: false,
+      reason: "unknown_field",
+      details: { field: "gaps" }
+    });
+  });
+
   test("token entries reject envelope meaning fail-closed", () => {
     const json = validTokenJson();
     json.primitive["color.blue.500"].meaning = "品牌主色";
@@ -1160,15 +1201,27 @@ test.describe("layout-rules.json sourceCaptures", () => {
 
 test.describe("collectStatusEntries", () => {
   test("token.json yields layer-qualified ids across all layers", () => {
-    const entries = collectStatusEntries("token.json", validTokenJson());
+    const json = validTokenJson();
+    json.semantic["rule.open-gap.hover-color"] = {
+      kind: "domain-rule",
+      domain: "color",
+      meaning: "Hover color needs evidence.",
+      value: "Inspect the hover state before declaring a color token.",
+      status: "gap",
+      links: []
+    };
+    const entries = collectStatusEntries("token.json", json);
     expect(entries.map((e) => e.id).sort()).toEqual([
       "component.button.bg",
       "component.button.padding",
       "primitive.color.blue.500",
       "primitive.space.4",
-      "semantic.color.primary"
+      "semantic.color.primary",
+      "semantic.rule.open-gap.hover-color"
     ]);
-    const gap = entries.find((e) => e.id === "component.button.padding");
+    const gap = entries.find(
+      (e) => e.id === "semantic.rule.open-gap.hover-color"
+    );
     expect(gap).toMatchObject({ status: "gap", links: [] });
   });
 

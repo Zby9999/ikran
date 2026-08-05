@@ -331,15 +331,15 @@ test("invalid declarations return typed errors, log invalid_artifact and index n
             kind: "token",
             domain: "color",
             value: { alias: "semantic.color.b", usage: "Cycle probe A" },
-            status: "gap",
-            links: []
+            status: "candidate",
+            links: ["any-card"]
           },
           "color.b": {
             kind: "token",
             domain: "color",
             value: { alias: "semantic.color.a", usage: "Cycle probe B" },
-            status: "gap",
-            links: []
+            status: "candidate",
+            links: ["any-card"]
           }
         },
         component: {}
@@ -353,8 +353,8 @@ test("invalid declarations return typed errors, log invalid_artifact and index n
       relatedRecordIds: ["any-card"]
     }))).toMatchObject({ ok: false, error: "token_alias_cycle" });
 
-    // Schema-valid file (a gap carries no links), but the declaration itself
-    // references no answered card / annotation.
+    // Schema-valid file, but the declaration itself references no answered
+    // card / annotation.
     writeFileSync(
       tokenPath,
       `${JSON.stringify({
@@ -363,8 +363,8 @@ test("invalid declarations return typed errors, log invalid_artifact and index n
             kind: "token",
             domain: "color",
             value: "#101418",
-            status: "gap",
-            links: []
+            status: "candidate",
+            links: ["any-card"]
           }
         },
         semantic: {},

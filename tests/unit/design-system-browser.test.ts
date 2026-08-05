@@ -162,6 +162,18 @@ function fixtureView(): DesignSystemView {
           value: { alias: "primitive.ink.900" },
           alias: "primitive.ink.900",
           status: "candidate"
+        }),
+        entry({
+          entry_id: "semantic.rule.open-gap.image-accent-evidence",
+          section: "token.semantic",
+          name: "rule.open-gap.image-accent-evidence",
+          kind: "domain-rule",
+          domain: "color",
+          meaning: "Image-led accent colors need broader evidence.",
+          value:
+            "Only one project image demonstrates the range. Next: inspect two more project pages before declaring reusable accent roles.",
+          status: "gap",
+          links: []
         })
       ],
       component: []
@@ -254,6 +266,8 @@ describe("SpecRowView (09A d.6: name/value/meaning/chip only)", () => {
     expect(html).toContain("#0D0D0D");
     expect(html).toContain("Primary readable text");
     expect(html).toContain('data-status="candidate"');
+    expect(html).toContain('<button');
+    expect(html).toContain('aria-label="Switch text.primary to Formalized"');
     expect(html).toContain('aria-label="Evidence for text.primary"');
     // No evidence chain inline — it lives in the popover only.
     expect(html).not.toContain("What is the primary text color?");
@@ -266,8 +280,7 @@ describe("SpecRowView (09A d.6: name/value/meaning/chip only)", () => {
         approval: {
           kind: "error",
           reason: "formalized_requires_designer_edited_link",
-          message:
-            "Needs a designer-edited answered card before it can be formalized."
+          message: "Couldn't update. Try again."
         },
         infoOpen: false,
         popoverInstant: false,
@@ -278,8 +291,46 @@ describe("SpecRowView (09A d.6: name/value/meaning/chip only)", () => {
         onApprove: vi.fn()
       })
     );
-    expect(html).toContain("Approval failed");
-    expect(html).toContain("designer-edited");
+    expect(html).toContain("Couldn&#x27;t update. Try again.");
+    expect(html).not.toContain("designer-edited");
+  });
+
+  test("pending direct approval keeps the status control in place", () => {
+    const html = renderToStaticMarkup(
+      createElement(SpecRowView, {
+        row: row({ status: "formalized", entry: entry({ status: "formalized" }) }),
+        approval: { kind: "pending" },
+        infoOpen: false,
+        popoverInstant: false,
+        portalContainer: null,
+        onInfoOpenChange: vi.fn(),
+        onInfoHoverOpen: vi.fn(),
+        onInfoHoverClose: vi.fn(),
+        onApprove: vi.fn()
+      })
+    );
+    expect(html).toContain(">Updating…</button>");
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("disabled");
+  });
+
+  test("formalized status is also a direct switch back to candidate", () => {
+    const html = renderToStaticMarkup(
+      createElement(SpecRowView, {
+        row: row({ status: "formalized", entry: entry({ status: "formalized" }) }),
+        approval: { kind: "idle" },
+        infoOpen: false,
+        popoverInstant: false,
+        portalContainer: null,
+        onInfoOpenChange: vi.fn(),
+        onInfoHoverOpen: vi.fn(),
+        onInfoHoverClose: vi.fn(),
+        onApprove: vi.fn()
+      })
+    );
+    expect(html).toContain('data-status="formalized"');
+    expect(html).toContain('aria-label="Switch text.primary to Candidate"');
+    expect(html).toContain(">Formalized</button>");
   });
 });
 
@@ -304,9 +355,7 @@ describe("EvidenceInfoContent (ⓘ layer)", () => {
             ],
             unresolved_links: []
           }
-        }),
-        approval: { kind: "idle" },
-        onApprove: vi.fn()
+        })
       })
     );
     expect(html).toContain("Designer edits");
@@ -317,9 +366,7 @@ describe("EvidenceInfoContent (ⓘ layer)", () => {
   test("shows the full evidence chain, including unresolved links", () => {
     const html = renderToStaticMarkup(
       createElement(EvidenceInfoContent, {
-        entry: entry({}),
-        approval: { kind: "idle" },
-        onApprove: vi.fn()
+        entry: entry({})
       })
     );
     expect(html).toContain("What is the primary text color?");
@@ -329,16 +376,13 @@ describe("EvidenceInfoContent (ⓘ layer)", () => {
     expect(html).toContain("Landing / Hero");
     expect(html).toContain("Confirmed by designer");
     expect(html).toContain("missing-card-9");
-    // Candidate rows get the approve affordance.
-    expect(html).toContain("Approve → formalized");
+    expect(html).not.toContain("Approve → formalized");
   });
 
   test("formalized entries have no approve affordance; empty chain is honest", () => {
     const formalized = renderToStaticMarkup(
       createElement(EvidenceInfoContent, {
-        entry: entry({ status: "formalized" }),
-        approval: { kind: "idle" },
-        onApprove: vi.fn()
+        entry: entry({ status: "formalized" })
       })
     );
     expect(formalized).not.toContain("Approve → formalized");
@@ -353,41 +397,28 @@ describe("EvidenceInfoContent (ⓘ layer)", () => {
             designer_annotations: [],
             unresolved_links: []
           }
-        }),
-        approval: { kind: "idle" },
-        onApprove: vi.fn()
+        })
       })
     );
     expect(bare).toContain("No linked evidence.");
   });
 
-  test("typed failure renders in place inside the layer", () => {
+  test("approval failures stay out of the evidence layer", () => {
     const html = renderToStaticMarkup(
       createElement(EvidenceInfoContent, {
-        entry: entry({}),
-        approval: {
-          kind: "error",
-          reason: "gap_entry_not_approvable",
-          message: "Open gaps must be filled by the agent, not approved."
-        },
-        onApprove: vi.fn()
+        entry: entry({})
       })
     );
-    expect(html).toContain("Open gaps must be filled by the agent");
+    expect(html).not.toContain("Open gaps must be filled by the agent");
   });
 
-  test("pending approval keeps the tray visible even after the optimistic flip", () => {
-    // The entry status is already flipped to formalized by the optimistic
-    // update; the tray must still render the disabled pending button.
+  test("pending approval stays out of the evidence layer", () => {
     const html = renderToStaticMarkup(
       createElement(EvidenceInfoContent, {
-        entry: entry({ status: "formalized" }),
-        approval: { kind: "pending" },
-        onApprove: vi.fn()
+        entry: entry({ status: "formalized" })
       })
     );
-    expect(html).toContain("Approving…");
-    expect(html).toContain("disabled");
+    expect(html).not.toContain("Approving…");
     expect(html).not.toContain("Approve → formalized");
   });
 });
@@ -543,7 +574,7 @@ describe("TokenLeafPage", () => {
     expect(html).toContain("Semantic");
     expect(html).toContain('data-testid="ds-row-primitive.radius.sm"');
     expect(html).toContain('data-testid="ds-row-semantic.radius.card"');
-    expect(html).toContain("2 tokens across 2 layers");
+    expect(html).not.toContain("2 tokens across 2 layers");
   });
 
   test("color leaf: primitive layer collapses into swatch provenance", () => {
@@ -562,9 +593,26 @@ describe("TokenLeafPage", () => {
     expect(html).toContain('data-testid="ds-row-semantic.text.primary"');
     expect(html).toContain('data-testid="ds-color-swatch-text.primary"');
     expect(html).toContain("ink.900 · #0D0D0D");
-    // ink.900 is consumed (alias target) → nothing lands in the
-    // unconsumed strip.
+    // Unconsumed primitives are not gaps and never produce a problem strip.
     expect(html).not.toContain("ds-color-unconsumed");
+    expect(html).toContain('data-testid="ds-rules-zone"');
+    expect(html).toContain("Image-led accent colors need broader evidence.");
+    expect(html).toContain(
+      "Only one project image demonstrates the range. Next: inspect two more project pages before declaring reusable accent roles."
+    );
+    expect(html).toContain(">Open gap<");
+  });
+
+  test("color leaf has no separate Open Color Gaps region", () => {
+    const view = fixtureView();
+    const html = renderToStaticMarkup(
+      createElement(ColorLeafPage, {
+        model: buildColorLeafModel(view),
+        rows: rowSharedProps()
+      })
+    );
+    expect(html).not.toContain("ds-color-open-gaps");
+    expect(html).not.toContain("Open Color Gaps");
   });
 });
 
@@ -1375,10 +1423,7 @@ describe("LayoutLeafPage Source Capture (09C-D02)", () => {
   test("keeps the standard Browser heading and renders one placard per rule", () => {
     const html = renderLayoutLeaf();
     expect(html).toContain('class="dsb-h1">Layout</h1>');
-    expect(html).toContain("5 rules");
-    expect(html).toContain("1 formalized");
-    expect(html).toContain("3 candidate");
-    expect(html).toContain("1 open gap");
+    expect(html).not.toContain('class="dsb-intro"');
     expect(html).toContain('data-testid="ds-layout-placards"');
     expect(html).toContain('data-testid="ds-layout-placard-grid-page"');
     expect(html).toContain('data-testid="ds-layout-placard-shell-regions"');
