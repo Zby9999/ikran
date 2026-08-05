@@ -363,11 +363,12 @@ export type DsComponentDetailGroupId =
   | "anatomy"
   | "variants"
   | "sizes"
-  | "states-motion"
+  | "motion"
   | "usage-rules"
   | "content-rules"
   | "responsive-behavior"
   | "code-links"
+  | "verification-targets"
   | "open-gaps";
 
 /** One optional placard group (09B rich fields): prose lines plus object
@@ -386,8 +387,7 @@ export interface DsComponentDetail {
   boundaries: string[];
   /** State matrix rows: { state, ...behavior } verbatim from the spec. */
   stateMatrix: Record<string, unknown>[];
-  /** Hero states row names: rich `states` line labels when declared, else
-   * the state matrix names. */
+  /** Hero states row names, derived from the state matrix. */
   stateNames: string[];
   /** Non-empty rich groups in fixed placard order. */
   groups: DsComponentDetailGroup[];
@@ -421,7 +421,7 @@ const RICH_GROUP_DEFS: readonly {
   { id: "anatomy", label: "Anatomy", fields: ["anatomy"] },
   { id: "variants", label: "Variants", fields: ["variants"] },
   { id: "sizes", label: "Sizes", fields: ["sizes"] },
-  { id: "states-motion", label: "States & motion", fields: ["states", "motion"] },
+  { id: "motion", label: "Motion", fields: ["motion"] },
   { id: "usage-rules", label: "Usage rules", fields: ["usageRules"] },
   { id: "content-rules", label: "Content rules", fields: ["contentRules"] },
   {
@@ -430,6 +430,11 @@ const RICH_GROUP_DEFS: readonly {
     fields: ["responsiveBehavior"]
   },
   { id: "code-links", label: "Code links", fields: ["codeLinks"] },
+  {
+    id: "verification-targets",
+    label: "Verification targets",
+    fields: ["verificationTargets"]
+  },
   { id: "open-gaps", label: "Open gaps", fields: ["openGaps"] }
 ];
 
@@ -451,13 +456,6 @@ function parseRichItems(raw: unknown): {
     }
   }
   return { lines, rows };
-}
-
-/** Hero states row: rich `states` lines lead with a "name：note" /
- * "name: note" label — the name is the part before the first colon. */
-function stateNameOfLine(line: string): string {
-  const colon = line.search(/[：:]/);
-  return (colon === -1 ? line : line.slice(0, colon)).trim();
 }
 
 function parseComponentDetail(
@@ -501,15 +499,11 @@ function parseComponentDetail(
     }
   }
 
-  const statesLines = parseRichItems(value.states).lines;
-  const stateNames =
-    statesLines.length > 0
-      ? statesLines.map(stateNameOfLine).filter((name) => name.length > 0)
-      : stateMatrix.flatMap((row) =>
-          typeof row.state === "string" && row.state.trim().length > 0
-            ? [row.state]
-            : []
-        );
+  const stateNames = stateMatrix.flatMap((row) =>
+    typeof row.state === "string" && row.state.trim().length > 0
+      ? [row.state]
+      : []
+  );
 
   return {
     description:

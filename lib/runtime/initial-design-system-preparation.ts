@@ -18,6 +18,7 @@ import {
   LAYOUT_RULE_CAPTURE_NODE_RECT_FIELD,
   LAYOUT_RULE_CAPTURE_OPTIONAL_FIELDS,
   LAYOUT_RULE_CAPTURE_REQUIRED_FIELDS,
+  COMPONENT_SPEC_VALUE_FIELDS,
   DESIGN_SYSTEM_ENTRY_KINDS,
   DESIGN_SYSTEM_ENTRY_KIND_FILE_OWNERSHIP,
   RICH_COMPONENT_SPEC_FIELDS,
@@ -125,15 +126,17 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
     primitive_other_domains:
       'Primitive tokens of other domains keep the existing one-sentence meaning; legacy entries without an explicit domain keep a non-empty meaning.'
   },
-  component_spec_fields: [
-    "description",
-    "props",
-    "boundaries",
-    "stateMatrix",
-    ...RICH_COMPONENT_SPEC_FIELDS,
-    "group",
-    "sourceCaptures"
-  ],
+  component_spec_fields: COMPONENT_SPEC_VALUE_FIELDS,
+  component_spec_writing_policy: {
+    value_keys:
+      "component_spec_fields is the closed value-key registry; custom keys are rejected instead of being silently dropped.",
+    description:
+      "Write component prose in value.description; do not write meaning on component-spec entries.",
+    open_questions:
+      "Write every unresolved component question in value.openGaps only.",
+    parameter_facts:
+      "Write named parameter facts in the registered props or sizes fields instead of inventing custom value keys."
+  },
   component_group_field: {
     field: "group",
     values: ["component", "block"],

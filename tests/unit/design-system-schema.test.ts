@@ -685,6 +685,14 @@ test.describe("component-spec", () => {
     expect(res.ok).toBe(true);
   });
 
+  test("component spec uses value.description and does not require meaning", () => {
+    const { meaning: _meaning, ...spec } = validComponentSpec();
+
+    expect(validateDesignSystemJson("component-spec", spec)).toEqual({
+      ok: true
+    });
+  });
+
   test("rejects foundation entry kinds outside their owned files", () => {
     expect(
       validateDesignSystemJson("component-spec", {
@@ -759,6 +767,20 @@ test.describe("component-spec", () => {
       details: { field: "value.anatomy", expected: "array" }
     });
   });
+
+  test.each(["states", "openQuestions", "labelArrowGap"])(
+    "rejects unregistered component spec value key %s",
+    (field) => {
+      const spec = validComponentSpec();
+      Object.assign(spec.value, { [field]: ["must not be silently dropped"] });
+
+      expect(validateDesignSystemJson("component-spec", spec)).toMatchObject({
+        ok: false,
+        reason: "unknown_field",
+        details: { field: `value.${field}` }
+      });
+    }
+  );
 
   test("group is an optional component|block enum (09C-D03 sidebar grouping)", () => {
     // Absent (09A/09B legacy specs) stays valid.

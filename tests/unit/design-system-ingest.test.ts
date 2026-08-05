@@ -850,7 +850,6 @@ describe("design-system-view.json derived export", () => {
         id: "text-link-spec",
         name: "TextLink",
         value: richDetail,
-        meaning: "Inline call to action",
         status: "candidate",
         links: ["card-accepted"]
       });
@@ -866,6 +865,7 @@ describe("design-system-view.json derived export", () => {
       expect(view.ok).toBe(true);
       if (!view.ok) return;
       expect(view.view.components.specs[0].value).toEqual(richDetail);
+      expect(view.view.components.specs[0].meaning).toBe("");
 
       const exported = JSON.parse(
         readFileSync(

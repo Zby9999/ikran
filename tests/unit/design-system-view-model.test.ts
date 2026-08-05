@@ -843,37 +843,35 @@ describe("rich component detail parsing (09C-D03)", () => {
     expect(legacy.components.list[0]!.detail!.groups).toEqual([]);
   });
 
-  test("states and motion merge into one States & motion group", () => {
+  test("motion renders as its own rich group", () => {
     const view = fixtureView();
     view.components.specs[0] = richSpecEntry({
-      states: ["default：静态呈现。", { state: "hover" }],
       motion: ["不自动轮播。"]
     });
     const model = buildDesignSystemBrowserModel(view);
     const groups = model.components.list[0]!.detail!.groups;
     expect(groups).toEqual([
       {
-        id: "states-motion",
-        label: "States & motion",
-        lines: ["default：静态呈现。", "不自动轮播。"],
-        rows: [{ state: "hover" }]
+        id: "motion",
+        label: "Motion",
+        lines: ["不自动轮播。"],
+        rows: []
       }
     ]);
   });
 
-  test("hero state names come from the states lines, else the state matrix", () => {
+  test("hero state names come only from the state matrix", () => {
     const withStates = fixtureView();
     withStates.components.specs[0] = richSpecEntry({
-      states: ["default：静态呈现。", "hover: 指针悬停。"]
+      stateMatrix: [
+        { state: "default", behavior: "静态呈现。" },
+        { state: "hover", behavior: "指针悬停。" }
+      ]
     });
     expect(
       buildDesignSystemBrowserModel(withStates).components.list[0]!.detail!
         .stateNames
     ).toEqual(["default", "hover"]);
-
-    // No rich states → the state matrix names are the read-only row.
-    const legacy = buildDesignSystemBrowserModel(fixtureView());
-    expect(legacy.components.list[0]!.detail!.stateNames).toEqual(["hover"]);
 
     // Neither → no states row at all.
     const bare = fixtureView();
@@ -912,7 +910,8 @@ describe("rich component detail parsing (09C-D03)", () => {
       usageRules: ["One per group."],
       sizes: [{ name: "sm" }],
       variants: [{ name: "primary" }],
-      states: ["default：静态。"]
+      motion: ["Short feedback only."],
+      verificationTargets: ["No filled background."]
     });
     const groups = buildDesignSystemBrowserModel(view).components.list[0]!
       .detail!.groups;
@@ -921,11 +920,12 @@ describe("rich component detail parsing (09C-D03)", () => {
       "anatomy",
       "variants",
       "sizes",
-      "states-motion",
+      "motion",
       "usage-rules",
       "content-rules",
       "responsive-behavior",
       "code-links",
+      "verification-targets",
       "open-gaps"
     ]);
     expect(groups.map((group) => group.label)).toEqual([
@@ -933,11 +933,12 @@ describe("rich component detail parsing (09C-D03)", () => {
       "Anatomy",
       "Variants",
       "Sizes",
-      "States & motion",
+      "Motion",
       "Usage rules",
       "Content rules",
       "Responsive behavior",
       "Code links",
+      "Verification targets",
       "Open gaps"
     ]);
   });

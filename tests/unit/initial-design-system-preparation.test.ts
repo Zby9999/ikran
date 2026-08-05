@@ -463,12 +463,18 @@ describe("Initial Design System preparation", () => {
           "anatomy",
           "variants",
           "stateMatrix",
-          "states",
           "motion",
           "tokenLinks",
           "responsiveBehavior",
+          "verificationTargets",
           "openGaps"
         ]),
+        component_spec_writing_policy: {
+          value_keys: expect.stringContaining("closed"),
+          description: expect.stringContaining("do not write meaning"),
+          open_questions: expect.stringContaining("openGaps"),
+          parameter_facts: expect.stringContaining("props or sizes")
+        },
         rule_body: {
           applies_to: ["global-rule", "domain-rule"],
           field: "value",
@@ -536,6 +542,7 @@ describe("Initial Design System preparation", () => {
       declared_artifacts: []
     });
     if (!first.ok) return;
+    expect(first.source_contract.component_spec_fields).not.toContain("states");
     expect(first.question_cards).toHaveLength(12);
     expect(first.question_cards.every((card) => card.status === "answered")).toBe(
       true
@@ -1605,7 +1612,6 @@ describe("Initial Design System preparation", () => {
           anatomy: [{ part: "label" }, { part: "arrow" }],
           variants: [{ name: "text-link" }],
           sizes: [{ name: "default" }],
-          states: ["hover: translate the arrow without shifting layout."],
           motion: ["transform 160ms ease-out."],
           tokenLinks: ["semantic.text.action"],
           usageRules: ["Use for inline calls to action."],
@@ -1615,7 +1621,6 @@ describe("Initial Design System preparation", () => {
           verificationTargets: ["No filled background."],
           openGaps: []
         },
-        meaning: "Inline label-and-arrow call to action",
         status: "candidate",
         links: [componentCard.id]
       }
@@ -1830,11 +1835,6 @@ describe("Initial Design System preparation", () => {
       anatomy: [{ part: "label" }, { part: "arrow" }],
       variants: [{ name: "text-link" }],
       sizes: [{ name: "default" }],
-      states: [
-        contradictory
-          ? "hover: keep the filled surface."
-          : "hover: translate the arrow without shifting layout."
-      ],
       motion: ["transform 160ms ease-out."],
       tokenLinks: ["semantic.text.action"],
       usageRules: ["Use for inline calls to action."],

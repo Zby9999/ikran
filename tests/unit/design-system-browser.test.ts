@@ -617,12 +617,16 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
         },
         { name: "size", type: "string" }
       ],
-      states: ["default：静态呈现。", "hover：指针悬停。"],
+      stateMatrix: [
+        { state: "default", behavior: "静态呈现。" },
+        { state: "hover", behavior: "指针悬停。" }
+      ],
       motion: ["不自动轮播。"],
       anatomy: ["由标签与图标组成。"],
       variants: [{ name: "default", gap: "20px" }],
       tokenLinks: ["semantic.color.ink"],
       usageRules: ["每组最多一个主操作。"],
+      verificationTargets: ["不得出现填充背景。"],
       openGaps: ["生产组件映射待定。"]
     };
     return buildDesignSystemBrowserModel(view).components.list[0]!;
@@ -666,9 +670,11 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
     expect(html).toContain("Anatomy");
     expect(html).toContain("由标签与图标组成。");
     expect(html).toContain("Variants");
-    expect(html).toContain("States &amp; motion");
+    expect(html).toContain("Motion");
     expect(html).toContain("不自动轮播。");
     expect(html).toContain("Usage rules");
+    expect(html).toContain("Verification targets");
+    expect(html).toContain("不得出现填充背景。");
     expect(html).toContain("Open gaps");
     expect(html).toContain("生产组件映射待定。");
     const tokenLinksAt = html.indexOf("Token links");

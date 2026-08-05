@@ -158,7 +158,7 @@ type RawEntry = {
   domain?: TokenDomain;
   value: unknown;
   sourceCaptures?: unknown[];
-  meaning: string;
+  meaning?: string;
   status: DesignSystemStatus;
   links: string[];
 };
@@ -198,7 +198,7 @@ export function collectDesignSystemEntryRows(
         : isPlainObject(entry.value) && Array.isArray(entry.value.sourceCaptures)
           ? entry.value.sourceCaptures
           : [],
-      meaning: entry.meaning,
+      meaning: entry.meaning ?? "",
       status: entry.status,
       links: entry.links,
       position

@@ -8,11 +8,13 @@
 //     component-list.json, components/<name>.json, layout-rules.json,
 //     interaction-rules.json.
 //   - Every rule / token / component entry carries `value` (prose for rules,
-//     structured payload for tokens/components), `meaning` (one-line semantics), `status`
-//     ("formalized" | "candidate" | "gap") and `links` (answered question
-//     card ids / Agent annotation ids). Non-gap entries must link at least
-//     one record; gap entries carry none — the gap declaration itself is the
-//     semantics (09A decision 4: gaps are explicit only, never derived).
+//     structured payload for tokens/components), `status` ("formalized" |
+//     "candidate" | "gap") and `links` (answered question card ids / Agent
+//     annotation ids). Rules, tokens, and component inventory entries also
+//     carry `meaning`; component specs use `value.description` instead.
+//     Non-gap entries must link at least one record; gap entries carry none —
+//     the gap declaration itself is the semantics (09A decision 4: gaps are
+//     explicit only, never derived).
 //   - Primitive color tokens are the exception to the non-empty `meaning`
 //     contract: the palette carries no usage description, so their `meaning`
 //     must be the empty string (usage semantics belong to the semantic and
@@ -178,9 +180,9 @@ function requireArray(
 /**
  * Shared entry check: id (only when `withId`), meaning, status, links and a
  * per-kind value check. `ctx` identifies the entry in failure details.
- * `meaningMustBeEmpty` flips the meaning contract to "present, a string, and
- * exactly empty" (primitive color tokens — usage semantics live in the
- * semantic/component layers, never on the palette).
+ * `meaningPolicy` names the envelope contract: non-empty by default, exactly
+ * empty for primitive color tokens, or optional for component specs whose
+ * prose lives in `value.description`.
  */
 function checkEntry(
   raw: unknown,
@@ -190,7 +192,7 @@ function checkEntry(
     checkValue: (value: unknown, ctx: Record<string, unknown>) => DesignSystemSchemaError | null;
     allowedKinds?: readonly DesignSystemEntryKind[];
     domainRuleRequiresDomain?: boolean;
-    meaningMustBeEmpty?: boolean;
+    meaningPolicy?: "required" | "must-be-empty" | "optional";
   }
 ): DesignSystemSchemaError | null {
   if (!isPlainObject(raw)) {
@@ -229,7 +231,7 @@ function checkEntry(
       return fail("domain_rule_domain_required", ctx);
     }
   }
-  if (options.meaningMustBeEmpty) {
+  if (options.meaningPolicy === "must-be-empty") {
     if (raw.meaning === undefined) {
       return fail("missing_required_field", { ...ctx, field: "meaning" });
     }
@@ -243,7 +245,7 @@ function checkEntry(
     if (raw.meaning !== "") {
       return fail("primitive_color_meaning_forbidden", ctx);
     }
-  } else {
+  } else if (options.meaningPolicy !== "optional" || raw.meaning !== undefined) {
     const meaningFailure = requireString(raw, "meaning", ctx);
     if (meaningFailure) return meaningFailure;
   }
@@ -376,7 +378,6 @@ export const RICH_COMPONENT_SPEC_FIELDS = [
   "anatomy",
   "variants",
   "sizes",
-  "states",
   "motion",
   "tokenLinks",
   "usageRules",
@@ -385,6 +386,16 @@ export const RICH_COMPONENT_SPEC_FIELDS = [
   "codeLinks",
   "verificationTargets",
   "openGaps"
+] as const;
+
+export const COMPONENT_SPEC_VALUE_FIELDS = [
+  "description",
+  "props",
+  "boundaries",
+  "stateMatrix",
+  ...RICH_COMPONENT_SPEC_FIELDS,
+  "group",
+  "sourceCaptures"
 ] as const;
 
 const ALLOWED_ALIAS_TARGET_LAYERS: Record<TokenLayer, readonly TokenLayer[]> =
@@ -491,10 +502,12 @@ function validateTokenJson(json: Record<string, unknown>): DesignSystemSchemaRes
         // the empty string (usage semantics belong to the semantic/component
         // layers). domain-rule entries keep their own meaning, and legacy
         // entries without an explicit domain keep the old non-empty contract.
-        meaningMustBeEmpty:
+        meaningPolicy:
           layer === "primitive" &&
           raw.domain === "color" &&
-          raw.kind !== "domain-rule",
+          raw.kind !== "domain-rule"
+            ? "must-be-empty"
+            : "required",
         checkValue: (value) => {
           if (raw.kind === "domain-rule") {
             return validateRuleBody(value, ctx);
@@ -626,9 +639,20 @@ function validateComponentSpec(
   return checkEntry(json, {}, {
     withId: true,
     allowedKinds: entryKindsAllowedIn("component-spec"),
+    meaningPolicy: "optional",
     checkValue: (value, ctx) => {
       if (!isPlainObject(value)) {
         return fail("invalid_field_type", { ...ctx, field: "value", expected: "object" });
+      }
+      const unknownField = Object.keys(value).find(
+        (field) =>
+          !(COMPONENT_SPEC_VALUE_FIELDS as readonly string[]).includes(field)
+      );
+      if (unknownField) {
+        return fail("unknown_field", {
+          ...ctx,
+          field: `value.${unknownField}`
+        });
       }
       const descriptionFailure = requireString(value, "description", { ...ctx, field: "value" });
       if (descriptionFailure) return descriptionFailure;
