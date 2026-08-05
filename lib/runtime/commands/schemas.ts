@@ -357,20 +357,15 @@ const designSystemExtractionRetiredComponentWorkUnitSchema = z.object({
   retire: z.literal(true)
 }).strict();
 
-export const recordDesignSystemExtractionWorkUnitInputSchema = z.union([
-  z.object({
-    alignmentAttemptId: z.string(),
-    idempotencyKey: z.string(),
-    workUnit: designSystemExtractionActiveWorkUnitSchema,
-    claims: z.array(designSystemExtractionClaimSchema)
-  }).strict(),
-  z.object({
-    alignmentAttemptId: z.string(),
-    idempotencyKey: z.string(),
-    workUnit: designSystemExtractionRetiredComponentWorkUnitSchema,
-    claims: z.array(designSystemExtractionClaimSchema).length(0)
-  }).strict()
-]);
+export const recordDesignSystemExtractionWorkUnitInputSchema = z.object({
+  alignmentAttemptId: z.string(),
+  idempotencyKey: z.string(),
+  workUnit: z.union([
+    designSystemExtractionActiveWorkUnitSchema,
+    designSystemExtractionRetiredComponentWorkUnitSchema
+  ]),
+  claims: z.array(designSystemExtractionClaimSchema)
+}).strict();
 
 export const recordDesignSystemExtractionAuditInputSchema = z.object({
   alignmentAttemptId: z.string(),

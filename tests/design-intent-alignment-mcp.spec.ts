@@ -17,7 +17,8 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
   try {
     const handle = await spawnMcpClient(stateDir);
     client = handle.client;
-    const names = (await client.listTools()).tools.map((tool) => tool.name);
+    const advertisedTools = (await client.listTools()).tools;
+    const names = advertisedTools.map((tool) => tool.name);
     expect(names).toEqual(
       expect.arrayContaining([
         "create_alignment_question_card",
@@ -35,6 +36,28 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
       ])
     );
     expect(names).not.toContain("complete_design_intent_alignment");
+    const workUnitTool = advertisedTools.find(
+      (tool) => tool.name === "record_design_system_extraction_work_unit"
+    );
+    expect(workUnitTool?.inputSchema).toMatchObject({
+      type: "object",
+      properties: {
+        alignmentAttemptId: { type: "string" },
+        idempotencyKey: { type: "string" },
+        workUnit: expect.any(Object),
+        claims: { type: "array" }
+      },
+      required: expect.arrayContaining([
+        "alignmentAttemptId",
+        "idempotencyKey",
+        "workUnit",
+        "claims"
+      ])
+    });
+    const advertisedWorkUnitSchema = JSON.stringify(workUnitTool?.inputSchema);
+    expect(advertisedWorkUnitSchema).toContain("componentEntryId");
+    expect(advertisedWorkUnitSchema).toContain("retire");
+    expect(advertisedWorkUnitSchema).toContain("mapped");
 
     const opened = sc(await client.callTool({
       name: "create_or_open_project",

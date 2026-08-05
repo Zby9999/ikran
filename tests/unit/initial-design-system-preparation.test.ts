@@ -487,28 +487,6 @@ describe("Initial Design System preparation", () => {
         claims: []
       }).success
     ).toBe(false);
-    expect(
-      recordDesignSystemExtractionWorkUnitInputSchema.safeParse({
-        ...base,
-        workUnit: {
-          kind: "component",
-          componentEntryId: "component-text-link",
-          retire: true
-        },
-        claims: [
-          {
-            claimId: "not-allowed",
-            statement: "Retirement cannot carry claims.",
-            sourceRecordIds: ["source-1"],
-            sourceExcerpts: ["source"],
-            confidence: "confirmed",
-            outcome: "omitted",
-            reason: "Not allowed.",
-            targets: []
-          }
-        ]
-      }).success
-    ).toBe(false);
   });
 
   test("records one output work unit from evidence spanning Alignment sections", () => {
@@ -1077,6 +1055,13 @@ describe("Initial Design System preparation", () => {
       },
       claims: []
     };
+    expect(
+      recordDesignSystemExtractionWorkUnit(fixture.projectPath, {
+        ...retirementInput,
+        idempotencyKey: "component-text-link-invalid-retire-claims",
+        claims: [workUnitInput.claims[0]]
+      })
+    ).toEqual({ ok: false, reason: "invalid_work_unit" });
     const retired = recordDesignSystemExtractionWorkUnit(
       fixture.projectPath,
       retirementInput
