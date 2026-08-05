@@ -264,11 +264,22 @@ test("09A design system browser: declare → render → approve write-back", asy
             description: "Visual variant"
           }
         ],
-        boundaries: ["Never nest interactive elements inside Button"],
+        variants: [
+          { axis: "style", name: "primary" },
+          { axis: "size", name: "default" }
+        ],
         stateMatrix: [
           { state: "hover", background: "primitive.color.ink" },
           { state: "disabled", opacity: "0.5" }
-        ]
+        ],
+        guidelines: [
+          {
+            kind: "dont",
+            text: "Never nest interactive elements inside Button"
+          }
+        ],
+        tokenLinks: ["semantic.color.text-primary"],
+        codeLinks: ["components/Button.tsx"]
       }
     });
     writeSource("design-system/interaction-rules.json", {
@@ -411,13 +422,19 @@ test("09A design system browser: declare → render → approve write-back", asy
     await expect(statesRow).toContainText("hover");
     await expect(statesRow.locator("button")).toHaveCount(0);
     await expect(
-      page.getByRole("heading", { name: "Boundaries" })
+      page.getByRole("heading", { name: "Do / Don’ts" })
     ).toBeVisible();
     await expect(
       page.getByText("Never nest interactive elements inside Button")
     ).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "State matrix" })
+      page.getByRole("heading", { name: "States" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Variants" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Properties" })
     ).toBeVisible();
     await expect(page.getByRole("cell", { name: "hover" })).toBeVisible();
     await expect(page.getByRole("cell", { name: "disabled" })).toBeVisible();

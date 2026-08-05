@@ -145,8 +145,16 @@ function fixtureView(): DesignSystemView {
           value: {
             description: "Primary and secondary actions.",
             props: [{ name: "variant", type: "string", required: true }],
-            boundaries: ["Never two primary buttons in one group"],
-            stateMatrix: [{ state: "hover", behavior: "Darken fill" }]
+            variants: [{ axis: "style", name: "primary" }],
+            stateMatrix: [{ state: "hover", behavior: "Darken fill" }],
+            guidelines: [
+              {
+                kind: "dont",
+                text: "Never place two primary buttons in one group"
+              }
+            ],
+            tokenLinks: ["semantic.action.primary"],
+            codeLinks: ["components/Button.tsx"]
           }
         })
       ]
@@ -339,8 +347,11 @@ describe("buildDesignSystemBrowserModel", () => {
     expect(button.detail?.props).toEqual([
       { name: "variant", type: "string", required: true }
     ]);
-    expect(button.detail?.boundaries).toEqual([
-      "Never two primary buttons in one group"
+    expect(button.detail?.guidelines).toEqual([
+      {
+        kind: "dont",
+        text: "Never place two primary buttons in one group"
+      }
     ]);
     expect(button.detail?.stateMatrix).toEqual([
       { state: "hover", behavior: "Darken fill" }
@@ -650,8 +661,16 @@ function richSpecEntry(
     value: {
       description: "Primary and secondary actions.",
       props: [{ name: "variant", type: "string", required: true }],
-      boundaries: ["Never two primary buttons in one group"],
+      variants: [{ axis: "style", name: "primary" }],
       stateMatrix: [{ state: "hover", behavior: "Darken fill" }],
+      guidelines: [
+        {
+          kind: "dont",
+          text: "Never place two primary buttons in one group"
+        }
+      ],
+      tokenLinks: ["semantic.action.primary"],
+      codeLinks: ["components/Button.tsx"],
       ...value
     },
     ...extra
@@ -683,8 +702,11 @@ function blockComponentView(): DesignSystemView {
       value: {
         description: "Page structure.",
         props: [],
-        boundaries: [],
+        variants: [],
         stateMatrix: [],
+        guidelines: [],
+        tokenLinks: [],
+        codeLinks: [],
         group: "block"
       },
       status: "formalized"
@@ -803,64 +825,69 @@ describe("component grouping + sidebar projection (09C-D03)", () => {
   });
 });
 
-describe("rich component detail parsing (09C-D03)", () => {
-  test("parses string lines and object rows, dropping invalid items", () => {
+describe("consolidated component detail projection", () => {
+  test("projects every designer-facing field once without summarizing", () => {
     const view = fixtureView();
     view.components.specs[0] = richSpecEntry({
-      anatomy: ["由标签与图标组成。", 42, { part: "label" }, ""],
-      variants: [{ name: "default", gap: "20px" }, "text-only", null],
-      tokenLinks: ["semantic.color.ink", { alias: "primitive.space.4" }]
+      variants: [
+        { axis: "style", name: "primary", tone: "ink" },
+        { axis: "size", name: "small", height: "32px" },
+        { axis: "viewport", name: "narrow", behavior: "full width" }
+      ],
+      stateMatrix: [
+        {
+          state: "hover",
+          behavior: "Darken fill",
+          transition: "100ms ease-out",
+          reducedMotion: "Change color immediately"
+        }
+      ],
+      guidelines: [
+        {
+          kind: "do",
+          text: "Use one primary action per group.",
+          rationale: "Keeps the visual hierarchy unambiguous."
+        },
+        { kind: "dont", text: "Do not use a filled background." }
+      ],
+      tokenLinks: ["semantic.color.ink", { alias: "primitive.space.4" }],
+      codeLinks: ["components/Button.tsx"]
     });
-    const model = buildDesignSystemBrowserModel(view);
-    const groups = model.components.list[0]!.detail!.groups;
-    const byId = new Map(groups.map((group) => [group.id, group]));
+    const detail = buildDesignSystemBrowserModel(view).components.list[0]!
+      .detail!;
 
-    expect(byId.get("anatomy")).toEqual({
-      id: "anatomy",
-      label: "Anatomy",
-      lines: ["由标签与图标组成。"],
-      rows: [{ part: "label" }]
-    });
-    expect(byId.get("variants")).toEqual({
-      id: "variants",
-      label: "Variants",
-      lines: ["text-only"],
-      rows: [{ name: "default", gap: "20px" }]
-    });
-    expect(byId.get("token-links")).toEqual({
-      id: "token-links",
-      label: "Token links",
-      lines: ["semantic.color.ink"],
-      rows: [{ alias: "primitive.space.4" }]
-    });
-  });
-
-  test("empty rich fields are silently omitted from the groups", () => {
-    const view = fixtureView();
-    view.components.specs[0] = richSpecEntry({
-      anatomy: [],
-      usageRules: ["One primary action per group."]
-    });
-    const model = buildDesignSystemBrowserModel(view);
-    const groups = model.components.list[0]!.detail!.groups;
-    expect(groups.map((group) => group.id)).toEqual(["usage-rules"]);
-    // Legacy 09A specs have no rich fields at all.
-    const legacy = buildDesignSystemBrowserModel(fixtureView());
-    expect(legacy.components.list[0]!.detail!.groups).toEqual([]);
-  });
-
-  test("motion renders as its own rich group", () => {
-    const view = fixtureView();
-    view.components.specs[0] = richSpecEntry({
-      motion: ["不自动轮播。"]
-    });
-    const model = buildDesignSystemBrowserModel(view);
-    const groups = model.components.list[0]!.detail!.groups;
-    expect(groups).toEqual([
+    expect(detail.variants).toEqual([
+      { axis: "style", name: "primary", tone: "ink" },
+      { axis: "size", name: "small", height: "32px" },
+      { axis: "viewport", name: "narrow", behavior: "full width" }
+    ]);
+    expect(detail.stateMatrix).toEqual([
       {
-        id: "motion",
-        label: "Motion",
-        lines: ["不自动轮播。"],
+        state: "hover",
+        behavior: "Darken fill",
+        transition: "100ms ease-out",
+        reducedMotion: "Change color immediately"
+      }
+    ]);
+    expect(detail.guidelines).toEqual([
+      {
+        kind: "do",
+        text: "Use one primary action per group.",
+        rationale: "Keeps the visual hierarchy unambiguous."
+      },
+      { kind: "dont", text: "Do not use a filled background." }
+    ]);
+    expect(detail.referenceGroups).toEqual([
+      {
+        id: "token-links",
+        label: "Token links",
+        lines: ["semantic.color.ink"],
+        rows: [{ alias: "primitive.space.4" }]
+      },
+      {
+        id: "code-links",
+        label: "Code links",
+        lines: ["components/Button.tsx"],
         rows: []
       }
     ]);
@@ -879,7 +906,7 @@ describe("rich component detail parsing (09C-D03)", () => {
         .stateNames
     ).toEqual(["default", "hover"]);
 
-    // Neither → no states row at all.
+    // No declared states → no hero state names.
     const bare = fixtureView();
     bare.components.specs[0] = richSpecEntry({ stateMatrix: [] });
     expect(
@@ -887,7 +914,7 @@ describe("rich component detail parsing (09C-D03)", () => {
     ).toEqual([]);
   });
 
-  test("props carry an optional status chip flag", () => {
+  test("props preserve every declared column", () => {
     const view = fixtureView();
     view.components.specs[0] = richSpecEntry({
       props: [
@@ -899,53 +926,18 @@ describe("rich component detail parsing (09C-D03)", () => {
     const props = buildDesignSystemBrowserModel(view).components.list[0]!
       .detail!.props;
     expect(props[0]).toMatchObject({ name: "variant", status: "candidate" });
-    // Unknown status strings are dropped, not rendered.
-    expect(props[1]).toEqual({ name: "size", type: "string" });
+    expect(props[1]).toEqual({ name: "size", type: "string", status: "weird" });
     expect(props[2]).toEqual({ name: "label", type: "string" });
   });
 
-  test("group order is fixed: token links first, open gaps last", () => {
+  test("empty technical collections remain empty without synthesized content", () => {
     const view = fixtureView();
     view.components.specs[0] = richSpecEntry({
-      openGaps: ["生产组件映射待定。"],
-      codeLinks: ["components/Button.tsx"],
-      tokenLinks: ["semantic.color.ink"],
-      anatomy: ["Label only."],
-      responsiveBehavior: ["Keep one line."],
-      contentRules: ["Verb-first labels."],
-      usageRules: ["One per group."],
-      sizes: [{ name: "sm" }],
-      variants: [{ name: "primary" }],
-      motion: ["Short feedback only."],
-      verificationTargets: ["No filled background."]
+      tokenLinks: [],
+      codeLinks: []
     });
-    const groups = buildDesignSystemBrowserModel(view).components.list[0]!
-      .detail!.groups;
-    expect(groups.map((group) => group.id)).toEqual([
-      "token-links",
-      "anatomy",
-      "variants",
-      "sizes",
-      "motion",
-      "usage-rules",
-      "content-rules",
-      "responsive-behavior",
-      "code-links",
-      "verification-targets",
-      "open-gaps"
-    ]);
-    expect(groups.map((group) => group.label)).toEqual([
-      "Token links",
-      "Anatomy",
-      "Variants",
-      "Sizes",
-      "Motion",
-      "Usage rules",
-      "Content rules",
-      "Responsive behavior",
-      "Code links",
-      "Verification targets",
-      "Open gaps"
-    ]);
+    const detail = buildDesignSystemBrowserModel(view).components.list[0]!
+      .detail!;
+    expect(detail.referenceGroups).toEqual([]);
   });
 });

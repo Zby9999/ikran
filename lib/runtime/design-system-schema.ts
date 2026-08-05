@@ -359,25 +359,17 @@ export const TOKEN_DOMAINS = [
 
 export type TokenDomain = (typeof TOKEN_DOMAINS)[number];
 
-/** Additional component-detail groups produced by the 09B extraction flow. */
+/** Designer-facing component collections required by the extraction flow. */
 export const RICH_COMPONENT_SPEC_FIELDS = [
-  "anatomy",
   "variants",
-  "sizes",
-  "motion",
+  "guidelines",
   "tokenLinks",
-  "usageRules",
-  "contentRules",
-  "responsiveBehavior",
-  "codeLinks",
-  "verificationTargets",
-  "openGaps"
+  "codeLinks"
 ] as const;
 
 export const COMPONENT_SPEC_VALUE_FIELDS = [
   "description",
   "props",
-  "boundaries",
   "stateMatrix",
   ...RICH_COMPONENT_SPEC_FIELDS,
   "group",
@@ -656,10 +648,10 @@ function validateComponentList(
   );
 }
 
-// components/<name>.json — one file per component. The spec value carries a
-// description, a props table, Boundaries (constraint list) and the state
-// matrix (09A: component detail includes Boundaries and the state matrix).
-// Boundaries/stateMatrix may be empty arrays but must be present.
+// components/<name>.json — one file per component. Every designer-facing
+// collection is required so Runtime and Workbench cannot silently diverge.
+// Size and viewport choices live in variants, motion lives on state rows, and
+// prescriptive rules live in polarity-explicit guidelines.
 function validateComponentSpec(
   json: Record<string, unknown>
 ): DesignSystemSchemaResult {
@@ -700,14 +692,24 @@ function validateComponentSpec(
         if (propFailure) return propFailure;
       }
 
-      const boundariesFailure = requireArray(value, "boundaries", { ...ctx, field: "value" });
-      if (boundariesFailure) return boundariesFailure;
-      if ((value.boundaries as unknown[]).some((b) => !isNonEmptyString(b))) {
-        return fail("invalid_field_type", {
-          ...ctx,
-          field: "value.boundaries",
-          expected: "array of non-empty strings"
-        });
+      const variantsFailure = requireArray(value, "variants", { ...ctx, field: "value" });
+      if (variantsFailure) return variantsFailure;
+      const variants = value.variants as unknown[];
+      for (let i = 0; i < variants.length; i++) {
+        const variant = variants[i];
+        if (
+          !isPlainObject(variant) ||
+          !isNonEmptyString(variant.name) ||
+          (variant.axis !== "style" &&
+            variant.axis !== "size" &&
+            variant.axis !== "viewport")
+        ) {
+          return fail("invalid_field_type", {
+            ...ctx,
+            field: `value.variants[${i}]`,
+            expected: '{ axis: "style" | "size" | "viewport", name: non-empty string }'
+          });
+        }
       }
 
       const stateMatrixFailure = requireArray(value, "stateMatrix", { ...ctx, field: "value" });
@@ -721,6 +723,39 @@ function validateComponentSpec(
         const stateFailure = requireString(state, "state", { ...ctx, field: `value.stateMatrix[${i}]` });
         if (stateFailure) return stateFailure;
       }
+
+      const guidelinesFailure = requireArray(value, "guidelines", { ...ctx, field: "value" });
+      if (guidelinesFailure) return guidelinesFailure;
+      const guidelines = value.guidelines as unknown[];
+      for (let i = 0; i < guidelines.length; i++) {
+        const guideline = guidelines[i];
+        if (
+          !isPlainObject(guideline) ||
+          (guideline.kind !== "do" && guideline.kind !== "dont") ||
+          !isNonEmptyString(guideline.text)
+        ) {
+          return fail("invalid_field_type", {
+            ...ctx,
+            field: `value.guidelines[${i}]`,
+            expected: '{ kind: "do" | "dont", text: non-empty string }'
+          });
+        }
+      }
+
+      for (const field of ["tokenLinks", "codeLinks"] as const) {
+        const collectionFailure = requireArray(value, field, { ...ctx, field: "value" });
+        if (collectionFailure) return collectionFailure;
+        const invalidIndex = (value[field] as unknown[]).findIndex(
+          (item) => !(isNonEmptyString(item) || isPlainObject(item))
+        );
+        if (invalidIndex >= 0) {
+          return fail("invalid_field_type", {
+            ...ctx,
+            field: `value.${field}[${invalidIndex}]`,
+            expected: "non-empty string or object"
+          });
+        }
+      }
       // 09C-D03: optional sidebar grouping. Absent stays valid (09A/09B
       // legacy specs); when present it is a closed enum.
       if (
@@ -733,18 +768,6 @@ function validateComponentSpec(
           field: "value.group",
           expected: '"component" | "block"'
         });
-      }
-      // Backward compatible at declaration time: 09A specs remain valid.
-      // When a 09B field is present, however, it has a stable collection
-      // shape so ingest/view/export can preserve it without interpretation.
-      for (const field of RICH_COMPONENT_SPEC_FIELDS) {
-        if (value[field] !== undefined && !Array.isArray(value[field])) {
-          return fail("invalid_field_type", {
-            ...ctx,
-            field: `value.${field}`,
-            expected: "array"
-          });
-        }
       }
       return null;
     }

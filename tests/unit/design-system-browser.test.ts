@@ -192,11 +192,14 @@ function fixtureView(): DesignSystemView {
           value: {
             description: "Primary and secondary actions.",
             props: [{ name: "variant", type: "string", required: true }],
-            boundaries: ["Never two primary buttons in one group"],
+            variants: [{ axis: "style", name: "primary" }],
             stateMatrix: [
               { state: "hover", behavior: "Darken fill" },
               { state: "disabled", behavior: "Ink 30%" }
-            ]
+            ],
+            guidelines: [],
+            tokenLinks: [],
+            codeLinks: []
           },
           status: "formalized"
         })
@@ -619,15 +622,27 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
       ],
       stateMatrix: [
         { state: "default", behavior: "静态呈现。" },
-        { state: "hover", behavior: "指针悬停。" }
+        {
+          state: "hover",
+          behavior: "指针悬停。",
+          transition: "100ms ease-out",
+          reducedMotion: "立即切换颜色。"
+        }
       ],
-      motion: ["不自动轮播。"],
-      anatomy: ["由标签与图标组成。"],
-      variants: [{ name: "default", gap: "20px" }],
-      tokenLinks: ["semantic.color.ink"],
-      usageRules: ["每组最多一个主操作。"],
-      verificationTargets: ["不得出现填充背景。"],
-      openGaps: ["生产组件映射待定。"]
+      variants: [
+        { axis: "style", name: "default", gap: "20px" },
+        { axis: "size", name: "small", height: "32px" }
+      ],
+      guidelines: [
+        {
+          kind: "do",
+          text: "每组只使用一个主操作。",
+          rationale: "保持视觉层级清晰。"
+        },
+        { kind: "dont", text: "不得出现填充背景。" }
+      ],
+      tokenLinks: ["semantic.color.ink", "semantic.motion.fast"],
+      codeLinks: ["components/Button.tsx"]
     };
     return buildDesignSystemBrowserModel(view).components.list[0]!;
   }
@@ -645,7 +660,7 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
     );
   }
 
-  test("hero leads the page; title, chip and spec groups follow in the reading column", () => {
+  test("renders the four designer sections and full technical details", () => {
     const html = renderDetail(richComponentModel());
     // Hero before the title — the component detail special case (09C-D03).
     const heroAt = html.indexOf('data-testid="ds-component-hero"');
@@ -655,45 +670,62 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
     expect(html).toContain(">Button</h1>");
     // The placard title carries one status chip (worst of inventory/spec).
     expect(html).toContain('data-testid="ds-component-status"');
-    // Purpose + spec groups.
-    expect(html).toContain("Purpose");
+    // The four designer-facing sections use the consolidated contract.
+    expect(html).toContain(">Overview</h2>");
     expect(html).toContain("Primary and secondary actions.");
-    expect(html).toContain("Boundaries");
-    expect(html).toContain("Never two primary buttons in one group");
+    expect(html).toContain('data-testid="ds-component-variants"');
+    expect(html).toContain(">Variants</h2>");
+    expect(html).toContain('data-testid="ds-component-properties"');
+    expect(html).toContain(">Properties</h2>");
+    expect(html.indexOf('data-testid="ds-component-properties"')).toBeGreaterThan(
+      html.indexOf('data-testid="ds-component-variants"')
+    );
+    expect(html).toContain("style");
+    expect(html).toContain("small");
+    expect(html).toContain("32px");
+    expect(html).toContain(">States</h2>");
+    expect(html).toContain(">Reduced motion</th>");
+    expect(html).not.toContain(">AXIS</th>");
+    expect(html).toContain("100ms ease-out");
+    expect(html).toContain("立即切换颜色。");
+    expect(html).toContain(">Do / Don’ts</h2>");
+    expect(html).toContain('aria-label="Do"');
+    expect(html).toContain('aria-label="Don’t"');
+    expect(html).toContain("每组只使用一个主操作。");
+    expect(html).toContain(">Rationale</th>");
+    expect(html).toContain("保持视觉层级清晰。");
+    expect(html).toContain("不得出现填充背景。");
+    expect(html.indexOf('aria-label="Do"')).toBeLessThan(
+      html.indexOf('aria-label="Don’t"')
+    );
     // Props: candidate entries carry a chip.
     expect(html).toContain('data-testid="ds-component-prop-variant"');
     expect(html).toContain('data-testid="ds-component-prop-status-variant"');
     expect(html).not.toContain('data-testid="ds-component-prop-status-size"');
-    // Rich groups render in the fixed placard order.
+    // Technical details are visible, complete, and not collapsed or summarized.
+    expect(html).toContain(">Technical details</h2>");
     expect(html).toContain("Token links");
     expect(html).toContain("semantic.color.ink");
-    expect(html).toContain("Anatomy");
-    expect(html).toContain("由标签与图标组成。");
-    expect(html).toContain("Variants");
-    expect(html).toContain("Motion");
-    expect(html).toContain("不自动轮播。");
-    expect(html).toContain("Usage rules");
-    expect(html).toContain("Verification targets");
-    expect(html).toContain("不得出现填充背景。");
-    expect(html).toContain("Open gaps");
-    expect(html).toContain("生产组件映射待定。");
-    const tokenLinksAt = html.indexOf("Token links");
-    const openGapsAt = html.indexOf("Open gaps");
-    expect(tokenLinksAt).toBeGreaterThan(-1);
-    expect(openGapsAt).toBeGreaterThan(tokenLinksAt);
+    expect(html).toContain("semantic.motion.fast");
+    expect(html).toContain("Code links");
+    expect(html).toContain("components/Button.tsx");
+    expect(html).toContain("Status &amp; evidence");
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain("Anatomy");
+    expect(html).not.toContain("Open gaps");
+    expect(html).not.toContain(">Motion<");
+    expect(html).not.toContain(">Sizes<");
   });
 
-  test("empty spec groups are silently omitted; the state matrix stays", () => {
+  test("empty optional content is omitted while declared states stay", () => {
     const model = buildDesignSystemBrowserModel(fixtureView());
     const html = renderDetail(model.components.list[0]!);
-    expect(html).toContain("State matrix");
+    expect(html).toContain(">States</h2>");
     expect(html).toContain("hover");
     expect(html).toContain("Darken fill");
-    // No rich fields declared → none of the optional group labels appear.
-    expect(html).not.toContain("Anatomy");
+    expect(html).not.toContain("Do / Don’ts");
     expect(html).not.toContain("Token links");
-    expect(html).not.toContain("Open gaps");
-    expect(html).not.toContain("Usage rules");
+    expect(html).toContain(">Technical details</h2>");
   });
 
   test("the states row is a read-only name line inside the hero", () => {
@@ -730,6 +762,15 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
           surfaceId: "surf-old",
           stale: true,
           nodeRect: null
+        },
+        {
+          nodeId: "1:100",
+          nodeName: "Button / Secondary",
+          artifactPath: "design-system/captures/button-secondary.png",
+          capturedAt: "2026-08-03T12:05:00.000Z",
+          surfaceId: "surf-current",
+          stale: false,
+          nodeRect: { x: 0, y: 0, width: 160, height: 40 }
         }
       ]
     };
@@ -748,6 +789,9 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
     expect(html).toContain("captured 2026-08-03 12:00");
     expect(html).toContain('data-stale="true"');
     expect(html).toContain("· stale");
+    expect(html).toContain("Source captures");
+    expect(html).toContain("Button / Secondary");
+    expect(html).toContain("design-system/captures/button-secondary.png");
   });
 
   test("Status & evidence rows keep the inventory/spec approval wiring", () => {

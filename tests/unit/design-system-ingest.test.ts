@@ -288,8 +288,16 @@ function writeSixFiles(dir: string) {
     value: {
       description: "主操作按钮",
       props: [{ name: "variant", type: "string" }],
-      boundaries: ["一个屏幕区域最多一个主按钮"],
-      stateMatrix: [{ state: "default", behavior: "主色背景" }]
+      variants: [
+        { axis: "style", name: "primary" },
+        { axis: "size", name: "default" }
+      ],
+      stateMatrix: [{ state: "default", behavior: "主色背景" }],
+      guidelines: [
+        { kind: "do", text: "一个屏幕区域只使用一个主按钮" }
+      ],
+      tokenLinks: ["semantic.color.primary"],
+      codeLinks: ["components/Button.tsx"]
     }
   });
   writeProjectFile(dir, "design-system/layout-rules.json", {
@@ -861,24 +869,30 @@ describe("design-system-view.json derived export", () => {
     });
   });
 
-  test("rich component spec fields survive ingest, DB view, and derived export", () => {
+  test("consolidated component spec fields survive ingest, DB view, and derived export", () => {
     withTempProject((dir) => {
       seedEvidenceCards(dir);
       const richDetail = {
         description: "Label-and-arrow CTA",
         props: [{ name: "label", type: "string" }],
-        boundaries: ["Never render a filled button background."],
-        stateMatrix: [{ state: "default", behavior: "Inline text link" }],
-        anatomy: [{ part: "label" }, { part: "arrow" }],
-        variants: [{ name: "text-link" }],
-        sizes: [{ name: "default" }],
+        variants: [
+          { axis: "style", name: "text-link" },
+          { axis: "size", name: "default" }
+        ],
+        stateMatrix: [
+          {
+            state: "default",
+            behavior: "Inline text link",
+            transition: "transform 160ms ease-out"
+          }
+        ],
+        guidelines: [
+          { kind: "do", text: "Use for a single inline CTA." },
+          { kind: "do", text: "Keep the label concise." },
+          { kind: "dont", text: "Never render a filled button background." }
+        ],
         tokenLinks: ["semantic.text.action"],
-        usageRules: ["Use for a single inline CTA."],
-        contentRules: ["Keep the label concise."],
-        responsiveBehavior: ["Preserve inline flow."],
-        codeLinks: ["components/TextLink.tsx"],
-        verificationTargets: ["No filled background."],
-        openGaps: []
+        codeLinks: ["components/TextLink.tsx"]
       };
       writeProjectFile(dir, "design-system/components/text-link.json", {
         id: "text-link-spec",
@@ -1442,8 +1456,11 @@ describe("getDesignSystemView layout captures", () => {
         value: {
           description: "Primary action.",
           props: [],
-          boundaries: [],
+          variants: [],
           stateMatrix: [],
+          guidelines: [],
+          tokenLinks: [],
+          codeLinks: [],
           sourceCaptures: [
             {
               nodeName: "Button / Primary",
@@ -1522,10 +1539,12 @@ describe("getDesignSystemComponentCommand", () => {
       expect(detail.component.inventory?.name).toBe("Button");
       expect(detail.component.spec?.entry_id).toBe("button-spec");
       const specValue = detail.component.spec?.value as {
-        boundaries: string[];
+        guidelines: Array<{ kind: string; text: string }>;
         stateMatrix: Array<{ state: string }>;
       };
-      expect(specValue.boundaries).toEqual(["一个屏幕区域最多一个主按钮"]);
+      expect(specValue.guidelines).toEqual([
+        { kind: "do", text: "一个屏幕区域只使用一个主按钮" }
+      ]);
       expect(specValue.stateMatrix[0].state).toBe("default");
 
       const missing = getDesignSystemComponentCommand(dir, "nope");
@@ -1561,8 +1580,13 @@ describe("getDesignSystemComponentCommand", () => {
         value: {
           description: "主操作按钮",
           props: [{ name: "variant", type: "string" }],
-          boundaries: ["一个屏幕区域最多一个主按钮"],
-          stateMatrix: [{ state: "default", behavior: "主色背景" }]
+          variants: [{ axis: "style", name: "primary" }],
+          stateMatrix: [{ state: "default", behavior: "主色背景" }],
+          guidelines: [
+            { kind: "do", text: "一个屏幕区域只使用一个主按钮" }
+          ],
+          tokenLinks: ["semantic.color.primary"],
+          codeLinks: ["components/Button.tsx"]
         }
       });
       expect(

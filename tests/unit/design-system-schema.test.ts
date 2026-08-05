@@ -117,11 +117,24 @@ function validComponentSpec() {
       props: [
         { name: "variant", type: "string", meaning: "视觉变体", default: "primary" }
       ],
-      boundaries: ["一个屏幕区域最多一个主按钮"],
+      variants: [
+        { axis: "style", name: "primary" },
+        { axis: "size", name: "default" }
+      ],
       stateMatrix: [
         { state: "default", behavior: "主色背景" },
-        { state: "disabled", behavior: "降透明度,不可点击" }
-      ]
+        {
+          state: "disabled",
+          behavior: "降透明度,不可点击",
+          transition: "100ms ease-out"
+        }
+      ],
+      guidelines: [
+        { kind: "do", text: "一个屏幕区域只使用一个主按钮" },
+        { kind: "dont", text: "不要并列多个主操作" }
+      ],
+      tokenLinks: ["semantic.action.primary"],
+      codeLinks: ["components/Button.tsx"]
     },
     meaning: "触发主操作",
     status: "formalized",
@@ -708,7 +721,7 @@ test.describe("component-list.json", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("component-spec", () => {
-  test("valid spec with boundaries + state matrix", () => {
+  test("valid spec uses the consolidated designer-facing contract", () => {
     const res = validateDesignSystemJson("component-spec", validComponentSpec());
     expect(res.ok).toBe(true);
   });
@@ -733,8 +746,15 @@ test.describe("component-spec", () => {
     });
   });
 
-  test("missing boundaries / stateMatrix → missing_required_field", () => {
-    for (const field of ["boundaries", "stateMatrix"] as const) {
+  test("missing designer-facing collections → missing_required_field", () => {
+    for (const field of [
+      "props",
+      "variants",
+      "stateMatrix",
+      "guidelines",
+      "tokenLinks",
+      "codeLinks"
+    ] as const) {
       const value = { ...validComponentSpec().value, [field]: undefined };
       const res = validateDesignSystemJson("component-spec", {
         ...validComponentSpec(),
@@ -759,44 +779,50 @@ test.describe("component-spec", () => {
     expect(res.reason).toBe("missing_required_field");
   });
 
-  test("boundaries must be non-empty strings", () => {
-    const res = validateDesignSystemJson("component-spec", {
-      ...validComponentSpec(),
-      value: { ...validComponentSpec().value, boundaries: [""] }
-    });
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.reason).toBe("invalid_field_type");
+  test("guidelines require an explicit do/dont kind and non-empty text", () => {
+    for (const guidelines of [
+      [{ kind: "maybe", text: "Ambiguous advice" }],
+      [{ kind: "do", text: "" }],
+      ["Do not encode polarity in prose"]
+    ]) {
+      const spec = validComponentSpec();
+      Object.assign(spec.value, { guidelines });
+      expect(validateDesignSystemJson("component-spec", spec)).toMatchObject({
+        ok: false,
+        reason: "invalid_field_type"
+      });
+    }
   });
 
-  test("09B component detail groups use stable array shapes when present", () => {
-    const rich = validComponentSpec();
-    Object.assign(rich.value, {
-      anatomy: [{ part: "label" }, { part: "icon" }],
-      variants: [{ name: "text-link" }],
-      sizes: [{ name: "default" }],
-      tokenLinks: ["semantic.text.action"],
-      usageRules: ["Use for a single inline CTA."],
-      contentRules: ["Pair a short label with an arrow."],
-      responsiveBehavior: ["Preserve inline flow."],
-      codeLinks: ["components/TextLink.tsx"],
-      verificationTargets: ["No filled background."],
-      openGaps: []
-    });
-    expect(validateDesignSystemJson("component-spec", rich).ok).toBe(true);
-
-    const invalid = validComponentSpec();
-    Object.assign(invalid.value, { anatomy: { part: "label" } });
-    expect(
-      validateDesignSystemJson("component-spec", invalid)
-    ).toMatchObject({
-      ok: false,
-      reason: "invalid_field_type",
-      details: { field: "value.anatomy", expected: "array" }
-    });
+  test("variants require a named style, size, or viewport axis", () => {
+    for (const variants of [
+      [{ name: "primary" }],
+      [{ axis: "density", name: "compact" }],
+      [{ axis: "size", name: "" }]
+    ]) {
+      const spec = validComponentSpec();
+      Object.assign(spec.value, { variants });
+      expect(validateDesignSystemJson("component-spec", spec)).toMatchObject({
+        ok: false,
+        reason: "invalid_field_type"
+      });
+    }
   });
 
-  test.each(["states", "openQuestions", "labelArrowGap"])(
+  test.each([
+    "states",
+    "boundaries",
+    "anatomy",
+    "sizes",
+    "motion",
+    "usageRules",
+    "contentRules",
+    "responsiveBehavior",
+    "verificationTargets",
+    "openGaps",
+    "openQuestions",
+    "labelArrowGap"
+  ])(
     "rejects unregistered component spec value key %s",
     (field) => {
       const spec = validComponentSpec();

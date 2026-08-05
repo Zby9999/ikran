@@ -110,7 +110,7 @@ const TYPOGRAPHY_ROLE_WRITING_STYLE = {
 } as const;
 
 export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
-  schema_version: 2,
+  schema_version: 3,
   source_root: "design-system",
   file_layout: [
     ...INITIAL_DESIGN_SYSTEM_REQUIRED_ARTIFACTS,
@@ -140,10 +140,14 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
       "component_spec_fields is the closed value-key registry; custom keys are rejected instead of being silently dropped.",
     description:
       "Write component prose in value.description; do not write meaning on component-spec entries.",
-    open_questions:
-      "Write every unresolved component question in value.openGaps only.",
-    parameter_facts:
-      "Write named parameter facts in the registered props or sizes fields instead of inventing custom value keys."
+    variants:
+      'Write every visual choice as a variants row with axis: "style", axis: "size", or axis: "viewport"; do not create separate size or responsive fields.',
+    states:
+      "Write component-bound behavior, transitions, motion, and reduced-motion facts on the matching stateMatrix row.",
+    guidelines:
+      "Write every designer-facing usage, content, boundary, and human-readable verification rule as one guidelines row with an explicit do/dont kind.",
+    unresolved_questions:
+      "Keep unresolved questions in the extraction manifest and lineage; do not repeat workflow state inside the component spec."
   },
   component_group_field: {
     field: "group",
@@ -211,7 +215,7 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
   interaction_entry_split: {
     interaction_rules: "Cross-component interaction and motion strategies only.",
     component_specs:
-      "Component-bound states and motion belong in the matching component spec."
+      "Component-bound behavior and motion belong on stateMatrix rows in the matching component spec."
   },
   rule_taxonomy: {
     interaction_rules: "Cross-component interaction and motion strategies.",

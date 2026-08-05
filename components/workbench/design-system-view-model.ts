@@ -362,29 +362,17 @@ export function buildColorLeafModel(view: DesignSystemView): DsColorLeafModel {
  * page-structure Block; everything else is a Component. */
 export type DsComponentGroupId = "component" | "block";
 
-export interface DsComponentProp {
+export interface DsComponentProp extends Record<string, unknown> {
   name: string;
   type: string;
-  /** Optional extra columns carried verbatim when the source declares them. */
-  required?: boolean;
-  description?: string;
-  /** Candidate props carry the chip in the placard (only the literal
-   * "candidate" is honored — unknown status strings are dropped). */
-  status?: "candidate";
 }
 
-export type DsComponentDetailGroupId =
-  | "token-links"
-  | "anatomy"
-  | "variants"
-  | "sizes"
-  | "motion"
-  | "usage-rules"
-  | "content-rules"
-  | "responsive-behavior"
-  | "code-links"
-  | "verification-targets"
-  | "open-gaps";
+export type DsComponentDetailGroupId = "token-links" | "code-links";
+
+export interface DsComponentGuideline extends Record<string, unknown> {
+  kind: "do" | "dont";
+  text: string;
+}
 
 /** One optional placard group (09B rich fields): prose lines plus object
  * rows, both verbatim from the spec. Empty fields never reach this list —
@@ -399,13 +387,15 @@ export interface DsComponentDetailGroup {
 export interface DsComponentDetail {
   description: string;
   props: DsComponentProp[];
-  boundaries: string[];
+  /** Style, size, and viewport rows carried verbatim from the spec. */
+  variants: Record<string, unknown>[];
   /** State matrix rows: { state, ...behavior } verbatim from the spec. */
   stateMatrix: Record<string, unknown>[];
+  guidelines: DsComponentGuideline[];
   /** Hero states row names, derived from the state matrix. */
   stateNames: string[];
-  /** Non-empty rich groups in fixed placard order. */
-  groups: DsComponentDetailGroup[];
+  /** Full-fidelity technical references in fixed placard order. */
+  referenceGroups: DsComponentDetailGroup[];
 }
 
 export interface DsComponentModel {
@@ -425,7 +415,7 @@ export interface DsComponentModel {
   chips: string[];
 }
 
-/* ------------------------- rich detail group tables ------------------------- */
+/* ----------------------- technical reference tables ----------------------- */
 
 const RICH_GROUP_DEFS: readonly {
   id: DsComponentDetailGroupId;
@@ -433,24 +423,7 @@ const RICH_GROUP_DEFS: readonly {
   fields: readonly string[];
 }[] = [
   { id: "token-links", label: "Token links", fields: ["tokenLinks"] },
-  { id: "anatomy", label: "Anatomy", fields: ["anatomy"] },
-  { id: "variants", label: "Variants", fields: ["variants"] },
-  { id: "sizes", label: "Sizes", fields: ["sizes"] },
-  { id: "motion", label: "Motion", fields: ["motion"] },
-  { id: "usage-rules", label: "Usage rules", fields: ["usageRules"] },
-  { id: "content-rules", label: "Content rules", fields: ["contentRules"] },
-  {
-    id: "responsive-behavior",
-    label: "Responsive behavior",
-    fields: ["responsiveBehavior"]
-  },
-  { id: "code-links", label: "Code links", fields: ["codeLinks"] },
-  {
-    id: "verification-targets",
-    label: "Verification targets",
-    fields: ["verificationTargets"]
-  },
-  { id: "open-gaps", label: "Open gaps", fields: ["openGaps"] }
+  { id: "code-links", label: "Code links", fields: ["codeLinks"] }
 ];
 
 /** Tolerant rich-field parse: real data mixes string lines and object rows;
@@ -486,21 +459,29 @@ function parseComponentDetail(
         continue;
       }
       props.push({
+        ...raw,
         name: raw.name,
-        type: raw.type,
-        ...(typeof raw.required === "boolean" ? { required: raw.required } : {}),
-        ...(typeof raw.description === "string"
-          ? { description: raw.description }
-          : {}),
-        ...(raw.status === "candidate" ? { status: "candidate" as const } : {})
+        type: raw.type
       });
     }
   }
   const stateMatrix = Array.isArray(value.stateMatrix)
     ? value.stateMatrix.filter(isPlainObject)
     : [];
+  const variants = Array.isArray(value.variants)
+    ? value.variants.filter(isPlainObject)
+    : [];
+  const guidelines: DsComponentGuideline[] = Array.isArray(value.guidelines)
+    ? value.guidelines.flatMap((raw) =>
+        isPlainObject(raw) &&
+        (raw.kind === "do" || raw.kind === "dont") &&
+        typeof raw.text === "string"
+          ? [{ ...raw, kind: raw.kind, text: raw.text }]
+          : []
+      )
+    : [];
 
-  const groups: DsComponentDetailGroup[] = [];
+  const referenceGroups: DsComponentDetailGroup[] = [];
   for (const def of RICH_GROUP_DEFS) {
     const lines: string[] = [];
     const rows: Record<string, unknown>[] = [];
@@ -510,7 +491,7 @@ function parseComponentDetail(
       rows.push(...parsed.rows);
     }
     if (lines.length > 0 || rows.length > 0) {
-      groups.push({ id: def.id, label: def.label, lines, rows });
+      referenceGroups.push({ id: def.id, label: def.label, lines, rows });
     }
   }
 
@@ -524,12 +505,11 @@ function parseComponentDetail(
     description:
       typeof value.description === "string" ? value.description : "",
     props,
-    boundaries: Array.isArray(value.boundaries)
-      ? value.boundaries.filter((b): b is string => typeof b === "string")
-      : [],
+    variants,
     stateMatrix,
+    guidelines,
     stateNames,
-    groups
+    referenceGroups
   };
 }
 

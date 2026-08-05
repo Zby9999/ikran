@@ -262,8 +262,13 @@ function writeApprovalFixtures(dir: string) {
     value: {
       description: "主操作按钮",
       props: [{ name: "variant", type: "string" }],
-      boundaries: ["一个屏幕区域最多一个主按钮"],
-      stateMatrix: [{ state: "default", behavior: "主色背景" }]
+      variants: [{ axis: "style", name: "primary" }],
+      stateMatrix: [{ state: "default", behavior: "主色背景" }],
+      guidelines: [
+        { kind: "do", text: "一个屏幕区域只使用一个主按钮" }
+      ],
+      tokenLinks: ["semantic.color.primary"],
+      codeLinks: ["components/Button.tsx"]
     }
   });
   writeProjectFile(dir, "design-system/layout-rules.json", {

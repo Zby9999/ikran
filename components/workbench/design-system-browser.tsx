@@ -37,7 +37,8 @@ import {
   Layers01Icon,
   MultiplicationSignIcon,
   Route01Icon,
-  TextFontIcon
+  TextFontIcon,
+  Tick02Icon
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
@@ -2552,30 +2553,67 @@ export function DesignSystemBrowser({
 
 /* ----------------------------- component detail ----------------------------- */
 
-/* 09C-D03 Placard (designer-selected from app/prototypes/component-detail):
- * a hero stage card leads — white card, hairline border, content centered,
- * origin tag top-right, a read-only states name line at the bottom — then a
- * centered reading column: title + status chip, Purpose, Props, Boundaries,
- * Token links and the data-driven optional groups. Empty fields are silently
- * omitted. Two visual origins only this slice: Source capture (the spec's
- * screenshot) or an explicit unavailable block; code-backed is a later slice. */
+/* Component Reader: the hero remains the visual anchor. The reading column
+ * projects the Runtime contract one-to-one as Overview, Variants, States,
+ * Do / Don’ts, and complete Technical details. */
+
+function columnsForRows(
+  rows: readonly Record<string, unknown>[],
+  leading: readonly string[] = []
+): string[] {
+  const available = new Set(rows.flatMap((row) => Object.keys(row)));
+  const first = leading.filter((column) => available.delete(column));
+  return [...first, ...available];
+}
+
+function formatColumnLabel(column: string): string {
+  const words = column.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+}
+
+function ComponentRecordTable({
+  rows,
+  leading = []
+}: {
+  rows: readonly Record<string, unknown>[];
+  leading?: readonly string[];
+}) {
+  const columns = columnsForRows(rows, leading);
+  return (
+    <table className="dsb-table">
+      <thead>
+        <tr>
+          {columns.map((column) => (
+            <th key={column}>{formatColumnLabel(column)}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, index) => (
+          <tr key={index}>
+            {columns.map((column) => (
+              <td key={column}>{formatMatrixCell(row[column])}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
 
 /** One data-driven optional group: prose lines verbatim, object rows as a
  * single table keyed by the union of row keys. */
-function ComponentDetailGroupSection({
+function ComponentReferenceGroup({
   group
 }: {
   group: DsComponentDetailGroup;
 }) {
-  const columns = [
-    ...new Set(group.rows.flatMap((row) => Object.keys(row)))
-  ];
   return (
-    <section
-      className="dsb-section"
+    <div
+      className="dsb-reference-group"
       data-testid={`ds-component-group-${group.id}`}
     >
-      <GroupLabel>{group.label}</GroupLabel>
+      <h3 className="dsb-reference-label">{group.label}</h3>
       {group.lines.length > 0 ? (
         <ul className="dsb-boundaries">
           {group.lines.map((line) => (
@@ -2584,26 +2622,9 @@ function ComponentDetailGroupSection({
         </ul>
       ) : null}
       {group.rows.length > 0 ? (
-        <table className="dsb-table">
-          <thead>
-            <tr>
-              {columns.map((column) => (
-                <th key={column}>{column}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {group.rows.map((row, index) => (
-              <tr key={index}>
-                {columns.map((column) => (
-                  <td key={column}>{formatMatrixCell(row[column])}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ComponentRecordTable rows={group.rows} />
       ) : null}
-    </section>
+    </div>
   );
 }
 
@@ -2638,18 +2659,11 @@ export function ComponentDetail({
 
   const detail = component.detail;
   const capture = component.captures[0] ?? null;
-  const matrixColumns = detail
-    ? [
-        "state",
-        ...new Set(
-          detail.stateMatrix.flatMap((row) =>
-            Object.keys(row).filter((key) => key !== "state")
-          )
-        )
-      ]
-    : [];
   const purpose =
     detail?.description || component.inventory?.meaning || "";
+  const propColumns = detail
+    ? columnsForRows(detail.props, ["name", "type"])
+    : [];
 
   return (
     <article
@@ -2729,84 +2743,128 @@ export function ComponentDetail({
           />
         </header>
         {purpose !== "" ? (
-          <section className="dsb-section">
-            <GroupLabel>Purpose</GroupLabel>
+          <section className="dsb-section" data-testid="ds-component-overview">
+            <GroupLabel>Overview</GroupLabel>
             <p className="dsb-reader-body">{purpose}</p>
           </section>
         ) : null}
+        {detail && detail.variants.length > 0 ? (
+          <section className="dsb-section" data-testid="ds-component-variants">
+            <GroupLabel>Variants</GroupLabel>
+            <ComponentRecordTable
+              rows={detail.variants}
+              leading={["axis", "name"]}
+            />
+          </section>
+        ) : null}
         {detail && detail.props.length > 0 ? (
-          <section className="dsb-section">
-            <GroupLabel>Props</GroupLabel>
-            <dl className="dsb-props">
-              {detail.props.map((prop) => (
-                <div
-                  className="dsb-prop"
-                  key={prop.name}
-                  data-testid={`ds-component-prop-${prop.name}`}
-                >
-                  <dt>
-                    {prop.name}
-                    {prop.status === "candidate" ? (
-                      <StatusChip
-                        status="candidate"
-                        testId={`ds-component-prop-status-${prop.name}`}
-                      />
-                    ) : null}
-                  </dt>
-                  <dd>
-                    <span className="dsb-prop-type">
-                      {prop.type}
-                      {prop.required === true ? " · required" : ""}
-                    </span>
-                    {prop.description ? (
-                      <span className="dsb-prop-note">{prop.description}</span>
-                    ) : null}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-        ) : null}
-        {detail && detail.boundaries.length > 0 ? (
-          <section className="dsb-section">
-            <GroupLabel>Boundaries</GroupLabel>
-            <ul className="dsb-boundaries">
-              {detail.boundaries.map((boundary) => (
-                <li key={boundary}>{boundary}</li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-        {detail && detail.stateMatrix.length > 0 ? (
-          <section className="dsb-section">
-            <GroupLabel>State matrix</GroupLabel>
+          <section className="dsb-section" data-testid="ds-component-properties">
+            <GroupLabel>Properties</GroupLabel>
             <table className="dsb-table">
               <thead>
                 <tr>
-                  {matrixColumns.map((column) => (
-                    <th key={column}>{column}</th>
-                  ))}
+                  {propColumns.map(
+                    (column) => <th key={column}>{formatColumnLabel(column)}</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
-                {detail.stateMatrix.map((stateRow, index) => (
-                  <tr key={index}>
-                    {matrixColumns.map((column) => (
-                      <td key={column}>{formatMatrixCell(stateRow[column])}</td>
-                    ))}
+                {detail.props.map((prop) => (
+                  <tr
+                    key={prop.name}
+                    data-testid={`ds-component-prop-${prop.name}`}
+                  >
+                    {propColumns.map(
+                      (column) => (
+                        <td key={column}>
+                          {column === "status" && prop[column] === "candidate" ? (
+                            <StatusChip
+                              status="candidate"
+                              testId={`ds-component-prop-status-${prop.name}`}
+                            />
+                          ) : (
+                            formatMatrixCell(prop[column])
+                          )}
+                        </td>
+                      )
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </section>
         ) : null}
-        {detail?.groups.map((group) => (
-          <ComponentDetailGroupSection key={group.id} group={group} />
-        ))}
-        {statusRows.length > 0 ? (
-          <section className="dsb-section">
-            <GroupLabel>Status &amp; evidence</GroupLabel>
-            <RowList rows={statusRows} {...rows} />
+        {detail && detail.stateMatrix.length > 0 ? (
+          <section className="dsb-section" data-testid="ds-component-state-matrix">
+            <GroupLabel>States</GroupLabel>
+            <ComponentRecordTable rows={detail.stateMatrix} leading={["state"]} />
+          </section>
+        ) : null}
+        {detail && detail.guidelines.length > 0 ? (
+          <section className="dsb-section" data-testid="ds-component-guidelines">
+            <GroupLabel>Do / Don’ts</GroupLabel>
+            <div className="dsb-guidelines">
+              {(["do", "dont"] as const).map((kind) => {
+                const items = detail.guidelines.filter(
+                  (guideline) => guideline.kind === kind
+                );
+                if (items.length === 0) return null;
+                const label = kind === "do" ? "Do" : "Don’t";
+                const rows = items.map(({ kind: _kind, ...guideline }) => guideline);
+                const hasMetadata = rows.some((guideline) =>
+                  Object.keys(guideline).some((key) => key !== "text")
+                );
+                return (
+                  <div className="dsb-guideline-group" data-kind={kind} key={kind}>
+                    <div className="dsb-guideline-label" aria-label={label}>
+                      <HugeiconsIcon
+                        icon={kind === "do" ? Tick02Icon : MultiplicationSignIcon}
+                        size={14}
+                        strokeWidth={2}
+                        aria-hidden
+                      />
+                      <span>{label}</span>
+                    </div>
+                    {hasMetadata ? (
+                      <ComponentRecordTable rows={rows} leading={["text"]} />
+                    ) : (
+                      <ul className="dsb-boundaries">
+                        {items.map((guideline) => (
+                          <li key={guideline.text}>{guideline.text}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+        {detail || component.captures.length > 0 || statusRows.length > 0 ? (
+          <section className="dsb-section" data-testid="ds-component-technical-details">
+            <GroupLabel>Technical details</GroupLabel>
+            <div className="dsb-technical-details">
+              {component.captures.length > 0 ? (
+                <div className="dsb-reference-group">
+                  <h3 className="dsb-reference-label">Source captures</h3>
+                  <ComponentRecordTable
+                    rows={component.captures.map((sourceCapture) => ({
+                      ...sourceCapture
+                    }))}
+                    leading={["nodeName", "artifactPath", "capturedAt"]}
+                  />
+                </div>
+              ) : null}
+              {detail?.referenceGroups.map((group) => (
+                <ComponentReferenceGroup key={group.id} group={group} />
+              ))}
+              {statusRows.length > 0 ? (
+                <div className="dsb-reference-group">
+                  <h3 className="dsb-reference-label">Status &amp; evidence</h3>
+                  <RowList rows={statusRows} {...rows} />
+                </div>
+              ) : null}
+            </div>
           </section>
         ) : null}
         {detail ? null : (

@@ -433,7 +433,7 @@ describe("Initial Design System preparation", () => {
         "design-system/interaction-rules.json"
       ],
       source_contract: {
-        schema_version: 2,
+        schema_version: 3,
         source_root: "design-system",
         entry_envelope: expect.arrayContaining([
           "kind",
@@ -468,20 +468,21 @@ describe("Initial Design System preparation", () => {
           fail_closed: expect.stringContaining("Token meaning is forbidden")
         },
         component_spec_fields: expect.arrayContaining([
-          "anatomy",
+          "description",
+          "props",
           "variants",
           "stateMatrix",
-          "motion",
+          "guidelines",
           "tokenLinks",
-          "responsiveBehavior",
-          "verificationTargets",
-          "openGaps"
+          "codeLinks"
         ]),
         component_spec_writing_policy: {
           value_keys: expect.stringContaining("closed"),
           description: expect.stringContaining("do not write meaning"),
-          open_questions: expect.stringContaining("openGaps"),
-          parameter_facts: expect.stringContaining("props or sizes")
+          variants: expect.stringContaining('axis: "size"'),
+          states: expect.stringContaining("stateMatrix"),
+          guidelines: expect.stringContaining("do/dont"),
+          unresolved_questions: expect.stringContaining("manifest")
         },
         rule_body: {
           applies_to: ["global-rule", "domain-rule"],
@@ -502,7 +503,7 @@ describe("Initial Design System preparation", () => {
           interaction_rules:
             "Cross-component interaction and motion strategies only.",
           component_specs:
-            "Component-bound states and motion belong in the matching component spec."
+            "Component-bound behavior and motion belong on stateMatrix rows in the matching component spec."
         },
         typography_role_writing_style: {
           role_value_fields: expect.arrayContaining([
@@ -1419,7 +1420,7 @@ describe("Initial Design System preparation", () => {
     });
   });
 
-  test("requires component inventory/spec pairing and the 09B detail groups", () => {
+  test("requires component inventory/spec pairing and the consolidated detail contract", () => {
     const fixture = createCompletedAlignmentFixture();
     const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
     if (!claimed.ok) throw new Error(claimed.reason);
@@ -1504,8 +1505,23 @@ describe("Initial Design System preparation", () => {
     const baseSpec = {
       description: "Label-and-arrow CTA",
       props: [{ name: "label", type: "string" }],
-      boundaries: ["Never render a filled background."],
-      stateMatrix: [{ state: "default", behavior: "Inline text link" }]
+      variants: [
+        { axis: "style", name: "text-link" },
+        { axis: "size", name: "default" }
+      ],
+      stateMatrix: [
+        {
+          state: "default",
+          behavior: "Inline text link",
+          transition: "transform 160ms ease-out"
+        }
+      ],
+      guidelines: [
+        { kind: "do", text: "Use for inline calls to action." },
+        { kind: "dont", text: "Never render a filled background." }
+      ],
+      tokenLinks: ["semantic.text.action"],
+      codeLinks: []
     };
     writeJson(
       fixture.projectPath,
@@ -1554,11 +1570,6 @@ describe("Initial Design System preparation", () => {
               artifactPath: "design-system/components/text-link.json",
               entryId: "component-text-link-spec",
               jsonPointer: "/value/codeLinks"
-            },
-            {
-              artifactPath: "design-system/components/text-link.json",
-              entryId: "component-text-link-spec",
-              jsonPointer: "/value/openGaps"
             }
           ]
         };
@@ -1581,68 +1592,6 @@ describe("Initial Design System preparation", () => {
       }
     );
     if (!secondManifest.ok) throw new Error(secondManifest.reason);
-    expect(
-      finalizeInitialDesignSystemPreparation(
-        fixture.projectPath,
-        fixture.attemptId
-      )
-    ).toMatchObject({
-      ok: false,
-      reason: "component_spec_fields_missing",
-      details: {
-        specs: [
-          {
-            entry_id: "component-text-link-spec",
-            missing_fields: expect.arrayContaining([
-              "anatomy",
-              "variants",
-              "sizes",
-              "tokenLinks",
-              "usageRules",
-              "contentRules",
-              "responsiveBehavior",
-              "codeLinks",
-              "verificationTargets",
-              "openGaps"
-            ])
-          }
-        ]
-      }
-    });
-
-    writeJson(
-      fixture.projectPath,
-      "design-system/components/text-link.json",
-      {
-        id: "component-text-link-spec",
-        name: "TextLink",
-        value: {
-          ...baseSpec,
-          anatomy: [{ part: "label" }, { part: "arrow" }],
-          variants: [{ name: "text-link" }],
-          sizes: [{ name: "default" }],
-          motion: ["transform 160ms ease-out."],
-          tokenLinks: ["semantic.text.action"],
-          usageRules: ["Use for inline calls to action."],
-          contentRules: ["Keep labels concise."],
-          responsiveBehavior: ["Preserve inline flow."],
-          codeLinks: [],
-          verificationTargets: ["No filled background."],
-          openGaps: []
-        },
-        status: "candidate",
-        links: [componentCard.id]
-      }
-    );
-    const richSpecDeclaration = recordSourceArtifact(fixture.projectPath, {
-      path: "design-system/components/text-link.json",
-      artifactType: "component-spec",
-      semanticPurpose: "Rich initial component contract",
-      relatedRecordIds: [componentCard.id]
-    });
-    if (!richSpecDeclaration.ok) {
-      throw new Error(richSpecDeclaration.reason);
-    }
     expect(
       finalizeInitialDesignSystemPreparation(
         fixture.projectPath,
@@ -1824,30 +1773,31 @@ describe("Initial Design System preparation", () => {
         ? "Filled primary button"
         : "Concise label-and-arrow text link",
       props: [{ name: "label", type: "string" }],
-      boundaries: [
-        contradictory
-          ? "Use a black filled background."
-          : "Never introduce a filled button background."
+      variants: [
+        { axis: "style", name: "text-link" },
+        { axis: "size", name: "default" }
       ],
       stateMatrix: [
         {
           state: "default",
           behavior: contradictory
             ? "Black fill with white label"
-            : "Inline label plus arrow"
+            : "Inline label plus arrow",
+          transition: "transform 160ms ease-out"
         }
       ],
-      anatomy: [{ part: "label" }, { part: "arrow" }],
-      variants: [{ name: "text-link" }],
-      sizes: [{ name: "default" }],
-      motion: ["transform 160ms ease-out."],
+      guidelines: [
+        { kind: "do", text: "Use for inline calls to action." },
+        { kind: "do", text: "Keep the label concise." },
+        {
+          kind: "dont",
+          text: contradictory
+            ? "Use a black filled background."
+            : "Never introduce a filled button background."
+        }
+      ],
       tokenLinks: ["semantic.text.action"],
-      usageRules: ["Use for inline calls to action."],
-      contentRules: ["Keep the label concise."],
-      responsiveBehavior: ["Preserve inline flow."],
-      codeLinks: ["components/TextLink.tsx"],
-      verificationTargets: ["No filled background."],
-      openGaps: []
+      codeLinks: ["components/TextLink.tsx"]
     });
     const writeAndDeclareSpec = (contradictory: boolean) => {
       writeJson(
@@ -1941,13 +1891,7 @@ describe("Initial Design System preparation", () => {
         return [{
           ...claim,
           reason: "The confirmed contract leaves no unresolved component gap.",
-          targets: [
-            {
-              artifactPath: "design-system/components/text-link.json",
-              entryId: "component-text-link-spec",
-              jsonPointer: "/value/openGaps"
-            }
-          ]
+          targets: []
         }];
       }
       return [claim];
@@ -2053,7 +1997,12 @@ describe("Initial Design System preparation", () => {
     );
     expect(view.view.components.specs[0].value).toMatchObject({
       description: "Concise label-and-arrow text link",
-      boundaries: ["Never introduce a filled button background."]
+      guidelines: expect.arrayContaining([
+        {
+          kind: "dont",
+          text: "Never introduce a filled button background."
+        }
+      ])
     });
   });
 });

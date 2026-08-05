@@ -1869,6 +1869,18 @@
   flex-direction: column;
   gap: 40px;
   margin: 0 auto;
+  font-family: Inter, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.dsb-reader * {
+  font-family: Inter, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.dsb-reader .dsb-table th {
+  letter-spacing: -0.02em;
+  text-transform: none;
 }
 
 .dsb-reader-head {
@@ -1887,6 +1899,49 @@
   margin: 0;
   font-size: 15px;
   line-height: 1.65;
+}
+
+.dsb-reference-group,
+.dsb-guideline-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dsb-reference-group + .dsb-reference-group,
+.dsb-guideline-group + .dsb-guideline-group {
+  margin-top: 20px;
+}
+
+.dsb-reference-label {
+  margin: 0;
+  color: var(--dsc-ink-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.dsb-guidelines,
+.dsb-technical-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.dsb-guideline-label {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dsb-guideline-group[data-kind="do"] .dsb-guideline-label {
+  color: #16803a;
+}
+
+.dsb-guideline-group[data-kind="dont"] .dsb-guideline-label {
+  color: #c0362c;
 }
 
 /* Placard props: name (+ candidate chip) left, type/notes right, hairline
