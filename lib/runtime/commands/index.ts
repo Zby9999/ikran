@@ -41,6 +41,8 @@ export { listEvidenceSurfacesCommand } from "./evidence-package";
 
 export { recordArtifactWrittenCommand } from "./artifact";
 
+export { recordNewDesignRunCommand } from "./new-design-run";
+
 export {
   getDesignSystemViewCommand,
   getDesignSystemComponentCommand,
@@ -160,6 +162,8 @@ export {
   recordDesignerFeedbackInputShape,
   recordPreviewInputSchema,
   recordPreviewInputShape,
+  recordNewDesignRunInputSchema,
+  recordNewDesignRunInputShape,
   createOrOpenProjectInputShape,
   setupWorkspaceInputShape
 } from "./schemas";

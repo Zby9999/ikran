@@ -28,6 +28,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { openProjectDb, closeProjectDb, withProjectTransaction } from "./db";
 import { emitRecordEvent } from "./record-bus";
+import { validateUsedCandidateIdsOnDb } from "./new-design-run";
 import { logEvent, logEventOnDb, logInvalidToolEvent } from "./events";
 import {
   recordSourceContentDigest,
@@ -159,6 +160,8 @@ export interface NormalizedSourceArtifactDeclaration {
    * proposal to exist and be confirmed.
    */
   proposalId?: string;
+  /** Candidate entry ids this write depended on (Issue 13). */
+  usedCandidateIds?: string[];
 }
 
 export type SourceArtifactDeclarationReason =
@@ -167,7 +170,8 @@ export type SourceArtifactDeclarationReason =
   | "unknown_artifact_type"
   | "missing_semantic_purpose"
   | "invalid_related_record_ids"
-  | "invalid_proposal_id";
+  | "invalid_proposal_id"
+  | "invalid_used_candidate_ids";
 
 export type SourceArtifactDeclarationOk = {
   ok: true;
@@ -253,6 +257,19 @@ export function validateSourceArtifactDeclaration(
     }
     declaration.proposalId = raw.proposalId.trim();
   }
+  if (raw.usedCandidateIds !== undefined) {
+    if (!Array.isArray(raw.usedCandidateIds)) {
+      return fail("invalid_used_candidate_ids");
+    }
+    for (let i = 0; i < raw.usedCandidateIds.length; i++) {
+      if (!isNonEmptyString(raw.usedCandidateIds[i])) {
+        return fail("invalid_used_candidate_ids", { index: i });
+      }
+    }
+    declaration.usedCandidateIds = raw.usedCandidateIds.map((id) =>
+      String(id).trim()
+    );
+  }
   return { ok: true, declaration };
 }
 
@@ -280,6 +297,10 @@ export type SourceArtifactRecordReason =
   | DesignSystemDeclarationLinkReason
   | "artifact_path_escape"
   | "db_error"
+  | "proposal_not_found"
+  | "proposal_not_confirmed"
+  | "candidate_entry_not_found"
+  | "candidate_entry_not_candidate"
   | string;
 
 export interface SourceArtifactRecordResult {
@@ -431,6 +452,19 @@ export function recordSourceArtifact(
         }
       }
 
+      let usedCandidateIds: string[] = [];
+      if (
+        declaration.usedCandidateIds !== undefined &&
+        declaration.usedCandidateIds.length > 0
+      ) {
+        const candidates = validateUsedCandidateIdsOnDb(
+          db,
+          declaration.usedCandidateIds
+        );
+        if (!candidates.ok) return candidates;
+        usedCandidateIds = candidates.ids;
+      }
+
       // Design-system declarations must link answered question cards or
       // Agent annotations (09A decision 4); the DB-dependent check runs
       // inside the transaction so it shares a snapshot with the write.
@@ -537,8 +571,20 @@ export function recordSourceArtifact(
         declaration_version: record.declaration_version,
         ...(declaration.proposalId === undefined
           ? {}
-          : { proposal_id: declaration.proposalId })
+          : { proposal_id: declaration.proposalId }),
+        ...(usedCandidateIds.length === 0
+          ? {}
+          : { used_candidate_ids: usedCandidateIds })
       });
+
+      if (usedCandidateIds.length > 0) {
+        logEventOnDb(db, "candidate_dependency_declared", {
+          artifact_id: record.id,
+          path: record.path,
+          used_candidate_ids: usedCandidateIds,
+          source: "record_artifact_written"
+        });
+      }
 
       // Ingest writes land after the declaration event so a crash never
       // leaves entries without their declaration.
@@ -569,8 +615,9 @@ export function recordSourceArtifact(
     });
 
     if (!result.ok) {
-      logInvalidArtifact(projectPath, result.reason, relativePath, result.details);
-      return { ok: false, reason: result.reason, details: result.details };
+      const details = "details" in result ? result.details : undefined;
+      logInvalidArtifact(projectPath, result.reason, relativePath, details);
+      return { ok: false, reason: result.reason, details };
     }
 
     emitRecordEvent({

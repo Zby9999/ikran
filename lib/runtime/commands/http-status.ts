@@ -29,12 +29,15 @@ const CONFLICT_REASONS = new Set([
   // Issue 29: proposal-first gate — decided proposal, or artifact declared
   // against a proposal the designer has not confirmed.
   "proposal_not_awaiting_confirmation",
-  "proposal_not_confirmed"
+  "proposal_not_confirmed",
+  "run_already_exists",
+  "candidate_entry_not_candidate"
 ]);
 const NOT_FOUND_REASONS = new Set([
   "not_found",
   "proposal_not_found",
-  "feedback_record_not_found"
+  "feedback_record_not_found",
+  "candidate_entry_not_found"
 ]);
 const GONE_REASONS = new Set(["endpoint_retired"]);
 const GATEWAY_TIMEOUT_REASONS = new Set(["figma_api_timeout"]);

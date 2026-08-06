@@ -1100,7 +1100,10 @@ test.describe("PRAGMA user_version migration runner", () => {
             "evidence_version_ids_json",
             "design_system_version",
             "created_at",
-            "updated_at"
+            "updated_at",
+            "kind",
+            "intent",
+            "used_candidate_ids_json"
           ])
         );
 
@@ -1171,7 +1174,7 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(27);
+        expect(CURRENT_SCHEMA_VERSION).toBe(28);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([

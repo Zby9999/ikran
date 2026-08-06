@@ -722,4 +722,67 @@ test.describe("recordSourceArtifact (record path)", () => {
       expect(listed[0].path).toBe("design-system/token.json");
     });
   });
+
+  test("usedCandidateIds validates candidate entries and records dependency event", () => {
+    withTempProject((dir) => {
+      const db = new DatabaseSync(getProjectDbPath(dir));
+      try {
+        db.prepare(
+          `INSERT INTO design_system_entries
+           (id, source_artifact_path, file_kind, section, entry_id, name,
+            value_json, meaning, status, links_json, position, created_at, updated_at)
+           VALUES ('cand-1', 'design-system/layout-rules.json', 'layout-rules.json',
+                   'layout', 'layout.cand', 'layout.cand', '"v"', 'Cand',
+                   'candidate', '[]', 0, ?, ?)`
+        ).run("2026-08-06T00:00:00.000Z", "2026-08-06T00:00:00.000Z");
+        db.prepare(
+          `INSERT INTO design_system_entries
+           (id, source_artifact_path, file_kind, section, entry_id, name,
+            value_json, meaning, status, links_json, position, created_at, updated_at)
+           VALUES ('formal-1', 'design-system/layout-rules.json', 'layout-rules.json',
+                   'layout', 'layout.formal', 'layout.formal', '"v"', 'Formal',
+                   'formalized', '[]', 1, ?, ?)`
+        ).run("2026-08-06T00:00:00.000Z", "2026-08-06T00:00:00.000Z");
+      } finally {
+        db.close();
+      }
+
+      writeProjectFile(dir, "prototype/app.tsx", "export default function App(){return null}");
+
+      expect(
+        recordSourceArtifact(dir, {
+          path: "prototype/app.tsx",
+          artifactType: "prototype",
+          semanticPurpose: "new design page",
+          usedCandidateIds: ["missing"]
+        })
+      ).toMatchObject({ ok: false, reason: "candidate_entry_not_found" });
+
+      expect(
+        recordSourceArtifact(dir, {
+          path: "prototype/app.tsx",
+          artifactType: "prototype",
+          semanticPurpose: "new design page",
+          usedCandidateIds: ["formal-1"]
+        })
+      ).toMatchObject({ ok: false, reason: "candidate_entry_not_candidate" });
+
+      const ok = recordSourceArtifact(dir, {
+        path: "prototype/app.tsx",
+        artifactType: "prototype",
+        semanticPurpose: "new design page",
+        usedCandidateIds: ["cand-1"]
+      });
+      expect(ok.ok).toBe(true);
+      expect(listEvents(dir, "candidate_dependency_declared")).toEqual([
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            used_candidate_ids: ["cand-1"],
+            source: "record_artifact_written",
+            path: "prototype/app.tsx"
+          })
+        })
+      ]);
+    });
+  });
 });

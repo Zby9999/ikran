@@ -52,6 +52,7 @@ export type EventType =
   | "preview_failed"
   | "preview_stale"
   | "new_prototype_run_created"
+  | "candidate_dependency_declared"
   | "rule_update_proposal_created"
   | "rule_update_confirmed"
   | "rule_update_canceled"

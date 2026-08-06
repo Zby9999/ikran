@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 27;
+export const CURRENT_SCHEMA_VERSION = 28;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1308,6 +1308,33 @@ CREATE INDEX IF NOT EXISTS idx_prototype_surfaces_run
 CREATE INDEX IF NOT EXISTS idx_prototype_surfaces_created_at
   ON prototype_surfaces(created_at);
       `);
+    }
+  },
+  {
+    version: 28,
+    up(db) {
+      // Issue 13: distinguish seed-reconstruction runs from human-intent new
+      // design runs, and persist the intent + declared Candidate dependencies
+      // that the generation session used.
+      const columns = db
+        .prepare("PRAGMA table_info(prototype_runs)")
+        .all() as Array<{ name: string }>;
+      const names = new Set(columns.map((column) => column.name));
+      if (!names.has("kind")) {
+        db.exec(
+          `ALTER TABLE prototype_runs
+           ADD COLUMN kind TEXT NOT NULL DEFAULT 'seed_reconstruction'`
+        );
+      }
+      if (!names.has("intent")) {
+        db.exec(`ALTER TABLE prototype_runs ADD COLUMN intent TEXT`);
+      }
+      if (!names.has("used_candidate_ids_json")) {
+        db.exec(
+          `ALTER TABLE prototype_runs
+           ADD COLUMN used_candidate_ids_json TEXT NOT NULL DEFAULT '[]'`
+        );
+      }
     }
   }
 ];

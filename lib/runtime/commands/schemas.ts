@@ -204,6 +204,12 @@ export const recordArtifactWrittenInputShape = {
     .optional()
     .describe(
       "Confirmed rule_update_proposals id this write realizes. Required for rule-update writes; Runtime rejects an unconfirmed or unknown id."
+    ),
+  usedCandidateIds: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "design_system_entries ids (or entry_id) this write depended on that are still Candidate. Runtime validates each is status=candidate and records candidate_dependency_declared."
     )
 } as const;
 
@@ -347,6 +353,29 @@ export const recordPreviewInputShape = {
 } as const;
 
 export const recordPreviewInputSchema = z.object(recordPreviewInputShape);
+
+export const recordNewDesignRunInputShape = {
+  runId: z
+    .string()
+    .describe(
+      "Stable run id for this new design session; reuse it on later record_preview calls."
+    ),
+  intent: z
+    .string()
+    .describe(
+      "Designer's new prototype intent for this run. This is the only non-design-system input allowed in generation."
+    ),
+  usedCandidateIds: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Candidate design_system_entries ids this run already plans to depend on."
+    )
+} as const;
+
+export const recordNewDesignRunInputSchema = z.object(
+  recordNewDesignRunInputShape
+);
 
 export const recordDesignerFeedbackInputShape = {
   summary: z
