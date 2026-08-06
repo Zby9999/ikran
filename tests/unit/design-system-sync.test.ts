@@ -336,6 +336,79 @@ describe("design-system-sync (lazy file→DB re-ingest)", () => {
       expect(after?.updated_at).toBe(before?.updated_at);
     });
   });
+
+  test("a NULL-digest row whose file still matches the DB skips the ingest gate", () => {
+    withTempProject((dir) => {
+      seedDeclare(dir);
+      // Production legacy state: the card predates the designer-edited gate,
+      // so a full re-ingest would reject the formalized entry — but the file
+      // is unchanged and matches the DB rows, so sync must not re-ingest at
+      // all. (This is the ikran test 7 recurring-warning scenario.)
+      const db = new DatabaseSync(getProjectDbPath(dir));
+      try {
+        db.prepare(
+          `UPDATE alignment_question_cards
+           SET answer_source = 'agent-proposed-designer-accepted'
+           WHERE id = 'card-edited'`
+        ).run();
+        db.prepare(
+          `UPDATE source_artifacts SET content_digest = NULL
+           WHERE path = 'design-system/token.json'`
+        ).run();
+      } finally {
+        db.close();
+      }
+
+      const before = entryRow(
+        dir,
+        "design-system/token.json",
+        "primitive.color.blue.500"
+      );
+      const result = getDesignSystemView(dir);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Content-match fast path: no gate rejection, no warning, and the
+      // missing digest is backfilled so the next read skips the file.
+      expect(result.view.sync_warnings).toBeUndefined();
+      expect(artifactDigest(dir, "design-system/token.json")).toBe(
+        sha256OfFile(dir, "design-system/token.json")
+      );
+      const after = entryRow(
+        dir,
+        "design-system/token.json",
+        "primitive.color.blue.500"
+      );
+      expect(after?.updated_at).toBe(before?.updated_at);
+    });
+  });
+
+  test("a NULL-digest row with changed bytes still goes through full ingest", () => {
+    withTempProject((dir) => {
+      seedDeclare(dir, "#3b82f6");
+      const db = new DatabaseSync(getProjectDbPath(dir));
+      try {
+        db.prepare(
+          `UPDATE source_artifacts SET content_digest = NULL
+           WHERE path = 'design-system/token.json'`
+        ).run();
+      } finally {
+        db.close();
+      }
+      writeProjectFile(dir, "design-system/token.json", tokenJson("#ff0000"));
+
+      const result = getDesignSystemView(dir);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const primitive = result.view.tokens.primitive.find(
+        (entry) => entry.entry_id === "primitive.color.blue.500"
+      );
+      expect(primitive?.value).toBe("#ff0000");
+      expect(result.view.sync_warnings).toBeUndefined();
+      expect(artifactDigest(dir, "design-system/token.json")).toBe(
+        sha256OfFile(dir, "design-system/token.json")
+      );
+    });
+  });
 });
 
 describe("capture single storage (value_json stripped)", () => {

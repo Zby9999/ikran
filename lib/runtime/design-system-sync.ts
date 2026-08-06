@@ -22,6 +22,7 @@
 //     not convergence of the Runtime truth.
 
 import { existsSync, readFileSync } from "node:fs";
+import type { DatabaseSync } from "node:sqlite";
 import {
   openProjectDb,
   closeProjectDb,
@@ -39,8 +40,10 @@ import {
 } from "./design-system-schema";
 import {
   applyDesignSystemIngestOnDb,
+  collectDesignSystemEntryRows,
   prepareDesignSystemIngestOnDb
 } from "./design-system-ingest";
+import { sortKeysDeep } from "./design-system-entry-provenance";
 import { resolveProjectArtifactPath } from "./evidence-package";
 
 const DESIGN_SYSTEM_FILE_KINDS: readonly DesignSystemFileKind[] = [
@@ -65,6 +68,90 @@ export interface DesignSystemSyncWarning {
 export interface DesignSystemSyncResult {
   reingested: string[];
   warnings: DesignSystemSyncWarning[];
+}
+
+type DbEntryRow = {
+  entry_id: string;
+  section: string;
+  name: string | null;
+  kind: string | null;
+  domain: string | null;
+  value_json: string;
+  source_captures_json: string;
+  meaning: string;
+  status: string;
+  links_json: string;
+  position: number;
+};
+
+/**
+ * Canonical per-entry comparison between a source file and the DB rows it
+ * last produced (key order and JSON formatting normalized away — only real
+ * content drift counts). When nothing drifted, the caller records the digest
+ * and skips re-ingest entirely: re-ingesting replays the declaration-time
+ * status gate, which would wrongly reject entries that reached formalized
+ * through the approval flow (their approval events predate digest
+ * provenance). design-system.json also carries the system name in
+ * design_system_meta, so that file must match it too.
+ */
+function designSystemFileMatchesDbRows(
+  db: DatabaseSync,
+  fileKind: DesignSystemFileKind,
+  json: unknown,
+  sourcePath: string
+): boolean {
+  if (fileKind === "design-system.json") {
+    const meta = db
+      .prepare("SELECT name FROM design_system_meta WHERE singleton = 1")
+      .get() as { name: string } | undefined;
+    if (meta?.name !== (json as Record<string, unknown>).name) return false;
+  }
+  const fileRows = collectDesignSystemEntryRows(fileKind, json).map((row) =>
+    JSON.stringify(
+      sortKeysDeep({
+        entry_id: row.entry_id,
+        section: row.section,
+        name: row.name,
+        kind: row.kind,
+        domain: row.domain,
+        value: row.value,
+        source_captures: row.source_captures,
+        meaning: row.meaning,
+        status: row.status,
+        links: row.links,
+        position: row.position
+      })
+    )
+  );
+  const dbRows = (
+    db
+      .prepare(
+        `SELECT entry_id, section, name, kind, domain, value_json,
+                source_captures_json, meaning, status, links_json, position
+         FROM design_system_entries WHERE source_artifact_path = ?`
+      )
+      .all(sourcePath) as unknown as DbEntryRow[]
+  ).map((row) =>
+    JSON.stringify(
+      sortKeysDeep({
+        entry_id: row.entry_id,
+        section: row.section,
+        name: row.name,
+        kind: row.kind,
+        domain: row.domain,
+        value: JSON.parse(row.value_json),
+        source_captures: JSON.parse(row.source_captures_json),
+        meaning: row.meaning,
+        status: row.status,
+        links: JSON.parse(row.links_json),
+        position: row.position
+      })
+    )
+  );
+  if (fileRows.length !== dbRows.length) return false;
+  const sortedFile = [...fileRows].sort();
+  const sortedDb = [...dbRows].sort();
+  return sortedFile.every((row, index) => row === sortedDb[index]);
 }
 
 /**
@@ -127,7 +214,8 @@ export function syncDesignSystemSources(
       continue;
     }
     const digest = sourceContentDigestOf(content);
-    // Null digest = pre-v23 row: re-ingest once, then stay current.
+    // Null digest = pre-v23 row: verify once (fast path below), then stay
+    // current.
     if (artifact.content_digest === digest) continue;
 
     const file = readJsonFileObject(absolutePath);
@@ -151,6 +239,16 @@ export function syncDesignSystemSources(
 
     const now = new Date().toISOString();
     const ingest = withProjectTransaction(projectPath, (txnDb) => {
+      // The DB may already serve these exact bytes — pre-v23 rows were never
+      // registered with the sync ledger, and approval-flow formalizations are
+      // legitimate DB truth the declaration gate would wrongly reject. When
+      // nothing drifted, just record the digest and stop.
+      if (
+        designSystemFileMatchesDbRows(txnDb, fileKind, file.json, artifact.path)
+      ) {
+        recordSourceContentDigest(txnDb, artifact.path, digest);
+        return { ok: true as const, reingested: false };
+      }
       const prepared = prepareDesignSystemIngestOnDb(txnDb, {
         fileKind,
         json: file.json,
@@ -160,7 +258,7 @@ export function syncDesignSystemSources(
       if (!prepared.ok) return prepared;
       applyDesignSystemIngestOnDb(txnDb, prepared.plan);
       recordSourceContentDigest(txnDb, artifact.path, digest);
-      return { ok: true as const };
+      return { ok: true as const, reingested: true };
     });
     if (!ingest.ok) {
       // Status cross-validation or another ingest gate rejected the file —
@@ -172,6 +270,7 @@ export function syncDesignSystemSources(
       });
       continue;
     }
+    if (!ingest.reingested) continue;
 
     result.reingested.push(artifact.path);
     emitRecordEvent({

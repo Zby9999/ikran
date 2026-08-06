@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { DesignSystemFileKind } from "./design-system-schema";
 
-function sortKeysDeep(value: unknown): unknown {
+export function sortKeysDeep(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeysDeep);
   if (value !== null && typeof value === "object") {
     const source = value as Record<string, unknown>;
