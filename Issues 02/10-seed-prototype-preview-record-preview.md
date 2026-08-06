@@ -1,5 +1,9 @@
 # Seed Prototype Preview 与 `record_preview`
 
+> **Status: superseded(2026-08-06)** — 由 `30-prototype-surfaces-multi-embed-single-live.md` 取代。原文保留供考古,以实现为准见 Issue 30。
+>
+> 取代记录:`record_preview`、dev server lifecycle、Prototype Evidence Surface、run metadata 记录等核心内容被 Issue 30 继承。变化:画布形态定为"多嵌单活"(仅 focus 的 surface 为 live iframe,其余截图占位);明确不做 created page hover;Focus Mode 扩展为打开 live preview;标注走宿主浏览器 + Issue 27 声明通道,不再规划 Runtime 侧 DOM inspection(原后续 Issue 11 一并放弃)。
+
 ## What to build
 
 让 Agent 创建或更新 seed reconstruction prototype，并通过 `record_artifact_written` 声明 prototype code。Runtime 管理本地 dev server readiness、稳定 preview URL、`record_preview` 和 Prototype Evidence Surface。Workbench 将 preview URL 嵌入 live iframe，并提供 focus mode。

@@ -1,5 +1,9 @@
 # Prototype Region Context 与 DOM Inspection
 
+> **Status: superseded(2026-08-06)** — 整体放弃,兜底语义由 `30-prototype-surfaces-multi-embed-single-live.md` 与 `27-chat-first-designer-feedback-declaration.md` 吸收。原文保留供考古。
+>
+> 取代记录:设计师标注走 Focus Mode + Agent 宿主自带浏览器标注,标注结论经 Issue 27 的 feedback 声明通道落库,DOM selector 等作为 opaque context 原样存储。Runtime 不再实现 preview proxy 脚本注入、postMessage 取 DOM candidates、DOM↔canvas 坐标映射。原 issue 的兜底语义("DOM inspection 失败时 annotation 仍有效")直接成为主路径:DOM context 一律 opaque,Runtime 不校验、不映射。
+
 ## What to build
 
 在 live Prototype Evidence Surface 上支持 prototype Region Annotation。设计师可以选择 iframe 可视区域，Runtime 生成 bounding box、normalized rect、selected crop，并尽量通过 preview proxy 注入脚本和 postMessage 获取 DOM candidates。DOM inspection 失败时，Region Annotation 仍有效。

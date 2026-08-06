@@ -1,6 +1,6 @@
 # 28 — Phase State Machine 与 Design System 正式化
 
-Status: implemented（Real Agent validation 待做）
+Status: resolved
 
 ## What to build
 
@@ -19,6 +19,7 @@ seed → draft_design_system(待审计) → prototype_validation → design_syst
 关键语义:**Draft DS 只有被用来产出并审计通过第一个 Prototype 后才算被验证**——抽取阶段审计只能验证规则忠实于 seed,验证不了规则足以生成正确的新东西,第一个 Prototype 是 Draft 的验收测试。因此:
 
 - **正式化不是单纯状态翻转**:它 = 第一次批量 Rule Update(把 prototype 迭代期间经 Issue 27 落库的反馈回流折进规则,复用 Issue 29 的批量审查机制,全部 Confirm 后)+ DS v1 状态翻转。正式化的 DS v1 必须与刚审计通过的 Prototype 一致。
+- **Candidate 的裁决点**:DS 条目分 Formalized(设计师确认,生成硬参考)与 Candidate(未确认,低优先级软参考,冲突时 Formalized 优先)两级。正式化时,通过 prototype 验证的 Candidate 转为 Formalized;未裁决的 Candidate 保持软参考地位,不得无限积压。
 - **Prototype 迭代期间的修改必须经 Agent 之手**(设计师在 chat 指示、Agent 改代码、反馈照常落库);设计师不直接改 prototype 文件,否则正式化时的回流审查会漏。
 - **回退路径**:Prototype 审计暴露 Draft 根本性问题时,可声明退回 seed/extraction 阶段(abandon 语义事件),状态机不假装线性。
 - 硬校验只管**声明顺序**(未 confirm draft 不能 record prototype;未 confirm prototype 不能 formalize;未 formalize 不能开新设计 run),不管文件本身——与现有 evidence 校验边界一致。研究导出(Issue 15)的有效性依赖这个事件序列。
@@ -39,8 +40,10 @@ seed → draft_design_system(待审计) → prototype_validation → design_syst
 
 ## Real Agent validation
 
-- [ ] 真实 Agent 走完整链路:设计师 chat 确认 draft → 生成并迭代 prototype → 设计师确认 → 批量审查回流 → formalize,事件日志相位序列完整。
-- [ ] 真实 Agent 在 draft 未确认时尝试 record prototype 被拒。
+- [x] 真实 Agent 走完整链路:设计师 chat 确认 draft → 生成并迭代 prototype → 设计师确认 → 批量审查回流 → formalize,事件日志相位序列完整。
+- [x] 真实 Agent 在 draft 未确认时尝试 record prototype 被拒。
+
+> 2026-08-06 `ikran test 7` MCP 验证 PASS（`b397009`）:相位链 B1–B8（含未审反馈门；消费用 SQL 模拟 Issue 29）；乱序 formalize@draft → `phase_gate`（`record_preview` 属 Issue 30，尚未接线）；Workbench `data-project-phase` / readiness 同步到 `ready_for_new_design`；abandon 按计划跳过。报告见 `/tmp/ikran-issue28-test7-report.md`。
 
 ## Likely difficulties for Agent
 

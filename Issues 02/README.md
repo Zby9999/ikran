@@ -36,13 +36,24 @@
 9C-D01. `09C-D01-interaction-section-text-only-strategy-rules.md` - Interaction Section 纯文本策略规则与抽取契约拆分
 9C-D02. `09C-D02-layout-source-capture-visual-anchor.md` - Layout Source Capture：原设计截图作为视觉 Anchor
 9C-D03. `09C-D03-component-reader-presentation-framework.md` - Component Reader 与统一呈现框架（含组件绑定交互规格）
-10. `10-seed-prototype-preview-record-preview.md` - Seed Prototype Preview 与 `record_preview`
-11. `11-prototype-region-context-dom-inspection.md` - Prototype Region Context 与 DOM Inspection
-12. `12-rule-update-proposal-confirm-cancel.md` - Rule Update Proposal Confirm/Cancel
-13. `13-human-intent-new-prototype-loop.md` - Human-Intent New Prototype Loop
+10. ~~`10-seed-prototype-preview-record-preview.md`~~ **superseded(2026-08-06)by 30**,原文保留考古
+11. ~~`11-prototype-region-context-dom-inspection.md`~~ **superseded(2026-08-06)**,整体放弃,兜底语义由 27/30 吸收
+12. ~~`12-rule-update-proposal-confirm-cancel.md`~~ **superseded(2026-08-06)by 29**,原文保留考古
+13. `13-human-intent-new-prototype-loop.md` - Human-Intent New Prototype Loop(2026-08-06 原地改写:相位门 + 会话边界 + 生成隔离)
 14. `14-optional-visual-reference-new-prototype.md` - Optional Visual Reference New Prototype Path
-15. `15-research-event-export-undeclared-artifact-guard.md` - Research Event Export 与 Undeclared Artifact Guard
+15. `15-research-event-export-undeclared-artifact-guard.md` - Research Event Export 与 Undeclared Artifact Guard(2026-08-06 修订:导出含 designer-feedback 日志)
 16. `16-staged-full-workflow-smoke-harness.md` - Staged Full Workflow Smoke Harness
+
+## 收尾链路(2026-08-06 重排,取代原 10/11/12 并续接主线)
+
+27. `27-chat-first-designer-feedback-declaration.md` - Chat-First Designer Feedback 声明通道(反馈即时落库、只写不读、生成隔离)
+28. `28-phase-state-machine-design-system-formalization.md` - Phase State Machine 与 Design System 正式化(正式化 = 第一次批量 rule update + v1 翻转)
+29. `29-batch-rule-update-review.md` - 批量 Rule Update 审查(设计师择机 Consolidate,取代 12)
+30. `30-prototype-surfaces-multi-embed-single-live.md` - Prototype Surface 多嵌单活(取代 10/11,仅 focus 的 surface 为 live iframe)
+
+收尾依赖链:`27 → 29 → 28 → 30 → 13 → (14) → 15 → 16`。其中 28 与 29 可并行起步;28 的 `formalize_design_system` 整合 29 的批量审查机制。
+
+演示路线(2026-08-06 变更):优先交付**无 UI 端到端纵切**。29 走 chat 口述路径(只口述拟提升为全局规则的提案,Confirm/Cancel 也在 chat),Workbench 审查 UI 按 `app/prototypes/review-session/` 的 Intake 原型推迟补齐;其余 issue 机制不变。
 
 ## Post-MVP host adapter investigation
 
@@ -54,7 +65,7 @@
 
 ADR 0003 转型的实际 frontier 是：`05A → 05B → 05C → 06 → 05D → 07`。05C 先交付 structural overlay、refresh correspondence 与 context lookup；Issue 06 再建立持久 surface/node/region Annotation 和 stale warning；05D 完成 legacy contract 后，Issue 07 才进入正式 Alignment gate。
 
-Issue 01–05 与 Issue 06 的既有代码/历史材料已存在；阅读时先看各文件顶部的架构收口说明。Issue 05A–05D 与 07–16 同步的是目标与验收，不表示已实现完成。
+Issue 01–05 与 Issue 06 的既有代码/历史材料已存在；阅读时先看各文件顶部的架构收口说明。Issue 05A–05D、07–16 与 27–30 同步的是目标与验收，不表示已实现完成。
 
 ## 全局约束
 
@@ -72,6 +83,7 @@ Issue 01–05 与 Issue 06 的既有代码/历史材料已存在；阅读时先�
 - Agent 只能通过语义 MCP tools 改变研究事实源；无 raw exec，无单独 geometry tool。
 - 无 AgentAdapter / `/api/tasks` / fake Agent connection / mock product families 产品路径；测试仅用 deterministic MCP client / test doubles。
 - Source artifact 由 Agent host 原生文件编辑写入；只有声明并校验通过后才进入事件、derived artifact 和 export。
+- Design System 条目分两级：**Formalized**（设计师确认，生成时的硬参考）与 **Candidate**（未经确认，低优先级软参考）。冲突时 Formalized 优先且冲突必须显式标记；Candidate 不得无限积压，Issue 28 的正式化是其裁决点（通过 prototype 验证的 Candidate 转正）。两级都在 Design System 内，不违反生成隔离——层级语义约束的是"冲突时谁赢"，不是"库内 vs 库外"。**Candidate 依赖必须可追溯**：Agent 生成时若实际依赖了某条 Candidate，须在声明或提案中显式标注；审查时按使用频率优先裁决被高频依赖的 Candidate。
 - 研究 export：**入选**要求完整成功递归；**内容**为该项目整条成功语义链路（含闭环前成功阶段）。失败请求、失败标注、草稿、取消、Open Gap、canvas layout 不进入研究事实导出。
 - 每个 issue 都必须包含真实 Agent 验证点和 open gaps 记录；真实 smoke 与 automated/mock 明确区分。
 

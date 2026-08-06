@@ -1,5 +1,9 @@
 # Rule Update Proposal Confirm/Cancel
 
+> **Status: superseded(2026-08-06)** — 由 `29-batch-rule-update-review.md` 取代。原文保留供考古,以实现为准见 Issue 29。
+>
+> 取代记录:proposal-first、Confirm/Cancel、Confirm 后写 artifact 并关联 proposal id、六类分类学、事件日志等核心契约被 Issue 29 全部继承。变化:提案起草时机从"反馈后即时提案"改为"设计师择机发起的批量审查(Consolidate)";反馈证据来自 Issue 27 的 chat-first 落库通道(`designer_feedback` 进入 evidence 白名单);新增单条即时提案逃生口与待审查计数软提醒。
+
 ## What to build
 
 从 design-system 页面反馈或 prototype region feedback 生成 rule update proposal。Agent 负责解释将改变什么、为什么改变、受影响项；Runtime 记录 proposal canvas/source records；设计师 Confirm 后，Agent 写 design-system source artifact 并声明；Cancel 不修改 source artifact。
