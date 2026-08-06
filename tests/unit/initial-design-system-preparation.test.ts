@@ -35,6 +35,7 @@ import {
 } from "../../lib/runtime/initial-design-system-preparation";
 import { getDesignSystemView } from "../../lib/runtime/design-system-view";
 import {
+  INITIAL_DESIGN_SYSTEM_PENDING_GRACE_MS,
   INITIAL_DESIGN_SYSTEM_WRITE_GATE_STALE_MS,
   isInitialDesignSystemWriteBlocked
 } from "../../lib/runtime/design-system-write-gate";
@@ -457,14 +458,16 @@ function recordAuditForCurrentProgress(
 }
 
 /**
- * Age the durable Initial Design System command past the write gate's stale
- * window, simulating an interrupted extraction run (the command row never
- * moves again once the agent stops working on it).
+ * Age the durable Initial Design System command, simulating time passing
+ * without the run progressing (the command row never moves on its own once
+ * the agent stops working on it). Defaults to twice the claimed-stage stale
+ * window.
  */
-function backdateInitialDesignSystemCommand(projectPath: string) {
-  const stale = new Date(
-    Date.now() - INITIAL_DESIGN_SYSTEM_WRITE_GATE_STALE_MS * 2
-  ).toISOString();
+function backdateInitialDesignSystemCommand(
+  projectPath: string,
+  msAgo = INITIAL_DESIGN_SYSTEM_WRITE_GATE_STALE_MS * 2
+) {
+  const stale = new Date(Date.now() - msAgo).toISOString();
   const db = new DatabaseSync(getProjectDbPath(projectPath));
   try {
     db.prepare(
@@ -1652,6 +1655,18 @@ describe("Initial Design System preparation", () => {
     expect(isInitialDesignSystemWriteBlocked(fixture.projectPath)).toBe(true);
 
     backdateInitialDesignSystemCommand(fixture.projectPath);
+    expect(isInitialDesignSystemWriteBlocked(fixture.projectPath)).toBe(false);
+  });
+
+  test("pending command past the claim grace unblocks writes without waiting a full day", () => {
+    const fixture = createCompletedAlignmentFixture();
+    // Never claimed and older than the pending grace (but well inside the
+    // claimed-stage stale window): nothing is extracting, so designer
+    // writes must not stay locked.
+    backdateInitialDesignSystemCommand(
+      fixture.projectPath,
+      INITIAL_DESIGN_SYSTEM_PENDING_GRACE_MS * 2
+    );
     expect(isInitialDesignSystemWriteBlocked(fixture.projectPath)).toBe(false);
   });
 

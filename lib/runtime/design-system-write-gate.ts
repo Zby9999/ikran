@@ -2,15 +2,24 @@ import { getAlignmentPreparationOnDb } from "./alignment-preparation";
 import { closeProjectDb, openProjectDb } from "./db";
 
 /**
- * How long a pending/claimed Initial Design System command without any
- * extraction activity still counts as "in progress" for the write gate.
+ * How long a claimed Initial Design System command without any extraction
+ * activity still counts as "in progress" for the write gate.
  *
  * The durable command has no timeout of its own — an interrupted extraction
- * leaves it pending/claimed forever, and the agent can always re-claim it
- * later — so the gate must stop treating stale commands as live, or designer
- * approvals and edits stay blocked indefinitely.
+ * leaves it claimed forever, and the agent can always re-claim it later — so
+ * the gate must stop treating stale commands as live, or designer approvals
+ * and edits stay blocked indefinitely.
  */
 export const INITIAL_DESIGN_SYSTEM_WRITE_GATE_STALE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How long a pending (never-claimed) command still counts as "about to be
+ * claimed". A pending command writes nothing — extraction only starts
+ * writing at claim — so it is a short grace, not the full stale window: the
+ * agent claims within moments of the command being created, and a command
+ * left pending longer than this was abandoned before it started.
+ */
+export const INITIAL_DESIGN_SYSTEM_PENDING_GRACE_MS = 60 * 60 * 1000;
 
 /**
  * Initial extraction owns the Design System source while its durable command
@@ -18,10 +27,11 @@ export const INITIAL_DESIGN_SYSTEM_WRITE_GATE_STALE_MS = 24 * 60 * 60 * 1000;
  * designer edits and approvals must wait until finalize completes.
  *
  * Liveness: the command row moves on claim/finalize, and every recorded
- * extraction manifest bumps its own updated_at. A command whose latest
- * activity on either is older than the stale window is an interrupted run,
- * not an in-flight one — it can still be re-claimed later, but it must not
- * keep designer writes locked.
+ * extraction manifest bumps its own updated_at. A claimed command whose
+ * latest activity on either is older than the stale window is an interrupted
+ * run, not an in-flight one — it can still be re-claimed later, but it must
+ * not keep designer writes locked. A pending command only holds the gate for
+ * the claim grace.
  */
 export function isInitialDesignSystemWriteBlocked(
   projectPath: string,
@@ -37,6 +47,12 @@ export function isInitialDesignSystemWriteBlocked(
     if (command?.status !== "pending" && command?.status !== "claimed") {
       return false;
     }
+    const commandMs = Date.parse(command.updated_at);
+    // Unparseable command timestamp: fail closed, keep the gate locked.
+    if (Number.isNaN(commandMs)) return true;
+    if (command.status === "pending") {
+      return now.getTime() - commandMs <= INITIAL_DESIGN_SYSTEM_PENDING_GRACE_MS;
+    }
     const latestManifest = db
       .prepare(
         `SELECT MAX(updated_at) AS latest
@@ -48,15 +64,12 @@ export function isInitialDesignSystemWriteBlocked(
     // on claim/re-claim/finalize, manifests move as the extraction records
     // work units. A stale manifest must not mask a fresh re-claim, and a
     // stale command row must not mask a live manifest stream.
-    const commandMs = Date.parse(command.updated_at);
     const manifestMs = latestManifest?.latest
       ? Date.parse(latestManifest.latest)
       : Number.NaN;
     const activityMs = Number.isNaN(manifestMs)
       ? commandMs
       : Math.max(commandMs, manifestMs);
-    // Unparseable activity timestamp: fail closed, keep the gate locked.
-    if (Number.isNaN(activityMs)) return true;
     return (
       now.getTime() - activityMs <= INITIAL_DESIGN_SYSTEM_WRITE_GATE_STALE_MS
     );
@@ -64,3 +77,4 @@ export function isInitialDesignSystemWriteBlocked(
     closeProjectDb(db);
   }
 }
+

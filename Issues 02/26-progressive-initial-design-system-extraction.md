@@ -46,11 +46,16 @@ spec's `stateMatrix`.
     switches are disabled and rejected by Runtime. Writes reopen after
     preparation completes. Liveness refinement (2026-08-06): the durable
     command has no timeout, and an interrupted extraction used to lock
-    designer writes forever. The gate now treats a pending/claimed command
-    with no activity — neither a command-row update nor an extraction
-    manifest write — for more than 24 hours as an interrupted run and stops
-    blocking; the command itself stays pending/claimed so the agent can
-    still re-claim and resume it.
+    designer writes forever — migration v22 made this worse by resetting a
+    previously completed command back to pending with a fresh updated_at.
+    The gate now distinguishes the two stages. A pending (never-claimed)
+    command writes nothing, so it only holds the gate for a 1-hour claim
+    grace; past that it was abandoned before it started. A claimed command
+    blocks while its latest activity — either a command-row update or an
+    extraction manifest write — is within 24 hours; past that it is an
+    interrupted run and stops blocking. In both cases the command itself
+    keeps its status so the agent can still claim/re-claim and resume, and
+    a fresh claim re-locks the gate.
 11. No compatibility or migration of old extraction manifests or test data.
     The prototype is re-extracted from a fresh project after implementation.
 
