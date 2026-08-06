@@ -9,6 +9,7 @@ import {
   getDesignIntentAlignmentOnDb
 } from "./design-intent-alignment";
 import { logEventOnDb } from "./events";
+import { advanceToDraftDesignSystemOnDb } from "./project-phase";
 import { emitRecordEvent } from "./record-bus";
 import { listDeclaredArtifacts } from "./source-artifact";
 import { resolveEntrySourceCaptures } from "./design-system-ingest";
@@ -2402,6 +2403,7 @@ export function finalizeInitialDesignSystemPreparation(
           entry_count: entries.length
         }
       );
+      advanceToDraftDesignSystemOnDb(db);
       const completed = getAlignmentPreparationOnDb(db);
       const progressive = progressiveExtractionStateOnDb(
         db,

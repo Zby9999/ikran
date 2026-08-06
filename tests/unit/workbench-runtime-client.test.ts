@@ -110,7 +110,8 @@ function readinessResponse(
         ? {
             ok: true,
             preconditions: [],
-            designLanguageDescription: options?.description ?? ""
+            designLanguageDescription: options?.description ?? "",
+            project_phase: "seed"
           }
         : { ok: false, error: options?.error ?? "load_failed" }
     ),

@@ -53,6 +53,15 @@ export { proposeRuleUpdateCommand } from "./rule-update-proposal";
 export { recordDesignerFeedbackCommand } from "./designer-feedback";
 
 export {
+  getProjectPhaseCommand,
+  requireProjectPhaseCommand,
+  confirmDraftDesignSystemCommand,
+  confirmPrototypeCommand,
+  formalizeDesignSystemCommand,
+  abandonProjectPhaseCommand
+} from "./project-phase";
+
+export {
   createRegionAnnotationCommand,
   confirmAnnotationPrimaryNodeCommand,
   listRegionAnnotationsCommand,

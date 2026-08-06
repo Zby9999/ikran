@@ -9,6 +9,7 @@ import { registerDesignIntentAlignmentTools } from "./design-intent-alignment-to
 import { registerArtifactTools } from "./artifact-tools";
 import { registerRuleUpdateTools } from "./rule-update-tools";
 import { registerDesignerFeedbackTools } from "./feedback-tools";
+import { registerProjectPhaseTools } from "./project-phase-tools";
 import { registerInitialDesignSystemTools } from "./initial-design-system-tools";
 import {
   IKRAN_MCP_INSTRUCTIONS,
@@ -34,4 +35,5 @@ export function registerIkranTools(
   registerArtifactTools(mcp, deps);
   registerRuleUpdateTools(mcp, deps);
   registerDesignerFeedbackTools(mcp, deps);
+  registerProjectPhaseTools(mcp, deps);
 }

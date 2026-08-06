@@ -65,6 +65,7 @@ export function SeedEvidenceWorkbench({
     annotations,
     layout,
     designLanguageDescription,
+    projectPhase,
     alignment,
     status: runtimeStatus,
     error,
@@ -296,6 +297,7 @@ export function SeedEvidenceWorkbench({
       data-figma-gate={canvasLocked ? "closed" : "open"}
       data-canvas-stage={canvasLocked ? undefined : canvasStage}
       data-alignment-workflow-stage={workflowStage}
+      data-project-phase={projectPhase}
       data-agent-command-status={nextAgentCommandStatus}
     >
       <div className="seed-workbench__folder-stack">

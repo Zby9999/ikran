@@ -156,6 +156,7 @@ export function useWorkbenchRuntime(session: string) {
   );
   const [designLanguageDescription, setDesignLanguageDescription] =
     useState("");
+  const [projectPhase, setProjectPhase] = useState("seed");
   const [alignment, setAlignment] =
     useState<DesignIntentAlignmentSnapshot | null>(null);
   const [status, setStatus] = useState<WorkbenchRuntimeStatus>("idle");
@@ -190,6 +191,9 @@ export function useWorkbenchRuntime(session: string) {
       prev === snapshot.designLanguageDescription
         ? prev
         : snapshot.designLanguageDescription
+    );
+    setProjectPhase((prev) =>
+      prev === snapshot.projectPhase ? prev : snapshot.projectPhase
     );
     setAlignment((prev) =>
       prev && alignmentSignature(prev) === alignmentSignature(snapshot.alignment)
@@ -493,6 +497,7 @@ export function useWorkbenchRuntime(session: string) {
     annotations,
     layout,
     designLanguageDescription,
+    projectPhase,
     alignment,
     status,
     error,

@@ -168,6 +168,8 @@ export type WorkbenchRuntimeSnapshot = {
   layout: WorkbenchLayoutDocument;
   /** Project-level Design Language Description (Info tip). */
   designLanguageDescription: string;
+  /** Issue 28 — completion-phase state machine. */
+  projectPhase: string;
   /** Issue 07 — authoritative six-part Design Intent Alignment state. */
   alignment: DesignIntentAlignmentSnapshot;
 };
@@ -361,6 +363,10 @@ export function createWorkbenchDataClient(
             typeof readinessRes.data.designLanguageDescription === "string"
               ? readinessRes.data.designLanguageDescription
               : "";
+          const projectPhase =
+            typeof readinessRes.data.project_phase === "string"
+              ? readinessRes.data.project_phase
+              : "seed";
           options.onSnapshot({
             seeds: (seedRes.data.records as SeedReferenceRecord[]) ?? [],
             surfaces:
@@ -369,6 +375,7 @@ export function createWorkbenchDataClient(
               (annotationRes.data.records as RegionAnnotationRecord[]) ?? [],
             layout: lastLayout,
             designLanguageDescription,
+            projectPhase,
             alignment: alignmentRes.data as unknown as DesignIntentAlignmentSnapshot
           });
           options.onError(null);

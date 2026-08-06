@@ -82,6 +82,7 @@ afterEach(() => {
 test("empty Description reports description_missing and does not block capture", async () => {
   const readiness = getProjectReadiness(projectDir);
   expect(readiness.preconditions).toContain("description_missing");
+  expect(readiness.projectPhase).toBe("seed");
   expect(getDesignLanguageDescription(projectDir)).toBe("");
 
   const capture = await addSeedReference(projectDir, {

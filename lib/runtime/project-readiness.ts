@@ -7,12 +7,14 @@
 
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
 import { openProjectDb, closeProjectDb, withProjectTransaction } from "./db";
+import { getProjectPhase, type ProjectPhase } from "./project-phase";
 
 export type ProjectReadinessPrecondition = "description_missing";
 
 export type ProjectReadiness = {
   preconditions: ProjectReadinessPrecondition[];
   designLanguageDescription: string;
+  projectPhase: ProjectPhase;
 };
 
 function ensureProjectMetaRow(db: DatabaseType): void {
@@ -77,5 +79,9 @@ export function getProjectReadiness(projectPath: string): ProjectReadiness {
   if (designLanguageDescription.length === 0) {
     preconditions.push("description_missing");
   }
-  return { preconditions, designLanguageDescription };
+  return {
+    preconditions,
+    designLanguageDescription,
+    projectPhase: getProjectPhase(projectPath)
+  };
 }

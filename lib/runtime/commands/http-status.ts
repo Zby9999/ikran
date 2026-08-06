@@ -22,7 +22,10 @@ const CONFLICT_REASONS = new Set([
   "entry_not_in_source_file",
   "concurrent_edit_superseded",
   "source_db_drift",
-  "concurrent_source_changed"
+  "concurrent_source_changed",
+  // Issue 28: illegal phase transition / formalize feedback gate.
+  "phase_gate",
+  "unreviewed_feedback"
 ]);
 const NOT_FOUND_REASONS = new Set(["not_found"]);
 const GONE_REASONS = new Set(["endpoint_retired"]);

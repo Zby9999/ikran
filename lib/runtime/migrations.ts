@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 24;
+export const CURRENT_SCHEMA_VERSION = 25;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1147,6 +1147,55 @@ CREATE INDEX IF NOT EXISTS idx_designer_feedback_created_at
 CREATE INDEX IF NOT EXISTS idx_designer_feedback_run_session
   ON designer_feedback(run_id, session_id);
       `);
+    }
+  },
+  {
+    version: 25,
+    up(db) {
+      // Issue 28: project completion-phase state machine. Issue 29 writes
+      // designer_feedback_review_consumption when a confirmed proposal
+      // consumes feedback; Issue 28 formalize only reads that table.
+      const now = new Date().toISOString();
+      db.exec(`
+CREATE TABLE IF NOT EXISTS project_phase (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  phase TEXT NOT NULL CHECK (phase IN (
+    'seed',
+    'draft_design_system',
+    'prototype_validation',
+    'design_system_formal',
+    'ready_for_new_design'
+  )),
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS designer_feedback_review_consumption (
+  feedback_id TEXT PRIMARY KEY
+    REFERENCES designer_feedback(id) ON DELETE RESTRICT,
+  proposal_id TEXT NOT NULL,
+  consumed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_review_consumption_proposal
+  ON designer_feedback_review_consumption(proposal_id);
+      `);
+      db.prepare(
+        `INSERT OR IGNORE INTO project_phase (singleton, phase, updated_at)
+         VALUES (1, 'seed', ?)`
+      ).run(now);
+      const completedExtraction = db
+        .prepare(
+          `SELECT 1 AS ok FROM agent_commands
+           WHERE command_type = 'prepare_initial_design_system'
+             AND status = 'completed'
+           LIMIT 1`
+        )
+        .get() as { ok: number } | undefined;
+      if (completedExtraction) {
+        db.prepare(
+          `UPDATE project_phase
+           SET phase = 'draft_design_system', updated_at = ?
+           WHERE singleton = 1 AND phase = 'seed'`
+        ).run(now);
+      }
     }
   }
 ];

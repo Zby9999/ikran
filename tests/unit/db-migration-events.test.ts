@@ -980,7 +980,7 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(24);
+        expect(CURRENT_SCHEMA_VERSION).toBe(25);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
@@ -1003,7 +1003,9 @@ test.describe("PRAGMA user_version migration runner", () => {
             "design_system_meta",
             "design_system_extraction_manifests",
             "design_system_extraction_manifest_requests",
-            "designer_feedback"
+            "designer_feedback",
+            "project_phase",
+            "designer_feedback_review_consumption"
           ])
         );
         const designSystemColumns = db

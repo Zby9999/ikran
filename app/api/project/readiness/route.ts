@@ -40,7 +40,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     preconditions: readiness.preconditions,
-    designLanguageDescription: readiness.designLanguageDescription
+    designLanguageDescription: readiness.designLanguageDescription,
+    project_phase: readiness.projectPhase
   });
 }
 
@@ -97,6 +98,7 @@ export async function PATCH(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     designLanguageDescription: result.designLanguageDescription,
-    preconditions: readiness.preconditions
+    preconditions: readiness.preconditions,
+    project_phase: readiness.projectPhase
   });
 }
