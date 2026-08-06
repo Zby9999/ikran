@@ -717,6 +717,21 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     await expect(editInput).toHaveValue("First pass");
     await editInput.fill("Second pass — tightened spacing");
 
+    // Multiline edit must grow the card box — never clip the second line.
+    const longEdit =
+      "每一页左上角、顶部都要有固定的SVG黑白插图，并与底部插图对应。";
+    await editInput.fill(longEdit);
+    const editForm = page.getByTestId("designer-annotation-card-edit");
+    await expect
+      .poll(async () => {
+        return editForm.evaluate((el) => {
+          const form = el as HTMLElement;
+          return form.scrollHeight <= form.clientHeight + 1;
+        });
+      })
+      .toBe(true);
+    await editInput.fill("Second pass — tightened spacing");
+
     const patchRequest = page.waitForRequest(
       (request) =>
         request.method() === "PATCH" &&

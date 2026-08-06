@@ -31,6 +31,7 @@ export function DesignerAnnotationEntryForm({
   submitting = false,
   onSubmit,
   onCancel,
+  onHeightChange,
   testId = "designer-annotation-entry",
   className
 }: {
@@ -38,12 +39,15 @@ export function DesignerAnnotationEntryForm({
   submitting?: boolean;
   onSubmit: (body: string) => void | Promise<void>;
   onCancel: () => void;
+  /** Fires when the form's laid-out height changes (create + in-card edit). */
+  onHeightChange?: (height: number) => void;
   testId?: string;
   /** Extra form class — e.g. the in-card variant that fills the card's box. */
   className?: string;
 }) {
   const [draft, setDraft] = useState(initialBody);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -62,6 +66,17 @@ export function DesignerAnnotationEntryForm({
     textarea.style.height = "auto";
     textarea.style.height = `${textarea.scrollHeight}px`;
   }, [draft]);
+
+  useEffect(() => {
+    const form = formRef.current;
+    if (!form || !onHeightChange) return;
+    const notify = () => onHeightChange(form.offsetHeight);
+    notify();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(notify);
+    observer.observe(form);
+    return () => observer.disconnect();
+  }, [onHeightChange, draft]);
 
   function submit(event?: FormEvent) {
     event?.preventDefault();
@@ -84,6 +99,7 @@ export function DesignerAnnotationEntryForm({
 
   return (
     <form
+      ref={formRef}
       className={["designer-annotation-entry", className]
         .filter(Boolean)
         .join(" ")}

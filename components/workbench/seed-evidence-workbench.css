@@ -1118,18 +1118,22 @@
   opacity: 0.4;
 }
 
-/* In-card edit variant: the entry form fills the docked card's fixed box
-   exactly, so toggling between filled and editing never changes the card's
-   height (the dashed connector stays anchored to the same center point). */
+/* In-card edit variant: grow with the typed body instead of locking to the
+   display-mode box (that box was measured for full-width body text; the edit
+   row shares space with the send button and wraps tighter, so a fixed height
+   clips the second line). */
 .designer-annotation-entry--card {
-  height: 100%;
-  min-height: 0;
+  height: auto;
+  min-height: 100%;
+  align-items: flex-start;
 }
 
-/* Inside the fixed card box the textarea still auto-grows, but is capped by
-   the box itself (form content height) and scrolls beyond it. */
 .designer-annotation-entry--card .designer-annotation-entry__textarea {
-  max-height: 100%;
+  max-height: 200px;
+}
+
+.designer-annotation-entry--card .designer-annotation-entry__send {
+  margin-top: 4px;
 }
 
 /* Designer Annotation side card (Issue 08A, Figma 670:895) — filled

@@ -89,6 +89,7 @@ import {
   type ApprovalState,
   type ComponentLeafId,
   type DesignSystemEntryView,
+  type DesignSystemLayoutCapture,
   type DesignSystemView,
   type DsBrowserModel,
   type DsColorLeafModel,
@@ -245,6 +246,142 @@ export function OriginTag({ origin }: { origin: DsVisualOrigin }) {
     <span className="dsb-origin" data-origin={origin}>
       {DS_VISUAL_ORIGIN_LABELS[origin]}
     </span>
+  );
+}
+
+/** Hero origin chip for a real capture: hover (not click) opens the provenance
+ * panel. Caption under the image and the Technical-details dump were retired
+ * so this is the single place for capture metadata. */
+function SourceCaptureOriginPopover({
+  captures,
+  portalContainer
+}: {
+  captures: readonly DesignSystemLayoutCapture[];
+  portalContainer: HTMLElement | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [side, setSide] = useState<InfoPopoverSide>("bottom");
+  const primary = captures[0];
+
+  const openNow = useCallback(() => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setOpen(true);
+  }, []);
+  const closeDelayed = useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      setOpen(false);
+    }, INFO_HOVER_CLOSE_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    },
+    []
+  );
+
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) return;
+    setSide(pickInfoPopoverSide(triggerRef.current));
+  }, [open]);
+
+  if (!primary) return <OriginTag origin="unavailable" />;
+
+  const ariaLabel = `Source capture: ${primary.nodeName}, captured ${formatCapturedAt(primary.capturedAt)}${primary.stale ? ", stale" : ""}`;
+  const align = side === "left" || side === "right" ? "start" : "end";
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setOpen(false);
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          ref={triggerRef}
+          type="button"
+          className="dsb-origin"
+          data-origin="source-capture"
+          data-testid="ds-component-capture-origin"
+          aria-label={ariaLabel}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onMouseEnter={openNow}
+          onMouseLeave={closeDelayed}
+          onFocus={openNow}
+          onBlur={closeDelayed}
+        >
+          {DS_VISUAL_ORIGIN_LABELS["source-capture"]}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="dsb-popover dsb-capture-popover"
+        container={portalContainer}
+        side={side}
+        align={align}
+        collisionPadding={INFO_POPOVER_EDGE_PAD}
+        sticky="partial"
+        data-testid="ds-component-capture-panel"
+        onMouseEnter={openNow}
+        onMouseLeave={closeDelayed}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => event.preventDefault()}
+      >
+        <p className="dsb-popover-title">Source capture</p>
+        {captures.map((capture, index) => (
+          <dl
+            key={`${capture.artifactPath}-${index}`}
+            className="dsb-capture-meta"
+            data-stale={capture.stale || undefined}
+          >
+            <div>
+              <dt>Node</dt>
+              <dd>{capture.nodeName}</dd>
+            </div>
+            <div>
+              <dt>Captured</dt>
+              <dd>
+                {formatCapturedAt(capture.capturedAt)}
+                {capture.stale ? " · stale" : ""}
+              </dd>
+            </div>
+            <div>
+              <dt>Artifact</dt>
+              <dd>{capture.artifactPath}</dd>
+            </div>
+            {capture.nodeId ? (
+              <div>
+                <dt>Node id</dt>
+                <dd>{capture.nodeId}</dd>
+              </div>
+            ) : null}
+            {capture.surfaceId ? (
+              <div>
+                <dt>Surface id</dt>
+                <dd>{capture.surfaceId}</dd>
+              </div>
+            ) : null}
+            {capture.nodeRect ? (
+              <div>
+                <dt>Node rect</dt>
+                <dd>{JSON.stringify(capture.nodeRect)}</dd>
+              </div>
+            ) : null}
+          </dl>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -2758,7 +2895,14 @@ export function ComponentDetail({
     >
       <section className="dsb-hero" data-testid="ds-component-hero">
         <span className="dsb-hero-origin">
-          <OriginTag origin={capture ? "source-capture" : "unavailable"} />
+          {capture ? (
+            <SourceCaptureOriginPopover
+              captures={component.captures}
+              portalContainer={rows.portalContainer}
+            />
+          ) : (
+            <OriginTag origin="unavailable" />
+          )}
         </span>
         {capture ? (
           <img
@@ -2783,18 +2927,6 @@ export function ComponentDetail({
             </span>
           </div>
         )}
-        {capture ? (
-          <span
-            className="dsb-hero-caption"
-            data-testid="ds-component-caption"
-          >
-            <span>{capture.nodeName}</span>
-            <span data-stale={capture.stale || undefined}>
-              captured {formatCapturedAt(capture.capturedAt)}
-              {capture.stale ? " · stale" : ""}
-            </span>
-          </span>
-        ) : null}
         {detail && detail.stateNames.length > 0 ? (
           <div
             className="dsb-hero-states"
@@ -2920,21 +3052,10 @@ export function ComponentDetail({
             </div>
           </section>
         ) : null}
-        {detail || component.captures.length > 0 || statusRows.length > 0 ? (
+        {detail || statusRows.length > 0 ? (
           <section className="dsb-section" data-testid="ds-component-technical-details">
             <GroupLabel>Technical details</GroupLabel>
             <div className="dsb-technical-details">
-              {component.captures.length > 0 ? (
-                <div className="dsb-reference-group">
-                  <h3 className="dsb-reference-label">Source captures</h3>
-                  <ComponentRecordTable
-                    rows={component.captures.map((sourceCapture) => ({
-                      ...sourceCapture
-                    }))}
-                    leading={["nodeName", "artifactPath", "capturedAt"]}
-                  />
-                </div>
-              ) : null}
               {detail?.referenceGroups.map((group) => (
                 <ComponentReferenceGroup key={group.id} group={group} />
               ))}

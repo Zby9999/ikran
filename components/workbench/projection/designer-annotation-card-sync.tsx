@@ -301,21 +301,25 @@ function syncDesignerAnnotationCardShapes(
         for (const { shape, plan: cardPlan } of cardUpdates) {
           const record = recordById.get(cardPlan.recordId);
           if (!record) continue;
+          // While the designer is editing in place, keep the live box size so
+          // a projection refresh cannot shrink the form mid-keystroke and
+          // reintroduce the multiline clip.
+          const editing = shape.props.editing;
           editor.updateShape<DesignerAnnotationCardShape>({
             id: shape.id,
             type: DESIGNER_ANNOTATION_CARD_TYPE,
-            x: cardPlan.x,
-            y: cardPlan.y,
+            x: editing ? shape.x : cardPlan.x,
+            y: editing ? shape.y : cardPlan.y,
             isLocked: true,
             props: {
               w: cardPlan.w,
-              h: cardPlan.h,
+              h: editing ? Math.max(cardPlan.h, shape.props.h) : cardPlan.h,
               body: cardPlan.body,
               section: cardPlan.section ?? "",
               anchorKind: cardPlan.anchorKind,
               placement: cardPlan.placement,
               // Local UI state survives projection updates (alignment-card precedent).
-              editing: shape.props.editing
+              editing
             },
             meta: projectionMeta(cardPlan, record)
           });

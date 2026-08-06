@@ -812,7 +812,7 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
     expect(html).toContain("ask the agent to implement this component");
   });
 
-  test("a source capture renders the image with its origin tag and provenance", () => {
+  test("a source capture renders the image with a hover provenance origin", () => {
     const view = fixtureView();
     view.components.specs[0] = {
       ...view.components.specs[0]!,
@@ -844,17 +844,15 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
     );
     expect(html).toContain('alt="Source capture of Button / Primary"');
     expect(html).toContain('data-origin="source-capture"');
+    expect(html).toContain('data-testid="ds-component-capture-origin"');
     expect(html).not.toContain('data-testid="ds-component-unavailable"');
-    // Provenance caption — same visual language as the layout placard,
-    // including the stale verdict.
-    expect(html).toContain('data-testid="ds-component-caption"');
-    expect(html).toContain("Button / Primary");
-    expect(html).toContain("captured 2026-08-03 12:00");
-    expect(html).toContain('data-stale="true"');
-    expect(html).toContain("· stale");
-    expect(html).toContain("Source captures");
-    expect(html).toContain("Button / Secondary");
-    expect(html).toContain("design-system/captures/button-secondary.png");
+    // Provenance lives on the origin chip (hover panel) — not under the
+    // image and not in Technical details.
+    expect(html).not.toContain('data-testid="ds-component-caption"');
+    expect(html).not.toContain("Source captures");
+    expect(html).toContain(
+      'aria-label="Source capture: Button / Primary, captured 2026-08-03 12:00, stale"'
+    );
   });
 
   test("Status & evidence rows keep the inventory/spec approval wiring", () => {

@@ -15,7 +15,9 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
+  useEffect,
   type ReactNode,
   type SyntheticEvent
 } from "react";
@@ -31,7 +33,12 @@ import {
 import { DesignerAnnotationEntryForm } from "./designer-annotation-entry-form";
 import { useExclusiveDialog } from "./exclusive-dialog-context";
 import type { DesignerAnnotationMutationResult } from "./designer-annotation-entry-context";
-import type { DesignerAnnotationAnchorKind } from "./projection/designer-annotation-card-projection";
+import {
+  DESIGNER_ANNOTATION_CARD_MAX_H,
+  DESIGNER_ANNOTATION_CARD_MIN_H,
+  type DesignerAnnotationAnchorKind
+} from "./projection/designer-annotation-card-projection";
+import { measureDesignerAnnotationCardHeight } from "./projection/designer-annotation-card-measure";
 
 export const DESIGNER_ANNOTATION_CARD_TYPE = "designer-annotation-card" as const;
 
@@ -156,6 +163,48 @@ export function DesignerAnnotationCardShapeView({
   const exclusive = useExclusiveDialog();
   const { w, h, body, section, anchorKind, editing } = shape.props;
 
+  const fitEditingHeight = useCallback(
+    (nextH: number) => {
+      if (!shape.props.editing) return;
+      const clamped = Math.min(
+        DESIGNER_ANNOTATION_CARD_MAX_H,
+        Math.max(DESIGNER_ANNOTATION_CARD_MIN_H, Math.ceil(nextH))
+      );
+      if (Math.abs(clamped - shape.props.h) <= 1) return;
+      editor.run(
+        () =>
+          editor.updateShape<DesignerAnnotationCardShape>({
+            id: shape.id,
+            type: DESIGNER_ANNOTATION_CARD_TYPE,
+            props: { h: clamped }
+          }),
+        { ignoreShapeLock: true }
+      );
+    },
+    [editor, shape.id, shape.props.editing, shape.props.h]
+  );
+
+  // Display mode stays tight to the body. Edit mode may grow the box; when
+  // editing ends, shrink back to the measured display height so the default
+  // card does not keep the taller edit chrome.
+  useEffect(() => {
+    if (editing) return;
+    const nextH = measureDesignerAnnotationCardHeight(
+      editor.getContainer(),
+      body
+    );
+    if (Math.abs(nextH - shape.props.h) <= 1) return;
+    editor.run(
+      () =>
+        editor.updateShape<DesignerAnnotationCardShape>({
+          id: shape.id,
+          type: DESIGNER_ANNOTATION_CARD_TYPE,
+          props: { h: nextH }
+        }),
+      { ignoreShapeLock: true }
+    );
+  }, [body, editing, editor, shape.id, shape.props.h]);
+
   function setEditing(next: boolean) {
     // Single-active-dialog: route through the canvas-wide coordinator when
     // available so opening this edit form closes every other input dialog
@@ -197,6 +246,7 @@ export function DesignerAnnotationCardShapeView({
           testId="designer-annotation-card-edit"
           className="designer-annotation-entry--card"
           initialBody={body}
+          onHeightChange={fitEditingHeight}
           onSubmit={async (nextBody) => {
             const result = await actions?.updateBody(
               shape.meta.runtimeRecordId,

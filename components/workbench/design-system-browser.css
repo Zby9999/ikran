@@ -845,6 +845,48 @@
   font-weight: 600;
 }
 
+.dsb-capture-popover {
+  width: min(360px, calc(100vw - 32px));
+}
+
+.dsb-capture-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.dsb-capture-meta + .dsb-capture-meta {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgb(0 0 0 / 6%);
+}
+
+.dsb-capture-meta > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.dsb-capture-meta dt {
+  margin: 0;
+  color: var(--dsc-ink-3);
+  font-size: 10.5px;
+}
+
+.dsb-capture-meta dd {
+  margin: 0;
+  color: var(--dsc-ink);
+  font-size: 11.5px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.dsb-capture-meta[data-stale] dd {
+  color: #9a6a00;
+}
+
 .dsb-evidence-section + .dsb-evidence-section {
   margin-top: 10px;
 }
@@ -1763,30 +1805,27 @@
   border: 1px solid rgb(0 0 0 / 8%);
   border-radius: 16px;
   background: #fff;
-  padding: 32px 32px 56px;
+  padding: 32px 32px 48px;
 }
 
 .dsb-hero-origin {
   position: absolute;
   top: 14px;
   right: 16px;
+  z-index: 1;
 }
 
-/* Provenance caption (bottom-left) — same visual language as the layout
- * placard caption, including the stale verdict color. */
-.dsb-hero-caption {
-  position: absolute;
-  bottom: 14px;
-  left: 16px;
-  display: flex;
+.dsb-hero-origin .dsb-origin {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  color: var(--dsc-ink-3);
-  font-size: 10.5px;
-}
-
-.dsb-hero-caption [data-stale] {
-  color: #9a6a00;
+  margin: 0;
+  border: 0;
+  background: #fff;
+  cursor: default;
+  font: inherit;
+  font-size: 9.5px;
+  line-height: 14px;
+  letter-spacing: 0.01em;
 }
 
 .dsb-hero-image {
