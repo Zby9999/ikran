@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import type { DesignIntentAlignmentSnapshot } from "@/lib/runtime/design-intent-alignment";
 import {
   approvalErrorMessage,
+  editErrorMessage,
   approvalReducer,
   buildColorLeafModel,
   buildDesignSystemBrowserModel,
@@ -667,6 +668,20 @@ describe("approval UI states", () => {
     ]) {
       expect(approvalErrorMessage(reason)).toBe("Couldn't update. Try again.");
     }
+  });
+
+  test("preparing-gate failure explains why writes are locked", () => {
+    expect(approvalErrorMessage("initial_design_system_preparing")).toBe(
+      "Initial extraction is still running — try again once it finishes."
+    );
+  });
+
+  test("edit failures map the preparing gate and pass other reasons through", () => {
+    expect(editErrorMessage("initial_design_system_preparing")).toBe(
+      "Initial extraction is still running — try again once it finishes."
+    );
+    // Other edit reasons render verbatim (the inline rule editor shows them raw).
+    expect(editErrorMessage("source_db_drift")).toBe("source_db_drift");
   });
 });
 
