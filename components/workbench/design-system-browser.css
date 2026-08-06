@@ -1583,10 +1583,16 @@
 .dsb-interaction-ledger-main .dsb-card-title,
 .dsb-interaction-ledger-main .dsb-card-desc {
   display: block;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.02em;
 }
 
 .dsb-interaction-ledger-main .dsb-card-title,
 .dsb-interaction-ledger-main .dsb-rule-inline-title {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
   line-height: 20px;
 }
 

@@ -2598,18 +2598,18 @@ export function DesignSystemBrowser({
                     )
                   : null}
               </nav>
+              {view?.sync_warnings && view.sync_warnings.length > 0 ? (
+                <p
+                  className="dsb-page-note dsb-sync-warning"
+                  data-testid="ds-sync-warning"
+                  role="status"
+                >
+                  {view.sync_warnings.length === 1
+                    ? `One source file could not be synced (${view.sync_warnings[0].path}) — showing its last synced version.`
+                    : `${view.sync_warnings.length} source files could not be synced — showing their last synced versions.`}
+                </p>
+              ) : null}
             </div>
-            {view?.sync_warnings && view.sync_warnings.length > 0 ? (
-              <p
-                className="dsb-page-note dsb-sync-warning"
-                data-testid="ds-sync-warning"
-                role="status"
-              >
-                {view.sync_warnings.length === 1
-                  ? `One source file could not be synced (${view.sync_warnings[0].path}) — showing its last synced version.`
-                  : `${view.sync_warnings.length} source files could not be synced — showing their last synced versions.`}
-              </p>
-            ) : null}
             <div
               key={`${route.kind}-${route.kind === "leaf" ? route.leaf : route.section}`}
               className="dsb-enter dsb-page"
