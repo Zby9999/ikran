@@ -80,7 +80,6 @@ import {
   buildColorLeafModel,
   buildDesignSystemBrowserModel,
   componentLeafId,
-  editErrorMessage,
   formatEntryValue,
   sheetReducer,
   sheetEscapeAction,
@@ -2106,10 +2105,7 @@ export function DesignSystemBrowser({
         if (!(response.ok && data.ok === true)) {
           return {
             ok: false,
-            error:
-              typeof data.error === "string"
-                ? editErrorMessage(data.error)
-                : "edit_failed"
+            error: typeof data.error === "string" ? data.error : "edit_failed"
           };
         }
         await reload();

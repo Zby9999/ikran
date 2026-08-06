@@ -917,27 +917,12 @@ export function approvalReducer(
   }
 }
 
-/** Status-write failure → short retry guidance shown beside the row. The
- * initial-extraction write gate gets its own message: a generic "try again"
- * would send the designer into a retry loop that cannot succeed until the
- * extraction finalizes (or goes stale). */
+/** Status-write failure → short retry guidance shown beside the row. */
 export function approvalErrorMessage(
-  reason: string,
+  _reason: string,
   _details?: unknown
 ): string {
-  if (reason === "initial_design_system_preparing") {
-    return "Initial extraction is still running — try again once it finishes.";
-  }
   return "Couldn't update. Try again.";
-}
-
-/** Edit-write failure text for the inline rule editor: the preparing gate
- * maps to the same explanatory message as approvals; every other reason
- * passes through verbatim (the editor renders it raw). */
-export function editErrorMessage(reason: string): string {
-  return reason === "initial_design_system_preparing"
-    ? approvalErrorMessage(reason)
-    : reason;
 }
 
 /**

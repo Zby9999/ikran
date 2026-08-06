@@ -1,13 +1,6 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, test } from "vitest";
 
 import {
@@ -16,7 +9,6 @@ import {
 } from "../../lib/runtime/alignment-agent-command";
 import { prepareDesignIntentAlignment } from "../../lib/runtime/alignment-preparation";
 import { initializeProjectDb } from "../../lib/runtime/db";
-import { getProjectDbPath } from "../../lib/runtime/paths";
 import {
   ALIGNMENT_SECTIONS,
   completeDesignIntentAlignment,
@@ -34,11 +26,6 @@ import {
   recordDesignSystemExtractionWorkUnit
 } from "../../lib/runtime/initial-design-system-preparation";
 import { getDesignSystemView } from "../../lib/runtime/design-system-view";
-import {
-  INITIAL_DESIGN_SYSTEM_PENDING_GRACE_MS,
-  INITIAL_DESIGN_SYSTEM_WRITE_GATE_STALE_MS,
-  isInitialDesignSystemWriteBlocked
-} from "../../lib/runtime/design-system-write-gate";
 import { approveDesignSystemEntry } from "../../lib/runtime/design-system-approval";
 import { editDesignSystemEntry } from "../../lib/runtime/design-system-edit";
 import { setDesignLanguageDescription } from "../../lib/runtime/project-readiness";
@@ -455,29 +442,6 @@ function recordAuditForCurrentProgress(
   });
   if (!audit.ok) throw new Error(audit.reason);
   return audit;
-}
-
-/**
- * Age the durable Initial Design System command, simulating time passing
- * without the run progressing (the command row never moves on its own once
- * the agent stops working on it). Defaults to twice the claimed-stage stale
- * window.
- */
-function backdateInitialDesignSystemCommand(
-  projectPath: string,
-  msAgo = INITIAL_DESIGN_SYSTEM_WRITE_GATE_STALE_MS * 2
-) {
-  const stale = new Date(Date.now() - msAgo).toISOString();
-  const db = new DatabaseSync(getProjectDbPath(projectPath));
-  try {
-    db.prepare(
-      `UPDATE agent_commands
-       SET created_at = ?, updated_at = ?
-       WHERE command_type = 'prepare_initial_design_system'`
-    ).run(stale, stale);
-  } finally {
-    db.close();
-  }
 }
 
 afterEach(() => {
@@ -1591,145 +1555,57 @@ describe("Initial Design System preparation", () => {
     });
   });
 
-  test("keeps Browser writes closed until progressive extraction finalizes", () => {
+  test("keeps Browser writes open during progressive extraction", () => {
     const fixture = createCompletedAlignmentFixture();
     const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
     if (!claimed.ok) throw new Error(claimed.reason);
     declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
 
-    const sourcePath = path.join(
-      fixture.projectPath,
-      "design-system/design-system.json"
-    );
-    const before = readFileSync(sourcePath, "utf8");
+    // The designer's approve/edit stay available while extraction is in
+    // flight. Conflicts are handled by the optimistic concurrency guards,
+    // not by locking writes.
     expect(
       approveDesignSystemEntry(fixture.projectPath, {
         sourceArtifactPath: "design-system/design-system.json",
         entryId: "visual-language",
         targetStatus: "formalized"
       })
-    ).toEqual({ ok: false, reason: "initial_design_system_preparing" });
-    expect(
-      editDesignSystemEntry(fixture.projectPath, {
-        sourceArtifactPath: "design-system/design-system.json",
-        entryId: "visual-language",
-        field: "value.description",
-        text: "A blocked edit."
-      })
-    ).toEqual({ ok: false, reason: "initial_design_system_preparing" });
-    expect(readFileSync(sourcePath, "utf8")).toBe(before);
+    ).toMatchObject({ ok: true, entry: { status: "formalized" } });
+    const edit = editDesignSystemEntry(fixture.projectPath, {
+      sourceArtifactPath: "design-system/design-system.json",
+      entryId: "visual-language",
+      field: "value.description",
+      text: "Designer-edited mid-extraction."
+    });
+    expect(edit).toMatchObject({ ok: true });
+    if (!edit.ok) throw new Error(edit.reason);
 
     const audit = recordCompleteProgressiveExtraction(fixture, claimed);
     expect(audit.progress.readyToFinalize).toBe(true);
+
+    // The conflict surfaces explicitly at finalize instead of being locked
+    // out up front: the designer's edit appended its event id to the entry
+    // links, which the extraction claims do not cover, so the lineage audit
+    // fails with a typed, retryable reason naming the entry and the exact
+    // unclaimed link (the edit event id).
     expect(
       finalizeInitialDesignSystemPreparation(
         fixture.projectPath,
         fixture.attemptId
       )
     ).toMatchObject({
-      ok: true,
-      command: { status: "completed" },
-      extraction_progress: { readyToFinalize: true }
+      ok: false,
+      reason: "entry_claim_lineage_mismatch",
+      details: {
+        entries: [
+          {
+            source_artifact_path: "design-system/design-system.json",
+            entry_id: "visual-language",
+            unclaimed_link_ids: [edit.event_id]
+          }
+        ]
+      }
     });
-
-    expect(
-      approveDesignSystemEntry(fixture.projectPath, {
-        sourceArtifactPath: "design-system/design-system.json",
-        entryId: "visual-language",
-        targetStatus: "formalized"
-      })
-    ).toMatchObject({ ok: true, entry: { status: "formalized" } });
-    expect(
-      editDesignSystemEntry(fixture.projectPath, {
-        sourceArtifactPath: "design-system/design-system.json",
-        entryId: "visual-language",
-        field: "value.description",
-        text: "Designer-edited after finalize."
-      })
-    ).toMatchObject({ ok: true });
-  });
-
-  test("stale unclaimed command no longer blocks Browser writes", () => {
-    const fixture = createCompletedAlignmentFixture();
-    // Fresh pending command: the agent is expected to claim it any moment.
-    expect(isInitialDesignSystemWriteBlocked(fixture.projectPath)).toBe(true);
-
-    backdateInitialDesignSystemCommand(fixture.projectPath);
-    expect(isInitialDesignSystemWriteBlocked(fixture.projectPath)).toBe(false);
-  });
-
-  test("pending command past the claim grace unblocks writes without waiting a full day", () => {
-    const fixture = createCompletedAlignmentFixture();
-    // Never claimed and older than the pending grace (but well inside the
-    // claimed-stage stale window): nothing is extracting, so designer
-    // writes must not stay locked.
-    backdateInitialDesignSystemCommand(
-      fixture.projectPath,
-      INITIAL_DESIGN_SYSTEM_PENDING_GRACE_MS * 2
-    );
-    expect(isInitialDesignSystemWriteBlocked(fixture.projectPath)).toBe(false);
-  });
-
-  test("stale claimed command without recent extraction activity unblocks Browser writes", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-
-    // Claimed, then the run died before any manifest was recorded.
-    backdateInitialDesignSystemCommand(fixture.projectPath);
-    expect(isInitialDesignSystemWriteBlocked(fixture.projectPath)).toBe(false);
-    expect(
-      approveDesignSystemEntry(fixture.projectPath, {
-        sourceArtifactPath: "design-system/design-system.json",
-        entryId: "visual-language",
-        targetStatus: "formalized"
-      })
-    ).toMatchObject({ ok: true, entry: { status: "formalized" } });
-  });
-
-  test("recent extraction manifest activity keeps the write gate closed", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-    recordCompleteProgressiveExtraction(fixture, claimed);
-
-    // The command row may look old; live manifest activity still means the
-    // extraction is in flight and owns the source files.
-    backdateInitialDesignSystemCommand(fixture.projectPath);
-    expect(isInitialDesignSystemWriteBlocked(fixture.projectPath)).toBe(true);
-    expect(
-      approveDesignSystemEntry(fixture.projectPath, {
-        sourceArtifactPath: "design-system/design-system.json",
-        entryId: "visual-language",
-        targetStatus: "formalized"
-      })
-    ).toEqual({ ok: false, reason: "initial_design_system_preparing" });
-  });
-
-  test("re-claim after an interrupted run re-locks the gate despite stale manifests", () => {
-    const fixture = createCompletedAlignmentFixture();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
-    if (!claimed.ok) throw new Error(claimed.reason);
-    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
-    recordCompleteProgressiveExtraction(fixture, claimed);
-
-    // The interrupted run's manifests are old, but the agent just re-claimed
-    // the command (its row is fresh) and is actively extracting again.
-    const stale = new Date(
-      Date.now() - INITIAL_DESIGN_SYSTEM_WRITE_GATE_STALE_MS * 2
-    ).toISOString();
-    const db = new DatabaseSync(getProjectDbPath(fixture.projectPath));
-    try {
-      db.prepare(
-        `UPDATE design_system_extraction_manifests
-         SET created_at = ?, updated_at = ?`
-      ).run(stale, stale);
-    } finally {
-      db.close();
-    }
-    expect(isInitialDesignSystemWriteBlocked(fixture.projectPath)).toBe(true);
   });
 
   test("finalize preserves uncovered-entry and bidirectional-lineage gates", () => {

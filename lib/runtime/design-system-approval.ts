@@ -53,7 +53,6 @@ import {
   sourceContentDigestOf
 } from "./source-artifact-digest";
 import { designSystemEntryContentDigest } from "./design-system-entry-provenance";
-import { isInitialDesignSystemWriteBlocked } from "./design-system-write-gate";
 import {
   parseTokenEntryRef,
   validateDesignSystemJson,
@@ -73,7 +72,6 @@ export type DesignSystemApprovalReason =
   | "already_formalized"
   | "already_candidate"
   | "gap_entry_not_approvable"
-  | "initial_design_system_preparing"
   | "entry_not_in_source_file"
   | "artifact_path_escape"
   | "artifact_file_missing"
@@ -191,9 +189,6 @@ export function approveDesignSystemEntry(
   input: ApproveDesignSystemEntryInput,
   hooks: ApproveDesignSystemEntryHooks = {}
 ): DesignSystemApprovalResult {
-  if (isInitialDesignSystemWriteBlocked(projectPath)) {
-    return { ok: false, reason: "initial_design_system_preparing" };
-  }
   // Project-scope check (same fail-closed seam as recordSourceArtifact).
   if (assertArtifactPathInProject(projectPath, input.sourceArtifactPath) !== null) {
     return { ok: false, reason: "artifact_path_escape" };

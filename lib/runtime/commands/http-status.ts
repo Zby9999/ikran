@@ -13,7 +13,6 @@ const CONFLICT_REASONS = new Set([
   "alignment_attempt_required",
   "alignment_command_not_claimed",
   "stale_alignment_attempt",
-  "initial_design_system_preparing",
   "no_pending_alignment_command",
   "no_active_alignment_attempt",
   // Designer status write-back: stale target or source/DB drift.

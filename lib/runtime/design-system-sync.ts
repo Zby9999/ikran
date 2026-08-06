@@ -17,9 +17,9 @@
 //     getDesignSystemView regenerates it from the freshly built view when
 //     this sync re-ingested anything (writing it from here via
 //     writeDesignSystemViewExport would recurse through getDesignSystemView).
-//   - This is a system-internal write path: the initial-preparation write
-//     gate (design-system-write-gate) guards designer edits/approvals only,
-//     not convergence of the Runtime truth.
+//   - This is a system-internal write path and stays available while the
+//     initial extraction runs: designer edits/approvals rely on the
+//     optimistic concurrency guards, not a write lock.
 
 import { existsSync, readFileSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";

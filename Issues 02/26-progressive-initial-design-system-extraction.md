@@ -41,21 +41,29 @@ spec's `stateMatrix`.
 8. A final residual audit consumes or explicitly classifies every remaining
    Question card, Agent Annotation, and Designer Annotation.
 9. The global completeness gate remains atomic at finalize.
-10. While Initial Design System preparation is pending or claimed, Design
-    Browser content may be read but direct edits and candidate/formalized
-    switches are disabled and rejected by Runtime. Writes reopen after
-    preparation completes. Liveness refinement (2026-08-06): the durable
-    command has no timeout, and an interrupted extraction used to lock
-    designer writes forever — migration v22 made this worse by resetting a
-    previously completed command back to pending with a fresh updated_at.
-    The gate now distinguishes the two stages. A pending (never-claimed)
-    command writes nothing, so it only holds the gate for a 1-hour claim
-    grace; past that it was abandoned before it started. A claimed command
-    blocks while its latest activity — either a command-row update or an
-    extraction manifest write — is within 24 hours; past that it is an
-    interrupted run and stops blocking. In both cases the command itself
-    keeps its status so the agent can still claim/re-claim and resume, and
-    a fresh claim re-locks the gate.
+10. Design Browser writes stay open for the whole preparation. Direct edits
+    and candidate/formalized switches are never disabled or rejected by
+    Runtime, whether the command is pending, claimed, or mid-extraction —
+    any control the designer can see must be operable, and there is no
+    waiting window. Revision (2026-08-06): the original write gate (and its
+    later 1-hour/24-hour liveness windows) was retired. It existed to
+    protect extraction-owned source files, but in practice a wedged or
+    reset durable command locked the designer out indefinitely, and the
+    protection was redundant: designer writes already carry optimistic
+    concurrency guards (`concurrent_source_changed`,
+    `concurrent_edit_superseded`, `source_db_drift` — the losing write
+    fails typed and the original bytes are restored), and Agent writes go
+    through declaration + ingest + drift sync, so a genuine race degrades
+    to a typed retryable failure or an LWW overwrite, never corrupt data.
+    The accepted trade-off: when the designer writes mid-extraction, the
+    conflict surfaces explicitly at finalize instead of being prevented —
+    e.g. a designer edit appends its event id to the entry links, which
+    the extraction claims do not cover, so the finalize audit fails with
+    `entry_claim_lineage_mismatch` (or
+    `formalized_claim_support_insufficient` for a designer-formalized
+    entry) naming the affected entry. The agent reconciles (records a
+    claim covering the designer's change, or the designer reverts) and
+    finalize is retried.
 11. No compatibility or migration of old extraction manifests or test data.
     The prototype is re-extracted from a fresh project after implementation.
 
