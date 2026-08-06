@@ -83,6 +83,7 @@ import {
   formatEntryValue,
   sheetReducer,
   sheetEscapeAction,
+  syncWarningAppliesToRoute,
   toRow,
   withEntryStatus,
   type ApprovalState,
@@ -1955,6 +1956,18 @@ export function DesignSystemBrowser({
     [view]
   );
 
+  // Sync warnings mount per page: only warnings whose source file feeds the
+  // current route show (e.g. token.json flags the token leaves, not Home).
+  const routeSyncWarnings = useMemo(
+    () =>
+      view && model
+        ? (view.sync_warnings ?? []).filter((warning) =>
+            syncWarningAppliesToRoute(warning.path, route, model)
+          )
+        : [],
+    [view, model, route]
+  );
+
   // Fresh navigation context each time the sheet opens.
   useEffect(() => {
     if (!open) return;
@@ -2598,15 +2611,15 @@ export function DesignSystemBrowser({
                     )
                   : null}
               </nav>
-              {view?.sync_warnings && view.sync_warnings.length > 0 ? (
+              {routeSyncWarnings.length > 0 ? (
                 <p
                   className="dsb-page-note dsb-sync-warning"
                   data-testid="ds-sync-warning"
                   role="status"
                 >
-                  {view.sync_warnings.length === 1
-                    ? `One source file could not be synced (${view.sync_warnings[0].path}) — showing its last synced version.`
-                    : `${view.sync_warnings.length} source files could not be synced — showing their last synced versions.`}
+                  {routeSyncWarnings.length === 1
+                    ? `One source file could not be synced (${routeSyncWarnings[0].path}) — showing its last synced version.`
+                    : `${routeSyncWarnings.length} source files could not be synced — showing their last synced versions.`}
                 </p>
               ) : null}
             </div>

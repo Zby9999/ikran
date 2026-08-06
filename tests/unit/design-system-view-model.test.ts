@@ -13,9 +13,13 @@ import {
   sheetReducer,
   sheetEscapeAction,
   statusChips,
+  syncWarningAppliesToRoute,
   withEntryStatus,
   type DesignSystemEntryView,
-  type DesignSystemView
+  type DesignSystemView,
+  type DsLeafId,
+  type DsRoute,
+  type DsSectionId
 } from "@/components/workbench/design-system-view-model";
 
 function entry(
@@ -960,5 +964,100 @@ describe("consolidated component detail projection", () => {
     const detail = buildDesignSystemBrowserModel(view).components.list[0]!
       .detail!;
     expect(detail.referenceGroups).toEqual([]);
+  });
+});
+
+describe("syncWarningAppliesToRoute (per-page warning mounting)", () => {
+  const model = buildDesignSystemBrowserModel(fixtureView());
+  const foundationsHome: DsRoute = { kind: "section", section: "foundations" };
+  const componentsHome: DsRoute = { kind: "section", section: "components" };
+  const leaf = (id: DsLeafId, section: DsSectionId = "foundations"): DsRoute => ({
+    kind: "leaf",
+    section,
+    leaf: id
+  });
+
+  test("design-system.json flags only Foundations Home", () => {
+    const path = "design-system/design-system.json";
+    expect(syncWarningAppliesToRoute(path, foundationsHome, model)).toBe(true);
+    expect(syncWarningAppliesToRoute(path, leaf("color"), model)).toBe(false);
+    expect(syncWarningAppliesToRoute(path, componentsHome, model)).toBe(false);
+  });
+
+  test("token.json flags the three token leaves only", () => {
+    const path = "design-system/token.json";
+    expect(syncWarningAppliesToRoute(path, leaf("color"), model)).toBe(true);
+    expect(syncWarningAppliesToRoute(path, leaf("typography"), model)).toBe(true);
+    expect(syncWarningAppliesToRoute(path, leaf("materials"), model)).toBe(true);
+    expect(syncWarningAppliesToRoute(path, leaf("layout"), model)).toBe(false);
+    expect(syncWarningAppliesToRoute(path, foundationsHome, model)).toBe(false);
+  });
+
+  test("root-relative spelling is accepted too", () => {
+    expect(syncWarningAppliesToRoute("token.json", leaf("color"), model)).toBe(true);
+  });
+
+  test("layout and interaction rule files flag their own leaves", () => {
+    expect(
+      syncWarningAppliesToRoute("design-system/layout-rules.json", leaf("layout"), model)
+    ).toBe(true);
+    expect(
+      syncWarningAppliesToRoute("design-system/layout-rules.json", leaf("interaction"), model)
+    ).toBe(false);
+    expect(
+      syncWarningAppliesToRoute(
+        "design-system/interaction-rules.json",
+        leaf("interaction"),
+        model
+      )
+    ).toBe(true);
+  });
+
+  test("component-list.json flags the whole components section", () => {
+    const path = "design-system/component-list.json";
+    expect(syncWarningAppliesToRoute(path, componentsHome, model)).toBe(true);
+    expect(
+      syncWarningAppliesToRoute(path, leaf("component:button", "components"), model)
+    ).toBe(true);
+    expect(syncWarningAppliesToRoute(path, foundationsHome, model)).toBe(false);
+  });
+
+  test("a component spec flags its own page and the landing that renders it", () => {
+    // Two components: button (inventory-anchored, landing) + a spec-only card.
+    const view = fixtureView();
+    view.components.specs.push(
+      entry({
+        entry_id: "card-spec",
+        file_kind: "component-spec",
+        section: "components.spec",
+        name: "Card",
+        source_artifact_path: "design-system/components/card.json",
+        value: { description: "Card surfaces." }
+      })
+    );
+    const two = buildDesignSystemBrowserModel(view);
+    expect(two.components.landingLeaf).toBe("component:button");
+
+    const buttonSpec = "design-system/components/button.json";
+    const cardSpec = "design-system/components/card.json";
+    expect(
+      syncWarningAppliesToRoute(buttonSpec, leaf("component:button", "components"), two)
+    ).toBe(true);
+    expect(
+      syncWarningAppliesToRoute(buttonSpec, leaf("component:card-spec", "components"), two)
+    ).toBe(false);
+    // The section landing renders the first component's detail, so only the
+    // landing component's stale spec shows there.
+    expect(syncWarningAppliesToRoute(buttonSpec, componentsHome, two)).toBe(true);
+    expect(syncWarningAppliesToRoute(cardSpec, componentsHome, two)).toBe(false);
+    expect(
+      syncWarningAppliesToRoute(cardSpec, leaf("component:card-spec", "components"), two)
+    ).toBe(true);
+  });
+
+  test("unknown paths flag nothing", () => {
+    expect(
+      syncWarningAppliesToRoute("design-system/readme.md", foundationsHome, model)
+    ).toBe(false);
   });
 });

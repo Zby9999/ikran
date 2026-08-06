@@ -222,6 +222,12 @@ export interface DsTokenLeafModel {
   chips: string[];
 }
 
+const TOKEN_LEAF_IDS: readonly TokenLeafId[] = [
+  "color",
+  "typography",
+  "materials"
+];
+
 const TOKEN_LEAF_NAMES: Record<TokenLeafId, string> = {
   color: "Color",
   typography: "Typography",
@@ -592,7 +598,7 @@ export function buildDesignSystemBrowserModel(
 
   // Token leaves: classify each layer's entries, keep layer grouping inside
   // each leaf (primitive → semantic → component), drop empty groups.
-  const tokenLeafIds: TokenLeafId[] = ["color", "typography", "materials"];
+  const tokenLeafIds = TOKEN_LEAF_IDS;
   const byLeafLayer = new Map<TokenLeafId, Map<TokenLayerKey, DsRow[]>>(
     tokenLeafIds.map((id) => [id, new Map()])
   );
@@ -745,6 +751,78 @@ export const DS_SECTION_NAMES: Record<DsSectionId, string> = {
 
 export function componentLeafId(leaf: DsLeafId): string | null {
   return leaf.startsWith("component:") ? leaf.slice("component:".length) : null;
+}
+
+/* --------------------------- sync warning routing --------------------------- */
+
+/**
+ * Which synced source file feeds which page: warnings mount per page, so a
+ * stale file only flags the pages whose data came from it. Paths arrive
+ * project-relative ("design-system/token.json"); the root-relative spelling
+ * is accepted too (same normalization as specPathMatchesSourceArtifact).
+ */
+export function syncWarningAppliesToRoute(
+  path: string,
+  route: DsRoute,
+  model: DsBrowserModel
+): boolean {
+  const rel = path.startsWith("design-system/")
+    ? path.slice("design-system/".length)
+    : path;
+  if (rel === "design-system.json") {
+    // Foundations Home is the only page rendering principles + visual language.
+    return route.kind === "section" && route.section === "foundations";
+  }
+  if (rel === "token.json") {
+    return (
+      route.kind === "leaf" &&
+      route.section === "foundations" &&
+      (TOKEN_LEAF_IDS as readonly string[]).includes(route.leaf)
+    );
+  }
+  if (rel === "layout-rules.json") {
+    return (
+      route.kind === "leaf" &&
+      route.section === "foundations" &&
+      route.leaf === "layout"
+    );
+  }
+  if (rel === "interaction-rules.json") {
+    return (
+      route.kind === "leaf" &&
+      route.section === "foundations" &&
+      route.leaf === "interaction"
+    );
+  }
+  if (rel === "component-list.json") {
+    // Inventory rows feed the components landing and every component page.
+    return route.section === "components";
+  }
+  if (rel.startsWith("components/")) {
+    // A component spec flags its own component page — and the components
+    // section landing when that component is the one it renders.
+    const component =
+      model.components.list.find(
+        (candidate) =>
+          candidate.spec !== null &&
+          specPathMatchesSourceArtifact(
+            candidate.spec.source_artifact_path,
+            path
+          )
+      ) ?? null;
+    if (route.kind === "section") {
+      return (
+        route.section === "components" &&
+        (component === null ||
+          model.components.landingLeaf === component.leafId)
+      );
+    }
+    return (
+      route.section === "components" &&
+      (component === null || route.leaf === component.leafId)
+    );
+  }
+  return false;
 }
 
 export function breadcrumbFor(
