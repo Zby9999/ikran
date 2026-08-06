@@ -1,6 +1,6 @@
 # 29 — 批量 Rule Update 审查(设计师择机 Consolidate)
 
-Status: ready-for-agent
+Status: implemented（MVP chat 路径；UI slice 仍推迟）
 
 > **修订记录(2026-08-06,演示路线变更)**:为优先交付**无 UI 的端到端纵切**,本 issue 拆为两个 slice:
 >
@@ -34,17 +34,17 @@ Rule update 的提案时机由设计师选择,不是每次交互后即时提案�
 
 标注:【MVP】= chat 口述路径(先行);【UI】= Workbench 审查面板(推迟,按 Intake 原型补齐)。
 
-- [ ] 【MVP】设计师在 chat 发起 Consolidate 审查;发起前反馈库只写不读。【UI】另增 Workbench 发起入口。
-- [ ] 【MVP】发起后 Agent 全量读取反馈库,按分组与 linkage 聚合,批量起草 proposals(含分类、reason、affected items、linked evidence)。
-- [ ] 【MVP】被后续反馈推翻的中间决定不单独成提案,以最新决定为准。
-- [ ] 【MVP】chat 口述只呈现拟提升为全局规则的提案(可复用候选 / 拟议更新);其余分类的去向可在 chat 按需查询。
-- [ ] 【MVP】Confirm / Cancel 在 chat 表达,Agent 经声明命令落库。【UI】Proposal 面板逐条 Confirm / Cancel。
-- [ ] 【MVP】Confirm 后 Agent 写 source artifact 并 `record_artifact_written` 关联 proposal id;Runtime 校验关联,缺失拒绝。
-- [ ] 【MVP】Cancel 不修改 source artifact。
-- [ ] 【MVP】支持 chat 明确指示的单条即时提案(逃生口),同样 Confirm 才生效。
+- [x] 【MVP】设计师在 chat 发起 Consolidate 审查;发起前反馈库只写不读。【UI】另增 Workbench 发起入口。
+- [x] 【MVP】发起后 Agent 全量读取反馈库,按分组与 linkage 聚合,批量起草 proposals(含分类、reason、affected items、linked evidence)。（聚合由 Agent 按工具描述执行;Runtime 提供全量读入口）
+- [x] 【MVP】被后续反馈推翻的中间决定不单独成提案,以最新决定为准。（Agent 侧契约;Runtime 不强制）
+- [x] 【MVP】chat 口述只呈现拟提升为全局规则的提案(可复用候选 / 拟议更新);其余分类的去向可在 chat 按需查询。
+- [x] 【MVP】Confirm / Cancel 在 chat 表达,Agent 经声明命令落库。【UI】Proposal 面板逐条 Confirm / Cancel。
+- [x] 【MVP】Confirm 后 Agent 写 source artifact 并 `record_artifact_written` 关联 proposal id;Runtime 校验关联,缺失拒绝。（携带 proposalId 时硬校验 confirmed;缺失时由 instructions 约束,与演示 handoff 一致）
+- [x] 【MVP】Cancel 不修改 source artifact。
+- [x] 【MVP】支持 chat 明确指示的单条即时提案(逃生口),同样 Confirm 才生效。
 - [ ] 【UI】Workbench 状态区显示待审查反馈计数;无任何自动触发。
-- [ ] 【MVP】事件日志记录 proposal created / confirmed / canceled。
-- [ ] 【MVP】测试覆盖:批量起草与聚合、confirm path、cancel path、artifact-proposal 关联校验、未确认 artifact guard、逃生口。
+- [x] 【MVP】事件日志记录 proposal created / confirmed / canceled。
+- [x] 【MVP】测试覆盖:批量起草与聚合、confirm path、cancel path、artifact-proposal 关联校验、未确认 artifact guard、逃生口。
 
 ## Real Agent validation
 
