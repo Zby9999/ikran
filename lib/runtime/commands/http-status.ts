@@ -31,7 +31,9 @@ const CONFLICT_REASONS = new Set([
   "proposal_not_awaiting_confirmation",
   "proposal_not_confirmed",
   "run_already_exists",
-  "candidate_entry_not_candidate"
+  "candidate_entry_not_candidate",
+  // Issue 15: research export eligibility gate unmet.
+  "research_export_ineligible"
 ]);
 const NOT_FOUND_REASONS = new Set([
   "not_found",

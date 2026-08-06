@@ -63,12 +63,13 @@ export function successResult(
 // semantics live on each tool's description. Never restate contract content
 // here; keep this within ~2KB.
 export const IKRAN_MCP_INSTRUCTIONS =
-  "Ikran local research workbench. open_workbench starts/reuses it and returns a localhost URL. OPEN-AND-WAIT DEFAULT: after create_or_open_project, do not end the turn — call wait_for_agent_command and keep consuming each durable command via its claim tool so a later designer Next/Complete continues the same turn; MCP cannot restart a turn once it ends. All source-of-truth changes go through Ikran tools.\n\n" +
+  "Ikran local research workbench. open_workbench starts/reuses it and returns a localhost URL. OPEN-AND-WAIT: after create_or_open_project, keep calling wait_for_agent_command and claim each durable command so designer Next/Complete continues the same turn; MCP cannot restart a turn once it ends. All source-of-truth changes go through Ikran tools.\n\n" +
   "GLOBAL DISCIPLINES:\n" +
-  "- Runtime capture is the sole Active ingestion path for Figma screenshots / positional evidence; without an active Figma Connection, Workbench paste and Agent seed add fail closed. Host Figma MCP is context only.\n" +
-  "- Declare every source artifact via record_artifact_written after the host file edit; undeclared files are excluded from research export.\n" +
-  "- Never silently drop confirmed input: map it to a stable record/entry, or record conflict / omitted / gap. Never invent semantics; never use one designer-edited card to formalize unrelated claims.\n" +
-  "- Follow the source_contract rule taxonomy; route misplaced-rule moves through the rule-update proposal channel, never move silently. Design gen uses design-system source only, never feedback; Formalized hard over Candidate soft — pass usedCandidateIds when depending on Candidate; declare conclusions via record_designer_feedback.\n" +
+  "- Runtime capture is the sole Active ingestion path for Figma screenshots/positional evidence; without Figma Connection, Workbench paste and Agent seed add fail closed. Host Figma MCP is context only.\n" +
+  "- Declare artifacts via record_artifact_written after host edits; undeclared files stay out of export_research.\n" +
+  "- Never silently drop confirmed input: map to a stable record/entry, or record conflict/omitted/gap. Never invent semantics; never use one designer-edited card to formalize unrelated claims.\n" +
+  "- Follow source_contract rule taxonomy; route misplaced-rule moves through the rule-update proposal channel, never move silently. Design gen uses design-system source only, never feedback; Formalized hard over Candidate soft—pass usedCandidateIds when depending on Candidate; declare conclusions via record_designer_feedback.\n" +
   "- Runtime owns prototype dev servers: declare code, then record_preview; never run one. After formalize: record_new_design_run (intent+DS only), new host chat.\n" +
-  "- Read feedback only via claim_consolidate_review when the designer starts a review; narrate only global-rule proposals (reusable_candidate / proposed_update). Never write a rule-update artifact before confirm_rule_update; declare it with that proposalId.\n\n" +
-  "FLOW CONTRACTS arrive on demand: claim_alignment_preparation → Alignment section_contract; claim_initial_design_system_preparation → frozen context + extraction source_contract. Read all context first, then record global/tokens/layout/interaction units, one per component, then the audit.";
+  "- Read feedback only via claim_consolidate_review when the designer starts review; narrate only global-rule proposals (reusable_candidate/proposed_update). Never write a rule-update artifact before confirm_rule_update; declare with that proposalId.\n" +
+  "- Call export_research only after complete success recursion (DS v1→new design→feedback/confirm→DS v2→second new design).\n\n" +
+  "FLOW CONTRACTS on demand: claim_alignment_preparation → Alignment section_contract; claim_initial_design_system_preparation → frozen context + extraction source_contract. Read all context first, then record global/tokens/layout/interaction units, one per component, then the audit.";

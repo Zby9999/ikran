@@ -1,5 +1,7 @@
 # Research Event Export 与 Undeclared Artifact Guard
 
+Status: implemented（MCP export；Workbench action UI 推迟；Evidence/Annotation 独立文件与 Seed lineage 深化可后续补）
+
 > **修订记录(2026-08-06)**:导出物新增 `designer-feedback.json`(Issue 27 的原始反馈日志,含未被审查提升的记录,proposal 引用其中子集);入选门槛中的 "Design System v1" 以 Issue 28 的 `formalize_design_system` 相位事件为准;`Blocked by` 中的 10/12 替换为 27/28/29/30。其余不变。
 
 ## What to build
@@ -28,18 +30,18 @@
 
 ## Acceptance criteria
 
-- [ ] Export 生成 `.ikran/export/`。
-- [ ] 仅完整成功递归项目（DS v1 → 新原型 → 反馈/确认规则更新 → DS v2 → 第二次新设计）**有资格**生成研究 export；未达门槛拒绝/跳过。
-- [ ] 达标后的 export 包含整条成功语义链路（含闭环完成前的 seed / evidence / annotation / alignment / DS v1 / 第一次原型等），不是只导出终点。
-- [ ] 最小导出包含 `events.jsonl`、`project-summary.json`、`alignment-questions.json`、`designer-answers.json`、`prototype-runs.json`、`rule-update-proposals.json`、`designer-feedback.json`、`artifacts-index.json`。`designer-feedback.json` 为原始反馈日志（含未被审查提升的记录），rule update proposals 引用其中子集作为 evidence。
+- [x] Export 生成 `.ikran/export/`。
+- [x] 仅完整成功递归项目（DS v1 → 新原型 → 反馈/确认规则更新 → DS v2 → 第二次新设计）**有资格**生成研究 export；未达门槛拒绝/跳过。
+- [x] 达标后的 export 包含整条成功语义链路（含闭环完成前的 seed / evidence / annotation / alignment / DS v1 / 第一次原型等），不是只导出终点。
+- [x] 最小导出包含 `events.jsonl`、`project-summary.json`、`alignment-questions.json`、`designer-answers.json`、`prototype-runs.json`、`rule-update-proposals.json`、`designer-feedback.json`、`artifacts-index.json`。`designer-feedback.json` 为原始反馈日志（含未被审查提升的记录），rule update proposals 引用其中子集作为 evidence。
 - [ ] Export 保留 Evidence Surface、Region Annotation、Question card、answer、prototype run、rule proposal、artifact 的 linkage；成功 annotation raw semantic region 可回放。
 - [ ] Export 保留每个 Seed Reference 的 canonical identity、initiator、successful capture、evidence lineage/current version 与 confirmed primary node linkage，但不包含 PAT 或可恢复凭证的信息。
 - [ ] 低层 pan/zoom/hover/keystroke 与 canvas layout 不作为 research events 导出。
-- [ ] 未声明 source artifact 不进入 artifact index 或 export。
-- [ ] 失败请求、失败标注、草稿、取消、Open Gap 不进入研究事实导出（可另有运维/调试记录，但不冒充研究成功语义）。
+- [x] 未声明 source artifact 不进入 artifact index 或 export。
+- [x] 失败请求、失败标注、草稿、取消、Open Gap 不进入研究事实导出（可另有运维/调试记录，但不冒充研究成功语义）。
 - [ ] 失败 Figma capture、未提交 link、连接错误和限流不进入成功研究事实导出。
 - [ ] Workbench 提供最小 export action 和 completion status。
-- [ ] 测试覆盖：达标项目导出含早期成功阶段；未达门槛拒绝/跳过；真实 Agent 声明 artifact export；未声明 artifact guard。
+- [x] 测试覆盖：达标项目导出含早期成功阶段；未达门槛拒绝/跳过；真实 Agent 声明 artifact export；未声明 artifact guard。
 
 ## Real Agent validation
 

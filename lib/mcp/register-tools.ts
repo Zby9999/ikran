@@ -13,6 +13,7 @@ import { registerDesignerFeedbackTools } from "./feedback-tools";
 import { registerPrototypePreviewTools } from "./prototype-preview-tools";
 import { registerNewDesignRunTools } from "./new-design-run-tools";
 import { registerProjectPhaseTools } from "./project-phase-tools";
+import { registerResearchExportTools } from "./research-export-tools";
 import { registerInitialDesignSystemTools } from "./initial-design-system-tools";
 import {
   IKRAN_MCP_INSTRUCTIONS,
@@ -42,4 +43,5 @@ export function registerIkranTools(
   registerNewDesignRunTools(mcp, deps);
   registerConsolidateReviewTools(mcp, deps);
   registerProjectPhaseTools(mcp, deps);
+  registerResearchExportTools(mcp, deps);
 }

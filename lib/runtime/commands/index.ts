@@ -43,6 +43,8 @@ export { recordArtifactWrittenCommand } from "./artifact";
 
 export { recordNewDesignRunCommand } from "./new-design-run";
 
+export { exportResearchCommand } from "./research-export";
+
 export {
   getDesignSystemViewCommand,
   getDesignSystemComponentCommand,
