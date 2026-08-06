@@ -44,7 +44,13 @@ spec's `stateMatrix`.
 10. While Initial Design System preparation is pending or claimed, Design
     Browser content may be read but direct edits and candidate/formalized
     switches are disabled and rejected by Runtime. Writes reopen after
-    preparation completes.
+    preparation completes. Liveness refinement (2026-08-06): the durable
+    command has no timeout, and an interrupted extraction used to lock
+    designer writes forever. The gate now treats a pending/claimed command
+    with no activity — neither a command-row update nor an extraction
+    manifest write — for more than 24 hours as an interrupted run and stops
+    blocking; the command itself stays pending/claimed so the agent can
+    still re-claim and resume it.
 11. No compatibility or migration of old extraction manifests or test data.
     The prototype is re-extracted from a fresh project after implementation.
 

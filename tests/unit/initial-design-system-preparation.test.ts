@@ -34,6 +34,10 @@ import {
   recordDesignSystemExtractionWorkUnit
 } from "../../lib/runtime/initial-design-system-preparation";
 import { getDesignSystemView } from "../../lib/runtime/design-system-view";
+import {
+  INITIAL_DESIGN_SYSTEM_WRITE_GATE_STALE_MS,
+  isInitialDesignSystemWriteBlocked
+} from "../../lib/runtime/design-system-write-gate";
 import { approveDesignSystemEntry } from "../../lib/runtime/design-system-approval";
 import { editDesignSystemEntry } from "../../lib/runtime/design-system-edit";
 import { setDesignLanguageDescription } from "../../lib/runtime/project-readiness";
@@ -450,6 +454,27 @@ function recordAuditForCurrentProgress(
   });
   if (!audit.ok) throw new Error(audit.reason);
   return audit;
+}
+
+/**
+ * Age the durable Initial Design System command past the write gate's stale
+ * window, simulating an interrupted extraction run (the command row never
+ * moves again once the agent stops working on it).
+ */
+function backdateInitialDesignSystemCommand(projectPath: string) {
+  const stale = new Date(
+    Date.now() - INITIAL_DESIGN_SYSTEM_WRITE_GATE_STALE_MS * 2
+  ).toISOString();
+  const db = new DatabaseSync(getProjectDbPath(projectPath));
+  try {
+    db.prepare(
+      `UPDATE agent_commands
+       SET created_at = ?, updated_at = ?
+       WHERE command_type = 'prepare_initial_design_system'`
+    ).run(stale, stale);
+  } finally {
+    db.close();
+  }
 }
 
 afterEach(() => {
@@ -1619,6 +1644,77 @@ describe("Initial Design System preparation", () => {
         text: "Designer-edited after finalize."
       })
     ).toMatchObject({ ok: true });
+  });
+
+  test("stale unclaimed command no longer blocks Browser writes", () => {
+    const fixture = createCompletedAlignmentFixture();
+    // Fresh pending command: the agent is expected to claim it any moment.
+    expect(isInitialDesignSystemWriteBlocked(fixture.projectPath)).toBe(true);
+
+    backdateInitialDesignSystemCommand(fixture.projectPath);
+    expect(isInitialDesignSystemWriteBlocked(fixture.projectPath)).toBe(false);
+  });
+
+  test("stale claimed command without recent extraction activity unblocks Browser writes", () => {
+    const fixture = createCompletedAlignmentFixture();
+    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    if (!claimed.ok) throw new Error(claimed.reason);
+    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
+
+    // Claimed, then the run died before any manifest was recorded.
+    backdateInitialDesignSystemCommand(fixture.projectPath);
+    expect(isInitialDesignSystemWriteBlocked(fixture.projectPath)).toBe(false);
+    expect(
+      approveDesignSystemEntry(fixture.projectPath, {
+        sourceArtifactPath: "design-system/design-system.json",
+        entryId: "visual-language",
+        targetStatus: "formalized"
+      })
+    ).toMatchObject({ ok: true, entry: { status: "formalized" } });
+  });
+
+  test("recent extraction manifest activity keeps the write gate closed", () => {
+    const fixture = createCompletedAlignmentFixture();
+    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    if (!claimed.ok) throw new Error(claimed.reason);
+    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
+    recordCompleteProgressiveExtraction(fixture, claimed);
+
+    // The command row may look old; live manifest activity still means the
+    // extraction is in flight and owns the source files.
+    backdateInitialDesignSystemCommand(fixture.projectPath);
+    expect(isInitialDesignSystemWriteBlocked(fixture.projectPath)).toBe(true);
+    expect(
+      approveDesignSystemEntry(fixture.projectPath, {
+        sourceArtifactPath: "design-system/design-system.json",
+        entryId: "visual-language",
+        targetStatus: "formalized"
+      })
+    ).toEqual({ ok: false, reason: "initial_design_system_preparing" });
+  });
+
+  test("re-claim after an interrupted run re-locks the gate despite stale manifests", () => {
+    const fixture = createCompletedAlignmentFixture();
+    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    if (!claimed.ok) throw new Error(claimed.reason);
+    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
+    recordCompleteProgressiveExtraction(fixture, claimed);
+
+    // The interrupted run's manifests are old, but the agent just re-claimed
+    // the command (its row is fresh) and is actively extracting again.
+    const stale = new Date(
+      Date.now() - INITIAL_DESIGN_SYSTEM_WRITE_GATE_STALE_MS * 2
+    ).toISOString();
+    const db = new DatabaseSync(getProjectDbPath(fixture.projectPath));
+    try {
+      db.prepare(
+        `UPDATE design_system_extraction_manifests
+         SET created_at = ?, updated_at = ?`
+      ).run(stale, stale);
+    } finally {
+      db.close();
+    }
+    expect(isInitialDesignSystemWriteBlocked(fixture.projectPath)).toBe(true);
   });
 
   test("finalize preserves uncovered-entry and bidirectional-lineage gates", () => {
