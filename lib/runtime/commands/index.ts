@@ -48,9 +48,18 @@ export {
   editDesignSystemEntryCommand
 } from "./design-system";
 
-export { proposeRuleUpdateCommand } from "./rule-update-proposal";
+export {
+  proposeRuleUpdateCommand,
+  confirmRuleUpdateCommand,
+  cancelRuleUpdateCommand
+} from "./rule-update-proposal";
 
 export { recordDesignerFeedbackCommand } from "./designer-feedback";
+
+export {
+  claimConsolidateReviewCommand,
+  dismissDesignerFeedbackCommand
+} from "./consolidate-review";
 
 export {
   getProjectPhaseCommand,
@@ -134,6 +143,14 @@ export {
   editDesignSystemEntryInputShape,
   proposeRuleUpdateInputSchema,
   proposeRuleUpdateInputShape,
+  confirmRuleUpdateInputSchema,
+  confirmRuleUpdateInputShape,
+  cancelRuleUpdateInputSchema,
+  cancelRuleUpdateInputShape,
+  claimConsolidateReviewInputSchema,
+  claimConsolidateReviewInputShape,
+  dismissDesignerFeedbackInputSchema,
+  dismissDesignerFeedbackInputShape,
   recordDesignerFeedbackInputSchema,
   recordDesignerFeedbackInputShape,
   createOrOpenProjectInputShape,

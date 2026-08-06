@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 25;
+export const CURRENT_SCHEMA_VERSION = 26;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1196,6 +1196,58 @@ CREATE INDEX IF NOT EXISTS idx_feedback_review_consumption_proposal
            WHERE singleton = 1 AND phase = 'seed'`
         ).run(now);
       }
+    }
+  },
+  {
+    version: 26,
+    up(db) {
+      // Issue 29 (MVP chat path): rule-update proposals become durable rows,
+      // not event-only records, so confirm/cancel can flip one identity and
+      // record_artifact_written can require a confirmed proposal id. Every
+      // feedback row needs an explicit disposition — consumed by a confirmed
+      // proposal (v25 table) or dismissed with a reason here.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS rule_update_proposals (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('new', 'update', 'move')),
+  classification TEXT NOT NULL CHECK (classification IN (
+    'local_exception',
+    'reusable_candidate',
+    'rule_conflict',
+    'open_gap',
+    'proposed_update',
+    'no_finding'
+  )),
+  title TEXT NOT NULL,
+  change_description TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  affected_items_json TEXT NOT NULL,
+  evidence_record_ids_json TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN (
+    'awaiting_confirmation',
+    'confirmed',
+    'canceled'
+  )),
+  source_artifact_path TEXT,
+  entry_id TEXT,
+  proposed_target_path TEXT,
+  created_at TEXT NOT NULL,
+  decided_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_rule_update_proposals_status
+  ON rule_update_proposals(status);
+CREATE INDEX IF NOT EXISTS idx_rule_update_proposals_created_at
+  ON rule_update_proposals(created_at);
+
+CREATE TABLE IF NOT EXISTS designer_feedback_dismissals (
+  feedback_id TEXT PRIMARY KEY
+    REFERENCES designer_feedback(id) ON DELETE RESTRICT,
+  reason TEXT NOT NULL,
+  dismissed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_designer_feedback_dismissals_dismissed_at
+  ON designer_feedback_dismissals(dismissed_at);
+      `);
     }
   }
 ];

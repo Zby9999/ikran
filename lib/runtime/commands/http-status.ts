@@ -25,9 +25,17 @@ const CONFLICT_REASONS = new Set([
   "concurrent_source_changed",
   // Issue 28: illegal phase transition / formalize feedback gate.
   "phase_gate",
-  "unreviewed_feedback"
+  "unreviewed_feedback",
+  // Issue 29: proposal-first gate — decided proposal, or artifact declared
+  // against a proposal the designer has not confirmed.
+  "proposal_not_awaiting_confirmation",
+  "proposal_not_confirmed"
 ]);
-const NOT_FOUND_REASONS = new Set(["not_found"]);
+const NOT_FOUND_REASONS = new Set([
+  "not_found",
+  "proposal_not_found",
+  "feedback_record_not_found"
+]);
 const GONE_REASONS = new Set(["endpoint_retired"]);
 const GATEWAY_TIMEOUT_REASONS = new Set(["figma_api_timeout"]);
 const INTERNAL_REASONS = new Set([

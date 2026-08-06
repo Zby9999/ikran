@@ -98,6 +98,37 @@ export function requireProjectPhase(
   return { ok: true, phase };
 }
 
+/**
+ * Feedback with no recorded disposition: neither consumed by a confirmed
+ * rule-update proposal (Issue 29 confirm path) nor explicitly dismissed.
+ * Shared seam between the Consolidate review and the formalize gate.
+ */
+const UNREVIEWED_FEEDBACK_PREDICATE = `
+  NOT EXISTS (
+    SELECT 1 FROM designer_feedback_review_consumption c
+    WHERE c.feedback_id = f.id
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM designer_feedback_dismissals d
+    WHERE d.feedback_id = f.id
+  )
+`;
+
+export function listUnreviewedDesignerFeedbackOnDb(
+  db: DatabaseType
+): string[] {
+  return (
+    db
+      .prepare(
+        `SELECT f.id AS id
+         FROM designer_feedback f
+         WHERE ${UNREVIEWED_FEEDBACK_PREDICATE}
+         ORDER BY f.created_at ASC, f.id ASC`
+      )
+      .all() as Array<{ id: string }>
+  ).map((row) => row.id);
+}
+
 export function countUnreviewedDesignerFeedbackOnDb(
   db: DatabaseType
 ): number {
@@ -105,13 +136,30 @@ export function countUnreviewedDesignerFeedbackOnDb(
     .prepare(
       `SELECT COUNT(*) AS count
        FROM designer_feedback f
-       WHERE NOT EXISTS (
-         SELECT 1 FROM designer_feedback_review_consumption c
-         WHERE c.feedback_id = f.id
-       )`
+       WHERE ${UNREVIEWED_FEEDBACK_PREDICATE}`
     )
     .get() as { count: number };
   return Number(row.count);
+}
+
+export function listUnreviewedDesignerFeedback(
+  projectPath: string
+): string[] {
+  const db = openProjectDb(projectPath);
+  try {
+    return listUnreviewedDesignerFeedbackOnDb(db);
+  } finally {
+    closeProjectDb(db);
+  }
+}
+
+export function countUnreviewedDesignerFeedback(projectPath: string): number {
+  const db = openProjectDb(projectPath);
+  try {
+    return countUnreviewedDesignerFeedbackOnDb(db);
+  } finally {
+    closeProjectDb(db);
+  }
 }
 
 /**

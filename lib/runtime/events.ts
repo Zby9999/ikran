@@ -54,6 +54,8 @@ export type EventType =
   | "rule_update_confirmed"
   | "rule_update_canceled"
   | "designer_feedback_recorded"
+  | "consolidate_review_started"
+  | "designer_feedback_dismissed"
   | "project_phase_confirmed"
   | "design_system_formalized"
   | "project_phase_abandoned"

@@ -198,7 +198,13 @@ export const recordArtifactWrittenInputShape = {
   semanticPurpose: z.string(),
   relatedRecordIds: z.array(z.string()).optional(),
   // Agent-declared build/preview readiness note; Runtime never verifies it.
-  readiness: z.string().optional()
+  readiness: z.string().optional(),
+  proposalId: z
+    .string()
+    .optional()
+    .describe(
+      "Confirmed rule_update_proposals id this write realizes. Required for rule-update writes; Runtime rejects an unconfirmed or unknown id."
+    )
 } as const;
 
 export const recordArtifactWrittenInputSchema = z.object(
@@ -238,17 +244,64 @@ export const editDesignSystemEntryInputSchema = z.object(
   editDesignSystemEntryInputShape
 );
 
+// Strings (not enums) for kind / classification so the domain reasons
+// invalid_proposal_kind / invalid_proposal_classification reach the caller.
 export const proposeRuleUpdateInputShape = {
-  sourceArtifactPath: z.string(),
-  entryId: z.string(),
-  proposedTargetPath: z.string(),
+  kind: z
+    .string()
+    .optional()
+    .describe("new | update | move. Defaults to move."),
+  classification: z
+    .string()
+    .optional()
+    .describe(
+      "local_exception | reusable_candidate | rule_conflict | open_gap | proposed_update | no_finding. Defaults to proposed_update."
+    ),
+  title: z.string().optional(),
+  changeDescription: z.string().optional(),
   reason: z.string(),
   affectedItems: z.array(z.string()),
-  evidenceRecordIds: z.array(z.string())
+  evidenceRecordIds: z.array(z.string()),
+  sourceArtifactPath: z.string().optional(),
+  entryId: z.string().optional(),
+  proposedTargetPath: z.string().optional()
 } as const;
 
 export const proposeRuleUpdateInputSchema = z.object(
   proposeRuleUpdateInputShape
+);
+
+export const confirmRuleUpdateInputShape = {
+  proposalId: z.string()
+} as const;
+
+export const confirmRuleUpdateInputSchema = z.object(
+  confirmRuleUpdateInputShape
+);
+
+export const cancelRuleUpdateInputShape = {
+  proposalId: z.string()
+} as const;
+
+export const cancelRuleUpdateInputSchema = z.object(
+  cancelRuleUpdateInputShape
+);
+
+export const claimConsolidateReviewInputShape = {} as const;
+
+export const claimConsolidateReviewInputSchema = z.object(
+  claimConsolidateReviewInputShape
+);
+
+export const dismissDesignerFeedbackInputShape = {
+  feedbackIds: z.array(z.string()),
+  reason: z
+    .string()
+    .describe("Why these feedback records need no rule change.")
+} as const;
+
+export const dismissDesignerFeedbackInputSchema = z.object(
+  dismissDesignerFeedbackInputShape
 );
 
 export const recordDesignerFeedbackInputShape = {

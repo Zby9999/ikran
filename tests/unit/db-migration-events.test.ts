@@ -975,12 +975,100 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
+  test("v25→v26 creates the rule-update proposal and feedback dismissal tables", () => {
+    withTempProject((dir) => {
+      const initialized = openProjectDb(dir);
+      closeProjectDb(initialized);
+      const dbPath = getProjectDbPath(dir);
+      const v25 = new DatabaseSync(dbPath);
+      try {
+        v25.exec(`
+          DROP TABLE rule_update_proposals;
+          DROP TABLE designer_feedback_dismissals;
+          PRAGMA user_version = 25;
+        `);
+      } finally {
+        v25.close();
+      }
+
+      const migrated = openProjectDb(dir);
+      try {
+        expect(userVersion(migrated)).toBe(CURRENT_SCHEMA_VERSION);
+        expect(tableNames(migrated)).toEqual(
+          expect.arrayContaining([
+            "rule_update_proposals",
+            "designer_feedback_dismissals"
+          ])
+        );
+        const proposalColumns = migrated
+          .prepare("PRAGMA table_info(rule_update_proposals)")
+          .all() as Array<{ name: string; notnull: number }>;
+        expect(proposalColumns.map((column) => column.name)).toEqual(
+          expect.arrayContaining([
+            "id",
+            "kind",
+            "classification",
+            "title",
+            "change_description",
+            "reason",
+            "affected_items_json",
+            "evidence_record_ids_json",
+            "status",
+            "source_artifact_path",
+            "entry_id",
+            "proposed_target_path",
+            "created_at",
+            "decided_at"
+          ])
+        );
+        // Move-specific columns stay nullable for new / update proposals.
+        for (const nullable of [
+          "source_artifact_path",
+          "entry_id",
+          "proposed_target_path",
+          "decided_at"
+        ]) {
+          expect(
+            proposalColumns.find((column) => column.name === nullable)?.notnull
+          ).toBe(0);
+        }
+        expect(() =>
+          migrated
+            .prepare(
+              `INSERT INTO rule_update_proposals
+                (id, kind, classification, title, change_description, reason,
+                 affected_items_json, evidence_record_ids_json, status,
+                 created_at)
+               VALUES ('p-bad', 'rewrite', 'reusable_candidate', 'T', 'C', 'R',
+                       '[]', '[]', 'awaiting_confirmation',
+                       '2026-08-06T00:00:00.000Z')`
+            )
+            .run()
+        ).toThrow(/constraint/i);
+        const dismissalForeignKeys = migrated
+          .prepare("PRAGMA foreign_key_list(designer_feedback_dismissals)")
+          .all() as Array<{ table: string; from: string; to: string }>;
+        expect(dismissalForeignKeys).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              table: "designer_feedback",
+              from: "feedback_id",
+              to: "id"
+            })
+          ])
+        );
+      } finally {
+        closeProjectDb(migrated);
+      }
+    });
+  });
+
   test("fresh DB opens at CURRENT_SCHEMA_VERSION without backup", () => {
     withTempProject((dir) => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(25);
+        expect(CURRENT_SCHEMA_VERSION).toBe(26);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
@@ -1005,7 +1093,9 @@ test.describe("PRAGMA user_version migration runner", () => {
             "design_system_extraction_manifest_requests",
             "designer_feedback",
             "project_phase",
-            "designer_feedback_review_consumption"
+            "designer_feedback_review_consumption",
+            "rule_update_proposals",
+            "designer_feedback_dismissals"
           ])
         );
         const designSystemColumns = db

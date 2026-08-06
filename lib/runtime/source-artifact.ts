@@ -152,6 +152,12 @@ export interface NormalizedSourceArtifactDeclaration {
   semanticPurpose: string;
   relatedRecordIds: string[];
   readiness?: string;
+  /**
+   * Confirmed rule-update proposal this artifact realizes (Issue 29). Optional
+   * — only rule-update writes carry it — but when present Runtime requires the
+   * proposal to exist and be confirmed.
+   */
+  proposalId?: string;
 }
 
 export type SourceArtifactDeclarationReason =
@@ -159,7 +165,8 @@ export type SourceArtifactDeclarationReason =
   | "missing_artifact_type"
   | "unknown_artifact_type"
   | "missing_semantic_purpose"
-  | "invalid_related_record_ids";
+  | "invalid_related_record_ids"
+  | "invalid_proposal_id";
 
 export type SourceArtifactDeclarationOk = {
   ok: true;
@@ -238,6 +245,12 @@ export function validateSourceArtifactDeclaration(
   };
   if (isNonEmptyString(raw.readiness)) {
     declaration.readiness = raw.readiness;
+  }
+  if (raw.proposalId !== undefined) {
+    if (!isNonEmptyString(raw.proposalId)) {
+      return fail("invalid_proposal_id");
+    }
+    declaration.proposalId = raw.proposalId.trim();
   }
   return { ok: true, declaration };
 }
@@ -401,6 +414,22 @@ export function recordSourceArtifact(
       // source edits. Null for non-design-system artifacts.
       let contentDigest: string | null = null;
 
+      // Issue 29 proposal-first gate: a rule-update write may only be
+      // declared against a proposal the designer already confirmed. Runtime
+      // cannot stop the host from editing files, but it refuses to
+      // acknowledge a write that claims an unconfirmed authorization.
+      if (declaration.proposalId !== undefined) {
+        const proposal = db
+          .prepare(`SELECT status FROM rule_update_proposals WHERE id = ?`)
+          .get(declaration.proposalId) as { status: string } | undefined;
+        if (!proposal) {
+          return { ok: false as const, reason: "proposal_not_found" };
+        }
+        if (proposal.status !== "confirmed") {
+          return { ok: false as const, reason: "proposal_not_confirmed" };
+        }
+      }
+
       // Design-system declarations must link answered question cards or
       // Agent annotations (09A decision 4); the DB-dependent check runs
       // inside the transaction so it shares a snapshot with the write.
@@ -504,7 +533,10 @@ export function recordSourceArtifact(
         artifact_type: record.artifact_type,
         semantic_purpose: record.semantic_purpose,
         related_record_ids: declaration.relatedRecordIds,
-        declaration_version: record.declaration_version
+        declaration_version: record.declaration_version,
+        ...(declaration.proposalId === undefined
+          ? {}
+          : { proposal_id: declaration.proposalId })
       });
 
       // Ingest writes land after the declaration event so a crash never
