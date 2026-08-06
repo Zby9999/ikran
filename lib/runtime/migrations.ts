@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 23;
+export const CURRENT_SCHEMA_VERSION = 24;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1121,6 +1121,32 @@ WHERE command_type = 'prepare_initial_design_system'
           "ALTER TABLE source_artifacts ADD COLUMN content_digest TEXT"
         );
       }
+    }
+  },
+  {
+    version: 24,
+    up(db) {
+      // Issue 27: chat-first designer feedback declarations. Write-only
+      // record store; Consolidate reads land in Issue 29. Prototype surface
+      // ids are stored without FK until Issue 30 creates that table.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS designer_feedback (
+  id TEXT PRIMARY KEY,
+  summary TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  evidence_surface_id TEXT REFERENCES figma_evidence_surfaces(id),
+  prototype_surface_id TEXT,
+  region_annotation_id TEXT REFERENCES region_annotations(id),
+  seed_reference_id TEXT REFERENCES seed_references(id),
+  opaque_context_json TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_designer_feedback_created_at
+  ON designer_feedback(created_at);
+CREATE INDEX IF NOT EXISTS idx_designer_feedback_run_session
+  ON designer_feedback(run_id, session_id);
+      `);
     }
   }
 ];

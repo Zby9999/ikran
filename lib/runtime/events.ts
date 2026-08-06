@@ -53,6 +53,7 @@ export type EventType =
   | "rule_update_proposal_created"
   | "rule_update_confirmed"
   | "rule_update_canceled"
+  | "designer_feedback_recorded"
   | "export_generated"
   | "invalid_output"
   | "invalid_artifact"

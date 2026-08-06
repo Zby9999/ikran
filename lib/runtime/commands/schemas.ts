@@ -251,6 +251,34 @@ export const proposeRuleUpdateInputSchema = z.object(
   proposeRuleUpdateInputShape
 );
 
+export const recordDesignerFeedbackInputShape = {
+  summary: z
+    .string()
+    .describe(
+      "One modification conclusion from host chat — not a per-turn transcript."
+    ),
+  runId: z
+    .string()
+    .describe("Run grouping marker for later Consolidate aggregation."),
+  sessionId: z
+    .string()
+    .describe("Session grouping marker for later Consolidate aggregation."),
+  evidenceSurfaceId: z.string().optional(),
+  prototypeSurfaceId: z.string().optional(),
+  regionAnnotationId: z.string().optional(),
+  seedReferenceId: z.string().optional(),
+  opaqueContext: z
+    .unknown()
+    .optional()
+    .describe(
+      "Opaque host context (e.g. browser DOM selector). Stored as-is; Runtime does not validate or map it."
+    )
+} as const;
+
+export const recordDesignerFeedbackInputSchema = z.object(
+  recordDesignerFeedbackInputShape
+);
+
 const alignmentEvidenceLinkShape = {
   seedReferenceId: z.string(),
   evidenceSurfaceId: z.string(),

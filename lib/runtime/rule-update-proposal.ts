@@ -90,7 +90,8 @@ export function proposeRuleUpdate(
         db.prepare("SELECT 1 FROM agent_alignment_annotations WHERE id = ?"),
         db.prepare("SELECT 1 FROM region_annotations WHERE id = ?"),
         db.prepare("SELECT 1 FROM figma_evidence_surfaces WHERE id = ?"),
-        db.prepare("SELECT 1 FROM seed_references WHERE id = ?")
+        db.prepare("SELECT 1 FROM seed_references WHERE id = ?"),
+        db.prepare("SELECT 1 FROM designer_feedback WHERE id = ?")
       ];
       for (const recordId of payload.evidence_record_ids) {
         if (!evidenceStatements.some((statement) => statement.get(recordId))) {

@@ -50,6 +50,8 @@ export {
 
 export { proposeRuleUpdateCommand } from "./rule-update-proposal";
 
+export { recordDesignerFeedbackCommand } from "./designer-feedback";
+
 export {
   createRegionAnnotationCommand,
   confirmAnnotationPrimaryNodeCommand,
@@ -123,6 +125,8 @@ export {
   editDesignSystemEntryInputShape,
   proposeRuleUpdateInputSchema,
   proposeRuleUpdateInputShape,
+  recordDesignerFeedbackInputSchema,
+  recordDesignerFeedbackInputShape,
   createOrOpenProjectInputShape,
   setupWorkspaceInputShape
 } from "./schemas";
