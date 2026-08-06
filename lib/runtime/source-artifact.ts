@@ -58,6 +58,7 @@ import {
   designSystemQualityDiagnostics,
   type DesignSystemQualityDiagnostic
 } from "./design-system-quality";
+import { markPrototypeSurfacesStaleForArtifactOnDb } from "./prototype-surface";
 
 // ---------------------------------------------------------------------------
 // Artifact type registry (data-driven; add new types as entries below)
@@ -546,10 +547,19 @@ export function recordSourceArtifact(
         recordSourceContentDigest(db, record.path, contentDigest!);
       }
 
+      // Issue 30 stale semantics: declared prototype/code changes invalidate
+      // any live preview built from that tree. Runtime warns; it never
+      // auto-restarts the dev server.
+      const staleSurfaceIds =
+        spec.validationClass === "code"
+          ? markPrototypeSurfacesStaleForArtifactOnDb(db, record.path)
+          : [];
+
       return {
         ok: true as const,
         record,
         event_id: event.event_id,
+        staleSurfaceIds,
         quality_diagnostics: ingestPlan
           ? designSystemQualityDiagnostics(relativePath, ingestPlan.rows)
           : [],
@@ -569,6 +579,15 @@ export function recordSourceArtifact(
       id: result.record.id,
       projectPath: path.resolve(projectPath)
     });
+
+    for (const surfaceId of result.staleSurfaceIds) {
+      emitRecordEvent({
+        kind: "prototype",
+        action: "updated",
+        id: surfaceId,
+        projectPath: path.resolve(projectPath)
+      });
+    }
 
     if (result.ingested) {
       // Browser invalidation for the DB-backed design-system view. Identity

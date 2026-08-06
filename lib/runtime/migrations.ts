@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 26;
+export const CURRENT_SCHEMA_VERSION = 27;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1247,6 +1247,66 @@ CREATE TABLE IF NOT EXISTS designer_feedback_dismissals (
 );
 CREATE INDEX IF NOT EXISTS idx_designer_feedback_dismissals_dismissed_at
   ON designer_feedback_dismissals(dismissed_at);
+      `);
+    }
+  },
+  {
+    version: 27,
+    up(db) {
+      // Issue 30: prototype runs and their Prototype Evidence Surfaces. A run
+      // freezes the inputs a reconstruction was built from (seed reference
+      // ids, evidence versions, design-system version) so a later reading can
+      // tell which evidence a preview actually reflects. Surfaces carry the
+      // Runtime-owned dev-server lifecycle: readiness is explicit
+      // (installing / starting / ready / failed) instead of a vague loading
+      // state, and the port is persisted so the preview URL stays stable
+      // across restarts. `stale` marks a surface whose dev server exited or
+      // whose code changed; Runtime never auto-restarts it.
+      //
+      // designer_feedback.prototype_surface_id (v24) has no FK — SQLite
+      // cannot add one to an existing table. prototype_surface_id linkage is
+      // enforced in designer-feedback.ts against this table instead.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS prototype_runs (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL UNIQUE,
+  source_artifact_path TEXT NOT NULL,
+  prototype_root TEXT NOT NULL,
+  dev_command TEXT NOT NULL,
+  seed_reference_ids_json TEXT NOT NULL,
+  evidence_version_ids_json TEXT NOT NULL,
+  design_system_version TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_prototype_runs_created_at
+  ON prototype_runs(created_at);
+
+CREATE TABLE IF NOT EXISTS prototype_surfaces (
+  id TEXT PRIMARY KEY,
+  prototype_run_id TEXT NOT NULL
+    REFERENCES prototype_runs(id) ON DELETE RESTRICT,
+  surface_key TEXT NOT NULL,
+  name TEXT NOT NULL,
+  preview_url TEXT NOT NULL,
+  preview_port INTEGER NOT NULL,
+  readiness TEXT NOT NULL CHECK (readiness IN (
+    'installing',
+    'starting',
+    'ready',
+    'failed'
+  )),
+  readiness_reason TEXT,
+  stale INTEGER NOT NULL DEFAULT 0,
+  stale_reason TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (prototype_run_id, surface_key)
+);
+CREATE INDEX IF NOT EXISTS idx_prototype_surfaces_run
+  ON prototype_surfaces(prototype_run_id);
+CREATE INDEX IF NOT EXISTS idx_prototype_surfaces_created_at
+  ON prototype_surfaces(created_at);
       `);
     }
   }

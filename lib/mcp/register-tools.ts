@@ -10,6 +10,7 @@ import { registerArtifactTools } from "./artifact-tools";
 import { registerRuleUpdateTools } from "./rule-update-tools";
 import { registerConsolidateReviewTools } from "./consolidate-review-tools";
 import { registerDesignerFeedbackTools } from "./feedback-tools";
+import { registerPrototypePreviewTools } from "./prototype-preview-tools";
 import { registerProjectPhaseTools } from "./project-phase-tools";
 import { registerInitialDesignSystemTools } from "./initial-design-system-tools";
 import {
@@ -36,6 +37,7 @@ export function registerIkranTools(
   registerArtifactTools(mcp, deps);
   registerRuleUpdateTools(mcp, deps);
   registerDesignerFeedbackTools(mcp, deps);
+  registerPrototypePreviewTools(mcp, deps);
   registerConsolidateReviewTools(mcp, deps);
   registerProjectPhaseTools(mcp, deps);
 }

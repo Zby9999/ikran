@@ -54,8 +54,11 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
-/** Authoritative Workbench GET batch size, including Design Intent Alignment. */
-const LOAD_BATCH = 6;
+/**
+ * Authoritative Workbench GET batch size: the five-endpoint core batch plus
+ * Design Intent Alignment and Prototype Evidence Surfaces, which follow it.
+ */
+const LOAD_BATCH = 7;
 
 function jsonResponse(
   records: unknown[],
@@ -488,14 +491,16 @@ describe("Workbench Runtime consistency", () => {
     const older = client.loadAll();
     const newer = client.loadAll();
 
-    // Both core batches start together (5 requests each); alignment follows
-    // its core batch to avoid another concurrent project-DB connection.
+    // Both core batches start together (5 requests each); alignment and the
+    // prototype surfaces follow their core batch to avoid more concurrent
+    // project-DB connections.
     responses[5].resolve(jsonResponse([{ id: "new" }]));
     responses[6].resolve(jsonResponse([]));
     responses[7].resolve(jsonResponse([]));
     responses[8].resolve(layoutResponse());
     responses[9].resolve(readinessResponse());
     responses[10].resolve(alignmentResponse());
+    responses[11].resolve(jsonResponse([]));
     await newer;
 
     responses[0].resolve(jsonResponse([{ id: "old" }]));
@@ -503,7 +508,8 @@ describe("Workbench Runtime consistency", () => {
     responses[2].resolve(jsonResponse([]));
     responses[3].resolve(layoutResponse());
     responses[4].resolve(readinessResponse());
-    responses[11].resolve(alignmentResponse());
+    responses[12].resolve(alignmentResponse());
+    responses[13].resolve(jsonResponse([]));
     await older;
 
     expect(snapshots).toHaveLength(1);

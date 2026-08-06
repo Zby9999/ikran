@@ -134,8 +134,8 @@ test("recordDesignerFeedback rejects forged linkage ids", () => {
       })
     ).toEqual({ ok: false, reason: "linkage_record_not_found" });
 
-    // Prototype surfaces arrive in Issue 30; until then any provided id
-    // fails closed rather than storing an unverified linkage.
+    // `designer_feedback.prototype_surface_id` has no FK (v24 predates the
+    // v27 table), so the lookup in designer-feedback.ts is the only guard.
     expect(
       recordDesignerFeedback(projectPath, {
         summary: "Change the card radius.",

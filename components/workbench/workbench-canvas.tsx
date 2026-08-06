@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useRef, type PropsWithChildren } from "react";
 import { Tldraw, type TLStateNodeConstructor, type TLUiOverrides } from "tldraw";
 import { SeedReferenceProjectionShapeUtil } from "./seed-reference-projection-shape";
+import { PrototypeSurfaceProjectionShapeUtil } from "./prototype-surface-shape";
 import { RegionAnnotationShapeUtil } from "./region-annotation-shape";
 import {
   createRegionAnnotationToolClass,
@@ -34,6 +35,7 @@ import { SeedReferenceDeleteController } from "./seed-reference-delete";
 import { SeedSelectionForegroundOverlayUtil } from "./seed-selection-foreground-overlay";
 import { WORKBENCH_CANVAS_COMPONENTS } from "./workbench-canvas-grid";
 import { SeedProjectionSync } from "./projection/seed-projection-sync";
+import { PrototypeSurfaceProjectionSync } from "./projection/prototype-surface-projection-sync";
 import { RegionAnnotationProjectionSync } from "./projection/region-annotation-projection-sync";
 import { DesignerAnnotationCardSync } from "./projection/designer-annotation-card-sync";
 import { WorkbenchLayoutPersistence } from "./projection/workbench-layout-persistence";
@@ -49,6 +51,7 @@ import { FocusSeedProjectionController } from "./focus-seed-projection-controlle
 import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 import type { FigmaEvidenceSurfaceRecord } from "@/lib/runtime/evidence-package";
 import type { RegionAnnotationRecord } from "@/lib/runtime/region-annotation";
+import type { PrototypeSurfaceRecord } from "@/lib/runtime/prototype-surface";
 import type {
   WorkbenchCameraLayout,
   WorkbenchLayoutDocument
@@ -79,6 +82,7 @@ export { artifactScreenshotUrl };
 /** Stable across renders — do not rebuild inline in WorkbenchCanvas. */
 const SHAPE_UTILS = [
   SeedReferenceProjectionShapeUtil,
+  PrototypeSurfaceProjectionShapeUtil,
   RegionAnnotationShapeUtil,
   AlignmentCardShapeUtil,
   AlignmentTargetShapeUtil,
@@ -102,6 +106,7 @@ const WORKBENCH_UI_OVERRIDES: TLUiOverrides = {
 export function WorkbenchCanvas({
   records,
   surfaces = [],
+  prototypeSurfaces = [],
   annotations = [],
   alignment = null,
   alignmentStage = DEFAULT_ALIGNMENT_STAGE,
@@ -128,6 +133,8 @@ export function WorkbenchCanvas({
 }: {
   records: SeedReferenceRecord[];
   surfaces?: FigmaEvidenceSurfaceRecord[];
+  /** Runtime Prototype Evidence Surfaces — live preview frames (Issue 30). */
+  prototypeSurfaces?: PrototypeSurfaceRecord[];
   /** Runtime Region Annotation records — one-way projected to marker shapes. */
   annotations?: RegionAnnotationRecord[];
   alignment?: DesignIntentAlignmentSnapshot | null;
@@ -277,6 +284,7 @@ export function WorkbenchCanvas({
         savedFrames={savedFrames}
         designLanguageDescription={designLanguageDescription}
       />
+      <PrototypeSurfaceProjectionSync prototypeSurfaces={prototypeSurfaces} />
       {onPutWorkbenchLayout && onFlushWorkbenchLayout ? (
         <WorkbenchLayoutPersistence
           session={session}
@@ -287,7 +295,9 @@ export function WorkbenchCanvas({
       ) : null}
       <FocusSeedProjectionController
         seedId={focusSeedId}
-        projectionEpoch={records.length + surfaces.length}
+        projectionEpoch={
+          records.length + surfaces.length + prototypeSurfaces.length
+        }
         onFocused={onFocusSeedApplied}
       />
       <RegionAnnotationProjectionSync

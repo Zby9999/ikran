@@ -2,11 +2,12 @@
 
 import { useEffect } from "react";
 import { useEditor } from "tldraw";
-import { focusSeedReferenceProjection } from "./focus-seed-reference-projection";
+import { focusWorkbenchProjection } from "./focus-seed-reference-projection";
 
 /**
- * After duplicate paste, select + zoom the existing Seed Reference Frame.
- * Retries while `seedId` is set so projection sync can create/update the shape.
+ * After duplicate paste (or a Build panel page selection), select + zoom the
+ * existing projection. Retries while `seedId` is set so projection sync can
+ * create/update the shape first.
  */
 export function FocusSeedProjectionController({
   seedId,
@@ -31,7 +32,7 @@ export function FocusSeedProjectionController({
     const tryFocus = () => {
       if (cancelled) return;
       attempts += 1;
-      const focused = focusSeedReferenceProjection(editor, seedId);
+      const focused = focusWorkbenchProjection(editor, seedId);
       if (focused) {
         onFocused?.();
         return;

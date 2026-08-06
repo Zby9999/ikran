@@ -1,6 +1,6 @@
 # 30 — Prototype Surface 多嵌单活(Multi-Embed, Single-Live)
 
-Status: ready-for-agent
+Status: implemented（Runtime + Figma 限定 UI；多嵌单活 focus 完整形态未做，画布仅 single-live）
 
 ## What to build
 

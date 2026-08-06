@@ -1063,12 +1063,115 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
+  test("v26→v27 creates the prototype run and surface tables", () => {
+    withTempProject((dir) => {
+      const initialized = openProjectDb(dir);
+      closeProjectDb(initialized);
+      const dbPath = getProjectDbPath(dir);
+      const v26 = new DatabaseSync(dbPath);
+      try {
+        v26.exec(`
+          DROP TABLE prototype_surfaces;
+          DROP TABLE prototype_runs;
+          PRAGMA user_version = 26;
+        `);
+      } finally {
+        v26.close();
+      }
+
+      const migrated = openProjectDb(dir);
+      try {
+        expect(userVersion(migrated)).toBe(CURRENT_SCHEMA_VERSION);
+        expect(tableNames(migrated)).toEqual(
+          expect.arrayContaining(["prototype_runs", "prototype_surfaces"])
+        );
+
+        const runColumns = migrated
+          .prepare("PRAGMA table_info(prototype_runs)")
+          .all() as Array<{ name: string }>;
+        expect(runColumns.map((column) => column.name)).toEqual(
+          expect.arrayContaining([
+            "id",
+            "run_id",
+            "source_artifact_path",
+            "prototype_root",
+            "dev_command",
+            "seed_reference_ids_json",
+            "evidence_version_ids_json",
+            "design_system_version",
+            "created_at",
+            "updated_at"
+          ])
+        );
+
+        const surfaceColumns = migrated
+          .prepare("PRAGMA table_info(prototype_surfaces)")
+          .all() as Array<{ name: string }>;
+        expect(surfaceColumns.map((column) => column.name)).toEqual(
+          expect.arrayContaining([
+            "id",
+            "prototype_run_id",
+            "surface_key",
+            "name",
+            "preview_url",
+            "preview_port",
+            "readiness",
+            "readiness_reason",
+            "stale",
+            "stale_reason"
+          ])
+        );
+        expect(
+          migrated
+            .prepare("PRAGMA foreign_key_list(prototype_surfaces)")
+            .all() as Array<{ table: string; from: string; to: string }>
+        ).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              table: "prototype_runs",
+              from: "prototype_run_id",
+              to: "id"
+            })
+          ])
+        );
+
+        migrated
+          .prepare(
+            `INSERT INTO prototype_runs
+              (id, run_id, source_artifact_path, prototype_root, dev_command,
+               seed_reference_ids_json, evidence_version_ids_json,
+               design_system_version, created_at, updated_at)
+             VALUES ('pr-1', 'run-1', 'prototype/a.tsx', 'prototype',
+                     'npm run dev', '[]', '[]', 'unversioned',
+                     '2026-08-06T00:00:00.000Z', '2026-08-06T00:00:00.000Z')`
+          )
+          .run();
+        // Readiness is a closed vocabulary; a surface can never claim a state
+        // the Runtime lifecycle does not produce.
+        expect(() =>
+          migrated
+            .prepare(
+              `INSERT INTO prototype_surfaces
+                (id, prototype_run_id, surface_key, name, preview_url,
+                 preview_port, readiness, created_at, updated_at)
+               VALUES ('ps-bad', 'pr-1', 'landing', 'Landing',
+                       'http://127.0.0.1:4300', 4300, 'running',
+                       '2026-08-06T00:00:00.000Z', '2026-08-06T00:00:00.000Z')`
+            )
+            .run()
+        ).toThrow(/constraint/i);
+      } finally {
+        closeProjectDb(migrated);
+      }
+    });
+  });
+
   test("fresh DB opens at CURRENT_SCHEMA_VERSION without backup", () => {
     withTempProject((dir) => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(26);
+        expect(CURRENT_SCHEMA_VERSION).toBe(27);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
@@ -1095,7 +1198,9 @@ test.describe("PRAGMA user_version migration runner", () => {
             "project_phase",
             "designer_feedback_review_consumption",
             "rule_update_proposals",
-            "designer_feedback_dismissals"
+            "designer_feedback_dismissals",
+            "prototype_runs",
+            "prototype_surfaces"
           ])
         );
         const designSystemColumns = db

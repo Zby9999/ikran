@@ -304,6 +304,50 @@ export const dismissDesignerFeedbackInputSchema = z.object(
   dismissDesignerFeedbackInputShape
 );
 
+export const recordPreviewInputShape = {
+  runId: z
+    .string()
+    .describe(
+      "Run grouping marker for this prototype build; reuse it to update the same run."
+    ),
+  sourceArtifactPath: z
+    .string()
+    .describe(
+      "Project-relative path of the prototype/code artifact already declared via record_artifact_written."
+    ),
+  prototypeRoot: z
+    .string()
+    .optional()
+    .describe(
+      "Project-relative directory Runtime installs and starts the dev server in. Defaults to the project root."
+    ),
+  devCommand: z
+    .string()
+    .optional()
+    .describe("Dev server command Runtime runs. Defaults to `npm run dev`."),
+  surfaceKey: z
+    .string()
+    .optional()
+    .describe(
+      "Stable identity of one previewable page inside the run. Defaults to `default`."
+    ),
+  name: z.string().optional().describe("Display name for the surface."),
+  seedReferenceIds: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Seed References this reconstruction was built from. Required during prototype_validation."
+    ),
+  evidenceVersionIds: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Figma Evidence Surface ids (evidence versions) used. Required during prototype_validation."
+    )
+} as const;
+
+export const recordPreviewInputSchema = z.object(recordPreviewInputShape);
+
 export const recordDesignerFeedbackInputShape = {
   summary: z
     .string()

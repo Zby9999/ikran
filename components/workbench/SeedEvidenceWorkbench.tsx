@@ -32,6 +32,7 @@ import {
   designSystemSheetExitMs
 } from "./design-system-browser";
 import { canOpenDesignSystemBrowser } from "./design-system-view-model";
+import { buildFolderPageItems } from "./folder-page-list";
 import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
 
 // tldraw touches the DOM during render, so the canvas shell is loaded with
@@ -62,6 +63,7 @@ export function SeedEvidenceWorkbench({
   const {
     seeds: records,
     surfaces,
+    prototypeSurfaces,
     annotations,
     layout,
     designLanguageDescription,
@@ -90,6 +92,10 @@ export function SeedEvidenceWorkbench({
   } = useWorkbenchRuntime(session);
   const [annotateMode, setAnnotateMode] = useState(false);
   const [followAgentMode, setFollowAgentMode] = useState(false);
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+  const [pageFocusRequestId, setPageFocusRequestId] = useState<string | null>(
+    null
+  );
   const [phaseError, setPhaseError] = useState<string | null>(null);
   const [phaseErrorExiting, setPhaseErrorExiting] = useState(false);
   const phaseErrorDismissRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -276,7 +282,26 @@ export function SeedEvidenceWorkbench({
   }, [getFigmaConnection]);
 
   const seedCount = records.length + inFlightCaptures.length;
-  const folderPhase = canvasLocked ? null : canvasStage;
+  // Issue 30 — once the draft design system is confirmed, the panel follows the
+  // Runtime project phase instead of the alignment workflow stage: prototype
+  // validation waits for the designer, and every later phase is Build.
+  const folderPhase = canvasLocked
+    ? null
+    : projectPhase === "prototype_validation"
+      ? "prototype"
+      : projectPhase === "design_system_formal" ||
+          projectPhase === "ready_for_new_design"
+        ? "build"
+        : canvasStage;
+  const pages = useMemo(
+    () => buildFolderPageItems({ seeds: records, surfaces, prototypeSurfaces }),
+    [records, surfaces, prototypeSurfaces]
+  );
+  // The first page reads as current until the designer picks another; only an
+  // explicit pick asks the canvas to move (a standing selection must not yank
+  // the camera every time a Runtime record changes).
+  const currentPageId = selectedPageId ?? pages[0]?.id ?? null;
+  const focusTargetId = focusSeedId ?? pageFocusRequestId;
   const staleWarning = staleAnnotationWarning(annotations);
   const toast = error
     ? { message: error, testId: "workbench-runtime-error" }
@@ -340,12 +365,20 @@ export function SeedEvidenceWorkbench({
           annotateActive={annotateMode}
           onAnnotate={() => setAnnotateMode((v) => !v)}
           extraction={
-            canvasStage === "extraction"
+            folderPhase === "extraction"
               ? { segments: alignmentQuestionSegments }
               : null
           }
+          pages={pages}
+          selectedPageId={currentPageId}
+          onSelectPage={(pageId) => {
+            setSelectedPageId(pageId);
+            setPageFocusRequestId(pageId);
+          }}
+          onOpenDesignSystem={() => setDesignSystemBrowserOpen(true)}
         />
-        {canvasStage === "extraction" && designSystemEntryVisible ? (
+        {(folderPhase === "extraction" || folderPhase === "prototype") &&
+        designSystemEntryVisible ? (
           <DesignSystemEntryButton
             onOpen={() => setDesignSystemBrowserOpen(true)}
           />
@@ -409,6 +442,7 @@ export function SeedEvidenceWorkbench({
           <WorkbenchCanvas
             records={records}
             surfaces={surfaces}
+            prototypeSurfaces={prototypeSurfaces}
             annotations={annotations}
             alignment={canvasStage === "extraction" ? alignment : null}
             alignmentStage={alignmentStage}
@@ -422,8 +456,11 @@ export function SeedEvidenceWorkbench({
             onUpdateSeedReferenceNote={updateSeedReferenceNote}
             onRefreshSeedReference={refreshSeedReference}
             onUpdateDesignLanguageDescription={updateDesignLanguageDescription}
-            focusSeedId={focusSeedId}
-            onFocusSeedApplied={clearFocusSeedId}
+            focusSeedId={focusTargetId}
+            onFocusSeedApplied={() => {
+              clearFocusSeedId();
+              setPageFocusRequestId(null);
+            }}
             annotateMode={annotateMode && !canvasLocked}
             onCreateAnnotation={createAnnotation}
             onUpdateAnnotationBody={(annotationId, body) =>

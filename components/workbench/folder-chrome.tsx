@@ -4,20 +4,33 @@ import {
   ArrowLeft01Icon,
   ArtboardToolIcon,
   CrosshairIcon,
-  Cursor02Icon
+  Cursor02Icon,
+  FigmaIcon,
+  GridIcon
 } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
 import { SmallIconButton } from "./small-icon-button";
 import { SquircleChrome } from "./squircle-chrome";
 import { cn } from "@/lib/utils";
 import type { AlignmentQuestionSegment } from "./alignment-stage-panel";
+import type { FolderPageItem } from "./folder-page-list";
 
 export type FolderChromeExtraction = {
   segments: readonly AlignmentQuestionSegment[];
 };
 
-/** Post-gate folder stages (Figma 329:429). */
-export type FolderChromePhase = "sign-seed" | "extraction";
+/**
+ * Post-gate folder stages.
+ *   `sign-seed` / `extraction` — Figma 329:429
+ *   `prototype` — Figma 729:1465, waiting for prototype confirmation
+ *   `build`     — Figma 735:1555, after the prototype is confirmed
+ */
+export type FolderChromePhase =
+  | "sign-seed"
+  | "extraction"
+  | "prototype"
+  | "build";
 
 export type FolderChromeProps = {
   folderName: string;
@@ -27,11 +40,19 @@ export type FolderChromeProps = {
    * `null` — compact Default (back + name only).
    * `sign-seed` — Sign Seed Design + seed count + Next Phase.
    * `extraction` — Extraction progress stub.
+   * `prototype` — Prototype pill + waiting-for-confirmation status.
+   * `build` — Design System button + page list + Build pill.
    */
   phase?: FolderChromePhase | null;
   /** Seed reference count shown in Sign Seed Design (Figma 329:490). */
   seedCount?: number;
   extraction?: FolderChromeExtraction | null;
+  /** Build panel page list — Figma seed pages and prototype pages. */
+  pages?: readonly FolderPageItem[];
+  selectedPageId?: string | null;
+  onSelectPage?: (pageId: string) => void;
+  /** Build panel Design System button — opens the existing browser sheet. */
+  onOpenDesignSystem?: () => void;
   onNextPhase?: () => void;
   onFollowAgent?: () => void;
   /** When true, Follow Agent button shows selected/active state (Figma 325:422). */
@@ -69,6 +90,10 @@ export function FolderChrome({
   phase = null,
   seedCount = 0,
   extraction = null,
+  pages = [],
+  selectedPageId = null,
+  onSelectPage,
+  onOpenDesignSystem,
   onNextPhase,
   onFollowAgent,
   followAgentActive = false,
@@ -77,9 +102,11 @@ export function FolderChrome({
   onAnnotate,
   annotateActive = false
 }: FolderChromeProps) {
-  const showActions = phase === "sign-seed" || phase === "extraction";
+  const showActions = phase !== null;
   const showSignSeed = phase === "sign-seed";
   const showExtraction = phase === "extraction" && extraction != null;
+  const showPrototype = phase === "prototype";
+  const showBuild = phase === "build";
   const answeredCount = extraction
     ? extraction.segments.filter((segment) => segment.answered).length
     : 0;
@@ -208,6 +235,85 @@ export function FolderChrome({
                   ))}
                 </span>
               ))}
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {showPrototype ? (
+        <>
+          <div className="seed-workbench__folder-divider" role="separator" />
+          <div
+            className="seed-workbench__folder-prototype"
+            data-testid="seed-workbench-prototype"
+          >
+            <span className="seed-workbench__folder-stage-label">Prototype</span>
+            <span
+              className="seed-workbench__folder-prototype-status"
+              data-testid="prototype-waiting-status"
+            >
+              waiting for confirmation
+            </span>
+          </div>
+        </>
+      ) : null}
+
+      {showBuild ? (
+        <>
+          <div className="seed-workbench__folder-divider" role="separator" />
+          <div
+            className="seed-workbench__folder-build"
+            data-testid="seed-workbench-build"
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              className="seed-workbench__folder-next"
+              data-testid="folder-design-system-button"
+              onClick={onOpenDesignSystem}
+            >
+              Design System
+            </Button>
+            {pages.length > 0 ? (
+              <ul
+                className="seed-workbench__folder-pages"
+                data-testid="folder-page-list"
+              >
+                {pages.map((page) => {
+                  const selected = page.id === selectedPageId;
+                  return (
+                    <li key={page.id}>
+                      <button
+                        type="button"
+                        className={cn(
+                          "seed-workbench__folder-page",
+                          selected && "seed-workbench__folder-page--selected"
+                        )}
+                        data-testid="folder-page-item"
+                        data-page-id={page.id}
+                        data-page-kind={page.kind}
+                        data-selected={selected ? "true" : undefined}
+                        aria-current={selected ? "true" : undefined}
+                        onClick={() => onSelectPage?.(page.id)}
+                      >
+                        <HugeiconsIcon
+                          className="seed-workbench__folder-page-icon"
+                          icon={page.kind === "figma" ? FigmaIcon : GridIcon}
+                          size={14}
+                          color="currentColor"
+                          strokeWidth={1.5}
+                        />
+                        <span className="seed-workbench__folder-page-label">
+                          {page.label}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+            <div className="seed-workbench__folder-build-footer">
+              <span className="seed-workbench__folder-stage-label">Build</span>
             </div>
           </div>
         </>

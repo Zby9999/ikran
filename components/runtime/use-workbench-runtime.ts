@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 import type { FigmaEvidenceSurfaceRecord } from "@/lib/runtime/evidence-package";
 import type { RegionAnnotationRecord } from "@/lib/runtime/region-annotation";
+import type { PrototypeSurfaceRecord } from "@/lib/runtime/prototype-surface";
 import type { WorkbenchLayoutDocument } from "@/lib/runtime/workbench-layout-shared";
 import { emptyWorkbenchLayout } from "@/lib/runtime/workbench-layout-shared";
 import type { NormalizedRect } from "@/components/workbench/region-annotation-geometry";
@@ -98,6 +99,24 @@ export function annotationSignature(records: RegionAnnotationRecord[]): string {
   );
 }
 
+function prototypeSignature(records: PrototypeSurfaceRecord[]): string {
+  return records
+    .map(
+      (r) =>
+        [
+          r.id,
+          r.surface_key,
+          r.name,
+          r.preview_url,
+          r.readiness,
+          r.readiness_reason ?? "",
+          r.stale ? "1" : "0",
+          r.stale_reason ?? ""
+        ].join(":")
+    )
+    .join("|");
+}
+
 function layoutSignature(layout: WorkbenchLayoutDocument): string {
   const cam = layout.camera;
   const frameKeys = Object.keys(layout.frames).sort();
@@ -151,6 +170,9 @@ export function useWorkbenchRuntime(session: string) {
   const [seeds, setSeeds] = useState<SeedReferenceRecord[]>([]);
   const [surfaces, setSurfaces] = useState<FigmaEvidenceSurfaceRecord[]>([]);
   const [annotations, setAnnotations] = useState<RegionAnnotationRecord[]>([]);
+  const [prototypeSurfaces, setPrototypeSurfaces] = useState<
+    PrototypeSurfaceRecord[]
+  >([]);
   const [layout, setLayout] = useState<WorkbenchLayoutDocument>(
     emptyWorkbenchLayout
   );
@@ -181,6 +203,11 @@ export function useWorkbenchRuntime(session: string) {
       annotationSignature(prev) === annotationSignature(snapshot.annotations)
         ? prev
         : snapshot.annotations
+    );
+    setPrototypeSurfaces((prev) =>
+      prototypeSignature(prev) === prototypeSignature(snapshot.prototypeSurfaces)
+        ? prev
+        : snapshot.prototypeSurfaces
     );
     setLayout((prev) =>
       layoutSignature(prev) === layoutSignature(snapshot.layout)
@@ -495,6 +522,7 @@ export function useWorkbenchRuntime(session: string) {
     seeds,
     surfaces,
     annotations,
+    prototypeSurfaces,
     layout,
     designLanguageDescription,
     projectPhase,

@@ -5,6 +5,10 @@ import {
   SEED_REFERENCE_PROJECTION_TYPE,
   type SeedReferenceProjectionShape
 } from "./seed-reference-projection-shape";
+import {
+  PROTOTYPE_SURFACE_PROJECTION_TYPE,
+  type PrototypeSurfaceProjectionShape
+} from "./prototype-surface-shape";
 
 /**
  * Select + zoom to the projection whose seedRecordId / runtimeRecordId
@@ -30,8 +34,32 @@ export function focusSeedReferenceProjection(
     });
 
   if (!match) return false;
+  return focusProjectionShape(editor, match.id as TLShapeId);
+}
 
-  const shapeId = match.id as TLShapeId;
+/**
+ * Select + zoom to whichever projection carries `recordId` — a Seed Reference
+ * frame or a Prototype Evidence Surface (Issue 30 Build panel page list).
+ */
+export function focusWorkbenchProjection(
+  editor: Editor,
+  recordId: string
+): boolean {
+  if (!recordId) return false;
+  if (focusSeedReferenceProjection(editor, recordId)) return true;
+
+  const match = editor.getCurrentPageShapes().find((shape) => {
+    if (shape.type !== PROTOTYPE_SURFACE_PROJECTION_TYPE) return false;
+    return (
+      (shape as PrototypeSurfaceProjectionShape).meta.runtimeRecordId ===
+      recordId
+    );
+  });
+  if (!match) return false;
+  return focusProjectionShape(editor, match.id as TLShapeId);
+}
+
+function focusProjectionShape(editor: Editor, shapeId: TLShapeId): boolean {
   editor.setSelectedShapes([shapeId]);
   const bounds = editor.getSelectionPageBounds();
   if (bounds) {

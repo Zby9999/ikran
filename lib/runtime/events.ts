@@ -49,6 +49,8 @@ export type EventType =
   | "source_artifact_declared"
   | "seed_reconstruction_started"
   | "preview_started"
+  | "preview_failed"
+  | "preview_stale"
   | "new_prototype_run_created"
   | "rule_update_proposal_created"
   | "rule_update_confirmed"

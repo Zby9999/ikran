@@ -78,8 +78,8 @@ export function recordDesignerFeedback(
       table: "seed_references",
       value: seedReferenceId
     },
-    // Issue 30 owns the prototype_surfaces table. Until it exists, any
-    // provided prototypeSurfaceId fails closed as linkage_record_not_found.
+    // designer_feedback.prototype_surface_id predates prototype_surfaces
+    // (v24 vs v27) and carries no FK; this lookup is the linkage guard.
     {
       column: "prototype_surface_id",
       table: "prototype_surfaces",

@@ -5,6 +5,7 @@ import type { RecordBusEvent } from "@/lib/runtime/record-bus";
 import type { SeedReferenceRecord } from "@/lib/runtime/seed-reference";
 import type { FigmaEvidenceSurfaceRecord } from "@/lib/runtime/evidence-package";
 import type { RegionAnnotationRecord } from "@/lib/runtime/region-annotation";
+import type { PrototypeSurfaceRecord } from "@/lib/runtime/prototype-surface";
 import type { WorkbenchLayoutDocument } from "@/lib/runtime/workbench-layout-shared";
 import { emptyWorkbenchLayout } from "@/lib/runtime/workbench-layout-shared";
 import type { NormalizedRect } from "@/components/workbench/region-annotation-geometry";
@@ -164,6 +165,8 @@ export type WorkbenchRuntimeSnapshot = {
   seeds: SeedReferenceRecord[];
   surfaces: FigmaEvidenceSurfaceRecord[];
   annotations: RegionAnnotationRecord[];
+  /** Issue 30 — Prototype Evidence Surfaces (live dev-server previews). */
+  prototypeSurfaces: PrototypeSurfaceRecord[];
   /** Project UX layout — frame geometry + camera (not research data). */
   layout: WorkbenchLayoutDocument;
   /** Project-level Design Language Description (Info tip). */
@@ -334,6 +337,12 @@ export function createWorkbenchDataClient(
           session,
           { method: "GET" }
         );
+        const prototypeRes = await fetchJson(
+          fetcher,
+          "/api/prototype-surface",
+          session,
+          { method: "GET" }
+        );
 
         if (!active) {
           return { ok: false, error: "runtime_client_disposed" };
@@ -350,7 +359,8 @@ export function createWorkbenchDataClient(
           surfaceRes.ok &&
           annotationRes.ok &&
           readinessRes.ok &&
-          alignmentRes.ok
+          alignmentRes.ok &&
+          prototypeRes.ok
         ) {
           if (layoutRes.ok) {
             const layoutRaw = layoutRes.data.layout;
@@ -373,6 +383,8 @@ export function createWorkbenchDataClient(
               (surfaceRes.data.records as FigmaEvidenceSurfaceRecord[]) ?? [],
             annotations:
               (annotationRes.data.records as RegionAnnotationRecord[]) ?? [],
+            prototypeSurfaces:
+              (prototypeRes.data.records as PrototypeSurfaceRecord[]) ?? [],
             layout: lastLayout,
             designLanguageDescription,
             projectPhase,
@@ -387,7 +399,8 @@ export function createWorkbenchDataClient(
           surfaceRes,
           annotationRes,
           readinessRes,
-          alignmentRes
+          alignmentRes,
+          prototypeRes
         );
         // Surface while retrying so the canvas is not silently stale.
         options.onError(lastError);

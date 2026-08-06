@@ -90,8 +90,10 @@ describe("architecture — one-process Runtime (no Next child spawn)", () => {
       for (const file of walkFiles(path.join(ROOT, dir))) {
         const rel = path.relative(ROOT, file);
         // Launcher opens a browser; the stdio bridge starts the persistent
-        // Runtime owner. Neither child is a Next CLI process.
+        // Runtime owner; the preview supervisor owns the designer's prototype
+        // dev server (Issue 30). None of those children is a Next CLI process.
         if (rel === "bin/ikran.mjs" || rel === "bin/ikran-mcp.mjs") continue;
+        if (rel === "lib/runtime/preview-server.ts") continue;
         const text = readFileSync(file, "utf8");
         if (
           /from\s+["']node:child_process["']/.test(text) &&
@@ -102,6 +104,17 @@ describe("architecture — one-process Runtime (no Next child spawn)", () => {
       }
     }
     expect(hits, `unexpected spawn usage:\n${hits.join("\n")}`).toEqual([]);
+  });
+
+  test("the preview supervisor spawns prototype dev servers, never Next", () => {
+    const supervisor = readFileSync(
+      path.join(ROOT, "lib/runtime/preview-server.ts"),
+      "utf8"
+    );
+    expect(supervisor).not.toMatch(/next\/dist\/bin\/next/);
+    expect(supervisor).not.toMatch(/detached:\s*true/);
+    // Every host effect stays injectable so tests never spawn a real process.
+    expect(supervisor).toMatch(/PreviewSupervisorDeps/);
   });
 });
 

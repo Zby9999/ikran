@@ -57,6 +57,11 @@ export {
 export { recordDesignerFeedbackCommand } from "./designer-feedback";
 
 export {
+  listPrototypeSurfacesCommand,
+  recordPreviewCommand
+} from "./prototype-preview";
+
+export {
   claimConsolidateReviewCommand,
   dismissDesignerFeedbackCommand
 } from "./consolidate-review";
@@ -153,6 +158,8 @@ export {
   dismissDesignerFeedbackInputShape,
   recordDesignerFeedbackInputSchema,
   recordDesignerFeedbackInputShape,
+  recordPreviewInputSchema,
+  recordPreviewInputShape,
   createOrOpenProjectInputShape,
   setupWorkspaceInputShape
 } from "./schemas";
