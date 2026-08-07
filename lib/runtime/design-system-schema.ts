@@ -954,6 +954,49 @@ function validateSourceCaptures(
     }
     const rect = validateCaptureNodeRect(item, itemField);
     if (!rect.ok) return rect;
+    const origin = validateCaptureOrigin(item, itemField, context);
+    if (!origin.ok) return origin;
+  }
+  return { ok: true };
+}
+
+/** Capture provenance (Issue 32): "source" is a Figma node screenshot (the
+ * legacy default when `origin` is absent), "code" is a code rendering
+ * screenshot, which must carry the code files it froze and their content
+ * digest so the view can verdict freshness. */
+export const CAPTURE_ORIGINS = ["source", "code"] as const;
+
+function validateCaptureOrigin(
+  item: Record<string, unknown>,
+  itemField: string,
+  context: Record<string, unknown>
+): DesignSystemSchemaResult {
+  if (item.origin === undefined) return { ok: true };
+  if (item.origin !== "source" && item.origin !== "code") {
+    return fail("invalid_field_type", {
+      ...context,
+      field: `${itemField}.origin`,
+      expected: '"source" | "code"'
+    });
+  }
+  if (item.origin !== "code") return { ok: true };
+  if (!isNonEmptyString(item.codeDigest)) {
+    return fail("invalid_field_type", {
+      ...context,
+      field: `${itemField}.codeDigest`,
+      expected: 'non-empty string (required when origin is "code")'
+    });
+  }
+  if (
+    !Array.isArray(item.codeLinks) ||
+    item.codeLinks.length === 0 ||
+    item.codeLinks.some((link) => !isNonEmptyString(link))
+  ) {
+    return fail("invalid_field_type", {
+      ...context,
+      field: `${itemField}.codeLinks`,
+      expected: 'non-empty string array (required when origin is "code")'
+    });
   }
   return { ok: true };
 }

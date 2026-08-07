@@ -30,6 +30,7 @@ import { initializeProjectDb } from "../../lib/runtime/db";
 import { getArtifactsDir, getProjectDbPath } from "../../lib/runtime/paths";
 import { registerSeedReference } from "../../lib/runtime/seed-reference";
 import { recordEvidencePackage } from "../../lib/runtime/evidence-package";
+import { codeCaptureDigest } from "../../lib/runtime/code-capture-digest";
 import { createRegionAnnotation } from "../../lib/runtime/region-annotation";
 import {
   subscribeRecordEvents,
@@ -1347,7 +1348,10 @@ describe("getDesignSystemView layout captures", () => {
           capturedAt: "2026-08-01T04:00:00.000Z",
           surfaceId,
           stale: false,
-          nodeRect: { x: 0.05, y: 0, width: 0.9, height: 0.0625 }
+          nodeRect: { x: 0.05, y: 0, width: 0.9, height: 0.0625 },
+          origin: "source",
+          codeLinks: null,
+          codeDigest: null
         },
         {
           nodeId: "1:99",
@@ -1356,7 +1360,10 @@ describe("getDesignSystemView layout captures", () => {
           capturedAt: "2026-08-01T04:01:00.000Z",
           surfaceId: null,
           stale: false,
-          nodeRect: null
+          nodeRect: null,
+          origin: "source",
+          codeLinks: null,
+          codeDigest: null
         }
       ]);
     });
@@ -1583,11 +1590,93 @@ describe("getDesignSystemView layout captures", () => {
           capturedAt: "2026-08-03T12:00:00.000Z",
           surfaceId: null,
           stale: false,
-          nodeRect: null
+          nodeRect: null,
+          origin: "source",
+          codeLinks: null,
+          codeDigest: null
         }
       ]);
       // Inventory entries are not capture surfaces — the hero reads the spec.
       expect(result.view.components.inventory[0]!.captures).toBeUndefined();
+    });
+  });
+
+  test("code captures carry origin and flip stale when the code changes (Issue 32)", () => {
+    withTempProject((dir) => {
+      seedEvidenceCards(dir);
+      writeProjectFile(dir, "components/Button.tsx", "export const Button = () => null;");
+      writeProjectFile(dir, "design-system/captures/button-primary.png", "png");
+      writeProjectFile(dir, "design-system/captures/button-code.png", "png");
+      const codeLinks = ["components/Button.tsx"];
+      const codeDigest = codeCaptureDigest(dir, codeLinks);
+      expect(codeDigest).not.toBeNull();
+      writeProjectFile(dir, "design-system/components/button.json", {
+        id: "component-button",
+        name: "Button",
+        value: {
+          description: "Primary action.",
+          props: [],
+          variants: [],
+          stateMatrix: [],
+          guidelines: [],
+          tokenLinks: [],
+          codeLinks,
+          sourceCaptures: [
+            // Legacy capture without `origin`: always reads as "source".
+            {
+              nodeName: "Button / Primary",
+              artifactPath: "design-system/captures/button-primary.png",
+              capturedAt: "2026-08-03T12:00:00.000Z"
+            },
+            {
+              nodeName: "Button",
+              artifactPath: "design-system/captures/button-code.png",
+              capturedAt: "2026-08-07T12:00:00.000Z",
+              surfaceId: "proto-surface-1",
+              origin: "code",
+              codeLinks,
+              codeDigest
+            }
+          ]
+        },
+        meaning: "Button spec",
+        status: "candidate",
+        links: ["card-accepted"]
+      });
+      expect(
+        declareFile(dir, "design-system/components/button.json", "component-spec")
+          .ok
+      ).toBe(true);
+
+      const specCaptures = () => {
+        const result = getDesignSystemView(dir);
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error(result.reason);
+        return result.view.components.specs[0]!.captures!;
+      };
+
+      const fresh = specCaptures();
+      expect(fresh.map((capture) => capture.origin)).toEqual([
+        "source",
+        "code"
+      ]);
+      // A code capture's prototype surfaceId is provenance, not a Figma
+      // surface — freshness comes from the code digest, so both are fresh.
+      expect(fresh.map((capture) => capture.stale)).toEqual([false, false]);
+      expect(fresh[1]).toMatchObject({ codeLinks, codeDigest });
+
+      // Editing the linked code file stales the code capture only.
+      writeProjectFile(
+        dir,
+        "components/Button.tsx",
+        "export const Button = () => <button>v2</button>;"
+      );
+      const staled = specCaptures();
+      expect(staled.map((capture) => capture.stale)).toEqual([false, true]);
+
+      // A missing code file is an honest stale, never a crash.
+      rmSync(path.join(dir, "components/Button.tsx"));
+      expect(specCaptures()[1]!.stale).toBe(true);
     });
   });
 });

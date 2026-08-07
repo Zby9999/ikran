@@ -13,13 +13,14 @@
 // directly, the alignment flow is driven through MCP tools + the alignment
 // HTTP surface, and the Workbench page follows along via the live SSE channel.
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 
 import { expect, test } from "./fixtures";
 import { recordEvidencePackage } from "../lib/runtime/evidence-package";
+import { codeCaptureDigest } from "../lib/runtime/code-capture-digest";
 import { setDesignLanguageDescription } from "../lib/runtime/project-readiness";
 import { registerSeedReference } from "../lib/runtime/seed-reference";
 import {
@@ -271,6 +272,23 @@ test("09A design system browser: declare → render → approve write-back", asy
         }
       ]
     });
+    // Issue 32: the Button spec carries a code-backed capture — a real code
+    // file (whose digest the capture freezes) plus the rendered screenshot,
+    // so the hero leads with the code render instead of the unavailable
+    // placeholder.
+    mkdirSync(path.join(projectDir, "components"), { recursive: true });
+    writeFileSync(
+      path.join(projectDir, "components", "Button.tsx"),
+      'export const Button = () => <button type="button">Button</button>;\n',
+      "utf-8"
+    );
+    mkdirSync(path.join(designSystemDir, "captures"), { recursive: true });
+    copyFileSync(
+      path.join(process.cwd(), "tests", "fixtures", "layout-capture-grid.png"),
+      path.join(designSystemDir, "captures", "button-code.png")
+    );
+    const buttonCodeLinks = ["components/Button.tsx"];
+    const buttonCodeDigest = codeCaptureDigest(projectDir, buttonCodeLinks);
     writeSource("design-system/components/button.json", {
       id: "button",
       name: "Button",
@@ -302,7 +320,17 @@ test("09A design system browser: declare → render → approve write-back", asy
           }
         ],
         tokenLinks: ["semantic.color.text-primary"],
-        codeLinks: ["components/Button.tsx"]
+        codeLinks: buttonCodeLinks,
+        sourceCaptures: [
+          {
+            nodeName: "Button",
+            artifactPath: "design-system/captures/button-code.png",
+            capturedAt: "2026-08-07T14:00:00.000Z",
+            origin: "code",
+            codeLinks: buttonCodeLinks,
+            codeDigest: buttonCodeDigest
+          }
+        ]
       }
     });
     writeSource("design-system/interaction-rules.json", {
@@ -483,10 +511,24 @@ test("09A design system browser: declare → render → approve write-back", asy
     await expect(
       buttonNav.locator(".dsb-navrow-candidate-dot")
     ).toBeVisible();
-    // Placard: hero leads (explicit unavailable — no capture declared), the
+    // Placard: hero leads with the code-backed render (Issue 32 — the code
+    // capture outranks source captures and the unavailable placeholder), the
     // reading column follows with the read-only states line.
     await expect(page.getByTestId("ds-component-hero")).toBeVisible();
-    await expect(page.getByTestId("ds-component-unavailable")).toBeVisible();
+    await expect(page.getByTestId("ds-component-unavailable")).toHaveCount(0);
+    const heroOrigin = page.getByTestId("ds-component-capture-origin");
+    await expect(heroOrigin).toHaveText("Code-backed");
+    await expect(heroOrigin).toHaveAttribute("data-origin", "code-backed");
+    await expect(page.locator(".dsb-hero-image")).toHaveAttribute(
+      "src",
+      /design-system\/captures\/button-code\.png/
+    );
+    // Hover provenance: the popover marks the code source, not a Figma node.
+    await heroOrigin.hover();
+    const capturePanel = page.getByTestId("ds-component-capture-panel");
+    await expect(capturePanel).toContainText("Code-backed render");
+    await expect(capturePanel).toContainText("components/Button.tsx");
+    await page.mouse.move(0, 0);
     await expect(page.getByTestId("ds-component-title")).toHaveText("Button");
     const statesRow = page.getByTestId("ds-component-states");
     await expect(statesRow).toBeVisible();

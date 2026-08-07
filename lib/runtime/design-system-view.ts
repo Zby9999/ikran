@@ -29,6 +29,7 @@ import {
 import {
   isCaptureNodeRectBounds
 } from "./design-system-schema";
+import { codeCaptureDigest } from "./code-capture-digest";
 import type {
   DesignSystemEntryKind,
   DesignSystemFileKind,
@@ -112,11 +113,19 @@ export interface LayoutCaptureNodeRect {
   height: number;
 }
 
-/** One Figma node screenshot backing a layout rule (09C-D02) or a component
- * spec (09C-D03 hero). The Agent captures the node via Figma MCP, stores the
- * image as a project artifact, and records the provenance in the entry's
+/** Where a capture's pixels came from (Issue 32): "source" is a Figma node
+ * screenshot (legacy rows without `origin` degrade to this), "code" is a
+ * screenshot of the component's real code rendering. */
+export type DesignSystemCaptureOrigin = "source" | "code";
+
+/** One captured image backing a layout rule (09C-D02) or a component spec
+ * (09C-D03 hero), from either evidence-grade origin: a Figma node the Agent
+ * captured via Figma MCP ("source"), or the component's real code rendering
+ * screenshotted from a prototype preview ("code", Issue 32). The image is
+ * stored as a project artifact with its provenance in the entry's
  * `value.sourceCaptures`; the view layers the freshness verdict (`stale`)
- * on top from evidence lineage. */
+ * on top — evidence lineage for source captures, the frozen code content
+ * digest for code captures. */
 export interface DesignSystemLayoutCapture {
   nodeId: string | null;
   nodeName: string;
@@ -124,10 +133,16 @@ export interface DesignSystemLayoutCapture {
   artifactPath: string;
   capturedAt: string;
   surfaceId: string | null;
-  /** True when the linked surface was superseded or no longer exists —
-   * the capture may not match the current source anymore. */
+  /** True when the capture may not match its source anymore — a source
+   * capture's linked surface was superseded or no longer exists; a code
+   * capture's code files changed (content digest mismatch) or went missing. */
   stale: boolean;
   nodeRect: LayoutCaptureNodeRect | null;
+  origin: DesignSystemCaptureOrigin;
+  /** Code-backed captures only: the code files this capture froze and their
+   * content digest at capture time; both null for source captures. */
+  codeLinks: string[] | null;
+  codeDigest: string | null;
 }
 
 export interface DesignSystemEntryView {
@@ -255,10 +270,13 @@ function nodeRectOfItem(item: Record<string, unknown>): LayoutCaptureNodeRect | 
 /** Parse an entry's structured source captures into view captures.
  * Ingest schema already enforces the item shape; the view still guards item
  * by item so a hand-edited legacy row degrades to "no captures" instead of
- * breaking the whole view. */
+ * breaking the whole view. Legacy items without `origin` are source
+ * captures; a code capture whose digest fields are malformed reads stale
+ * (its freshness can no longer be verified honestly). */
 function capturesOfRaw(
   raw: unknown,
-  staleOf: (surfaceId: string) => boolean
+  staleOf: (surfaceId: string) => boolean,
+  codeStaleOf: (codeLinks: string[], codeDigest: string) => boolean
 ): DesignSystemLayoutCapture[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const captures: DesignSystemLayoutCapture[] = [];
@@ -272,14 +290,38 @@ function capturesOfRaw(
       continue;
     }
     const surfaceId = nonEmptyString(item.surfaceId) ? item.surfaceId : null;
+    const origin: DesignSystemCaptureOrigin =
+      item.origin === "code" ? "code" : "source";
+    const codeLinks =
+      origin === "code" &&
+      Array.isArray(item.codeLinks) &&
+      item.codeLinks.length > 0 &&
+      item.codeLinks.every(nonEmptyString)
+        ? (item.codeLinks as string[])
+        : null;
+    const codeDigest =
+      origin === "code" && nonEmptyString(item.codeDigest)
+        ? item.codeDigest
+        : null;
+    const stale =
+      origin === "code"
+        ? codeLinks === null ||
+          codeDigest === null ||
+          codeStaleOf(codeLinks, codeDigest)
+        : surfaceId !== null
+          ? staleOf(surfaceId)
+          : false;
     captures.push({
       nodeId: nonEmptyString(item.nodeId) ? item.nodeId : null,
       nodeName: item.nodeName,
       artifactPath: item.artifactPath,
       capturedAt: item.capturedAt,
       surfaceId,
-      stale: surfaceId !== null ? staleOf(surfaceId) : false,
-      nodeRect: nodeRectOfItem(item)
+      stale,
+      nodeRect: nodeRectOfItem(item),
+      origin,
+      codeLinks,
+      codeDigest
     });
   }
   return captures.length > 0 ? captures : undefined;
@@ -422,6 +464,12 @@ function buildDesignSystemViewFromDb(
         | undefined;
       return surface === undefined || surface.superseded_by !== null;
     };
+    // Code-capture freshness (Issue 32): the frozen code files changed or
+    // went missing — recompute the content digest against the live files.
+    const codeCaptureStaleOf = (
+      codeLinks: string[],
+      codeDigest: string
+    ): boolean => codeCaptureDigest(projectPath, codeLinks) !== codeDigest;
 
     for (const row of rows) {
       const value = JSON.parse(row.value_json) as unknown;
@@ -545,7 +593,8 @@ function buildDesignSystemViewFromDb(
             ? {
                 captures: capturesOfRaw(
                   sourceCaptures,
-                  captureStaleOf
+                  captureStaleOf,
+                  codeCaptureStaleOf
                 )
               }
             : {})

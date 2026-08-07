@@ -379,7 +379,7 @@ export const recordPreviewInputShape = {
 export const recordPreviewInputSchema = z.object(recordPreviewInputShape);
 
 /** Normalized rect against the FULL page: x/y top-left, width/height in [0, 1]. */
-const ruleCaptureRectShape = {
+export const ruleCaptureRectShape = {
   x: z.number().min(0).max(1),
   y: z.number().min(0).max(1),
   width: z.number().min(0).max(1),
@@ -412,6 +412,35 @@ export const captureRuleScreenshotInputShape = {
 
 export const captureRuleScreenshotInputSchema = z.object(
   captureRuleScreenshotInputShape
+);
+
+export const captureComponentCodeHeroInputShape = {
+  entryId: z
+    .string()
+    .describe(
+      "Component spec entry (row id or entry_id) whose codeLinks code is rendered."
+    ),
+  surfaceId: z
+    .string()
+    .describe(
+      "Prototype Evidence Surface id whose preview URL renders the component's current code."
+    ),
+  fileName: z
+    .string()
+    .optional()
+    .describe(
+      "Output file name under design-system/captures/ (basename only). Defaults to code-capture-<entryId>-<epochMs>.png."
+    ),
+  crop: z
+    .object(ruleCaptureRectShape)
+    .optional()
+    .describe(
+      "Normalized crop against the full page; absent captures the whole page."
+    )
+} as const;
+
+export const captureComponentCodeHeroInputSchema = z.object(
+  captureComponentCodeHeroInputShape
 );
 
 export const recordNewDesignRunInputShape = {

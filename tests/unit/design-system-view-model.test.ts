@@ -791,7 +791,10 @@ describe("component grouping + sidebar projection (09C-D03)", () => {
         capturedAt: "2026-08-03T12:00:00.000Z",
         surfaceId: null,
         stale: false,
-        nodeRect: null
+        nodeRect: null,
+        origin: "source" as const,
+        codeLinks: null,
+        codeDigest: null
       }
     ];
     view.components.specs[0] = { ...view.components.specs[0]!, captures };

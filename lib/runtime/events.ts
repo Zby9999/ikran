@@ -47,6 +47,7 @@ export type EventType =
   | "design_system_entry_reverted"
   | "design_system_entry_edited"
   | "design_system_code_links_backfilled"
+  | "design_system_code_capture_recorded"
   | "source_artifact_declared"
   | "seed_reconstruction_started"
   | "prototype_preview_declared"

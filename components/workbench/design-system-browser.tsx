@@ -228,11 +228,12 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
 /* ------------------------------ visual origin ------------------------------ */
 
 /** Where a visual sample comes from. 09C-D03 shrank the origin chain to two
- * evidence-grade tiers — Code-backed (a later slice) and Source capture —
- * with everything else falling back to an explicit unavailable state; the
- * synthetic Source-generated / Schematic tiers were retired (they were the
- * only outcomes that could be mistaken for real pixels). Rendered as an
- * outlined tag — visually distinct from the filled status chip. */
+ * evidence-grade tiers — Code-backed (a code rendering capture, Issue 32) and
+ * Source capture — with everything else falling back to an explicit
+ * unavailable state; the synthetic Source-generated / Schematic tiers were
+ * retired (they were the only outcomes that could be mistaken for real
+ * pixels). Rendered as an outlined tag — visually distinct from the filled
+ * status chip. */
 export type DsVisualOrigin = "code-backed" | "source-capture" | "unavailable";
 
 export const DS_VISUAL_ORIGIN_LABELS: Record<DsVisualOrigin, string> = {
@@ -294,7 +295,12 @@ function SourceCaptureOriginPopover({
 
   if (!primary) return <OriginTag origin="unavailable" />;
 
-  const ariaLabel = `Source capture: ${primary.nodeName}, captured ${formatCapturedAt(primary.capturedAt)}${primary.stale ? ", stale" : ""}`;
+  // The popover's tier follows the primary (hero) capture: code renders and
+  // Figma source screenshots carry different labels and provenance rows.
+  const origin: DsVisualOrigin =
+    primary.origin === "code" ? "code-backed" : "source-capture";
+  const originTitle = origin === "code-backed" ? "Code-backed render" : "Source capture";
+  const ariaLabel = `${originTitle}: ${primary.nodeName}, captured ${formatCapturedAt(primary.capturedAt)}${primary.stale ? ", stale" : ""}`;
   const align = side === "left" || side === "right" ? "start" : "end";
 
   return (
@@ -309,7 +315,7 @@ function SourceCaptureOriginPopover({
           ref={triggerRef}
           type="button"
           className="dsb-origin"
-          data-origin="source-capture"
+          data-origin={origin}
           data-testid="ds-component-capture-origin"
           aria-label={ariaLabel}
           onClick={(event) => {
@@ -321,7 +327,7 @@ function SourceCaptureOriginPopover({
           onFocus={openNow}
           onBlur={closeDelayed}
         >
-          {DS_VISUAL_ORIGIN_LABELS["source-capture"]}
+          {DS_VISUAL_ORIGIN_LABELS[origin]}
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -338,15 +344,16 @@ function SourceCaptureOriginPopover({
         onCloseAutoFocus={(event) => event.preventDefault()}
         onEscapeKeyDown={(event) => event.preventDefault()}
       >
-        <p className="dsb-popover-title">Source capture</p>
+        <p className="dsb-popover-title">{originTitle}</p>
         {captures.map((capture, index) => (
           <dl
             key={`${capture.artifactPath}-${index}`}
             className="dsb-capture-meta"
+            data-origin={capture.origin}
             data-stale={capture.stale || undefined}
           >
             <div>
-              <dt>Node</dt>
+              <dt>{capture.origin === "code" ? "Component" : "Node"}</dt>
               <dd>{capture.nodeName}</dd>
             </div>
             <div>
@@ -360,6 +367,12 @@ function SourceCaptureOriginPopover({
               <dt>Artifact</dt>
               <dd>{capture.artifactPath}</dd>
             </div>
+            {capture.origin === "code" && capture.codeLinks ? (
+              <div>
+                <dt>Code</dt>
+                <dd>{capture.codeLinks.join(", ")}</dd>
+              </div>
+            ) : null}
             {capture.nodeId ? (
               <div>
                 <dt>Node id</dt>
@@ -2881,7 +2894,12 @@ export function ComponentDetail({
   }
 
   const detail = component.detail;
-  const capture = component.captures[0] ?? null;
+  // 09C-D03 two tiers: a code-backed render outranks a source capture —
+  // the hero shows the first code capture when one exists (Issue 32).
+  const captures = [...component.captures].sort(
+    (a, b) => Number(b.origin === "code") - Number(a.origin === "code")
+  );
+  const capture = captures[0] ?? null;
   const purpose =
     detail?.description || component.inventory?.meaning || "";
   const propColumns = detail
@@ -2897,7 +2915,7 @@ export function ComponentDetail({
         <span className="dsb-hero-origin">
           {capture ? (
             <SourceCaptureOriginPopover
-              captures={component.captures}
+              captures={captures}
               portalContainer={rows.portalContainer}
             />
           ) : (
@@ -2908,7 +2926,11 @@ export function ComponentDetail({
           <img
             className="dsb-hero-image"
             src={artifactScreenshotUrl(capture.artifactPath, session)}
-            alt={`Source capture of ${capture.nodeName}`}
+            alt={
+              capture.origin === "code"
+                ? `Code render of ${capture.nodeName}`
+                : `Source capture of ${capture.nodeName}`
+            }
           />
         ) : (
           <div

@@ -1082,6 +1082,72 @@ test.describe("layout-rules.json sourceCaptures", () => {
     }
   });
 
+  test("origin is a closed enum; absent stays valid (legacy source captures)", () => {
+    expect(
+      validateDesignSystemJson(
+        "layout-rules.json",
+        rulesWith([capture({ origin: "source" })])
+      )
+    ).toMatchObject({ ok: true });
+    expect(
+      validateDesignSystemJson(
+        "layout-rules.json",
+        rulesWith([capture({ origin: "figma" })])
+      )
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: {
+        field: "sourceCaptures[0].origin",
+        expected: '"source" | "code"'
+      }
+    });
+  });
+
+  test("a code capture requires codeDigest and codeLinks (Issue 32)", () => {
+    const codeCapture = capture({
+      origin: "code",
+      codeDigest: "abc123",
+      codeLinks: ["components/Button.tsx"]
+    });
+    expect(
+      validateDesignSystemJson("layout-rules.json", rulesWith([codeCapture]))
+    ).toMatchObject({ ok: true });
+
+    expect(
+      validateDesignSystemJson(
+        "layout-rules.json",
+        rulesWith([capture({ origin: "code", codeLinks: ["components/Button.tsx"] })])
+      )
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: { field: "sourceCaptures[0].codeDigest" }
+    });
+    expect(
+      validateDesignSystemJson(
+        "layout-rules.json",
+        rulesWith([capture({ origin: "code", codeDigest: "abc123" })])
+      )
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: { field: "sourceCaptures[0].codeLinks" }
+    });
+    expect(
+      validateDesignSystemJson(
+        "layout-rules.json",
+        rulesWith([
+          capture({ origin: "code", codeDigest: "abc123", codeLinks: [] })
+        ])
+      )
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: { field: "sourceCaptures[0].codeLinks" }
+    });
+  });
+
   test("nodeRect declares the node's position inside the capture image", () => {
     expect(
       validateDesignSystemJson(

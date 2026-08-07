@@ -824,7 +824,10 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
           capturedAt: "2026-08-03T12:00:00.000Z",
           surfaceId: "surf-old",
           stale: true,
-          nodeRect: null
+          nodeRect: null,
+          origin: "source",
+          codeLinks: null,
+          codeDigest: null
         },
         {
           nodeId: "1:100",
@@ -833,7 +836,10 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
           capturedAt: "2026-08-03T12:05:00.000Z",
           surfaceId: "surf-current",
           stale: false,
-          nodeRect: { x: 0, y: 0, width: 160, height: 40 }
+          nodeRect: { x: 0, y: 0, width: 160, height: 40 },
+          origin: "source",
+          codeLinks: null,
+          codeDigest: null
         }
       ]
     };
@@ -852,6 +858,84 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
     expect(html).not.toContain("Source captures");
     expect(html).toContain(
       'aria-label="Source capture: Button / Primary, captured 2026-08-03 12:00, stale"'
+    );
+  });
+
+  test("a code capture wins the hero as the code-backed tier (Issue 32)", () => {
+    const view = fixtureView();
+    view.components.specs[0] = {
+      ...view.components.specs[0]!,
+      captures: [
+        {
+          nodeId: "1:99",
+          nodeName: "Button / Primary",
+          artifactPath: "design-system/captures/button.png",
+          capturedAt: "2026-08-03T12:00:00.000Z",
+          surfaceId: "surf-old",
+          stale: false,
+          nodeRect: null,
+          origin: "source",
+          codeLinks: null,
+          codeDigest: null
+        },
+        {
+          nodeId: null,
+          nodeName: "Button",
+          artifactPath: "design-system/captures/button-code.png",
+          capturedAt: "2026-08-07T14:00:00.000Z",
+          surfaceId: "proto-surface-1",
+          stale: false,
+          nodeRect: null,
+          origin: "code",
+          codeLinks: ["prototypes/components/Button.tsx"],
+          codeDigest: "digest-1"
+        }
+      ]
+    };
+    const model = buildDesignSystemBrowserModel(view);
+    const html = renderDetail(model.components.list[0]!);
+    // The code-backed render leads even though the source capture was
+    // declared first; the tag and aria-label switch tiers.
+    expect(html).toContain(
+      "/api/artifacts/design-system/captures/button-code.png?session=test-session"
+    );
+    expect(html).toContain('alt="Code render of Button"');
+    expect(html).toContain('data-origin="code-backed"');
+    expect(html).toContain(
+      'aria-label="Code-backed render: Button, captured 2026-08-07 14:00"'
+    );
+    expect(html).not.toContain('data-testid="ds-component-unavailable"');
+  });
+
+  test("a stale code capture reads stale like a source capture (Issue 32)", () => {
+    const view = fixtureView();
+    view.components.specs[0] = {
+      ...view.components.specs[0]!,
+      captures: [
+        {
+          nodeId: null,
+          nodeName: "Button",
+          artifactPath: "design-system/captures/button-code.png",
+          capturedAt: "2026-08-07T14:00:00.000Z",
+          surfaceId: "proto-surface-1",
+          // The frozen code changed after the capture (digest mismatch).
+          stale: true,
+          nodeRect: null,
+          origin: "code",
+          codeLinks: ["prototypes/components/Button.tsx"],
+          codeDigest: "digest-1"
+        }
+      ]
+    };
+    const model = buildDesignSystemBrowserModel(view);
+    const html = renderDetail(model.components.list[0]!);
+    // Same stale treatment as a source capture: the tier tag stays
+    // code-backed and the origin chip's aria-label warns (the popover
+    // panel's data-stale row / "· stale" caption renders on hover through
+    // the same origin-agnostic path as source captures).
+    expect(html).toContain('data-origin="code-backed"');
+    expect(html).toContain(
+      'aria-label="Code-backed render: Button, captured 2026-08-07 14:00, stale"'
     );
   });
 
@@ -1392,7 +1476,10 @@ function layoutLeafRows(): DsRow[] {
             capturedAt: "2026-07-30T14:05:22Z",
             surfaceId: "surf-grid",
             stale: false,
-            nodeRect: { x: 0.1, y: 0.2, width: 0.6, height: 0.4 }
+            nodeRect: { x: 0.1, y: 0.2, width: 0.6, height: 0.4 },
+            origin: "source",
+            codeLinks: null,
+            codeDigest: null
           },
           {
             nodeId: "11:21",
@@ -1401,7 +1488,10 @@ function layoutLeafRows(): DsRow[] {
             capturedAt: "2026-07-30T14:06:01Z",
             surfaceId: null,
             stale: false,
-            nodeRect: null
+            nodeRect: null,
+            origin: "source",
+            codeLinks: null,
+            codeDigest: null
           }
         ]
       }
@@ -1422,7 +1512,10 @@ function layoutLeafRows(): DsRow[] {
             capturedAt: "2026-07-28T09:12:00Z",
             surfaceId: "surf-shell",
             stale: true,
-            nodeRect: null
+            nodeRect: null,
+            origin: "source",
+            codeLinks: null,
+            codeDigest: null
           }
         ]
       }
