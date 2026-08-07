@@ -61,3 +61,7 @@ seed → draft_design_system(待审计) → prototype_validation → design_syst
 
 - `27-chat-first-designer-feedback-declaration.md`(反馈落库是 formalize 回流的输入)
 - `29-batch-rule-update-review.md`(formalize 复用批量审查机制)
+
+## Notes
+
+- 2026-08-07: 相位现可被 Agent 读取:`get_project_readiness` 的 structuredContent 返回 `projectPhase` 与 `seedReferenceCount`,`create_or_open_project` 成功载荷携带 `project_phase`。注意:相位仍是声明序状态(declaration-order state),不是画布事实状态(canvas-fact state)——它记录 Agent/设计师声明到哪一步,不验证画布上真实发生了什么。

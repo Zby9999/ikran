@@ -7,7 +7,10 @@
 
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
 import { openProjectDb, closeProjectDb, withProjectTransaction } from "./db";
-import { getProjectPhase, type ProjectPhase } from "./project-phase";
+import {
+  readProjectPhaseOnDb,
+  type ProjectPhase
+} from "./project-phase";
 
 export type ProjectReadinessPrecondition = "description_missing";
 
@@ -15,6 +18,8 @@ export type ProjectReadiness = {
   preconditions: ProjectReadinessPrecondition[];
   designLanguageDescription: string;
   projectPhase: ProjectPhase;
+  /** Rows in seed_references; zero means only seed reconstruction is possible. */
+  seedReferenceCount: number;
 };
 
 function ensureProjectMetaRow(db: DatabaseType): void {
@@ -73,15 +78,29 @@ export function setDesignLanguageDescription(
   }
 }
 
+/** Rows in seed_references; zero means only seed reconstruction is possible. */
+export function countSeedReferencesOnDb(db: DatabaseType): number {
+  const row = db
+    .prepare(`SELECT COUNT(*) AS count FROM seed_references`)
+    .get() as { count: number };
+  return Number(row.count);
+}
+
 export function getProjectReadiness(projectPath: string): ProjectReadiness {
-  const designLanguageDescription = getDesignLanguageDescription(projectPath);
-  const preconditions: ProjectReadinessPrecondition[] = [];
-  if (designLanguageDescription.length === 0) {
-    preconditions.push("description_missing");
+  const db = openProjectDb(projectPath);
+  try {
+    const designLanguageDescription = readDescriptionFromDb(db);
+    const preconditions: ProjectReadinessPrecondition[] = [];
+    if (designLanguageDescription.length === 0) {
+      preconditions.push("description_missing");
+    }
+    return {
+      preconditions,
+      designLanguageDescription,
+      projectPhase: readProjectPhaseOnDb(db),
+      seedReferenceCount: countSeedReferencesOnDb(db)
+    };
+  } finally {
+    closeProjectDb(db);
   }
-  return {
-    preconditions,
-    designLanguageDescription,
-    projectPhase: getProjectPhase(projectPath)
-  };
 }

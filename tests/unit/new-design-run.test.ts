@@ -36,6 +36,26 @@ function setPhase(projectPath: string, phase: string): void {
   }
 }
 
+function insertSeedReference(projectPath: string, id = "seed-1"): void {
+  const db = new DatabaseSync(getProjectDbPath(projectPath));
+  try {
+    db.prepare(
+      `INSERT INTO seed_references
+       (id, figma_seed_reference, original_design_intent, created_at,
+        registered_via, file_key, node_id)
+       VALUES (?, ?, '', ?, 'agent', ?, ?)`
+    ).run(
+      id,
+      `https://www.figma.com/design/AbCdEf/X?node-id=1-2`,
+      "2026-08-06T00:00:00.000Z",
+      "AbCdEf",
+      "1:2"
+    );
+  } finally {
+    db.close();
+  }
+}
+
 function insertEntry(
   projectPath: string,
   row: {
@@ -80,9 +100,26 @@ test("recordNewDesignRun rejects outside ready_for_new_design", () => {
   });
 });
 
+test("recordNewDesignRun rejects with no_seed_reference when no Seed Reference exists", () => {
+  withProject((projectPath) => {
+    setPhase(projectPath, "ready_for_new_design");
+    expect(
+      recordNewDesignRun(projectPath, {
+        runId: "run-new-1",
+        intent: "A quieter product page"
+      })
+    ).toEqual({
+      ok: false,
+      reason: "no_seed_reference",
+      phase: "ready_for_new_design"
+    });
+  });
+});
+
 test("recordNewDesignRun persists run, context packet, and event", () => {
   withProject((projectPath) => {
     setPhase(projectPath, "ready_for_new_design");
+    insertSeedReference(projectPath);
     insertEntry(projectPath, {
       id: "formal-1",
       entryId: "layout.formal",
@@ -185,6 +222,7 @@ test("recordNewDesignRun persists run, context packet, and event", () => {
 test("recordNewDesignRun rejects forged or non-candidate usedCandidateIds", () => {
   withProject((projectPath) => {
     setPhase(projectPath, "ready_for_new_design");
+    insertSeedReference(projectPath);
     insertEntry(projectPath, {
       id: "formal-1",
       entryId: "layout.formal",

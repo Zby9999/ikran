@@ -37,7 +37,7 @@ export function registerProjectPhaseTools(
     "confirm_draft_design_system",
     {
       description:
-        "Declare that the designer finished auditing the Draft Design System. Advances project phase from draft_design_system to prototype_validation and unlocks the first Prototype. Rejected out of order.",
+        "Declare that the designer finished auditing the Draft Design System. Advances project phase from draft_design_system to prototype_validation and unlocks the first Prototype. After advancing, call get_prototype_rebuild_context to obtain the reconstruction context before writing the first prototype. Rejected out of order.",
       inputSchema: emptyInputSchema
     },
     async () => {

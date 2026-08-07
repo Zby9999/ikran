@@ -83,6 +83,7 @@ test("empty Description reports description_missing and does not block capture",
   const readiness = getProjectReadiness(projectDir);
   expect(readiness.preconditions).toContain("description_missing");
   expect(readiness.projectPhase).toBe("seed");
+  expect(readiness.seedReferenceCount).toBe(0);
   expect(getDesignLanguageDescription(projectDir)).toBe("");
 
   const capture = await addSeedReference(projectDir, {
@@ -93,9 +94,9 @@ test("empty Description reports description_missing and does not block capture",
   expect(capture.ok).toBe(true);
   expect(listSeedReferences(projectDir)).toHaveLength(1);
 
-  expect(getProjectReadiness(projectDir).preconditions).toContain(
-    "description_missing"
-  );
+  const afterCapture = getProjectReadiness(projectDir);
+  expect(afterCapture.preconditions).toContain("description_missing");
+  expect(afterCapture.seedReferenceCount).toBe(1);
 });
 
 test("non-empty Description clears description_missing; update is project-scoped only", async () => {

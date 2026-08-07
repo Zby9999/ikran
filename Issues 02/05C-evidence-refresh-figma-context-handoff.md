@@ -58,3 +58,7 @@ Structural overlay 不增加节点元数据 UI；交互采用设计师确认的�
 真实节点 `yNZdUYsVVUKuaEVl6YhoRA / 260:3308` 经 Browser Use Refresh 成功，Workbench 显示设计师更新后的 Redo frame；SQLite 证明 append-only lineage、current pointer 与历史 Surface 均正确，锚定旧 evidence version 的 6 个 Annotation records 继续保留并在 Workbench 投影。Real Figma / real Agent AC 当前完成 1/6，其余项目保持未勾选。验证：`npm run check` 完整通过（typecheck；53 unit files / 415 tests；64 e2e tests），新增 proxy transport 回归测试先红后绿，`git diff --check` 通过。
 
 2026-07-15 real-Agent closeout：真实自由 rect 返回可解释的 leaf-first candidates 与 containment signals；Cursor Agent 使用宿主 Figma MCP 独立核验 primary candidate，Runtime 未预取 implementation context。受控删除后 correspondence 明确 missing，历史 captured evidence/Annotation 保持可回放。真实路径明确分层为 Ikran MCP semantic write、Runtime positional evidence、宿主 Figma MCP implementation context、Agent primary judgment，以及只用于 UI invalidation 的 SSE。随后设计师将最后一项交互收口为无额外 metadata UI 的 `Tab` parent drill-up。Browser Use 在真实 Redo Surface 上复验 `260:3315 → 260:3314 → 260:3313 → 260:3312 → 260:3310`，顶层 clamp、鼠标移动重置以及点击提交当前 parent node 均通过；real Figma / real Agent AC 6/6 完成。
+
+## Notes
+
+- 2026-08-07: 产品决策记录:seed 重建(prototype_validation 首个 prototype 重建)以宿主 Figma MCP `get_design_context` 拉取的 LIVE 当前 Figma design context 为结构与视觉唯一事实源;持久化 capture 截图仅作辅助回退(Figma Connection 中断时);不存储任何 page-blueprint 类中间 artifact。该决策经由 `get_prototype_rebuild_context` 的 rebuild contract 下发给 Agent。

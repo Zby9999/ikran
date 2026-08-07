@@ -58,3 +58,7 @@ Stale 语义:preview dev server 退出、prototype code 变更后,surface 标记
 - `08-source-artifact-declaration-validation.md`
 - `27-chat-first-designer-feedback-declaration.md`(标注结论落库通道)
 - `28-phase-state-machine-design-system-formalization.md`(相位门:draft 未 confirm 不得 record 第一个 prototype)
+
+## Notes
+
+- 2026-08-07: 新增 `get_prototype_rebuild_context` MCP 工具支撑 prototype_validation 阶段的 seed 重建回路:返回各 Seed Reference 的 source 身份(fileKey/nodeId/figmaLink)、current evidence surface id、design-system version 与 rebuild contract,并要求随后以返回的 seedReferenceIds / surface ids 作为 evidenceVersionIds 调用 `record_preview`。相位门外拒绝 `phase_gate`,无 Seed 拒绝 `no_seed_reference`;evidence capture 未完成的 seed 返回 `currentEvidence: null`。

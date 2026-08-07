@@ -12,6 +12,7 @@ import type { DatabaseSync as DatabaseType } from "node:sqlite";
 import { withProjectTransaction } from "./db";
 import { buildLoggedEvent, insertEvent, logEventOnDb } from "./events";
 import { requireProjectPhase } from "./project-phase";
+import { countSeedReferencesOnDb } from "./project-readiness";
 import { designSystemVersionOnDb } from "./prototype-surface";
 
 export const NEW_DESIGN_RUN_KIND = "new_design" as const;
@@ -77,6 +78,7 @@ export type RecordNewDesignRunResult =
       ok: false;
       reason:
         | "phase_gate"
+        | "no_seed_reference"
         | "invalid_run"
         | "run_already_exists"
         | "candidate_entry_not_found"
@@ -209,6 +211,16 @@ export function recordNewDesignRun(
 
   try {
     const transaction = withProjectTransaction(projectPath, (db) => {
+      if (countSeedReferencesOnDb(db) === 0) {
+        // No Seed Reference: only seed reconstruction is possible — a new
+        // design run would have no captured source to build against.
+        return {
+          ok: false as const,
+          reason: "no_seed_reference" as const,
+          phase: gate.phase
+        };
+      }
+
       const existing = db
         .prepare(`SELECT 1 FROM prototype_runs WHERE run_id = ?`)
         .get(runId);

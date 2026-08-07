@@ -10,6 +10,7 @@ import {
   setupWorkspaceInputShape
 } from "../runtime/commands";
 import { type RegisterIkranToolsDeps } from "./shared";
+import { getProjectPhase } from "../runtime/project-phase";
 
 const WAIT_FOR_COMMAND_ACTION = {
   tool: "wait_for_agent_command"
@@ -81,7 +82,7 @@ export function registerProjectWorkspaceTools(
     "create_or_open_project",
     {
       description:
-        "Bind or open the Ikran project for a local folder and initialize its `.ikran/` state (SQLite, event log, config). With a `path`: CREATE the project there if no project is bound, OPEN it idempotently if that project is already bound, or FAIL CLOSED with `project_mismatch` if the Runtime is bound to a DIFFERENT project (single-project-single-flow — do not silently switch; to change projects, restart Ikran with the new folder as the working folder). With no `path`: if a project is already bound, return that active project + session + workbench_url (discovered cwd is NOT treated as a bind target); otherwise bind/open the working folder discovered from IKRAN_CWD env, then MCP Roots, then process.cwd(); if none is discoverable and no project is bound, returns `no_working_folder` (then pass { path } explicitly — your shell's `pwd` gives the workspace). A successful open/bind is not terminal: MUST call wait_for_agent_command next in the same turn. Always returns the active project, the startup session token, and the Workbench URL so the caller can confirm it is operating on the same project/session as the Workbench HTTP API. All research source-of-truth changes go through Ikran tools.",
+        "Bind or open the Ikran project for a local folder and initialize its `.ikran/` state (SQLite, event log, config). With a `path`: CREATE the project there if no project is bound, OPEN it idempotently if that project is already bound, or FAIL CLOSED with `project_mismatch` if the Runtime is bound to a DIFFERENT project (single-project-single-flow — do not silently switch; to change projects, restart Ikran with the new folder as the working folder). With no `path`: if a project is already bound, return that active project + session + workbench_url (discovered cwd is NOT treated as a bind target); otherwise bind/open the working folder discovered from IKRAN_CWD env, then MCP Roots, then process.cwd(); if none is discoverable and no project is bound, returns `no_working_folder` (then pass { path } explicitly — your shell's `pwd` gives the workspace). A successful open/bind is not terminal: MUST call wait_for_agent_command next in the same turn. Always returns the active project, the startup session token, the Workbench URL, and the current project phase so the caller can confirm it is operating on the same project/session as the Workbench HTTP API. All research source-of-truth changes go through Ikran tools.",
       inputSchema: createOrOpenProjectInputShape
     },
     async (args) => {
@@ -109,6 +110,7 @@ export function registerProjectWorkspaceTools(
               project: activeProject,
               active_project: activePath,
               cwd_candidate: state.cwd_candidate ?? null,
+              project_phase: getProjectPhase(activePath),
               session: rt.token,
               workbench_url: rt.url,
               next_action: WAIT_FOR_COMMAND_ACTION
@@ -168,6 +170,7 @@ export function registerProjectWorkspaceTools(
               ok: true,
               project: activeProject,
               active_project: activePath,
+              project_phase: getProjectPhase(activePath),
               session: rt.token,
               workbench_url: rt.url,
               next_action: WAIT_FOR_COMMAND_ACTION
@@ -251,6 +254,7 @@ export function registerProjectWorkspaceTools(
             project: bind.config,
             events: bind.events,
             active_project: activeAfter,
+            project_phase: getProjectPhase(activeAfter),
             session: rt.token,
             workbench_url: rt.url,
             next_action: WAIT_FOR_COMMAND_ACTION

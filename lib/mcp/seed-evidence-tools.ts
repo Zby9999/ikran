@@ -305,7 +305,7 @@ export function registerSeedEvidenceTools(
     "get_project_readiness",
     {
       description:
-        "Return project readiness preconditions for formal Design Intent Alignment (Issue 07). Empty Design Language Description yields precondition description_missing. Does not block Seed Reference capture."
+        "Return project readiness preconditions for formal Design Intent Alignment (Issue 07), plus the current project phase and Seed Reference count. Empty Design Language Description yields precondition description_missing. Does not block Seed Reference capture."
     },
     async () => {
       try {
@@ -329,6 +329,8 @@ export function registerSeedEvidenceTools(
             ok: true,
             preconditions: readiness.preconditions,
             designLanguageDescription: readiness.designLanguageDescription,
+            projectPhase: readiness.projectPhase,
+            seedReferenceCount: readiness.seedReferenceCount,
             session: rt.token,
             workbench_url: rt.url
           }

@@ -53,3 +53,7 @@ Status: implemented（机制；Workbench intent 入口 UI 仍推迟）
 - `09-draft-design-system-derived-view.md`
 - `28-phase-state-machine-design-system-formalization.md`(相位门)
 - `30-prototype-surfaces-multi-embed-single-live.md`(record_preview 与 surface)
+
+## Notes
+
+- 2026-08-07: `record_new_design_run` 新增硬门禁:项目没有任何 Seed Reference 时拒绝并返回 `no_seed_reference`(附带当前 phase)。无 Seed 时项目只属于 seed reconstruction 领域,新设计 run 不再有可达路径;门在 `ready_for_new_design` 相位门之后、事务内校验。

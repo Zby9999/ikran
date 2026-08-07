@@ -12,6 +12,7 @@ import { registerConsolidateReviewTools } from "./consolidate-review-tools";
 import { registerDesignerFeedbackTools } from "./feedback-tools";
 import { registerPrototypePreviewTools } from "./prototype-preview-tools";
 import { registerNewDesignRunTools } from "./new-design-run-tools";
+import { registerPrototypeRebuildContextTools } from "./prototype-rebuild-context-tools";
 import { registerProjectPhaseTools } from "./project-phase-tools";
 import { registerResearchExportTools } from "./research-export-tools";
 import { registerInitialDesignSystemTools } from "./initial-design-system-tools";
@@ -41,6 +42,7 @@ export function registerIkranTools(
   registerDesignerFeedbackTools(mcp, deps);
   registerPrototypePreviewTools(mcp, deps);
   registerNewDesignRunTools(mcp, deps);
+  registerPrototypeRebuildContextTools(mcp, deps);
   registerConsolidateReviewTools(mcp, deps);
   registerProjectPhaseTools(mcp, deps);
   registerResearchExportTools(mcp, deps);
