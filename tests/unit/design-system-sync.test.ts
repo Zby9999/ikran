@@ -415,6 +415,8 @@ describe("capture single storage (value_json stripped)", () => {
   test("spec value_json omits sourceCaptures while the view projects captures", () => {
     withTempProject((dir) => {
       seedEvidence(dir);
+      // The declaration gate requires the declared capture file to exist.
+      writeProjectFile(dir, ".ikran/artifacts/button.png", "png");
       writeProjectFile(dir, "design-system/components/button.json", {
         id: "button",
         name: "Button",

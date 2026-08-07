@@ -114,11 +114,8 @@ function consumptionRows(
   }
 }
 
-function proposeReusableCandidate(
-  projectPath: string,
-  evidenceRecordIds: string[]
-) {
-  return proposeRuleUpdate(projectPath, {
+function proposeReusableCandidateInput(evidenceRecordIds: string[]) {
+  return {
     kind: "new",
     classification: "reusable_candidate",
     title: "Sticky bar stays opaque",
@@ -127,7 +124,17 @@ function proposeReusableCandidate(
     reason: "Three feedback rounds concluded the same opacity behavior.",
     affectedItems: ["Sticky navigation"],
     evidenceRecordIds
-  });
+  };
+}
+
+function proposeReusableCandidate(
+  projectPath: string,
+  evidenceRecordIds: string[]
+) {
+  return proposeRuleUpdate(
+    projectPath,
+    proposeReusableCandidateInput(evidenceRecordIds)
+  );
 }
 
 test("claim_consolidate_review returns the whole feedback library and records the start event", () => {
@@ -402,6 +409,40 @@ test("confirm_rule_update consumes feedback evidence and clears the unreviewed c
       review_state: "consumed",
       consumed_by_proposal_id: proposalId
     });
+  });
+});
+
+test("confirm_rule_update attaches capture guidance only for layout / components.spec targets", () => {
+  withProject((projectPath) => {
+    const feedbackId = recordFeedback(projectPath, "Sticky bar stays opaque.");
+
+    // No rule-artifact path on the proposal: no guidance.
+    const plain = proposeReusableCandidate(projectPath, [feedbackId]);
+    expect(plain.ok).toBe(true);
+    if (!plain.ok) return;
+    const plainConfirmed = confirmRuleUpdate(projectPath, {
+      proposalId: plain.proposal.proposal_id
+    });
+    expect(plainConfirmed).toMatchObject({ ok: true, capture_guidance: null });
+
+    for (const target of [
+      "design-system/layout-rules.json",
+      "design-system/components/button.json"
+    ]) {
+      const proposal = proposeRuleUpdate(projectPath, {
+        ...proposeReusableCandidateInput([feedbackId]),
+        proposedTargetPath: target
+      });
+      expect(proposal.ok).toBe(true);
+      if (!proposal.ok) return;
+      const confirmed = confirmRuleUpdate(projectPath, {
+        proposalId: proposal.proposal.proposal_id
+      });
+      expect(confirmed).toMatchObject({
+        ok: true,
+        capture_guidance: expect.stringContaining("capture_rule_screenshot")
+      });
+    }
   });
 });
 

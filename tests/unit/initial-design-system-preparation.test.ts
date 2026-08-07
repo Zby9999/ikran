@@ -886,6 +886,11 @@ describe("Initial Design System preparation", () => {
 
     writeJson(
       fixture.projectPath,
+      "design-system/captures/text-link.png",
+      "png"
+    );
+    writeJson(
+      fixture.projectPath,
       "design-system/components/text-link.json",
       {
         id: "component-text-link-spec",

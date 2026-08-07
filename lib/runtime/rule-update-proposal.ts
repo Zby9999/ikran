@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
 
 import { withProjectTransaction } from "./db";
+import { isCaptureBearingArtifactPath } from "./design-system-schema";
 import { assertArtifactPathInProject } from "./evidence-package";
 import { buildLoggedEvent, insertEvent } from "./events";
 import { canonicalizeArtifactPath } from "./source-artifact";
@@ -89,8 +90,33 @@ export type ConfirmRuleUpdateResult =
       proposal: RuleUpdateProposal & { status: "confirmed" };
       consumed_feedback_ids: string[];
       event_id: string;
+      /**
+       * Agent-facing capture guidance, present when the confirmed proposal
+       * targets a design-system rule artifact (layout / components.spec) that
+       * carries sourceCaptures. Null otherwise.
+       */
+      capture_guidance: string | null;
     }
   | { ok: false; reason: string };
+
+/**
+ * Shown on confirm for rule artifacts with sourceCaptures: fresh capture or
+ * honest omission, never a reused file.
+ */
+export const RULE_UPDATE_CAPTURE_GUIDANCE =
+  "If a preview surface is ready, capture a fresh screenshot with " +
+  "capture_rule_screenshot and declare it in sourceCaptures; otherwise " +
+  "capture via the host Figma MCP or omit the field (honest unavailable). " +
+  "Never reuse another rule's existing capture file.";
+
+/** Rule artifacts carrying sourceCaptures: layout rules + component specs. */
+function targetsCaptureArtifact(proposal: RuleUpdateProposal): boolean {
+  const paths = [proposal.proposed_target_path, proposal.source_artifact_path];
+  return paths.some(
+    (artifactPath) =>
+      artifactPath !== null && isCaptureBearingArtifactPath(artifactPath)
+  );
+}
 
 export type CancelRuleUpdateResult =
   | {
@@ -427,7 +453,10 @@ export function confirmRuleUpdate(
       ok: true,
       proposal: transaction.proposal,
       consumed_feedback_ids: transaction.consumedFeedbackIds,
-      event_id: transaction.event.event_id
+      event_id: transaction.event.event_id,
+      capture_guidance: targetsCaptureArtifact(transaction.proposal)
+        ? RULE_UPDATE_CAPTURE_GUIDANCE
+        : null
     };
   } catch {
     return { ok: false, reason: "db_error" };

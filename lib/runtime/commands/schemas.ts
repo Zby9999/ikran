@@ -354,6 +354,42 @@ export const recordPreviewInputShape = {
 
 export const recordPreviewInputSchema = z.object(recordPreviewInputShape);
 
+/** Normalized rect against the FULL page: x/y top-left, width/height in [0, 1]. */
+const ruleCaptureRectShape = {
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  width: z.number().min(0).max(1),
+  height: z.number().min(0).max(1)
+} as const;
+
+export const captureRuleScreenshotInputShape = {
+  surfaceId: z
+    .string()
+    .describe("Prototype Evidence Surface id whose preview URL is captured."),
+  fileName: z
+    .string()
+    .optional()
+    .describe(
+      "Output file name under design-system/captures/ (basename only). Defaults to rule-capture-<epochMs>.png."
+    ),
+  crop: z
+    .object(ruleCaptureRectShape)
+    .optional()
+    .describe(
+      "Normalized crop against the full page; absent captures the whole page."
+    ),
+  annotations: z
+    .array(z.object(ruleCaptureRectShape))
+    .optional()
+    .describe(
+      "Normalized highlight rects baked into the PNG as green annotation overlays."
+    )
+} as const;
+
+export const captureRuleScreenshotInputSchema = z.object(
+  captureRuleScreenshotInputShape
+);
+
 export const recordNewDesignRunInputShape = {
   runId: z
     .string()

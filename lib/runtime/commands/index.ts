@@ -67,6 +67,8 @@ export {
   recordPreviewCommand
 } from "./prototype-preview";
 
+export { captureRuleScreenshotCommand } from "./rule-capture";
+
 export {
   claimConsolidateReviewCommand,
   dismissDesignerFeedbackCommand
@@ -166,6 +168,8 @@ export {
   recordDesignerFeedbackInputShape,
   recordPreviewInputSchema,
   recordPreviewInputShape,
+  captureRuleScreenshotInputSchema,
+  captureRuleScreenshotInputShape,
   recordNewDesignRunInputSchema,
   recordNewDesignRunInputShape,
   createOrOpenProjectInputShape,

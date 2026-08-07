@@ -40,6 +40,7 @@ import {
 } from "./evidence-package";
 import {
   designSystemFileCheck,
+  LAYOUT_RULE_CAPTURE_FIELD,
   readJsonFileObject,
   validateDesignSystemJson,
   type DesignSystemFileKind,
@@ -137,6 +138,70 @@ const designSystemJsonFileCheck: SourceArtifactFileCheck = (absolutePath) => {
 /** Class 3 default: existence only — never a quality judgment. */
 const codeFileCheck: SourceArtifactFileCheck = (absolutePath) =>
   existsSync(absolutePath) ? null : "artifact_file_missing";
+
+// ---------------------------------------------------------------------------
+// Declared capture existence (capture_rule_screenshot): a sourceCaptures
+// artifactPath on a layout / components.spec rule must resolve to a real
+// file under the project — fail-closed so a declaration never dangles.
+// Omitting sourceCaptures stays legal (honest unavailable).
+// ---------------------------------------------------------------------------
+
+/** Artifact types whose entries declare sourceCaptures with artifactPath. */
+const CAPTURE_GATED_ARTIFACT_TYPES = new Set([
+  "layout-rules.json",
+  "component-spec"
+]);
+
+function declaredCapturePaths(
+  artifactType: string,
+  json: Record<string, unknown>
+): string[] {
+  const paths: string[] = [];
+  const collect = (captures: unknown) => {
+    if (!Array.isArray(captures)) return;
+    for (const item of captures) {
+      if (item !== null && typeof item === "object" && !Array.isArray(item)) {
+        const artifactPath = (item as Record<string, unknown>).artifactPath;
+        if (typeof artifactPath === "string" && artifactPath.trim().length > 0) {
+          paths.push(artifactPath);
+        }
+      }
+    }
+  };
+  if (artifactType === "layout-rules.json") {
+    const rules = Array.isArray(json.rules) ? json.rules : [];
+    for (const rule of rules) {
+      if (rule !== null && typeof rule === "object") {
+        collect((rule as Record<string, unknown>)[LAYOUT_RULE_CAPTURE_FIELD]);
+      }
+    }
+  } else if (artifactType === "component-spec") {
+    if (json.value !== null && typeof json.value === "object") {
+      collect(
+        (json.value as Record<string, unknown>)[LAYOUT_RULE_CAPTURE_FIELD]
+      );
+    }
+  }
+  return paths;
+}
+
+/** Names the first declared capture path that is not a real project file. */
+function checkDeclaredCaptureFiles(
+  projectPath: string,
+  artifactType: string,
+  absolutePath: string
+): { reason: string; details?: unknown } | null {
+  if (!CAPTURE_GATED_ARTIFACT_TYPES.has(artifactType)) return null;
+  const file = readJsonFileObject(absolutePath);
+  if (!file.ok) return null; // the schema check above already reports this
+  for (const capturePath of declaredCapturePaths(artifactType, file.json)) {
+    const resolved = resolveProjectArtifactPath(projectPath, capturePath);
+    if (resolved === null || !existsSync(resolved)) {
+      return { reason: "capture_file_missing", details: { capturePath } };
+    }
+  }
+  return null;
+}
 
 const CLASS_FILE_CHECKS: Record<SourceArtifactClass, SourceArtifactFileCheck> =
   {
@@ -424,6 +489,26 @@ export function recordSourceArtifact(
     }
     logInvalidArtifact(projectPath, fileFailure, relativePath, details);
     return { ok: false, reason: fileFailure, details };
+  }
+
+  // Declared capture files must exist on disk (fail-closed; omission legal).
+  const captureFailure = checkDeclaredCaptureFiles(
+    projectPath,
+    declaration.artifactType,
+    absolutePath
+  );
+  if (captureFailure !== null) {
+    logInvalidArtifact(
+      projectPath,
+      captureFailure.reason,
+      relativePath,
+      captureFailure.details
+    );
+    return {
+      ok: false,
+      reason: captureFailure.reason,
+      details: captureFailure.details
+    };
   }
 
   const now = new Date().toISOString();

@@ -447,6 +447,6 @@ test("eligible export writes the package, keeps early stages, and guards undecla
 test("MCP instructions mention export_research within the resident budget", () => {
   expect(IKRAN_MCP_INSTRUCTIONS).toContain("export_research");
   expect(Buffer.byteLength(IKRAN_MCP_INSTRUCTIONS, "utf8")).toBeLessThanOrEqual(
-    2048
+    2150
   );
 });

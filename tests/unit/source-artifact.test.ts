@@ -786,3 +786,146 @@ test.describe("recordSourceArtifact (record path)", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Declared capture existence gate (capture_rule_screenshot): a sourceCaptures
+// artifactPath on layout / components.spec rules must be a real project file.
+// ---------------------------------------------------------------------------
+
+test.describe("declared capture existence gate", () => {
+  function insertCandidateCard(dir: string, id: string) {
+    const db = new DatabaseSync(getProjectDbPath(dir));
+    try {
+      db.prepare(
+        `INSERT INTO alignment_question_cards
+         (id, section, observation, question, final_answer, answer_source,
+          anchor_json, created_at, updated_at)
+         VALUES (?, 'layout', 'obs', 'ques', 'answer',
+                 'agent-proposed-designer-accepted',
+                 '{}', '2026-07-29T00:00:00.000Z', '2026-07-29T00:00:00.000Z')`
+      ).run(id);
+    } finally {
+      db.close();
+    }
+  }
+
+  function writeLayoutRules(dir: string, captures: unknown) {
+    writeProjectFile(
+      dir,
+      "design-system/layout-rules.json",
+      JSON.stringify({
+        rules: [
+          {
+            id: "rule-1",
+            value: "Use a twelve-column grid.",
+            meaning: "Grid",
+            status: "gap",
+            links: [],
+            ...(captures === undefined ? {} : { sourceCaptures: captures })
+          }
+        ]
+      })
+    );
+  }
+
+  function declareLayoutRules(dir: string) {
+    return recordSourceArtifact(dir, {
+      path: "design-system/layout-rules.json",
+      artifactType: "layout-rules.json",
+      semanticPurpose: "layout rules",
+      relatedRecordIds: ["card-1"]
+    });
+  }
+
+  function capture(artifactPath: string) {
+    return {
+      nodeName: "Grid",
+      artifactPath,
+      capturedAt: "2026-08-07T00:00:00.000Z"
+    };
+  }
+
+  test("a declared layout capture artifactPath must exist on disk", () => {
+    withTempProject((dir) => {
+      insertAnsweredCard(dir, "card-1");
+      writeLayoutRules(dir, [capture("design-system/captures/grid.png")]);
+
+      const missing = declareLayoutRules(dir);
+      expect(missing).toMatchObject({
+        ok: false,
+        reason: "capture_file_missing",
+        details: { capturePath: "design-system/captures/grid.png" }
+      });
+      expect(countArtifacts(dir)).toBe(0);
+      expect(
+        listEvents(dir, "invalid_artifact")[0].payload
+      ).toMatchObject({ reason: "capture_file_missing" });
+
+      writeProjectFile(dir, "design-system/captures/grid.png", "png");
+      expect(declareLayoutRules(dir).ok).toBe(true);
+    });
+  });
+
+  test("omitting sourceCaptures stays legal", () => {
+    withTempProject((dir) => {
+      insertAnsweredCard(dir, "card-1");
+      writeLayoutRules(dir, undefined);
+      expect(declareLayoutRules(dir).ok).toBe(true);
+    });
+  });
+
+  test("a capture path escaping the project fails closed", () => {
+    withTempProject((dir) => {
+      insertAnsweredCard(dir, "card-1");
+      writeLayoutRules(dir, [capture("../outside.png")]);
+      expect(declareLayoutRules(dir)).toMatchObject({
+        ok: false,
+        reason: "capture_file_missing",
+        details: { capturePath: "../outside.png" }
+      });
+    });
+  });
+
+  test("component-spec value.sourceCaptures is gated the same way", () => {
+    withTempProject((dir) => {
+      insertCandidateCard(dir, "card-1");
+      writeProjectFile(
+        dir,
+        "design-system/components/button.json",
+        JSON.stringify({
+          id: "component-button",
+          name: "Button",
+          value: {
+            description: "Primary action.",
+            props: [],
+            variants: [],
+            stateMatrix: [],
+            guidelines: [],
+            tokenLinks: [],
+            codeLinks: [],
+            sourceCaptures: [capture("design-system/captures/button.png")]
+          },
+          meaning: "Button spec",
+          status: "candidate",
+          links: ["card-1"]
+        })
+      );
+      const declare = () =>
+        recordSourceArtifact(dir, {
+          path: "design-system/components/button.json",
+          artifactType: "component-spec",
+          semanticPurpose: "button spec",
+          relatedRecordIds: ["card-1"]
+        });
+
+      expect(declare()).toMatchObject({
+        ok: false,
+        reason: "capture_file_missing",
+        details: { capturePath: "design-system/captures/button.png" }
+      });
+
+      writeProjectFile(dir, "design-system/captures/button.png", "png");
+      expect(declare().ok).toBe(true);
+    });
+  });
+});

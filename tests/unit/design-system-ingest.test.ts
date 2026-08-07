@@ -175,6 +175,8 @@ test("prose layout rules round-trip body verbatim with structured captures", () 
   withTempProject((dir) => {
     seedEvidenceCards(dir);
     const body = "Keep the article column narrow.\nLet wide media break out deliberately.";
+    // The declaration gate requires declared capture files to exist on disk.
+    writeProjectFile(dir, "design-system/captures/article-frame.png", "png");
     writeProjectFile(dir, "design-system/layout-rules.json", {
       rules: [
         {
@@ -1281,6 +1283,13 @@ describe("getDesignSystemView evidence join", () => {
 
 describe("getDesignSystemView layout captures", () => {
   function declareLayoutRules(dir: string, value: Record<string, unknown>) {
+    // The declaration gate requires every declared capture artifactPath to
+    // resolve to a real file under the project.
+    for (const capture of (value.sourceCaptures ?? []) as Array<{
+      artifactPath: string;
+    }>) {
+      writeProjectFile(dir, capture.artifactPath, "png");
+    }
     writeProjectFile(dir, "design-system/layout-rules.json", {
       rules: [
         {
@@ -1505,6 +1514,8 @@ describe("getDesignSystemView layout captures", () => {
   test("component spec entries are decorated the same way (09C-D03)", () => {
     withTempProject((dir) => {
       seedEvidenceCards(dir);
+      // The declaration gate requires the declared capture file to exist.
+      writeProjectFile(dir, "design-system/captures/button-primary.png", "png");
       writeProjectFile(dir, "design-system/components/button.json", {
         id: "component-button",
         name: "Button",

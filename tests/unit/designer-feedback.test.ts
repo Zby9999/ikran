@@ -241,7 +241,7 @@ test("feedback MCP surface is write-only", async () => {
 
 test("MCP instructions require declare-on-conclusion and generation isolation", () => {
   expect(Buffer.byteLength(IKRAN_MCP_INSTRUCTIONS, "utf8")).toBeLessThanOrEqual(
-    2048
+    2150
   );
   expect(IKRAN_MCP_INSTRUCTIONS).toContain("record_designer_feedback");
   expect(IKRAN_MCP_INSTRUCTIONS.toLowerCase()).toMatch(

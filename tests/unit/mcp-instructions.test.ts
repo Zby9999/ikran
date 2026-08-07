@@ -12,7 +12,7 @@ describe("MCP instructions channel split", () => {
   test("stays within the resident budget", () => {
     expect(
       Buffer.byteLength(IKRAN_MCP_INSTRUCTIONS, "utf8")
-    ).toBeLessThanOrEqual(2048);
+    ).toBeLessThanOrEqual(2150);
   });
 
   test("keeps the behavioral floor and global disciplines", () => {
@@ -28,6 +28,10 @@ describe("MCP instructions channel split", () => {
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("record_designer_feedback");
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("design-system source only");
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("never feedback");
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain("capture_rule_screenshot");
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
+      "never reuse existing capture files"
+    );
   });
 
   test("points at on-demand contracts instead of restating them", () => {

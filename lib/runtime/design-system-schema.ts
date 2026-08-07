@@ -844,6 +844,16 @@ export const LAYOUT_RULE_CAPTURE_NODE_RECT_KEYS = [
  * data error, not a truncation. */
 export const LAYOUT_RULE_CAPTURE_NODE_RECT_MAX_EXTENT = 4;
 
+/** Path convention for artifacts whose entries declare sourceCaptures:
+ * layout rules and component specs. Single source for the rule-update
+ * guidance trigger (which only has paths, not artifact types). */
+export function isCaptureBearingArtifactPath(artifactPath: string): boolean {
+  return (
+    /(^|\/)layout-rules\.json$/.test(artifactPath) ||
+    /(^|\/)design-system\/components\/[^/]+\.json$/.test(artifactPath)
+  );
+}
+
 /** Bounds check shared by the declaration gate and the view's defensive
  * parse: x/y in [0, 1]; width/height in (0, MAX_EXTENT] — above 1 means the
  * fixed-ratio crop truncates the node, which is expected. */
