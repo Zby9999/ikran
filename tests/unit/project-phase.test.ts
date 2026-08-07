@@ -244,6 +244,74 @@ function insertCandidateEntry(
   writeFileSync(absolutePath, JSON.stringify(json), "utf8");
 }
 
+/**
+ * A component-spec candidate: source file + the DB row its ingest produced
+ * (captures live in the source_captures column, stripped from value_json).
+ */
+function insertSpecCandidateEntry(
+  projectPath: string,
+  name: string,
+  opts: { codeLinks?: string[]; captures?: unknown[] } = {}
+): string {
+  const entryId = `${name.toLowerCase()}-spec`;
+  const rel = `design-system/components/${name.toLowerCase()}.json`;
+  const value: Record<string, unknown> = {
+    description: `${name} spec.`,
+    props: [],
+    variants: [],
+    stateMatrix: [],
+    guidelines: [],
+    tokenLinks: [],
+    codeLinks: opts.codeLinks ?? []
+  };
+  if (opts.captures !== undefined) value.sourceCaptures = opts.captures;
+  const absolutePath = path.join(projectPath, rel);
+  mkdirSync(path.dirname(absolutePath), { recursive: true });
+  writeFileSync(
+    absolutePath,
+    JSON.stringify({
+      id: entryId,
+      name,
+      meaning: `${name} meaning`,
+      status: "candidate",
+      links: ["card-1"],
+      value
+    }),
+    "utf8"
+  );
+  const { sourceCaptures: _stripped, ...dbValue } = value;
+  const db = new DatabaseSync(getProjectDbPath(projectPath));
+  try {
+    db.prepare(
+      `INSERT INTO design_system_entries
+       (id, source_artifact_path, file_kind, section, entry_id, name,
+        value_json, meaning, status, links_json, source_captures_json,
+        position, created_at, updated_at)
+       VALUES (?, ?, 'component-spec', 'components.spec', ?, ?,
+               ?, ?, 'candidate', '["card-1"]', ?, 0, ?, ?)`
+    ).run(
+      `row-${entryId}`,
+      rel,
+      entryId,
+      name,
+      JSON.stringify(dbValue),
+      `${name} meaning`,
+      JSON.stringify(opts.captures ?? []),
+      "2026-08-06T00:00:00.000Z",
+      "2026-08-06T00:00:00.000Z"
+    );
+  } finally {
+    db.close();
+  }
+  return entryId;
+}
+
+const SPEC_CAPTURE = {
+  nodeName: "Button / Primary",
+  artifactPath: "design-system/captures/button-primary.png",
+  capturedAt: "2026-08-03T12:00:00.000Z"
+};
+
 function entryStatus(projectPath: string, id: string): string {
   const db = new DatabaseSync(getProjectDbPath(projectPath));
   try {
@@ -445,5 +513,51 @@ test("formalize fails closed when a promoted entry is missing from its source fi
     expect(getProjectPhase(projectPath)).toBe("design_system_formal");
     expect(listEvents(projectPath, "design_system_formalized")).toEqual([]);
     expect(listEvents(projectPath, "design_system_entry_approved")).toEqual([]);
+  });
+});
+
+test("formalize hints at promoted entries that still only have sourceCaptures (Issue 31 soft hint)", () => {
+  withProject((projectPath) => {
+    setPhase(projectPath, "design_system_formal");
+    const captureOnly = insertSpecCandidateEntry(projectPath, "Button", {
+      captures: [SPEC_CAPTURE]
+    });
+    const codeBacked = insertSpecCandidateEntry(projectPath, "Card", {
+      codeLinks: ["prototypes/components/Card.tsx"],
+      captures: [SPEC_CAPTURE]
+    });
+    const noEvidence = insertSpecCandidateEntry(projectPath, "Badge");
+
+    const result = formalizeDesignSystem(projectPath, [
+      captureOnly,
+      codeBacked,
+      noEvidence
+    ]);
+    expect(result).toMatchObject({ ok: true, phase: "ready_for_new_design" });
+    if (!result.ok) return;
+
+    // Soft hint only: the promotion still succeeded; the hint lists the one
+    // promoted entry with empty codeLinks that still only has sourceCaptures.
+    expect(result.code_backfill_hints).toEqual([
+      { entry_id: captureOnly, title: "Button" }
+    ]);
+  });
+});
+
+test("formalize returns no backfill hints when promoted entries have code links or none are promoted", () => {
+  withProject((projectPath) => {
+    setPhase(projectPath, "design_system_formal");
+    const codeBacked = insertSpecCandidateEntry(projectPath, "Card", {
+      codeLinks: ["prototypes/components/Card.tsx"]
+    });
+
+    const promoted = formalizeDesignSystem(projectPath, [codeBacked]);
+    expect(promoted).toMatchObject({ ok: true });
+    if (promoted.ok) expect(promoted.code_backfill_hints).toEqual([]);
+
+    confirmPrototype(projectPath);
+    const unpromoted = formalizeDesignSystem(projectPath);
+    expect(unpromoted).toMatchObject({ ok: true });
+    if (unpromoted.ok) expect(unpromoted.code_backfill_hints).toEqual([]);
   });
 });

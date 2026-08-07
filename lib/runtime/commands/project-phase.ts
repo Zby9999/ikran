@@ -6,6 +6,7 @@ import {
   getProjectPhase,
   requireProjectPhase,
   type FormalizeFailure,
+  type FormalizeSuccess,
   type PhaseCommandResult,
   type ProjectPhase
 } from "../project-phase";
@@ -34,9 +35,10 @@ export function confirmPrototypeCommand(
 }
 
 export function formalizeDesignSystemCommand(
-  projectPath: string
-): PhaseCommandResult | FormalizeFailure {
-  return formalizeDesignSystem(projectPath);
+  projectPath: string,
+  promoteEntryIds: readonly string[] = []
+): FormalizeSuccess | FormalizeFailure {
+  return formalizeDesignSystem(projectPath, promoteEntryIds);
 }
 
 export function abandonProjectPhaseCommand(

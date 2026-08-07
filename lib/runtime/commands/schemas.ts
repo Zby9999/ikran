@@ -250,6 +250,30 @@ export const editDesignSystemEntryInputSchema = z.object(
   editDesignSystemEntryInputShape
 );
 
+export const backfillComponentCodeLinksInputShape = {
+  mappings: z
+    .array(
+      z.object({
+        entryId: z
+          .string()
+          .describe(
+            "design_system_entries row id or entry_id of the component spec entry."
+          ),
+        codeLinks: z
+          .array(z.string())
+          .min(1)
+          .describe(
+            "Project-relative code file paths backing this entry. Every file must exist on disk and be declared via record_artifact_written (artifactType code or prototype); undeclared or missing paths are rejected."
+          )
+      })
+    )
+    .min(1)
+} as const;
+
+export const backfillComponentCodeLinksInputSchema = z.object(
+  backfillComponentCodeLinksInputShape
+);
+
 // Strings (not enums) for kind / classification so the domain reasons
 // invalid_proposal_kind / invalid_proposal_classification reach the caller.
 export const proposeRuleUpdateInputShape = {

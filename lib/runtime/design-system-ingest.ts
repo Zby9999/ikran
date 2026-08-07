@@ -193,7 +193,7 @@ export function resolveEntrySourceCaptures(
  * Component specs carry them inside value.sourceCaptures in the source file;
  * strip the key from the stored value so value_json can never diverge from
  * the column. */
-function stripSourceCaptures(
+export function stripSourceCaptures(
   value: Record<string, unknown>
 ): Record<string, unknown> {
   const { sourceCaptures: _stripped, ...rest } = value;

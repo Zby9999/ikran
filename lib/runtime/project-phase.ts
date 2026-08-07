@@ -280,7 +280,44 @@ type PromotedEntryRow = {
   file_kind: string;
   status: string;
   links_json: string;
+  name: string | null;
+  value_json: string;
+  source_captures_json: string;
 };
+
+/**
+ * Issue 31 soft hint (never a gate): one entry per promoted component spec
+ * whose codeLinks are still empty while sourceCaptures remain its only
+ * provenance — the gap backfill_component_code_links exists to close.
+ */
+export type CodeBackfillHint = {
+  entry_id: string;
+  title: string;
+};
+
+export type FormalizeSuccess = PhaseCommandSuccess & {
+  code_backfill_hints: CodeBackfillHint[];
+};
+
+function codeBackfillHintsFor(
+  rows: readonly PromotedEntryRow[]
+): CodeBackfillHint[] {
+  const hints: CodeBackfillHint[] = [];
+  for (const row of rows) {
+    if (row.file_kind !== "component-spec") continue;
+    try {
+      const value = JSON.parse(row.value_json) as unknown;
+      const codeLinks = isPlainObject(value) ? value.codeLinks : undefined;
+      if (Array.isArray(codeLinks) && codeLinks.length > 0) continue;
+      const captures = JSON.parse(row.source_captures_json) as unknown;
+      if (!Array.isArray(captures) || captures.length === 0) continue;
+      hints.push({ entry_id: row.entry_id, title: row.name ?? row.entry_id });
+    } catch {
+      // Unparseable row payloads grant no hint.
+    }
+  }
+  return hints;
+}
 
 /**
  * Formalize gate (Issue 28): design_system_formal → ready_for_new_design,
@@ -295,11 +332,15 @@ type PromotedEntryRow = {
  * approveDesignSystemEntry); the digest ledger is only updated when the
  * written file matches the DB rows, so pre-existing drift stays visible to
  * the lazy sync.
+ *
+ * The success result also carries `code_backfill_hints` (Issue 31): promoted
+ * component specs whose codeLinks are still empty while sourceCaptures remain
+ * their only provenance. Advisory only — never a rejection path.
  */
 export function formalizeDesignSystem(
   projectPath: string,
   promoteEntryIds: readonly string[] = []
-): PhaseCommandSuccess | FormalizeFailure {
+): FormalizeSuccess | FormalizeFailure {
   const promoteIds = [
     ...new Set(
       promoteEntryIds.map((id) => id.trim()).filter((id) => id.length > 0)
@@ -333,7 +374,7 @@ export function formalizeDesignSystem(
         const row = db
           .prepare(
             `SELECT id, entry_id, source_artifact_path, file_kind, status,
-                    links_json
+                    links_json, name, value_json, source_captures_json
              FROM design_system_entries WHERE id = ? OR entry_id = ?`
           )
           .get(id, id) as PromotedEntryRow | undefined;
@@ -566,7 +607,8 @@ export function formalizeDesignSystem(
       ok: true,
       phase: "ready_for_new_design",
       from_phase: "design_system_formal",
-      event_id: transaction.event.event_id
+      event_id: transaction.event.event_id,
+      code_backfill_hints: codeBackfillHintsFor(promotedRows)
     };
   } catch {
     restoreWrittenFiles();

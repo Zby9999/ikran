@@ -20,6 +20,11 @@ import {
   type DesignSystemEditResult,
   type EditDesignSystemEntryInput
 } from "../design-system-edit";
+import {
+  backfillComponentCodeLinks,
+  type BackfillCodeLinkMapping,
+  type BackfillCodeLinksResult
+} from "../design-system-code-backfill";
 
 /**
  * Apply the designer's direct candidate ↔ formalized selection to the DB and
@@ -37,6 +42,17 @@ export function editDesignSystemEntryCommand(
   input: EditDesignSystemEntryInput
 ): DesignSystemEditResult {
   return editDesignSystemEntry(projectPath, input);
+}
+
+/**
+ * Agent-declared Prototype → Design System code backfill (Issue 31): writes
+ * codeLinks back into the source spec JSON files and syncs the DB rows.
+ */
+export function backfillComponentCodeLinksCommand(
+  projectPath: string,
+  mappings: readonly BackfillCodeLinkMapping[]
+): BackfillCodeLinksResult {
+  return backfillComponentCodeLinks(projectPath, mappings);
 }
 
 export function getDesignSystemViewCommand(

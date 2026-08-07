@@ -51,7 +51,8 @@ export {
   getDesignSystemViewCommand,
   getDesignSystemComponentCommand,
   approveDesignSystemEntryCommand,
-  editDesignSystemEntryCommand
+  editDesignSystemEntryCommand,
+  backfillComponentCodeLinksCommand
 } from "./design-system";
 
 export {
@@ -154,6 +155,8 @@ export {
   approveDesignSystemEntryInputShape,
   editDesignSystemEntryInputSchema,
   editDesignSystemEntryInputShape,
+  backfillComponentCodeLinksInputSchema,
+  backfillComponentCodeLinksInputShape,
   proposeRuleUpdateInputSchema,
   proposeRuleUpdateInputShape,
   confirmRuleUpdateInputSchema,
