@@ -436,6 +436,12 @@ export const captureComponentCodeHeroInputShape = {
     .optional()
     .describe(
       "Normalized crop against the full page; absent captures the whole page."
+    ),
+  harnessPath: z
+    .string()
+    .optional()
+    .describe(
+      'Optional live-render harness route YOU add to the prototype app (Issue 33): a same-origin relative path such as "/__ikran/component/button" that mounts this component standalone with default props and re-renders on the ?state=<name> query (state names come from the spec\'s stateMatrix — do not re-declare them). Pure presentation: no postMessage bridge, no Runtime API calls. Declaring it upgrades the Design System Browser hero from this static capture to a live sandboxed iframe render of the current code; omit it to keep the static code-backed capture only.'
     )
 } as const;
 

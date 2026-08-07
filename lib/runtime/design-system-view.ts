@@ -27,6 +27,7 @@ import {
   targetsFromAnchor
 } from "./design-intent-alignment";
 import {
+  isCaptureHarnessPath,
   isCaptureNodeRectBounds
 } from "./design-system-schema";
 import { codeCaptureDigest } from "./code-capture-digest";
@@ -118,6 +119,14 @@ export interface LayoutCaptureNodeRect {
  * screenshot of the component's real code rendering. */
 export type DesignSystemCaptureOrigin = "source" | "code";
 
+/** Readiness of the prototype surface a code capture links to (Issue 33),
+ * joined live from prototype_surfaces for the hero's live-render verdict. */
+export type DesignSystemCaptureSurfaceReadiness =
+  | "installing"
+  | "starting"
+  | "ready"
+  | "failed";
+
 /** One captured image backing a layout rule (09C-D02) or a component spec
  * (09C-D03 hero), from either evidence-grade origin: a Figma node the Agent
  * captured via Figma MCP ("source"), or the component's real code rendering
@@ -143,6 +152,17 @@ export interface DesignSystemLayoutCapture {
    * content digest at capture time; both null for source captures. */
   codeLinks: string[] | null;
   codeDigest: string | null;
+  /** Live hero (Issue 33): the Agent-declared harness route in the prototype
+   * app that mounts this component standalone (`?state=<name>` contract);
+   * null when no live render was declared. */
+  harnessPath: string | null;
+  /** Code captures with a linked prototype surface, decorated live from
+   * prototype_surfaces: the preview origin the hero builds the harness URL
+   * from, and the surface's current readiness / staleness. All null/false
+   * for source captures and for code captures whose surface row is gone. */
+  previewUrl: string | null;
+  surfaceReadiness: DesignSystemCaptureSurfaceReadiness | null;
+  surfaceStale: boolean;
 }
 
 export interface DesignSystemEntryView {
@@ -227,6 +247,16 @@ type EntryRow = {
   position: number;
 };
 
+/** The prototype_surfaces row a code capture's surfaceId joins to (Issue 33)
+ * — the hero's live-render verdict needs the surface's preview origin and
+ * its current readiness / staleness in the same /api/design-system payload
+ * (the Browser never fetches a second channel). */
+interface LiveSurfaceInfo {
+  readiness: DesignSystemCaptureSurfaceReadiness;
+  stale: boolean;
+  previewUrl: string;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -272,11 +302,13 @@ function nodeRectOfItem(item: Record<string, unknown>): LayoutCaptureNodeRect | 
  * by item so a hand-edited legacy row degrades to "no captures" instead of
  * breaking the whole view. Legacy items without `origin` are source
  * captures; a code capture whose digest fields are malformed reads stale
- * (its freshness can no longer be verified honestly). */
+ * (its freshness can no longer be verified honestly). A malformed harness
+ * declaration degrades to "no live hero" — the static capture still shows. */
 function capturesOfRaw(
   raw: unknown,
   staleOf: (surfaceId: string) => boolean,
-  codeStaleOf: (codeLinks: string[], codeDigest: string) => boolean
+  codeStaleOf: (codeLinks: string[], codeDigest: string) => boolean,
+  liveSurfaceOf: (surfaceId: string) => LiveSurfaceInfo | null
 ): DesignSystemLayoutCapture[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const captures: DesignSystemLayoutCapture[] = [];
@@ -303,6 +335,18 @@ function capturesOfRaw(
       origin === "code" && nonEmptyString(item.codeDigest)
         ? item.codeDigest
         : null;
+    const harnessPath =
+      origin === "code" &&
+      nonEmptyString(item.harnessPath) &&
+      isCaptureHarnessPath(item.harnessPath)
+        ? item.harnessPath
+        : null;
+    // Live-surface join (Issue 33): only code captures link a prototype
+    // surface; a source capture's surfaceId is Figma evidence lineage.
+    const liveSurface =
+      origin === "code" && surfaceId !== null
+        ? liveSurfaceOf(surfaceId)
+        : null;
     const stale =
       origin === "code"
         ? codeLinks === null ||
@@ -321,7 +365,11 @@ function capturesOfRaw(
       nodeRect: nodeRectOfItem(item),
       origin,
       codeLinks,
-      codeDigest
+      codeDigest,
+      harnessPath,
+      previewUrl: liveSurface?.previewUrl ?? null,
+      surfaceReadiness: liveSurface?.readiness ?? null,
+      surfaceStale: liveSurface?.stale ?? false
     });
   }
   return captures.length > 0 ? captures : undefined;
@@ -470,6 +518,22 @@ function buildDesignSystemViewFromDb(
       codeLinks: string[],
       codeDigest: string
     ): boolean => codeCaptureDigest(projectPath, codeLinks) !== codeDigest;
+    // Live-surface join (Issue 33): the prototype surface backing a code
+    // capture, for the hero's live-render verdict.
+    const liveSurfaceStmt = db.prepare(
+      `SELECT readiness, stale, preview_url FROM prototype_surfaces WHERE id = ?`
+    );
+    const liveSurfaceOf = (surfaceId: string): LiveSurfaceInfo | null => {
+      const surface = liveSurfaceStmt.get(surfaceId) as
+        | { readiness: string; stale: number; preview_url: string }
+        | undefined;
+      if (surface === undefined) return null;
+      return {
+        readiness: surface.readiness as DesignSystemCaptureSurfaceReadiness,
+        stale: surface.stale !== 0,
+        previewUrl: surface.preview_url
+      };
+    };
 
     for (const row of rows) {
       const value = JSON.parse(row.value_json) as unknown;
@@ -594,7 +658,8 @@ function buildDesignSystemViewFromDb(
                 captures: capturesOfRaw(
                   sourceCaptures,
                   captureStaleOf,
-                  codeCaptureStaleOf
+                  codeCaptureStaleOf,
+                  liveSurfaceOf
                 )
               }
             : {})

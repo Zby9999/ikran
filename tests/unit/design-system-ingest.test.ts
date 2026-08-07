@@ -1351,7 +1351,11 @@ describe("getDesignSystemView layout captures", () => {
           nodeRect: { x: 0.05, y: 0, width: 0.9, height: 0.0625 },
           origin: "source",
           codeLinks: null,
-          codeDigest: null
+          codeDigest: null,
+          harnessPath: null,
+          previewUrl: null,
+          surfaceReadiness: null,
+          surfaceStale: false
         },
         {
           nodeId: "1:99",
@@ -1363,7 +1367,11 @@ describe("getDesignSystemView layout captures", () => {
           nodeRect: null,
           origin: "source",
           codeLinks: null,
-          codeDigest: null
+          codeDigest: null,
+          harnessPath: null,
+          previewUrl: null,
+          surfaceReadiness: null,
+          surfaceStale: false
         }
       ]);
     });
@@ -1593,7 +1601,11 @@ describe("getDesignSystemView layout captures", () => {
           nodeRect: null,
           origin: "source",
           codeLinks: null,
-          codeDigest: null
+          codeDigest: null,
+          harnessPath: null,
+          previewUrl: null,
+          surfaceReadiness: null,
+          surfaceStale: false
         }
       ]);
       // Inventory entries are not capture surfaces — the hero reads the spec.

@@ -512,6 +512,169 @@ function componentStatusOf(
   return "formalized";
 }
 
+/* ------------------------- hero live plan (Issue 33) ------------------------- */
+
+/** Why a DECLARED live hero could not render and fell back to the static
+ * capture. "surface_not_ready": the linked prototype surface is not running
+ * (readiness not "ready", or its row is gone). "surface_stale": the surface
+ * is up but was marked stale (code changed / dev server exited) and is not
+ * re-serving the current code. "live_unreachable": the surface looked live
+ * but the harness iframe never finished loading (the harness moved or
+ * broke). A static code capture WITHOUT a harness declaration is the plain
+ * Issue-32 tier, not a fallback. */
+export type DsHeroLiveFallbackReason =
+  | "surface_not_ready"
+  | "surface_stale"
+  | "live_unreachable";
+
+/** Hero tier for the component placard: live sandboxed render of the current
+ * code when a harness was declared and its surface is live; otherwise the
+ * best static capture (code-backed outranks source); otherwise the explicit
+ * unavailable block. The chain live → code capture → source capture →
+ * unavailable mirrors the 09C-D03 two-tier decision, and digest staleness
+ * never takes down the live render (live always renders the current code —
+ * the stale flag stays on the origin popover only). `liveKey` identifies the
+ * current live target AND its readiness (see componentHeroLiveKey) so the
+ * client can pin its load-timeout verdict to it: the verdict is terminal per
+ * key, and a changed key — new capture, or the surface's readiness/staleness
+ * flipping on a refetch — re-arms the attempt exactly once. */
+export type DsHeroPlan =
+  | {
+      kind: "live";
+      capture: DesignSystemLayoutCapture;
+      liveKey: string | null;
+    }
+  | {
+      kind: "static";
+      capture: DesignSystemLayoutCapture;
+      liveFallback: DsHeroLiveFallbackReason | null;
+      liveKey: string | null;
+    }
+  | { kind: "unavailable"; liveKey: null };
+
+/** Identity of the live-hero attempt: the render target (preview origin +
+ * harness route + capture) PLUS the surface's readiness/staleness. The
+ * readiness fields are part of the key so a surface that flips
+ * starting → ready on a view refetch forms a NEW key and the hero re-tries
+ * the live render; an unchanged surface keeps the same key, so a timed-out
+ * verdict stays terminal and the hero never loops back into the iframe.
+ * Every segment is URI-encoded so the separator cannot collide. Null when
+ * the capture declares no harness (no live attempt possible). */
+export function componentHeroLiveKey(
+  capture: DesignSystemLayoutCapture
+): string | null {
+  if (capture.origin !== "code" || capture.harnessPath === null) return null;
+  return [
+    capture.previewUrl,
+    capture.harnessPath,
+    capture.artifactPath,
+    capture.surfaceReadiness,
+    String(capture.surfaceStale)
+  ]
+    .map((segment) => encodeURIComponent(String(segment)))
+    .join("|");
+}
+
+/** Tier verdict for the hero. `unreachableKey` is the client's timed-out
+ * live key (heroLiveVerdictReducer); when it matches the current attempt the
+ * plan demotes to the static capture with "live_unreachable". Owns the
+ * code-first tier ordering — callers pass captures in declared order. */
+export function planComponentHero(
+  captures: readonly DesignSystemLayoutCapture[],
+  unreachableKey: string | null
+): DsHeroPlan {
+  const sorted = [...captures].sort(
+    (a, b) => Number(b.origin === "code") - Number(a.origin === "code")
+  );
+  const capture = sorted[0];
+  if (!capture) return { kind: "unavailable", liveKey: null };
+  const liveKey = componentHeroLiveKey(capture);
+  if (capture.origin === "code" && capture.harnessPath !== null) {
+    if (unreachableKey !== null && unreachableKey === liveKey) {
+      return { kind: "static", capture, liveFallback: "live_unreachable", liveKey };
+    }
+    if (capture.previewUrl === null || capture.surfaceReadiness !== "ready") {
+      return { kind: "static", capture, liveFallback: "surface_not_ready", liveKey };
+    }
+    if (capture.surfaceStale) {
+      return { kind: "static", capture, liveFallback: "surface_stale", liveKey };
+    }
+    return { kind: "live", capture, liveKey };
+  }
+  return { kind: "static", capture, liveFallback: null, liveKey };
+}
+
+/** The harness URL the live iframe navigates to. `state` is a spec
+ * stateMatrix name; null restores the harness default (no query). */
+export function componentHeroLiveUrl(
+  capture: DesignSystemLayoutCapture,
+  state: string | null
+): string | null {
+  if (capture.previewUrl === null || capture.harnessPath === null) return null;
+  const base = `${capture.previewUrl}${capture.harnessPath}`;
+  return state === null ? base : `${base}?state=${encodeURIComponent(state)}`;
+}
+
+/** Client-side live phase: the iframe mounts optimistically ("pending"); its
+ * first load promotes to "live", a timeout with no load demotes to
+ * "unreachable" (the plan then falls back to the static capture, noting the
+ * reason). Terminal per key — once demoted, the hero stays static for this
+ * live target. */
+export type DsHeroLivePhase = "pending" | "live" | "unreachable";
+
+/** The load verdict pinned to the live key it belongs to. Events carry the
+ * key they fired for, so a late event from a superseded attempt (the view
+ * refetched, the key moved on) is ignored instead of corrupting the new
+ * attempt's verdict. */
+export type DsHeroLiveVerdict = {
+  key: string | null;
+  phase: DsHeroLivePhase;
+};
+
+export type DsHeroLiveVerdictAction =
+  /** The plan's liveKey changed (new capture, readiness flip) → re-arm. */
+  | { type: "retarget"; key: string | null }
+  | { type: "loaded"; key: string | null }
+  | { type: "timeout"; key: string | null };
+
+export function heroLiveVerdictReducer(
+  verdict: DsHeroLiveVerdict,
+  action: DsHeroLiveVerdictAction
+): DsHeroLiveVerdict {
+  if (action.key !== verdict.key) {
+    return action.type === "retarget"
+      ? { key: action.key, phase: "pending" }
+      : verdict;
+  }
+  if (verdict.phase !== "pending") return verdict;
+  switch (action.type) {
+    case "retarget":
+      return verdict;
+    case "loaded":
+      return { key: verdict.key, phase: "live" };
+    case "timeout":
+      return { key: verdict.key, phase: "unreachable" };
+  }
+}
+
+/** Iframe load grace before the hero demotes to the static capture. */
+export const DS_HERO_LIVE_TIMEOUT_MS = 5000;
+/** Hover/focus debounce before the iframe re-navigates to `?state=<name>`. */
+export const DS_HERO_STATE_DEBOUNCE_MS = 150;
+
+/** Fallback caption copy — says what happened and what is shown instead;
+ * a blank hero is an accident, an explained static capture is a conclusion. */
+export function heroLiveFallbackCopy(reason: DsHeroLiveFallbackReason): string {
+  switch (reason) {
+    case "surface_not_ready":
+      return "Live preview unavailable — the prototype surface is not running; showing the code render.";
+    case "surface_stale":
+      return "Live preview unavailable — the prototype surface is stale (its code changed); showing the code render.";
+    case "live_unreachable":
+      return "Live preview unreachable — the harness stopped loading; showing the code render.";
+  }
+}
+
 /* --------------------------- sidebar projection --------------------------- */
 
 export interface DsComponentSidebarItem {

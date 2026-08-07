@@ -149,6 +149,49 @@ function specEntryRow(dir: string, entryId: string) {
   }
 }
 
+/** Seed the prototype run + surface a code capture links to, so the view's
+ * live-surface decoration (Issue 33) has a row to join. */
+function seedPrototypeSurface(
+  dir: string,
+  opts: {
+    surfaceId: string;
+    readiness?: "installing" | "starting" | "ready" | "failed";
+    stale?: boolean;
+    previewUrl?: string;
+  }
+): void {
+  const db = new DatabaseSync(getProjectDbPath(dir));
+  try {
+    const now = "2026-08-07T00:00:00.000Z";
+    db.prepare(
+      `INSERT INTO prototype_runs
+       (id, run_id, source_artifact_path, prototype_root, dev_command,
+        seed_reference_ids_json, evidence_version_ids_json,
+        design_system_version, created_at, updated_at,
+        kind, intent, used_candidate_ids_json)
+       VALUES (?, ?, 'prototype/app.tsx', '', 'npm run dev', '[]', '[]',
+               'ds-v1', ?, ?, 'seed_reconstruction', NULL, '[]')`
+    ).run(`run-${opts.surfaceId}`, `run-${opts.surfaceId}`, now, now);
+    db.prepare(
+      `INSERT INTO prototype_surfaces
+       (id, prototype_run_id, surface_key, name, preview_url, preview_port,
+        readiness, readiness_reason, stale, stale_reason,
+        created_at, updated_at)
+       VALUES (?, ?, 'page', 'Page', ?, 4401, ?, NULL, ?, NULL, ?, ?)`
+    ).run(
+      opts.surfaceId,
+      `run-${opts.surfaceId}`,
+      opts.previewUrl ?? "http://127.0.0.1:4401",
+      opts.readiness ?? "ready",
+      opts.stale === true ? 1 : 0,
+      now,
+      now
+    );
+  } finally {
+    db.close();
+  }
+}
+
 function readSpecValue(dir: string, rel: string): Record<string, unknown> {
   const parsed = JSON.parse(readFileSync(path.join(dir, rel), "utf8")) as {
     value: Record<string, unknown>;
@@ -403,6 +446,218 @@ describe("captureComponentCodeHero", () => {
       expect(listEvents(dir, "design_system_code_capture_recorded")).toEqual(
         []
       );
+    });
+  });
+
+  test("a declared harnessPath rides the capture record into file, DB, event and view (Issue 33)", async () => {
+    await withTempProjectAsync(async (dir) => {
+      writeProjectFile(dir, CODE_LINKS[0], CODE_BODY);
+      const spec = seedSpecEntry(dir, {
+        name: "Button",
+        codeLinks: CODE_LINKS,
+        captures: [SOURCE_CAPTURE]
+      });
+
+      const result = await captureComponentCodeHero(
+        dir,
+        {
+          entryId: spec.entryId,
+          surfaceId: "proto-surface-1",
+          harnessPath: "/__ikran/component/button"
+        },
+        deps()
+      );
+      expect(result).toMatchObject({
+        ok: true,
+        harness_path: "/__ikran/component/button"
+      });
+
+      // Source file + DB row carry the declaration on the code capture only.
+      const captures = readSpecValue(dir, spec.rel)
+        .sourceCaptures as Array<Record<string, unknown>>;
+      expect(captures).toHaveLength(2);
+      expect(captures[0]).toEqual(SOURCE_CAPTURE);
+      expect(captures[1]).toMatchObject({
+        origin: "code",
+        harnessPath: "/__ikran/component/button"
+      });
+      const row = specEntryRow(dir, spec.entryId);
+      expect(JSON.parse(row!.source_captures_json)).toEqual(captures);
+
+      // The event records the declaration alongside what was frozen.
+      const events = listEvents(dir, "design_system_code_capture_recorded");
+      expect(events).toHaveLength(1);
+      expect(events[0]!.payload).toMatchObject({
+        harness_path: "/__ikran/component/button"
+      });
+
+      // The view exposes the declaration; without a surface row the live
+      // decoration degrades to nulls (hero falls back to the static tier).
+      const view = getDesignSystemView(dir);
+      expect(view.ok).toBe(true);
+      if (view.ok) {
+        const codeCapture = view.view.components.specs[0]!.captures!.find(
+          (capture) => capture.origin === "code"
+        )!;
+        expect(codeCapture.harnessPath).toBe("/__ikran/component/button");
+        expect(codeCapture.previewUrl).toBeNull();
+        expect(codeCapture.surfaceReadiness).toBeNull();
+        expect(codeCapture.surfaceStale).toBe(false);
+        const sourceCapture = view.view.components.specs[0]!.captures!.find(
+          (capture) => capture.origin === "source"
+        )!;
+        expect(sourceCapture.harnessPath).toBeNull();
+      }
+    });
+  });
+
+  test("omitting harnessPath keeps the record exactly the Issue-32 shape", async () => {
+    await withTempProjectAsync(async (dir) => {
+      writeProjectFile(dir, CODE_LINKS[0], CODE_BODY);
+      const spec = seedSpecEntry(dir, {
+        name: "Button",
+        codeLinks: CODE_LINKS
+      });
+
+      const result = await captureComponentCodeHero(
+        dir,
+        { entryId: spec.entryId, surfaceId: "proto-surface-1" },
+        deps()
+      );
+      expect(result).toMatchObject({ ok: true, harness_path: null });
+
+      const captures = readSpecValue(dir, spec.rel)
+        .sourceCaptures as Array<Record<string, unknown>>;
+      expect(captures).toHaveLength(1);
+      expect("harnessPath" in captures[0]!).toBe(false);
+      const events = listEvents(dir, "design_system_code_capture_recorded");
+      expect("harness_path" in events[0]!.payload).toBe(false);
+    });
+  });
+
+  test("an invalid harnessPath is rejected before any write", async () => {
+    await withTempProjectAsync(async (dir) => {
+      writeProjectFile(dir, CODE_LINKS[0], CODE_BODY);
+      const spec = seedSpecEntry(dir, {
+        name: "Button",
+        codeLinks: CODE_LINKS,
+        captures: [SOURCE_CAPTURE]
+      });
+      const fileBefore = readFileSync(path.join(dir, spec.rel), "utf8");
+
+      for (const bad of [
+        "components/button",
+        "https://evil.com/x",
+        "//evil.com/x",
+        "/../secret",
+        "/x?state=hover",
+        ""
+      ]) {
+        const result = await captureComponentCodeHero(
+          dir,
+          { entryId: spec.entryId, surfaceId: "proto-surface-1", harnessPath: bad },
+          deps()
+        );
+        expect(result).toMatchObject({ ok: false, reason: "invalid_input" });
+      }
+      // Nothing was written by any of the rejected attempts.
+      expect(readFileSync(path.join(dir, spec.rel), "utf8")).toBe(fileBefore);
+      const row = specEntryRow(dir, spec.entryId);
+      expect(JSON.parse(row!.source_captures_json)).toEqual([SOURCE_CAPTURE]);
+      expect(listEvents(dir, "design_system_code_capture_recorded")).toEqual(
+        []
+      );
+    });
+  });
+
+  test("the view decorates the linked prototype surface onto a code capture (Issue 33)", async () => {
+    await withTempProjectAsync(async (dir) => {
+      writeProjectFile(dir, CODE_LINKS[0], CODE_BODY);
+      seedPrototypeSurface(dir, {
+        surfaceId: "proto-surface-1",
+        readiness: "ready",
+        stale: false,
+        previewUrl: "http://127.0.0.1:4401"
+      });
+      const spec = seedSpecEntry(dir, {
+        name: "Button",
+        codeLinks: CODE_LINKS
+      });
+
+      const result = await captureComponentCodeHero(
+        dir,
+        {
+          entryId: spec.entryId,
+          surfaceId: "proto-surface-1",
+          harnessPath: "/__ikran/component/button"
+        },
+        deps()
+      );
+      expect(result.ok).toBe(true);
+
+      const view = getDesignSystemView(dir);
+      expect(view.ok).toBe(true);
+      if (!view.ok) return;
+      const codeCapture = view.view.components.specs[0]!.captures![0]!;
+      expect(codeCapture.previewUrl).toBe("http://127.0.0.1:4401");
+      expect(codeCapture.surfaceReadiness).toBe("ready");
+      expect(codeCapture.surfaceStale).toBe(false);
+    });
+  });
+
+  test("a stale or not-ready surface decorates as not live (Issue 33)", async () => {
+    await withTempProjectAsync(async (dir) => {
+      writeProjectFile(dir, CODE_LINKS[0], CODE_BODY);
+      seedPrototypeSurface(dir, {
+        surfaceId: "proto-surface-1",
+        readiness: "starting",
+        stale: false
+      });
+      seedPrototypeSurface(dir, {
+        surfaceId: "proto-surface-2",
+        readiness: "ready",
+        stale: true
+      });
+      const spec = seedSpecEntry(dir, {
+        name: "Button",
+        codeLinks: CODE_LINKS,
+        captures: [
+          {
+            nodeName: "Button",
+            artifactPath: "design-system/captures/code-starting.png",
+            capturedAt: "2026-08-06T12:00:00.000Z",
+            surfaceId: "proto-surface-1",
+            origin: "code",
+            codeLinks: CODE_LINKS,
+            codeDigest: codeCaptureDigest(dir, CODE_LINKS),
+            harnessPath: "/__ikran/component/button"
+          },
+          {
+            nodeName: "Button",
+            artifactPath: "design-system/captures/code-stale.png",
+            capturedAt: "2026-08-06T12:01:00.000Z",
+            surfaceId: "proto-surface-2",
+            origin: "code",
+            codeLinks: CODE_LINKS,
+            codeDigest: codeCaptureDigest(dir, CODE_LINKS),
+            harnessPath: "/__ikran/component/button"
+          }
+        ]
+      });
+      void spec;
+
+      const view = getDesignSystemView(dir);
+      expect(view.ok).toBe(true);
+      if (!view.ok) return;
+      const captures = view.view.components.specs[0]!.captures!;
+      expect(captures.map((capture) => capture.surfaceReadiness)).toEqual([
+        "starting",
+        "ready"
+      ]);
+      expect(captures.map((capture) => capture.surfaceStale)).toEqual([
+        false,
+        true
+      ]);
     });
   });
 });

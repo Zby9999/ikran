@@ -56,6 +56,10 @@ function capture(partial: Partial<DesignSystemLayoutCapture> = {}) {
     origin: "source" as const,
     codeLinks: null,
     codeDigest: null,
+    harnessPath: null,
+    previewUrl: null,
+    surfaceReadiness: null,
+    surfaceStale: false,
     ...partial
   };
 }

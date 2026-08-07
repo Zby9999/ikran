@@ -794,7 +794,11 @@ describe("component grouping + sidebar projection (09C-D03)", () => {
         nodeRect: null,
         origin: "source" as const,
         codeLinks: null,
-        codeDigest: null
+        codeDigest: null,
+        harnessPath: null,
+        previewUrl: null,
+        surfaceReadiness: null,
+        surfaceStale: false
       }
     ];
     view.components.specs[0] = { ...view.components.specs[0]!, captures };
@@ -1085,5 +1089,260 @@ describe("syncWarningAppliesToRoute (per-page warning mounting)", () => {
     expect(
       syncWarningAppliesToRoute("design-system/readme.md", foundationsHome, model)
     ).toBe(false);
+  });
+});
+
+/* ---------------------- hero live plan (Issue 33) ---------------------- */
+
+import {
+  componentHeroLiveKey,
+  componentHeroLiveUrl,
+  heroLiveFallbackCopy,
+  heroLiveVerdictReducer,
+  planComponentHero,
+  type DesignSystemLayoutCapture,
+  type DsHeroLiveVerdict
+} from "@/components/workbench/design-system-view-model";
+
+function heroCapture(
+  partial: Partial<DesignSystemLayoutCapture> = {}
+): DesignSystemLayoutCapture {
+  return {
+    nodeId: null,
+    nodeName: "Button",
+    artifactPath: "design-system/captures/button-code.png",
+    capturedAt: "2026-08-07T14:00:00.000Z",
+    surfaceId: "proto-surface-1",
+    stale: false,
+    nodeRect: null,
+    origin: "code",
+    codeLinks: ["components/Button.tsx"],
+    codeDigest: "digest-1",
+    harnessPath: "/__ikran/component/button",
+    previewUrl: "http://127.0.0.1:4401",
+    surfaceReadiness: "ready",
+    surfaceStale: false,
+    ...partial
+  };
+}
+
+const LIVE_KEY =
+  "http%3A%2F%2F127.0.0.1%3A4401|%2F__ikran%2Fcomponent%2Fbutton|design-system%2Fcaptures%2Fbutton-code.png|ready|false";
+
+describe("componentHeroLiveKey (Issue 33)", () => {
+  test("identifies target + readiness, URI-encoded per segment", () => {
+    expect(componentHeroLiveKey(heroCapture())).toBe(LIVE_KEY);
+    // No harness declared → no live attempt.
+    expect(componentHeroLiveKey(heroCapture({ harnessPath: null }))).toBeNull();
+  });
+
+  test("a readiness / staleness flip forms a new key; unchanged state keeps it", () => {
+    const ready = heroCapture();
+    const starting = heroCapture({ surfaceReadiness: "starting" });
+    const stale = heroCapture({ surfaceStale: true });
+    expect(componentHeroLiveKey(starting)).not.toBe(LIVE_KEY);
+    expect(componentHeroLiveKey(stale)).not.toBe(LIVE_KEY);
+    expect(componentHeroLiveKey(heroCapture())).toBe(
+      componentHeroLiveKey(ready)
+    );
+  });
+});
+
+describe("planComponentHero (Issue 33)", () => {
+  test("no captures is the explicit unavailable tier", () => {
+    expect(planComponentHero([], null)).toEqual({
+      kind: "unavailable",
+      liveKey: null
+    });
+  });
+
+  test("harness + live surface renders live — digest staleness does not demote", () => {
+    const capture = heroCapture();
+    expect(planComponentHero([capture], null)).toEqual({
+      kind: "live",
+      capture,
+      liveKey: LIVE_KEY
+    });
+    // A digest-stale capture still renders live: live always renders the
+    // current code; the stale flag stays on the origin popover.
+    const stale = heroCapture({ stale: true });
+    expect(planComponentHero([stale], null)).toEqual({
+      kind: "live",
+      capture: stale,
+      liveKey: LIVE_KEY
+    });
+  });
+
+  test("a code capture without a harness is the plain static tier, no fallback reason", () => {
+    const capture = heroCapture({ harnessPath: null });
+    expect(planComponentHero([capture], null)).toEqual({
+      kind: "static",
+      capture,
+      liveFallback: null,
+      liveKey: null
+    });
+  });
+
+  test("a surface that is not running falls back with surface_not_ready", () => {
+    for (const partial of [
+      { surfaceReadiness: "starting" as const },
+      { surfaceReadiness: "failed" as const },
+      { previewUrl: null, surfaceReadiness: null }
+    ]) {
+      const capture = heroCapture(partial);
+      expect(planComponentHero([capture], null)).toEqual({
+        kind: "static",
+        capture,
+        liveFallback: "surface_not_ready",
+        liveKey: componentHeroLiveKey(capture)
+      });
+    }
+  });
+
+  test("a stale surface falls back with surface_stale — the server is running but not serving current code", () => {
+    const capture = heroCapture({ surfaceStale: true });
+    expect(planComponentHero([capture], null)).toEqual({
+      kind: "static",
+      capture,
+      liveFallback: "surface_stale",
+      liveKey: componentHeroLiveKey(capture)
+    });
+  });
+
+  test("an unreachable iframe falls back with live_unreachable, pinned to its key", () => {
+    const capture = heroCapture();
+    expect(planComponentHero([capture], LIVE_KEY)).toEqual({
+      kind: "static",
+      capture,
+      liveFallback: "live_unreachable",
+      liveKey: LIVE_KEY
+    });
+    // A verdict pinned to a DIFFERENT key does not demote this attempt.
+    expect(planComponentHero([capture], "some-other-key").kind).toBe("live");
+  });
+
+  test("the chain: code capture outranks source capture at every static tier", () => {
+    const source = heroCapture({
+      nodeId: "1:99",
+      origin: "source",
+      codeLinks: null,
+      codeDigest: null,
+      harnessPath: null,
+      previewUrl: null,
+      surfaceReadiness: null,
+      artifactPath: "design-system/captures/button.png"
+    });
+    const code = heroCapture({ harnessPath: null });
+    // Declared source-first; the code capture still leads.
+    const plan = planComponentHero([source, code], null);
+    expect(plan).toEqual({
+      kind: "static",
+      capture: code,
+      liveFallback: null,
+      liveKey: null
+    });
+    // Source only → static source capture.
+    expect(planComponentHero([source], null)).toEqual({
+      kind: "static",
+      capture: source,
+      liveFallback: null,
+      liveKey: null
+    });
+  });
+});
+
+describe("componentHeroLiveUrl (Issue 33)", () => {
+  test("builds the harness URL on the surface origin; state rides ?state=", () => {
+    const capture = heroCapture();
+    expect(componentHeroLiveUrl(capture, null)).toBe(
+      "http://127.0.0.1:4401/__ikran/component/button"
+    );
+    expect(componentHeroLiveUrl(capture, "hover")).toBe(
+      "http://127.0.0.1:4401/__ikran/component/button?state=hover"
+    );
+    expect(componentHeroLiveUrl(capture, "focus visible")).toBe(
+      "http://127.0.0.1:4401/__ikran/component/button?state=focus%20visible"
+    );
+  });
+
+  test("no preview URL or harness means no live URL", () => {
+    expect(
+      componentHeroLiveUrl(heroCapture({ previewUrl: null }), "hover")
+    ).toBeNull();
+    expect(
+      componentHeroLiveUrl(heroCapture({ harnessPath: null }), "hover")
+    ).toBeNull();
+  });
+});
+
+describe("heroLiveVerdictReducer (Issue 33)", () => {
+  const pending: DsHeroLiveVerdict = { key: LIVE_KEY, phase: "pending" };
+
+  test("pending resolves once, terminally, per key", () => {
+    expect(
+      heroLiveVerdictReducer(pending, { type: "loaded", key: LIVE_KEY })
+    ).toEqual({ key: LIVE_KEY, phase: "live" });
+    expect(
+      heroLiveVerdictReducer(pending, { type: "timeout", key: LIVE_KEY })
+    ).toEqual({ key: LIVE_KEY, phase: "unreachable" });
+    // Late events after a verdict are ignored (state switches re-fire load).
+    const live = { key: LIVE_KEY, phase: "live" as const };
+    expect(
+      heroLiveVerdictReducer(live, { type: "timeout", key: LIVE_KEY })
+    ).toEqual(live);
+    const unreachable = { key: LIVE_KEY, phase: "unreachable" as const };
+    expect(
+      heroLiveVerdictReducer(unreachable, { type: "loaded", key: LIVE_KEY })
+    ).toEqual(unreachable);
+  });
+
+  test("events from a superseded attempt never corrupt the current one", () => {
+    // The key moved on (readiness flipped); a late timeout from the old
+    // iframe must not demote the fresh attempt.
+    expect(
+      heroLiveVerdictReducer(pending, { type: "timeout", key: "old-key" })
+    ).toEqual(pending);
+  });
+
+  test("a readiness flip retargets and re-arms the attempt (starting → ready retry)", () => {
+    // The surface was starting: the hero fell back with surface_not_ready.
+    const startingKey = componentHeroLiveKey(
+      heroCapture({ surfaceReadiness: "starting" })
+    )!;
+    const before: DsHeroLiveVerdict = { key: startingKey, phase: "pending" };
+    // Refetch reports ready → new key → retarget re-arms exactly once.
+    const rearmed = heroLiveVerdictReducer(before, {
+      type: "retarget",
+      key: LIVE_KEY
+    });
+    expect(rearmed).toEqual({ key: LIVE_KEY, phase: "pending" });
+    // Retargeting to the SAME key is a no-op — a demoted verdict stays
+    // terminal, never loops back into the iframe.
+    const demoted: DsHeroLiveVerdict = { key: LIVE_KEY, phase: "unreachable" };
+    expect(
+      heroLiveVerdictReducer(demoted, { type: "retarget", key: LIVE_KEY })
+    ).toEqual(demoted);
+  });
+});
+
+describe("heroLiveFallbackCopy (Issue 33)", () => {
+  test("every reason says what happened and what is shown instead", () => {
+    expect(heroLiveFallbackCopy("surface_not_ready")).toContain(
+      "prototype surface is not running"
+    );
+    expect(heroLiveFallbackCopy("surface_stale")).toContain(
+      "prototype surface is stale"
+    );
+    expect(heroLiveFallbackCopy("live_unreachable")).toContain(
+      "harness stopped loading"
+    );
+    // Every caption lands on what is shown instead — never a blank hero.
+    for (const reason of [
+      "surface_not_ready",
+      "surface_stale",
+      "live_unreachable"
+    ] as const) {
+      expect(heroLiveFallbackCopy(reason)).toContain("showing the code render");
+    }
   });
 });

@@ -827,7 +827,11 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
           nodeRect: null,
           origin: "source",
           codeLinks: null,
-          codeDigest: null
+          codeDigest: null,
+          harnessPath: null,
+          previewUrl: null,
+          surfaceReadiness: null,
+          surfaceStale: false
         },
         {
           nodeId: "1:100",
@@ -839,7 +843,11 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
           nodeRect: { x: 0, y: 0, width: 160, height: 40 },
           origin: "source",
           codeLinks: null,
-          codeDigest: null
+          codeDigest: null,
+          harnessPath: null,
+          previewUrl: null,
+          surfaceReadiness: null,
+          surfaceStale: false
         }
       ]
     };
@@ -876,7 +884,11 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
           nodeRect: null,
           origin: "source",
           codeLinks: null,
-          codeDigest: null
+          codeDigest: null,
+          harnessPath: null,
+          previewUrl: null,
+          surfaceReadiness: null,
+          surfaceStale: false
         },
         {
           nodeId: null,
@@ -888,7 +900,11 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
           nodeRect: null,
           origin: "code",
           codeLinks: ["prototypes/components/Button.tsx"],
-          codeDigest: "digest-1"
+          codeDigest: "digest-1",
+          harnessPath: null,
+          previewUrl: null,
+          surfaceReadiness: null,
+          surfaceStale: false
         }
       ]
     };
@@ -923,7 +939,11 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
           nodeRect: null,
           origin: "code",
           codeLinks: ["prototypes/components/Button.tsx"],
-          codeDigest: "digest-1"
+          codeDigest: "digest-1",
+          harnessPath: null,
+          previewUrl: null,
+          surfaceReadiness: null,
+          surfaceStale: false
         }
       ]
     };
@@ -937,6 +957,160 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
     expect(html).toContain(
       'aria-label="Code-backed render: Button, captured 2026-08-07 14:00, stale"'
     );
+  });
+
+  test("a harness-declared code capture on a live surface renders the live hero (Issue 33)", () => {
+    const view = fixtureView();
+    view.components.specs[0] = {
+      ...view.components.specs[0]!,
+      captures: [
+        {
+          nodeId: null,
+          nodeName: "Button",
+          artifactPath: "design-system/captures/button-code.png",
+          capturedAt: "2026-08-07T14:00:00.000Z",
+          surfaceId: "proto-surface-1",
+          stale: false,
+          nodeRect: null,
+          origin: "code",
+          codeLinks: ["prototypes/components/Button.tsx"],
+          codeDigest: "digest-1",
+        harnessPath: "/__ikran/component/button",
+        previewUrl: "http://127.0.0.1:4401",
+        surfaceReadiness: "ready",
+        surfaceStale: false
+        }
+      ]
+    };
+    const model = buildDesignSystemBrowserModel(view);
+    const html = renderDetail(model.components.list[0]!);
+    // The sandboxed live iframe replaces the static image, same boundary as
+    // the canvas surfaces; read-only presentation.
+    expect(html).toContain('data-testid="ds-component-live"');
+    expect(html).toContain('sandbox="allow-scripts allow-same-origin"');
+    expect(html).toContain('loading="lazy"');
+    expect(html).toContain('tabindex="-1"');
+    expect(html).toContain(
+      'src="http://127.0.0.1:4401/__ikran/component/button"'
+    );
+    expect(html).toContain('title="Live render of Button"');
+    expect(html).not.toContain("dsb-hero-image");
+    // The tier tag stays code-backed; no fallback caption when live works.
+    expect(html).toContain('data-origin="code-backed"');
+    expect(html).not.toContain('data-testid="ds-component-live-fallback"');
+    // States become switches (hover/focus drive `?state=` re-navigation).
+    const states = html.match(
+      /<div class="dsb-hero-states"[^>]*>([\s\S]*?)<\/div>/
+    );
+    expect(states).not.toBeNull();
+    expect(states![1]).toContain("<button");
+    expect(states![1]).toContain("dsb-hero-state--live");
+    expect(states![1]).toContain("hover");
+    expect(states![1]).toContain("disabled");
+  });
+
+  test("no harness declaration keeps the static Issue-32 hero byte-for-byte in behavior", () => {
+    const view = fixtureView();
+    view.components.specs[0] = {
+      ...view.components.specs[0]!,
+      captures: [
+        {
+          nodeId: null,
+          nodeName: "Button",
+          artifactPath: "design-system/captures/button-code.png",
+          capturedAt: "2026-08-07T14:00:00.000Z",
+          surfaceId: "proto-surface-1",
+          stale: false,
+          nodeRect: null,
+          origin: "code",
+          codeLinks: ["prototypes/components/Button.tsx"],
+          codeDigest: "digest-1",
+        harnessPath: null,
+        previewUrl: null,
+        surfaceReadiness: null,
+        surfaceStale: false
+        }
+      ]
+    };
+    const model = buildDesignSystemBrowserModel(view);
+    const html = renderDetail(model.components.list[0]!);
+    expect(html).toContain("dsb-hero-image");
+    expect(html).toContain(
+      "/api/artifacts/design-system/captures/button-code.png?session=test-session"
+    );
+    expect(html).not.toContain('data-testid="ds-component-live"');
+    // Not a fallback — no live was declared, so no reason caption.
+    expect(html).not.toContain('data-testid="ds-component-live-fallback"');
+    // States stay a read-only name line.
+    const states = html.match(
+      /<div class="dsb-hero-states"[^>]*>([\s\S]*?)<\/div>/
+    );
+    expect(states).not.toBeNull();
+    expect(states![1]).not.toContain("<button");
+  });
+
+  test("a harness on a not-live surface falls back to the static capture with the reason (Issue 33)", () => {
+    const view = fixtureView();
+    view.components.specs[0] = {
+      ...view.components.specs[0]!,
+      captures: [
+        {
+          nodeId: null,
+          nodeName: "Button",
+          artifactPath: "design-system/captures/button-code.png",
+          capturedAt: "2026-08-07T14:00:00.000Z",
+          surfaceId: "proto-surface-1",
+          stale: false,
+          nodeRect: null,
+          origin: "code",
+          codeLinks: ["prototypes/components/Button.tsx"],
+          codeDigest: "digest-1",
+        harnessPath: "/__ikran/component/button",
+        previewUrl: "http://127.0.0.1:4401",
+        surfaceReadiness: "starting",
+        surfaceStale: false
+        }
+      ]
+    };
+    const model = buildDesignSystemBrowserModel(view);
+    const html = renderDetail(model.components.list[0]!);
+    // Static code capture shows — never a blank hero — with the reason.
+    expect(html).toContain("dsb-hero-image");
+    expect(html).not.toContain('data-testid="ds-component-live"');
+    expect(html).toContain('data-testid="ds-component-live-fallback"');
+    expect(html).toContain('data-reason="surface_not_ready"');
+    expect(html).toContain("prototype surface is not running");
+    expect(html).toContain("showing the code render");
+  });
+
+  test("a stale surface falls back with its own reason — the server runs but not the current code (Issue 33)", () => {
+    const view = fixtureView();
+    view.components.specs[0] = {
+      ...view.components.specs[0]!,
+      captures: [
+        {
+          nodeId: null,
+          nodeName: "Button",
+          artifactPath: "design-system/captures/button-code.png",
+          capturedAt: "2026-08-07T14:00:00.000Z",
+          surfaceId: "proto-surface-1",
+          stale: false,
+          nodeRect: null,
+          origin: "code",
+          codeLinks: ["prototypes/components/Button.tsx"],
+          codeDigest: "digest-1",
+        harnessPath: "/__ikran/component/button",
+        previewUrl: "http://127.0.0.1:4401",
+        surfaceReadiness: "ready",
+        surfaceStale: true
+        }
+      ]
+    };
+    const model = buildDesignSystemBrowserModel(view);
+    const html = renderDetail(model.components.list[0]!);
+    expect(html).not.toContain('data-testid="ds-component-live"');
+    expect(html).toContain('data-reason="surface_stale"');
+    expect(html).toContain("prototype surface is stale");
   });
 
   test("Status & evidence rows keep the inventory/spec approval wiring", () => {
@@ -1479,7 +1653,11 @@ function layoutLeafRows(): DsRow[] {
             nodeRect: { x: 0.1, y: 0.2, width: 0.6, height: 0.4 },
             origin: "source",
             codeLinks: null,
-            codeDigest: null
+            codeDigest: null,
+            harnessPath: null,
+            previewUrl: null,
+            surfaceReadiness: null,
+            surfaceStale: false
           },
           {
             nodeId: "11:21",
@@ -1491,7 +1669,11 @@ function layoutLeafRows(): DsRow[] {
             nodeRect: null,
             origin: "source",
             codeLinks: null,
-            codeDigest: null
+            codeDigest: null,
+            harnessPath: null,
+            previewUrl: null,
+            surfaceReadiness: null,
+            surfaceStale: false
           }
         ]
       }
@@ -1515,7 +1697,11 @@ function layoutLeafRows(): DsRow[] {
             nodeRect: null,
             origin: "source",
             codeLinks: null,
-            codeDigest: null
+            codeDigest: null,
+            harnessPath: null,
+            previewUrl: null,
+            surfaceReadiness: null,
+            surfaceStale: false
           }
         ]
       }

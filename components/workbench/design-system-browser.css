@@ -1841,6 +1841,30 @@
   justify-content: center;
 }
 
+/* Live code-backed tier (Issue 33): the harness iframe fills the stage like
+ * the capture image would; pointer-events none — the hero is read-only
+ * presentation (33 locked decision 4), states switch from the names row. */
+.dsb-hero-live {
+  display: block;
+  width: 100%;
+  min-height: 240px;
+  align-self: stretch;
+  border: 0;
+  pointer-events: none;
+}
+
+/* Why the declared live hero fell back to the static capture — bottom-left,
+ * mirroring the stale caption position. */
+.dsb-hero-live-fallback {
+  position: absolute;
+  bottom: 14px;
+  left: 16px;
+  max-width: calc(100% - 48px);
+  color: var(--dsc-ink-3);
+  font-size: 11px;
+  line-height: 15px;
+}
+
 .dsb-hero-states {
   position: absolute;
   bottom: 14px;
@@ -1853,13 +1877,29 @@
   transform: translateX(-50%);
 }
 
-/* Read-only state names this slice — capture heroes have one screenshot, so
- * there is nothing honest to switch on hover yet. */
+/* Static heroes show read-only state names (nothing honest to switch on);
+ * the live tier turns them into state switches (Issue 33). */
 .dsb-hero-state {
   border-radius: 6px;
   padding: 5px 10px;
   color: var(--dsc-ink-3);
   font-size: 12px;
+}
+
+.dsb-hero-state--live {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.dsb-hero-state--live:hover,
+.dsb-hero-state--live:focus-visible,
+.dsb-hero-state--live[data-active] {
+  background: rgb(0 0 0 / 5%);
+  color: var(--dsc-ink);
+  outline: none;
 }
 
 /* Centered reading column below the hero. */

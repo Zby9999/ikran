@@ -1148,6 +1148,69 @@ test.describe("layout-rules.json sourceCaptures", () => {
     });
   });
 
+  test("harnessPath declares a same-origin relative route, code captures only (Issue 33)", () => {
+    const codeCapture = (harnessPath: unknown) =>
+      capture({
+        origin: "code",
+        codeDigest: "abc123",
+        codeLinks: ["components/Button.tsx"],
+        ...(harnessPath === undefined ? {} : { harnessPath })
+      });
+
+    // Valid: a leading-slash relative route.
+    expect(
+      validateDesignSystemJson(
+        "layout-rules.json",
+        rulesWith([codeCapture("/__ikran/component/button")])
+      )
+    ).toMatchObject({ ok: true });
+    // Absent stays valid (static code-backed tier only).
+    expect(
+      validateDesignSystemJson("layout-rules.json", rulesWith([codeCapture(undefined)]))
+    ).toMatchObject({ ok: true });
+
+    // Anything that could navigate away from the surface origin — or carry
+    // its own query/fragment — fails closed.
+    for (const bad of [
+      "components/button",
+      "//evil.com/x",
+      "https://evil.com/x",
+      "/../secret",
+      "/__ikran/component/../button",
+      "/x?state=hover",
+      "/x#frag",
+      "\\\\evil\\x",
+      ""
+    ]) {
+      expect(
+        validateDesignSystemJson(
+          "layout-rules.json",
+          rulesWith([codeCapture(bad)])
+        )
+      ).toMatchObject({
+        ok: false,
+        reason: "invalid_field_type",
+        details: { field: "sourceCaptures[0].harnessPath" }
+      });
+    }
+
+    // A source capture never names a render route (its surface is Figma
+    // evidence, not a preview).
+    expect(
+      validateDesignSystemJson(
+        "layout-rules.json",
+        rulesWith([capture({ harnessPath: "/__ikran/component/button" })])
+      )
+    ).toMatchObject({
+      ok: false,
+      reason: "invalid_field_type",
+      details: {
+        field: "sourceCaptures[0].harnessPath",
+        expected: 'only allowed when origin is "code"'
+      }
+    });
+  });
+
   test("nodeRect declares the node's position inside the capture image", () => {
     expect(
       validateDesignSystemJson(

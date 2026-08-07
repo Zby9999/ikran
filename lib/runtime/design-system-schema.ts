@@ -854,6 +854,18 @@ export function isCaptureBearingArtifactPath(artifactPath: string): boolean {
   );
 }
 
+/** Harness path contract (Issue 33): a same-origin relative route inside the
+ * prototype app — leading slash, no scheme/authority ("//host"), no parent
+ * traversal, no query/fragment (the hero appends `?state=` itself), no
+ * backslashes. Shared by the declaration gate, the capture_component_code_hero
+ * input check, and the view's defensive parse. */
+export function isCaptureHarnessPath(value: string): boolean {
+  if (!value.startsWith("/") || value.startsWith("//")) return false;
+  if (value.includes("..")) return false;
+  if (/[?#\\]/.test(value)) return false;
+  return true;
+}
+
 /** Bounds check shared by the declaration gate and the view's defensive
  * parse: x/y in [0, 1]; width/height in (0, MAX_EXTENT] — above 1 means the
  * fixed-ratio crop truncates the node, which is expected. */
@@ -971,15 +983,42 @@ function validateCaptureOrigin(
   itemField: string,
   context: Record<string, unknown>
 ): DesignSystemSchemaResult {
-  if (item.origin === undefined) return { ok: true };
-  if (item.origin !== "source" && item.origin !== "code") {
+  if (
+    item.origin !== undefined &&
+    item.origin !== "source" &&
+    item.origin !== "code"
+  ) {
     return fail("invalid_field_type", {
       ...context,
       field: `${itemField}.origin`,
       expected: '"source" | "code"'
     });
   }
-  if (item.origin !== "code") return { ok: true };
+  const origin = item.origin === undefined ? "source" : item.origin;
+  // Live-render harness declaration (Issue 33): only a code capture can name
+  // the prototype-app route that mounts its component — a source capture's
+  // surface is Figma evidence, never a renderable preview.
+  if (item.harnessPath !== undefined) {
+    if (
+      !isNonEmptyString(item.harnessPath) ||
+      !isCaptureHarnessPath(item.harnessPath)
+    ) {
+      return fail("invalid_field_type", {
+        ...context,
+        field: `${itemField}.harnessPath`,
+        expected:
+          'same-origin relative path ("/" prefix; no "..", scheme/authority, query or fragment)'
+      });
+    }
+    if (origin !== "code") {
+      return fail("invalid_field_type", {
+        ...context,
+        field: `${itemField}.harnessPath`,
+        expected: 'only allowed when origin is "code"'
+      });
+    }
+  }
+  if (origin !== "code") return { ok: true };
   if (!isNonEmptyString(item.codeDigest)) {
     return fail("invalid_field_type", {
       ...context,

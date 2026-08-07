@@ -24,8 +24,8 @@
 // DOES use radix Popover (components/ui/popover), portaled into the sheet
 // root so its keydown events stay inside the isolation boundary.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import type { CSSProperties, FocusEvent as ReactFocusEvent, ReactNode } from "react";
 import { getSvgPath } from "figma-squircle";
 import {
   ArrowDown01Icon,
@@ -73,14 +73,20 @@ import {
 } from "./design-system-layout-projection";
 import { artifactScreenshotUrl } from "./projection/seed-projection";
 import {
+  DS_HERO_LIVE_TIMEOUT_MS,
+  DS_HERO_STATE_DEBOUNCE_MS,
   DS_SECTION_NAMES,
   TOKEN_LAYER_LABELS,
   approvalReducer,
   breadcrumbFor,
   buildColorLeafModel,
   buildDesignSystemBrowserModel,
+  componentHeroLiveUrl,
   componentLeafId,
   formatEntryValue,
+  heroLiveFallbackCopy,
+  heroLiveVerdictReducer,
+  planComponentHero,
   sheetReducer,
   sheetEscapeAction,
   syncWarningAppliesToRoute,
@@ -2896,10 +2902,87 @@ export function ComponentDetail({
   const detail = component.detail;
   // 09C-D03 two tiers: a code-backed render outranks a source capture —
   // the hero shows the first code capture when one exists (Issue 32).
-  const captures = [...component.captures].sort(
-    (a, b) => Number(b.origin === "code") - Number(a.origin === "code")
+  // Issue 33 upgrades a harness-declared code capture to a live sandboxed
+  // render while its surface stays live; planComponentHero owns the tier
+  // verdict (and the code-first ordering) plus the explicit fallback chain.
+  const captures = component.captures;
+  const [hoveredState, setHoveredState] = useState<string | null>(null);
+  const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Live verdict, pinned to the attempt key (plan.liveKey) it belongs to via
+  // heroLiveVerdictReducer: terminal PER key — a demoted hero never re-arms
+  // itself — but a readiness flip or a new capture forms a new key on the
+  // next view refetch and gets exactly one fresh attempt.
+  const [verdict, dispatchVerdict] = useReducer(heroLiveVerdictReducer, {
+    key: null,
+    phase: "pending"
+  });
+  const plan = planComponentHero(
+    captures,
+    verdict.phase === "unreachable" ? verdict.key : null
   );
-  const capture = captures[0] ?? null;
+  const capture = plan.kind === "unavailable" ? null : plan.capture;
+  // The provenance popover lists the hero's capture first (the plan's tier
+  // verdict), the rest in declared order.
+  const popoverCaptures =
+    capture === null
+      ? captures
+      : [capture, ...captures.filter((item) => item !== capture)];
+  // A new attempt key re-arms the verdict (adjust-during-render); the
+  // unreachable verdict stays pinned to its own key, so demotion never loops
+  // back into the live iframe.
+  if (verdict.key !== plan.liveKey) {
+    dispatchVerdict({ type: "retarget", key: plan.liveKey });
+    setHoveredState(null);
+  }
+  // ~5s without the first iframe load = the harness is gone; demote to the
+  // static capture and say why (never a blank hero).
+  useEffect(() => {
+    if (plan.kind !== "live" || verdict.phase !== "pending") return;
+    const key = plan.liveKey;
+    const timer = setTimeout(() => {
+      dispatchVerdict({ type: "timeout", key });
+    }, DS_HERO_LIVE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [plan.kind, plan.liveKey, verdict.phase]);
+  // States row hover/focus drives `?state=<name>` re-navigation, debounced;
+  // leaving the row restores the harness default immediately.
+  const scheduleState = useCallback((name: string | null) => {
+    if (stateTimerRef.current !== null) {
+      clearTimeout(stateTimerRef.current);
+      stateTimerRef.current = null;
+    }
+    if (name === null) {
+      setHoveredState(null);
+      return;
+    }
+    stateTimerRef.current = setTimeout(() => {
+      setHoveredState(name);
+      stateTimerRef.current = null;
+    }, DS_HERO_STATE_DEBOUNCE_MS);
+  }, []);
+  useEffect(
+    () => () => {
+      if (stateTimerRef.current !== null) clearTimeout(stateTimerRef.current);
+    },
+    []
+  );
+  // Keyboard parity with pointer hover: focus moving BETWEEN the state
+  // buttons keeps the current switch (the next button's focus handler
+  // re-schedules); only focus leaving the whole row restores the default.
+  const handleStateBlur = useCallback(
+    (event: ReactFocusEvent<HTMLButtonElement>) => {
+      const row = event.currentTarget.parentElement;
+      if (
+        row !== null &&
+        event.relatedTarget instanceof Node &&
+        row.contains(event.relatedTarget)
+      ) {
+        return;
+      }
+      scheduleState(null);
+    },
+    [scheduleState]
+  );
   const purpose =
     detail?.description || component.inventory?.meaning || "";
   const propColumns = detail
@@ -2915,14 +2998,31 @@ export function ComponentDetail({
         <span className="dsb-hero-origin">
           {capture ? (
             <SourceCaptureOriginPopover
-              captures={captures}
+              captures={popoverCaptures}
               portalContainer={rows.portalContainer}
             />
           ) : (
             <OriginTag origin="unavailable" />
           )}
         </span>
-        {capture ? (
+        {plan.kind === "live" ? (
+          // Live code-backed tier (Issue 33): the declared harness route on
+          // the linked surface's preview origin — the same sandbox boundary
+          // as the canvas surfaces; read-only presentation (pointer-events
+          // none in CSS), states switch via `?state=` re-navigation.
+          <iframe
+            className="dsb-hero-live"
+            data-testid="ds-component-live"
+            src={componentHeroLiveUrl(plan.capture, hoveredState) ?? undefined}
+            title={`Live render of ${plan.capture.nodeName}`}
+            loading="lazy"
+            sandbox="allow-scripts allow-same-origin"
+            tabIndex={-1}
+            onLoad={() =>
+              dispatchVerdict({ type: "loaded", key: plan.liveKey })
+            }
+          />
+        ) : capture ? (
           <img
             className="dsb-hero-image"
             src={artifactScreenshotUrl(capture.artifactPath, session)}
@@ -2949,17 +3049,43 @@ export function ComponentDetail({
             </span>
           </div>
         )}
+        {plan.kind === "static" && plan.liveFallback !== null ? (
+          <span
+            className="dsb-hero-live-fallback"
+            data-testid="ds-component-live-fallback"
+            data-reason={plan.liveFallback}
+          >
+            {heroLiveFallbackCopy(plan.liveFallback)}
+          </span>
+        ) : null}
         {detail && detail.stateNames.length > 0 ? (
           <div
             className="dsb-hero-states"
             aria-label="Declared states"
             data-testid="ds-component-states"
+            onMouseLeave={
+              plan.kind === "live" ? () => scheduleState(null) : undefined
+            }
           >
-            {detail.stateNames.map((name) => (
-              <span key={name} className="dsb-hero-state">
-                {name}
-              </span>
-            ))}
+            {detail.stateNames.map((name) =>
+              plan.kind === "live" ? (
+                <button
+                  key={name}
+                  type="button"
+                  className="dsb-hero-state dsb-hero-state--live"
+                  data-active={hoveredState === name || undefined}
+                  onMouseEnter={() => scheduleState(name)}
+                  onFocus={() => scheduleState(name)}
+                  onBlur={handleStateBlur}
+                >
+                  {name}
+                </button>
+              ) : (
+                <span key={name} className="dsb-hero-state">
+                  {name}
+                </span>
+              )
+            )}
           </div>
         ) : null}
       </section>
