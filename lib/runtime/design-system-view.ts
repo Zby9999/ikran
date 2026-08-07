@@ -43,6 +43,7 @@ import {
 } from "./design-system-ingest";
 import {
   syncDesignSystemSources,
+  type DesignSystemSyncResult,
   type DesignSystemSyncWarning
 } from "./design-system-sync";
 
@@ -358,7 +359,21 @@ export function getDesignSystemView(
   // the Browser never serves silently-stale rows. Failures downgrade to
   // warnings; the view below keeps serving last-good data regardless.
   const sync = syncDesignSystemSources(projectPath);
+  return buildDesignSystemViewFromDb(projectPath, sync);
+}
 
+/**
+ * View assembly from the DB rows (Runtime truth) once convergence is settled.
+ * Split from getDesignSystemView so writeDesignSystemViewExport can build the
+ * derived export WITHOUT running the lazy sync: approve/edit call the export
+ * post-commit while another write-back flow may hold uncommitted whole-file
+ * bytes on disk, and syncing at that moment would re-ingest those bytes into
+ * the DB ahead of their transaction.
+ */
+function buildDesignSystemViewFromDb(
+  projectPath: string,
+  sync: DesignSystemSyncResult
+): DesignSystemViewResult {
   let name = "";
   const pending: Array<{ view: DesignSystemEntryView; versionIds: string[] }> =
     [];
@@ -708,12 +723,18 @@ function writeDesignSystemExportFile(
 /**
  * Regenerate the derived export from the DB (never from the source files).
  * Deterministic: identical content yields identical bytes, so exports do not
- * diff-noise.
+ * diff-noise. Deliberately skips the lazy file→DB sync: callers (ingest /
+ * approve / edit) invoke this right after their own commit, possibly while a
+ * concurrent write-back flow's uncommitted bytes are on disk — syncing here
+ * would ingest those bytes ahead of their transaction.
  */
 export function writeDesignSystemViewExport(
   projectPath: string
 ): DesignSystemViewExportResult {
-  const result = getDesignSystemView(projectPath);
+  const result = buildDesignSystemViewFromDb(projectPath, {
+    reingested: [],
+    warnings: []
+  });
   if (!result.ok) return { ok: false, reason: result.reason };
   return writeDesignSystemExportFile(
     projectPath,

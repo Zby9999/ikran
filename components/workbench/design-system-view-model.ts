@@ -917,12 +917,30 @@ export function approvalReducer(
   }
 }
 
-/** Status-write failure → short retry guidance shown beside the row. */
+/** Status-write failure → short retry guidance shown beside the row. Typed
+ * reasons get actionable copy; anything unexpected stays on the generic
+ * fallback. */
 export function approvalErrorMessage(
-  _reason: string,
+  reason: string,
   _details?: unknown
 ): string {
-  return "Couldn't update. Try again.";
+  switch (reason) {
+    case "source_db_drift":
+      return "Source file changed outside this view. Reload and try again.";
+    case "concurrent_source_changed":
+    case "concurrent_edit_superseded":
+      return "Changed while you worked. Reload and try again.";
+    case "already_formalized":
+    case "already_candidate":
+      return "Already up to date. Reload to refresh.";
+    case "gap_entry_not_approvable":
+      return "Gaps can't be switched — the agent fills them first.";
+    case "not_found":
+    case "entry_not_in_source_file":
+      return "Entry no longer exists. Reload to refresh.";
+    default:
+      return "Couldn't update. Try again.";
+  }
 }
 
 /**

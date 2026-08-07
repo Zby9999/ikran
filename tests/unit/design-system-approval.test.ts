@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, test } from "vitest";
 
@@ -1256,6 +1257,82 @@ describe("atomicity + LWW race", () => {
       // Reaching the target concurrently must not swallow the semantic click.
       expect(listEvents(dir, "invalid_output")).toHaveLength(0);
       expect(listEvents(dir, "design_system_entry_approved")).toHaveLength(1);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Digest ledger: whole-file writes must not launder undeclared drift
+// ---------------------------------------------------------------------------
+
+function artifactDigest(dir: string, rel: string): string | null {
+  const db = new DatabaseSync(getProjectDbPath(dir));
+  try {
+    const row = db
+      .prepare("SELECT content_digest FROM source_artifacts WHERE path = ?")
+      .get(rel) as { content_digest: string | null } | undefined;
+    return row?.content_digest ?? null;
+  } finally {
+    db.close();
+  }
+}
+
+function sha256OfFile(dir: string, rel: string): string {
+  return createHash("sha256")
+    .update(readFileSync(path.join(dir, rel)))
+    .digest("hex");
+}
+
+describe("digest ledger vs undeclared drift", () => {
+  test("approval records the digest when the written-back file matches the DB", () => {
+    withTempProject((dir) => {
+      seedAndIngest(dir);
+      expect(
+        approve(dir, "design-system/token.json", "semantic.color.primary").ok
+      ).toBe(true);
+      expect(artifactDigest(dir, "design-system/token.json")).toBe(
+        sha256OfFile(dir, "design-system/token.json")
+      );
+    });
+  });
+
+  test("approval leaves the digest stale when another entry drifted undeclared", () => {
+    withTempProject((dir) => {
+      seedAndIngest(dir);
+      // Agent silently rewrites the primitive token value on disk (no
+      // record_artifact_written): the file now drifts from the DB rows.
+      const drifted = tokenJsonFixture(["card-edited"]);
+      drifted.primitive["color.blue.500"].value = "#ff0000";
+      writeProjectFile(dir, "design-system/token.json", drifted);
+
+      // The per-entry drift gate tolerates the untouched semantic entry, so
+      // the approval itself still succeeds.
+      expect(
+        approve(dir, "design-system/token.json", "semantic.color.primary").ok
+      ).toBe(true);
+
+      // The written-back file must NOT enter the digest ledger: recording
+      // these bytes would hide the primitive drift from the lazy file→DB
+      // sync (it skips files whose bytes match the recorded digest).
+      expect(artifactDigest(dir, "design-system/token.json")).not.toBe(
+        sha256OfFile(dir, "design-system/token.json")
+      );
+
+      // The next view read notices the byte mismatch and re-ingests, healing
+      // the drifted primitive into the DB while keeping the approved status.
+      const view = getDesignSystemView(dir);
+      expect(view.ok).toBe(true);
+      expect(
+        entryRow(dir, "design-system/token.json", "primitive.color.blue.500")
+          ?.value_json
+      ).toBe(JSON.stringify("#ff0000"));
+      expect(
+        entryRow(dir, "design-system/token.json", "semantic.color.primary")
+          ?.status
+      ).toBe("formalized");
+      expect(artifactDigest(dir, "design-system/token.json")).toBe(
+        sha256OfFile(dir, "design-system/token.json")
+      );
     });
   });
 });

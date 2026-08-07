@@ -1121,7 +1121,9 @@ test.describe("PRAGMA user_version migration runner", () => {
             "readiness",
             "readiness_reason",
             "stale",
-            "stale_reason"
+            "stale_reason",
+            "screenshot_artifact_path",
+            "screenshot_captured_at"
           ])
         );
         expect(
@@ -1174,7 +1176,7 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(28);
+        expect(CURRENT_SCHEMA_VERSION).toBe(29);
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
@@ -1548,17 +1550,22 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
-  test("backup conflict fail-closed: existing v0 backup blocks v0 migration", () => {
+  test("backup conflict tolerated: existing v0 backup is kept and v0 migration proceeds", () => {
     withTempProject((dir) => {
       const dbPath = seedLegacyV0Db(dir);
-      writeFileSync(getProjectDbBackupPath(dir, 0), "occupied", "utf-8");
+      const bakPath = getProjectDbBackupPath(dir, 0);
+      writeFileSync(bakPath, "occupied", "utf-8");
 
-      expect(() => openProjectDb(dir)).toThrow(/backup/i);
-      // Original DB untouched (still v0 with tasks).
+      // A leftover snapshot from an earlier migration attempt must not wedge
+      // the project: the existing backup already preserves the pre-migration
+      // state, so open keeps it untouched and migrates anyway.
+      const opened = openProjectDb(dir);
+      closeProjectDb(opened);
+      expect(readFileSync(bakPath, "utf-8")).toBe("occupied");
       const db = new DatabaseSync(dbPath);
       try {
-        expect(userVersion(db)).toBe(0);
-        expect(tableNames(db)).toContain("tasks");
+        expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
+        expect(tableNames(db)).not.toContain("tasks");
       } finally {
         db.close();
       }
@@ -1623,23 +1630,28 @@ test.describe("PRAGMA user_version migration runner", () => {
       expect(existsSync(v0Backup)).toBe(true);
       expect(existsSync(v1Backup)).toBe(true);
 
-      // Conflict remains fail-closed for the same source version.
-      expect(() => backupProjectDbBeforeMigration(dir, 1)).toThrow(/backup/i);
+      // A repeated backup for the same source version keeps the first
+      // snapshot instead of failing.
+      const v1BackupAgain = backupProjectDbBeforeMigration(dir, 1);
+      expect(v1BackupAgain).toBe(v1Backup);
     });
   });
 
-  test("v1 backup conflict fail-closed: existing v1 backup blocks v1→v2", () => {
+  test("v1 backup conflict tolerated: existing v1 backup is kept and v1→current proceeds", () => {
     withTempProject((dir) => {
       const dbPath = seedV1Db(dir, [
         { id: "s1", figma_seed_reference: VALID }
       ]);
-      writeFileSync(getProjectDbBackupPath(dir, 1), "occupied", "utf-8");
+      const bakPath = getProjectDbBackupPath(dir, 1);
+      writeFileSync(bakPath, "occupied", "utf-8");
 
-      expect(() => openProjectDb(dir)).toThrow(/backup/i);
+      const opened = openProjectDb(dir);
+      closeProjectDb(opened);
+      expect(readFileSync(bakPath, "utf-8")).toBe("occupied");
       const db = new DatabaseSync(dbPath);
       try {
-        expect(userVersion(db)).toBe(1);
-        expect(seedColumns(db)).not.toContain("file_key");
+        expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
+        expect(seedColumns(db)).toContain("file_key");
       } finally {
         db.close();
       }
@@ -1875,7 +1887,7 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
-  test("v2 backup conflict fail-closed: existing v2 backup blocks v2→v3", () => {
+  test("v2 backup conflict tolerated: existing v2 backup is kept and v2→current proceeds", () => {
     withTempProject((dir) => {
       const dbPath = seedV2Db(dir, {
         seeds: [
@@ -1887,13 +1899,16 @@ test.describe("PRAGMA user_version migration runner", () => {
           }
         ]
       });
-      writeFileSync(getProjectDbBackupPath(dir, 2), "occupied", "utf-8");
+      const bakPath = getProjectDbBackupPath(dir, 2);
+      writeFileSync(bakPath, "occupied", "utf-8");
 
-      expect(() => openProjectDb(dir)).toThrow(/backup/i);
+      const opened = openProjectDb(dir);
+      closeProjectDb(opened);
+      expect(readFileSync(bakPath, "utf-8")).toBe("occupied");
       const db = new DatabaseSync(dbPath);
       try {
-        expect(userVersion(db)).toBe(2);
-        expect(seedColumns(db)).not.toContain("current_surface_id");
+        expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
+        expect(seedColumns(db)).toContain("current_surface_id");
       } finally {
         db.close();
       }
@@ -2101,7 +2116,7 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
-  test("v3 backup conflict fail-closed: existing v3 backup blocks v3→v4", () => {
+  test("v3 backup conflict tolerated: existing v3 backup is kept and v3→current proceeds", () => {
     withTempProject((dir) => {
       const dbPath = seedV3Db(dir, {
         seeds: [
@@ -2113,12 +2128,15 @@ test.describe("PRAGMA user_version migration runner", () => {
           }
         ]
       });
-      writeFileSync(getProjectDbBackupPath(dir, 3), "occupied", "utf-8");
+      const bakPath = getProjectDbBackupPath(dir, 3);
+      writeFileSync(bakPath, "occupied", "utf-8");
 
-      expect(() => openProjectDb(dir)).toThrow(/backup/i);
+      const opened = openProjectDb(dir);
+      closeProjectDb(opened);
+      expect(readFileSync(bakPath, "utf-8")).toBe("occupied");
       const db = new DatabaseSync(dbPath);
       try {
-        expect(userVersion(db)).toBe(3);
+        expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
       } finally {
         db.close();
       }

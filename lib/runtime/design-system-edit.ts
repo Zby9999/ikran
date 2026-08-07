@@ -3,10 +3,7 @@ import path from "node:path";
 
 import { closeProjectDb, openProjectDb, withProjectTransaction } from "./db";
 import { locateEntryObject } from "./design-system-approval";
-import {
-  recordSourceContentDigest,
-  sourceContentDigestOf
-} from "./source-artifact-digest";
+import { recordDesignSystemDigestIfConsistent } from "./design-system-sync";
 import {
   validateDesignSystemJson,
   type DesignSystemFileKind,
@@ -416,14 +413,6 @@ export function editDesignSystemEntry(
           );
       }
       insertEvent(transactionDb, editEvent);
-      // Phase 2 rewrote the source file to nextContent; keep the declared
-      // content digest in step so the lazy file→DB sync does not mistake
-      // this edit for undeclared drift.
-      recordSourceContentDigest(
-        transactionDb,
-        relativePath,
-        sourceContentDigestOf(nextContent)
-      );
       return { ok: true as const, eventId: editEvent.event_id };
     });
   } catch {
@@ -444,6 +433,18 @@ export function editDesignSystemEntry(
     restoreOwnFileChange();
     return transaction;
   }
+
+  // Phase 2 rewrote the whole source file while the transaction updated a
+  // single row. Record the new bytes in the digest ledger only when the
+  // whole file now matches the DB rows; otherwise the record would launder
+  // another entry's undeclared drift past the lazy file→DB sync.
+  recordDesignSystemDigestIfConsistent(
+    projectPath,
+    row.file_kind,
+    parsed,
+    relativePath,
+    nextContent
+  );
 
   emitRecordEvent({
     kind: "design-system",

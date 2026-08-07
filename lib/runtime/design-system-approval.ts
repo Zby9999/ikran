@@ -49,9 +49,8 @@ import {
 } from "./evidence-package";
 import { canonicalizeArtifactPath } from "./source-artifact";
 import {
-  recordSourceContentDigest,
-  sourceContentDigestOf
-} from "./source-artifact-digest";
+  recordDesignSystemDigestIfConsistent
+} from "./design-system-sync";
 import { designSystemEntryContentDigest } from "./design-system-entry-provenance";
 import {
   parseTokenEntryRef,
@@ -401,16 +400,6 @@ export function approveDesignSystemEntry(
         | { status: string; links_json: string }
         | undefined;
       if (!current) return { ok: false, reason: "not_found" };
-      // Phase 2 already rewrote the source file to newContent; every success
-      // path below must keep the declared content digest in step so the lazy
-      // file→DB sync does not mistake this write for undeclared drift.
-      const syncSourceContentDigest = () => {
-        recordSourceContentDigest(
-          db,
-          relativePath,
-          sourceContentDigestOf(newContent)
-        );
-      };
       if (current.status === input.targetStatus) {
         if (
           input.targetStatus === "formalized" &&
@@ -433,7 +422,6 @@ export function approveDesignSystemEntry(
             to: input.targetStatus
           }
         );
-        syncSourceContentDigest();
         return { ok: true, eventId: event.event_id };
       }
       if (current.status === "gap") {
@@ -464,7 +452,6 @@ export function approveDesignSystemEntry(
           to: input.targetStatus
         }
       );
-      syncSourceContentDigest();
       return { ok: true, eventId: event.event_id };
     });
   } catch {
@@ -477,6 +464,18 @@ export function approveDesignSystemEntry(
       ? { ok: false, reason: txn.reason, details: txn.details }
       : { ok: false, reason: txn.reason };
   }
+
+  // Phase 2 rewrote the whole source file while the transaction updated a
+  // single row. Record the new bytes in the digest ledger only when the
+  // whole file now matches the DB rows; otherwise the record would launder
+  // another entry's undeclared drift past the lazy file→DB sync.
+  recordDesignSystemDigestIfConsistent(
+    projectPath,
+    fileKind,
+    parsed,
+    relativePath,
+    newContent
+  );
 
   // -- Phase 4 (post-commit): Browser invalidation + derived export.
   emitRecordEvent({

@@ -1,3 +1,5 @@
+import path from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
 
 import {
@@ -5,7 +7,29 @@ import {
   openProjectDb,
   withProjectTransaction
 } from "./db";
-import { buildLoggedEvent, insertEvent, logEventOnDb } from "./events";
+import {
+  buildLoggedEvent,
+  insertEvent,
+  logEventOnDb,
+  logInvalidToolEvent
+} from "./events";
+import { emitRecordEvent } from "./record-bus";
+import { locateEntryObject } from "./design-system-approval";
+import { designSystemEntryContentDigest } from "./design-system-entry-provenance";
+import {
+  validateDesignSystemJson,
+  type DesignSystemFileKind
+} from "./design-system-schema";
+import { recordDesignSystemDigestIfConsistent } from "./design-system-sync";
+import {
+  stableJsonStringify,
+  writeDesignSystemViewExport
+} from "./design-system-view";
+import { resolveProjectArtifactPath } from "./evidence-package";
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 
 export const PROJECT_PHASES = [
   "seed",
@@ -38,7 +62,21 @@ export type FormalizeFailure =
       phase: ProjectPhase;
       unreviewed_feedback_count: number;
     }
-  | { ok: false; reason: "db_error" };
+  | {
+      ok: false;
+      reason: "candidate_entry_not_found" | "candidate_entry_not_candidate";
+    }
+  | { ok: false; reason: "db_error" }
+  | {
+      ok: false;
+      reason:
+        | "artifact_path_escape"
+        | "artifact_file_missing"
+        | "invalid_design_system_json"
+        | "entry_not_in_source_file"
+        | "write_failed";
+      details?: unknown;
+    };
 
 export type PhaseCommandResult =
   | PhaseCommandSuccess
@@ -142,26 +180,6 @@ export function countUnreviewedDesignerFeedbackOnDb(
   return Number(row.count);
 }
 
-export function listUnreviewedDesignerFeedback(
-  projectPath: string
-): string[] {
-  const db = openProjectDb(projectPath);
-  try {
-    return listUnreviewedDesignerFeedbackOnDb(db);
-  } finally {
-    closeProjectDb(db);
-  }
-}
-
-export function countUnreviewedDesignerFeedback(projectPath: string): number {
-  const db = openProjectDb(projectPath);
-  try {
-    return countUnreviewedDesignerFeedbackOnDb(db);
-  } finally {
-    closeProjectDb(db);
-  }
-}
-
 /**
  * Advance seed → draft_design_system after successful Initial Design System
  * extraction. No-op when already past seed. Used inside finalize transactions.
@@ -183,15 +201,16 @@ export function advanceToDraftDesignSystemOnDb(db: DatabaseType): void {
 
 function transitionPhase(
   projectPath: string,
-  from: ProjectPhase,
+  from: ProjectPhase | readonly ProjectPhase[],
   to: ProjectPhase,
   eventType: "project_phase_confirmed" | "design_system_formalized" | "project_phase_abandoned",
   command: string
 ): PhaseCommandResult {
+  const allowedFrom = Array.isArray(from) ? from : [from];
   try {
     const transaction = withProjectTransaction(projectPath, (db) => {
       const current = readProjectPhaseOnDb(db);
-      if (current !== from) {
+      if (!allowedFrom.includes(current)) {
         return {
           ok: false as const,
           reason: "phase_gate" as const,
@@ -203,18 +222,24 @@ function transitionPhase(
         `UPDATE project_phase SET phase = ?, updated_at = ? WHERE singleton = 1`
       ).run(to, now);
       const event = buildLoggedEvent(eventType, {
-        from_phase: from,
+        from_phase: current,
         phase: to,
         command
       });
       insertEvent(db, event);
-      return { ok: true as const, event };
+      return { ok: true as const, event, from_phase: current };
     });
     if (!transaction.ok) return transaction;
+    emitRecordEvent({
+      kind: "phase",
+      action: "updated",
+      id: "project-phase",
+      projectPath: path.resolve(projectPath)
+    });
     return {
       ok: true,
       phase: to,
-      from_phase: from,
+      from_phase: transaction.from_phase,
       event_id: transaction.event.event_id
     };
   } catch {
@@ -235,18 +260,201 @@ export function confirmDraftDesignSystem(
 }
 
 export function confirmPrototype(projectPath: string): PhaseCommandResult {
+  // From prototype_validation: first prototype confirmed after draft audit.
+  // From ready_for_new_design: a new-design-run prototype confirmed so the
+  // Design System can be formalized again (v2, v3, …) — Issue 15's
+  // success-recursion re-entry into design_system_formal.
   return transitionPhase(
     projectPath,
-    "prototype_validation",
+    ["prototype_validation", "ready_for_new_design"],
     "design_system_formal",
     "project_phase_confirmed",
     "confirm_prototype"
   );
 }
 
+type PromotedEntryRow = {
+  id: string;
+  entry_id: string;
+  source_artifact_path: string;
+  file_kind: string;
+  status: string;
+  links_json: string;
+};
+
+/**
+ * Formalize gate (Issue 28): design_system_formal → ready_for_new_design,
+ * flipping the designer-adjudicated candidates to formalized. Promotions are
+ * a designer status decision like the Browser approval flow, so they write
+ * BOTH sides of the 09A d.2 split: the source file status is flipped (and
+ * the file re-serialized canonically) and each promoted entry gets an
+ * approval-grade `design_system_entry_approved` event carrying the written
+ * content digest — otherwise the next ingest's status gate would reject the
+ * formalized claims the Runtime itself just wrote. Files are written first
+ * and restored if the transaction fails (same ordering as
+ * approveDesignSystemEntry); the digest ledger is only updated when the
+ * written file matches the DB rows, so pre-existing drift stays visible to
+ * the lazy sync.
+ */
 export function formalizeDesignSystem(
-  projectPath: string
+  projectPath: string,
+  promoteEntryIds: readonly string[] = []
 ): PhaseCommandSuccess | FormalizeFailure {
+  const promoteIds = [
+    ...new Set(
+      promoteEntryIds.map((id) => id.trim()).filter((id) => id.length > 0)
+    )
+  ];
+
+  // -- Phase 1 (read-only): phase gate, feedback gate, candidate lookup.
+  let promotedRows: PromotedEntryRow[] = [];
+  {
+    let db: DatabaseType;
+    try {
+      db = openProjectDb(projectPath);
+    } catch {
+      return { ok: false, reason: "db_error" };
+    }
+    try {
+      const current = readProjectPhaseOnDb(db);
+      if (current !== "design_system_formal") {
+        return { ok: false, reason: "phase_gate", phase: current };
+      }
+      const unreviewed = countUnreviewedDesignerFeedbackOnDb(db);
+      if (unreviewed > 0) {
+        return {
+          ok: false,
+          reason: "unreviewed_feedback",
+          phase: current,
+          unreviewed_feedback_count: unreviewed
+        };
+      }
+      for (const id of promoteIds) {
+        const row = db
+          .prepare(
+            `SELECT id, entry_id, source_artifact_path, file_kind, status,
+                    links_json
+             FROM design_system_entries WHERE id = ? OR entry_id = ?`
+          )
+          .get(id, id) as PromotedEntryRow | undefined;
+        if (!row) return { ok: false, reason: "candidate_entry_not_found" };
+        if (row.status !== "candidate") {
+          return { ok: false, reason: "candidate_entry_not_candidate" };
+        }
+        promotedRows.push(row);
+      }
+    } catch {
+      return { ok: false, reason: "db_error" };
+    } finally {
+      closeProjectDb(db);
+    }
+  }
+
+  // -- Phase 2: flip the promoted statuses in the source files. Original
+  //    bytes stay in memory for the restore path; a file the Runtime cannot
+  //    flip fails the whole promotion before any DB write.
+  const writtenFiles: Array<{
+    absolutePath: string;
+    relativePath: string;
+    fileKind: DesignSystemFileKind;
+    originalContent: string;
+    newContent: string;
+    parsed: Record<string, unknown>;
+  }> = [];
+  const approvedDigestByRow = new Map<string, string>();
+  const restoreWrittenFiles = () => {
+    for (const file of writtenFiles) {
+      try {
+        writeFileSync(file.absolutePath, file.originalContent, "utf-8");
+      } catch {
+        // Best-effort restore; the reported failure reason stands.
+      }
+    }
+  };
+  {
+    const rowsByPath = new Map<string, PromotedEntryRow[]>();
+    for (const row of promotedRows) {
+      const list = rowsByPath.get(row.source_artifact_path) ?? [];
+      list.push(row);
+      rowsByPath.set(row.source_artifact_path, list);
+    }
+    for (const [sourcePath, rows] of rowsByPath) {
+      const absolutePath = resolveProjectArtifactPath(projectPath, sourcePath);
+      if (absolutePath === null) {
+        restoreWrittenFiles();
+        return { ok: false, reason: "artifact_path_escape" };
+      }
+      const fileKind = rows[0].file_kind as DesignSystemFileKind;
+      let originalContent: string;
+      try {
+        originalContent = readFileSync(absolutePath, "utf-8");
+      } catch {
+        restoreWrittenFiles();
+        return { ok: false, reason: "artifact_file_missing" };
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(originalContent);
+      } catch {
+        restoreWrittenFiles();
+        return { ok: false, reason: "invalid_design_system_json" };
+      }
+      if (!isPlainObject(parsed)) {
+        restoreWrittenFiles();
+        return { ok: false, reason: "invalid_design_system_json" };
+      }
+      for (const row of rows) {
+        const entryObject = locateEntryObject(fileKind, parsed, row.entry_id);
+        if (entryObject === null) {
+          restoreWrittenFiles();
+          return {
+            ok: false,
+            reason: "entry_not_in_source_file",
+            details: {
+              source_artifact_path: sourcePath,
+              entry_id: row.entry_id
+            }
+          };
+        }
+        entryObject.status = "formalized";
+        // DB links are the evidence-authoritative envelope (same convention
+        // as the edit flow).
+        entryObject.links = JSON.parse(row.links_json) as string[];
+        approvedDigestByRow.set(
+          row.id,
+          designSystemEntryContentDigest(entryObject)
+        );
+      }
+      const validation = validateDesignSystemJson(fileKind, parsed);
+      if (!validation.ok) {
+        restoreWrittenFiles();
+        return {
+          ok: false,
+          reason: "invalid_design_system_json",
+          details: { reason: validation.reason, details: validation.details }
+        };
+      }
+      const newContent = `${stableJsonStringify(parsed)}\n`;
+      try {
+        writeFileSync(absolutePath, newContent, "utf-8");
+      } catch {
+        restoreWrittenFiles();
+        return { ok: false, reason: "write_failed" };
+      }
+      writtenFiles.push({
+        absolutePath,
+        relativePath: sourcePath,
+        fileKind,
+        originalContent,
+        newContent,
+        parsed
+      });
+    }
+  }
+
+  // -- Phase 3: transaction (row updates + phase + events in one commit),
+  //    re-checking every gate so a concurrent change fails without keeping
+  //    the file writes.
   try {
     const transaction = withProjectTransaction(projectPath, (db) => {
       const current = readProjectPhaseOnDb(db);
@@ -267,18 +475,93 @@ export function formalizeDesignSystem(
         };
       }
       const now = new Date().toISOString();
+      for (const row of promotedRows) {
+        const status = (
+          db
+            .prepare(`SELECT status FROM design_system_entries WHERE id = ?`)
+            .get(row.id) as { status: string } | undefined
+        )?.status;
+        if (status === undefined) {
+          return { ok: false as const, reason: "candidate_entry_not_found" as const };
+        }
+        if (status !== "candidate") {
+          return {
+            ok: false as const,
+            reason: "candidate_entry_not_candidate" as const
+          };
+        }
+      }
+      for (const row of promotedRows) {
+        db.prepare(
+          `UPDATE design_system_entries
+           SET status = 'formalized', updated_at = ?
+           WHERE id = ?`
+        ).run(now, row.id);
+      }
       db.prepare(
         `UPDATE project_phase SET phase = ?, updated_at = ? WHERE singleton = 1`
       ).run("ready_for_new_design", now);
       const event = buildLoggedEvent("design_system_formalized", {
         from_phase: "design_system_formal",
         phase: "ready_for_new_design",
-        command: "formalize_design_system"
+        command: "formalize_design_system",
+        promoted_entry_ids: promoteIds
       });
       insertEvent(db, event);
-      return { ok: true as const, event };
+      // Approval-grade provenance per promoted entry: the status gate checks
+      // source path + entry id + content digest when this file is re-ingested.
+      for (const row of promotedRows) {
+        logEventOnDb(db, "design_system_entry_approved", {
+          source_artifact_path: row.source_artifact_path,
+          entry_id: row.entry_id,
+          content_digest: approvedDigestByRow.get(row.id),
+          from: "candidate",
+          to: "formalized",
+          via: "formalize_design_system"
+        });
+      }
+      return { ok: true as const, event, promotedCount: promoteIds.length };
     });
-    if (!transaction.ok) return transaction;
+    if (!transaction.ok) {
+      restoreWrittenFiles();
+      return transaction;
+    }
+
+    // -- Phase 4 (post-commit): digest ledger (only when the written file
+    //    matches the DB rows), invalidation, derived export.
+    for (const file of writtenFiles) {
+      recordDesignSystemDigestIfConsistent(
+        projectPath,
+        file.fileKind,
+        file.parsed,
+        file.relativePath,
+        file.newContent
+      );
+    }
+    emitRecordEvent({
+      kind: "phase",
+      action: "updated",
+      id: "project-phase",
+      projectPath: path.resolve(projectPath)
+    });
+    if (transaction.promotedCount > 0) {
+      // Candidate → formalized flips change Design System Browser data.
+      emitRecordEvent({
+        kind: "design-system",
+        action: "updated",
+        id: "design-system-entries",
+        projectPath: path.resolve(projectPath)
+      });
+      const exportResult = writeDesignSystemViewExport(projectPath);
+      if (!exportResult.ok) {
+        logInvalidToolEvent(
+          projectPath,
+          "invalid_output",
+          "design_system_view_export",
+          exportResult.reason
+        );
+      }
+    }
     return {
       ok: true,
       phase: "ready_for_new_design",
@@ -286,6 +569,7 @@ export function formalizeDesignSystem(
       event_id: transaction.event.event_id
     };
   } catch {
+    restoreWrittenFiles();
     return { ok: false, reason: "db_error" };
   }
 }
@@ -293,36 +577,11 @@ export function formalizeDesignSystem(
 export function abandonProjectPhase(
   projectPath: string
 ): PhaseCommandResult {
-  try {
-    const transaction = withProjectTransaction(projectPath, (db) => {
-      const current = readProjectPhaseOnDb(db);
-      if (!ABANDONABLE.has(current)) {
-        return {
-          ok: false as const,
-          reason: "phase_gate" as const,
-          phase: current
-        };
-      }
-      const now = new Date().toISOString();
-      db.prepare(
-        `UPDATE project_phase SET phase = ?, updated_at = ? WHERE singleton = 1`
-      ).run("seed", now);
-      const event = buildLoggedEvent("project_phase_abandoned", {
-        from_phase: current,
-        phase: "seed",
-        command: "abandon_project_phase"
-      });
-      insertEvent(db, event);
-      return { ok: true as const, event, from_phase: current };
-    });
-    if (!transaction.ok) return transaction;
-    return {
-      ok: true,
-      phase: "seed",
-      from_phase: transaction.from_phase,
-      event_id: transaction.event.event_id
-    };
-  } catch {
-    return { ok: false, reason: "db_error" };
-  }
+  return transitionPhase(
+    projectPath,
+    [...ABANDONABLE],
+    "seed",
+    "project_phase_abandoned",
+    "abandon_project_phase"
+  );
 }

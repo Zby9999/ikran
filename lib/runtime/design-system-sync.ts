@@ -94,7 +94,7 @@ type DbEntryRow = {
  * provenance). design-system.json also carries the system name in
  * design_system_meta, so that file must match it too.
  */
-function designSystemFileMatchesDbRows(
+export function designSystemFileMatchesDbRows(
   db: DatabaseSync,
   fileKind: DesignSystemFileKind,
   json: unknown,
@@ -152,6 +152,38 @@ function designSystemFileMatchesDbRows(
   const sortedFile = [...fileRows].sort();
   const sortedDb = [...dbRows].sort();
   return sortedFile.every((row, index) => row === sortedDb[index]);
+}
+
+/**
+ * Digest-ledger write for the single-entry write-back flows (approve/edit).
+ * Those flows rewrite the WHOLE source file while updating a single DB row.
+ * Recording the whole-file digest unconditionally would launder any other
+ * entry's undeclared drift into the sync ledger: the lazy sync compares file
+ * bytes against this digest and skips re-ingest on a match, so the drift
+ * would become invisible. Record only when the written file matches the DB
+ * rows exactly; otherwise leave the digest stale so the next view read
+ * re-ingests (healing legitimate edits) or surfaces a sync warning.
+ * Best-effort: a stale digest only costs an extra sync pass.
+ */
+export function recordDesignSystemDigestIfConsistent(
+  projectPath: string,
+  fileKind: DesignSystemFileKind,
+  json: unknown,
+  sourcePath: string,
+  content: string
+): void {
+  try {
+    const db = openProjectDb(projectPath);
+    try {
+      if (designSystemFileMatchesDbRows(db, fileKind, json, sourcePath)) {
+        recordSourceContentDigest(db, sourcePath, sourceContentDigestOf(content));
+      }
+    } finally {
+      closeProjectDb(db);
+    }
+  } catch {
+    // Best-effort: leaving the digest stale only triggers an extra sync pass.
+  }
 }
 
 /**

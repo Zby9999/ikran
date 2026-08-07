@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, test } from "vitest";
 
@@ -926,5 +927,69 @@ test("legacy token meanings fail closed and are never repaired during edits", ()
     expect(result).toMatchObject({ ok: false, reason: "token_meaning_forbidden" });
     expect(readFileSync(sourcePath, "utf8")).toBe(original);
     expect(listEvents(projectPath, "design_system_entry_edited")).toHaveLength(0);
+  });
+});
+
+test("edit leaves the digest stale when another entry drifted undeclared", () => {
+  withTempProject((projectPath) => {
+    ingestGapRule(projectPath);
+    // Agent silently rewrites another rule's value on disk (no declaration):
+    // the file now drifts from the DB rows.
+    const source = JSON.parse(
+      readFileSync(
+        path.join(projectPath, "design-system/interaction-rules.json"),
+        "utf8"
+      )
+    ) as { rules: Array<{ id: string; value: unknown }> };
+    source.rules.find((rule) => rule.id === "interaction.prose")!.value =
+      "Agent rewrote this on disk.";
+    writeJson(projectPath, "design-system/interaction-rules.json", source);
+
+    const result = editDesignSystemEntry(projectPath, {
+      sourceArtifactPath: "design-system/interaction-rules.json",
+      entryId: "interaction.focus",
+      field: "meaning",
+      text: "Focus always visible"
+    });
+    expect(result).toMatchObject({ ok: true });
+
+    // The written-back file must NOT enter the digest ledger: recording
+    // these bytes would hide the prose drift from the lazy file→DB sync.
+    const db = new DatabaseSync(getProjectDbPath(projectPath));
+    try {
+      const row = db
+        .prepare(
+          "SELECT content_digest FROM source_artifacts WHERE path = 'design-system/interaction-rules.json'"
+        )
+        .get() as { content_digest: string | null };
+      const fileDigest = createHash("sha256")
+        .update(
+          readFileSync(
+            path.join(projectPath, "design-system/interaction-rules.json")
+          )
+        )
+        .digest("hex");
+      expect(row.content_digest).not.toBe(fileDigest);
+    } finally {
+      db.close();
+    }
+
+    // The next view read notices the byte mismatch and re-ingests, healing
+    // the drifted prose value into the DB.
+    const view = getDesignSystemView(projectPath);
+    expect(view.ok).toBe(true);
+    const dbAfter = new DatabaseSync(getProjectDbPath(projectPath));
+    try {
+      const prose = dbAfter
+        .prepare(
+          `SELECT value_json FROM design_system_entries
+           WHERE source_artifact_path = 'design-system/interaction-rules.json'
+             AND entry_id = 'interaction.prose'`
+        )
+        .get() as { value_json: string };
+      expect(JSON.parse(prose.value_json)).toBe("Agent rewrote this on disk.");
+    } finally {
+      dbAfter.close();
+    }
   });
 });

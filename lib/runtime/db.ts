@@ -14,8 +14,10 @@
 // Schema evolution uses `PRAGMA user_version` (see `./migrations`). Existing
 // DBs without a version are treated as v0. Before applying migrations to an
 // existing non-empty DB, a deterministic `{ikran.db}.v{fromVersion}.bak`
-// snapshot is created (fail-closed on same-version conflict or I/O failure).
-// Brand-new DBs are not backed up.
+// snapshot is created unless one already exists — a leftover snapshot from an
+// earlier (possibly interrupted) migration attempt already preserves the
+// pre-migration state, so it is kept and migration proceeds. Brand-new DBs
+// are not backed up.
 
 import { DatabaseSync } from "node:sqlite";
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
@@ -55,7 +57,11 @@ function isExistingNonEmptyDb(dbPath: string): boolean {
 /**
  * Deterministic pre-migration backup. `VACUUM INTO` creates a transactionally
  * consistent SQLite snapshot, including committed pages still resident in WAL.
- * Fail-closed: existing backup path or snapshot failure aborts migration.
+ * If the snapshot for `fromVersion` already exists it is kept as-is (it was
+ * taken from the same pre-migration lineage) and migration proceeds — refusing
+ * here would permanently wedge a project whose earlier migration attempt
+ * interrupted after the backup but before the version bump. Fail-closed only
+ * on snapshot I/O failure.
  */
 export function backupProjectDbBeforeMigration(
   projectPath: string,
@@ -71,9 +77,7 @@ export function backupProjectDbBeforeMigration(
   }
 
   if (existsSync(bakPath)) {
-    throw new Error(
-      `Database migration backup already exists (refusing to overwrite): ${bakPath}`
-    );
+    return bakPath;
   }
 
   const source = new DatabaseSync(dbPath);

@@ -657,12 +657,35 @@ describe("approval UI states", () => {
     expect(failed).toMatchObject({ kind: "error", reason: "already_formalized" });
   });
 
-  test("approval failures use one short retry message", () => {
+  test("approval failures surface typed guidance; unknown reasons stay generic", () => {
+    expect(approvalErrorMessage("source_db_drift")).toBe(
+      "Source file changed outside this view. Reload and try again."
+    );
+    expect(approvalErrorMessage("concurrent_source_changed")).toBe(
+      "Changed while you worked. Reload and try again."
+    );
+    expect(approvalErrorMessage("concurrent_edit_superseded")).toBe(
+      "Changed while you worked. Reload and try again."
+    );
+    expect(approvalErrorMessage("already_formalized")).toBe(
+      "Already up to date. Reload to refresh."
+    );
+    expect(approvalErrorMessage("already_candidate")).toBe(
+      "Already up to date. Reload to refresh."
+    );
+    expect(approvalErrorMessage("gap_entry_not_approvable")).toBe(
+      "Gaps can't be switched — the agent fills them first."
+    );
+    expect(approvalErrorMessage("not_found")).toBe(
+      "Entry no longer exists. Reload to refresh."
+    );
+    expect(approvalErrorMessage("entry_not_in_source_file")).toBe(
+      "Entry no longer exists. Reload to refresh."
+    );
     for (const reason of [
       "formalized_requires_designer_edited_link",
-      "gap_entry_not_approvable",
-      "already_formalized",
-      "not_found",
+      "db_error",
+      "write_failed",
       "some_other_reason"
     ]) {
       expect(approvalErrorMessage(reason)).toBe("Couldn't update. Try again.");

@@ -16,6 +16,15 @@ import {
 
 const emptyInputSchema = z.object({});
 
+const formalizeInputSchema = z.object({
+  promoteEntryIds: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Candidate adjudication: design_system_entries ids (row id or entry_id) the designer chose to promote candidate → formalized during the chat review. Unlisted candidates stay candidate. Every id must exist and currently be a candidate."
+    )
+});
+
 function phaseFailure(
   toolName: string,
   result: { ok: false; reason: string; phase?: string; unreviewed_feedback_count?: number },
@@ -57,7 +66,7 @@ export function registerProjectPhaseTools(
     "confirm_prototype",
     {
       description:
-        "Declare that the designer confirmed Prototype modifications and audit. Advances prototype_validation to design_system_formal. Prototype file edits must go through the Agent (chat → Agent edit → record_designer_feedback); do not edit prototype files directly. Rejected out of order.",
+        "Declare that the designer confirmed Prototype modifications and audit. Advances prototype_validation to design_system_formal; also re-enters design_system_formal from ready_for_new_design after a new-design-run prototype is confirmed, so the Design System can be formalized again (v2, v3, …). After advancing, keep the turn going autonomously — do not stop to ask: claim_consolidate_review to give every designer feedback an outcome (consumed via confirm_rule_update, or dismiss_designer_feedback with a reason), adjudicate candidates with the designer, then call formalize_design_system. Prototype file edits must go through the Agent (chat → Agent edit → record_designer_feedback); do not edit prototype files directly. Rejected out of order.",
       inputSchema: emptyInputSchema
     },
     async () => {
@@ -68,7 +77,10 @@ export function registerProjectPhaseTools(
       }
       const result = confirmPrototypeCommand(active.project.path);
       return result.ok
-        ? successResult(rt, result)
+        ? successResult(rt, {
+            ...result,
+            next: "Continue autonomously: claim_consolidate_review → outcome every feedback → formalize_design_system. Do not stop to ask."
+          })
         : phaseFailure("confirm_prototype", result, rt);
     }
   );
@@ -77,16 +89,19 @@ export function registerProjectPhaseTools(
     "formalize_design_system",
     {
       description:
-        "Formalize the Design System as v1 and advance design_system_formal to ready_for_new_design. Requires every designer_feedback row to be marked consumed in designer_feedback_review_consumption (written when Issue 29 confirms a proposal that references that feedback); otherwise rejects with unreviewed_feedback_count. Rejected out of order.",
-      inputSchema: emptyInputSchema
+        "Formalize the Design System and advance design_system_formal to ready_for_new_design. Requires every designer_feedback row to be marked consumed in designer_feedback_review_consumption (written when Issue 29 confirms a proposal that references that feedback); otherwise rejects with unreviewed_feedback_count. Pass promoteEntryIds to adjudicate Candidates chosen during the chat review: those entries flip candidate → formalized in the same transaction, and their source files are rewritten with the formalized status so file and DB stay in step; unlisted candidates stay candidate. Rejected out of order.",
+      inputSchema: formalizeInputSchema
     },
-    async () => {
+    async (args) => {
       const rt = await ensureRuntime();
       const active = requireActiveProjectCommand();
       if (!active.ok) {
         return failureResult("formalize_design_system", active.reason, rt);
       }
-      const result = formalizeDesignSystemCommand(active.project.path);
+      const result = formalizeDesignSystemCommand(
+        active.project.path,
+        args.promoteEntryIds ?? []
+      );
       return result.ok
         ? successResult(rt, result)
         : phaseFailure("formalize_design_system", result, rt);
