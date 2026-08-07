@@ -24,17 +24,20 @@ import {
   withProjectTransaction
 } from "./db";
 import { logEventOnDb } from "./events";
+import { parseJsonStringArray } from "./json-columns";
 import { emitRecordEvent } from "./record-bus";
 import { assertArtifactPathInProject } from "./evidence-package";
 import { requireProjectPhase, type ProjectPhase } from "./project-phase";
 import {
   allocatePreviewPort,
   defaultPreviewSupervisorDeps,
+  isAllowedDevCommand,
   previewUrlForPort,
   startPreviewServer,
   type PreviewReadiness,
   type PreviewSupervisorDeps
 } from "./preview-server";
+import { capturePrototypeSurfaceScreenshot } from "./prototype-screenshot";
 
 /** Phases where a prototype preview is meaningful (post confirm_draft). */
 export const PREVIEW_ALLOWED_PHASES = [
@@ -71,6 +74,9 @@ export interface PrototypeSurfaceRecord {
   readiness_reason: string | null;
   stale: boolean;
   stale_reason: string | null;
+  /** Runtime-captured preview bitmap, project-relative; null until captured. */
+  screenshot_artifact_path: string | null;
+  screenshot_captured_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -92,6 +98,7 @@ export interface RecordPreviewInput {
 
 export type RecordPreviewFailureReason =
   | "invalid_preview"
+  | "dev_command_not_allowed"
   | "phase_gate"
   | "prototype_artifact_not_declared"
   | "linkage_record_not_found"
@@ -184,22 +191,12 @@ function mapRun(row: Record<string, unknown>): PrototypeRunRecord {
     source_artifact_path: String(row.source_artifact_path),
     prototype_root: String(row.prototype_root),
     dev_command: String(row.dev_command),
-    seed_reference_ids: parseIdsJson(row.seed_reference_ids_json),
-    evidence_version_ids: parseIdsJson(row.evidence_version_ids_json),
+    seed_reference_ids: parseJsonStringArray(row.seed_reference_ids_json),
+    evidence_version_ids: parseJsonStringArray(row.evidence_version_ids_json),
     design_system_version: String(row.design_system_version),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at)
   };
-}
-
-function parseIdsJson(value: unknown): string[] {
-  if (typeof value !== "string") return [];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? parsed.map((entry) => String(entry)) : [];
-  } catch {
-    return [];
-  }
 }
 
 function mapSurface(row: Record<string, unknown>): PrototypeSurfaceRecord {
@@ -221,6 +218,16 @@ function mapSurface(row: Record<string, unknown>): PrototypeSurfaceRecord {
       row.stale_reason === null || row.stale_reason === undefined
         ? null
         : String(row.stale_reason),
+    screenshot_artifact_path:
+      row.screenshot_artifact_path === null ||
+      row.screenshot_artifact_path === undefined
+        ? null
+        : String(row.screenshot_artifact_path),
+    screenshot_captured_at:
+      row.screenshot_captured_at === null ||
+      row.screenshot_captured_at === undefined
+        ? null
+        : String(row.screenshot_captured_at),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at)
   };
@@ -322,6 +329,47 @@ export function setPreviewReadiness(
 }
 
 /**
+ * Persist the Runtime-captured preview bitmap for one surface. Fired after a
+ * successful capture; the artifact path is project-relative (like
+ * evidence-media paths) so the Workbench serves it via /api/artifacts.
+ */
+export function setPrototypeSurfaceScreenshot(
+  projectPath: string,
+  surfaceId: string,
+  artifactPath: string
+): { ok: true; event_id: string | null } | { ok: false; reason: string } {
+  try {
+    const result = withProjectTransaction(projectPath, (db) => {
+      const row = db
+        .prepare(`${SURFACE_SELECT} WHERE s.id = ?`)
+        .get(surfaceId) as Record<string, unknown> | undefined;
+      if (!row) {
+        return { ok: false as const, reason: "surface_record_not_found" };
+      }
+      const now = new Date().toISOString();
+      db.prepare(
+        `UPDATE prototype_surfaces
+         SET screenshot_artifact_path = ?, screenshot_captured_at = ?,
+             updated_at = ?
+         WHERE id = ?`
+      ).run(artifactPath, now, now, surfaceId);
+      return { ok: true as const, event_id: null };
+    });
+    if (result.ok) {
+      emitRecordEvent({
+        kind: "prototype",
+        action: "updated",
+        id: surfaceId,
+        projectPath: path.resolve(projectPath)
+      });
+    }
+    return result;
+  } catch {
+    return { ok: false, reason: "db_error" };
+  }
+}
+
+/**
  * Mark a surface stale (dev server exited, prototype code changed). Runtime
  * warns and stops: it never auto-restarts and never deletes the surface.
  * Idempotent — a surface already stale does not log a second event.
@@ -383,6 +431,236 @@ function markSurfacesStaleOnDb(
     staleIds.push(surface.id);
   }
   return staleIds;
+}
+
+/**
+ * Stale reason for surfaces whose dev server was stopped by a clean Runtime
+ * shutdown. Distinct from `code_changed` / `dev_server_exited`: the preview
+ * inputs did not change, so the next launch may restore the surface from its
+ * persisted run record instead of waiting for an Agent re-declaration.
+ */
+export const RUNTIME_SHUTDOWN_STALE_REASON = "runtime_shutdown";
+
+/**
+ * Runtime is shutting down: every surface claiming a live state goes stale
+ * with `runtime_shutdown` (the dev-server children are killed separately via
+ * `killAllPreviewServers`). Already-stale surfaces keep their original reason,
+ * and `failed` surfaces stay failed — a terminal failure is not restorable.
+ */
+export function markPrototypeSurfacesStaleForShutdown(
+  projectPath: string
+): { ok: true; stale_ids: string[] } | { ok: false; reason: string } {
+  try {
+    const result = withProjectTransaction(projectPath, (db) => {
+      const rows = db
+        .prepare(`${SURFACE_SELECT} WHERE s.stale = 0 AND s.readiness != 'failed'`)
+        .all() as Array<Record<string, unknown>>;
+      const staleIds = markSurfacesStaleOnDb(
+        db,
+        rows.map(mapSurface),
+        RUNTIME_SHUTDOWN_STALE_REASON
+      );
+      return { ok: true as const, stale_ids: staleIds };
+    });
+    if (result.ok) {
+      for (const id of result.stale_ids) {
+        emitRecordEvent({
+          kind: "prototype",
+          action: "updated",
+          id,
+          projectPath: path.resolve(projectPath)
+        });
+      }
+    }
+    return result;
+  } catch {
+    return { ok: false, reason: "db_error" };
+  }
+}
+
+/**
+ * Restore pass candidates: the surface row plus the run fields needed to
+ * respawn its dev server (root + command; the port lives on the surface).
+ */
+type RestoreCandidate = {
+  surface: PrototypeSurfaceRecord;
+  prototype_root: string;
+  dev_command: string;
+};
+
+const RESTORE_CANDIDATE_SELECT = `
+  SELECT s.*, r.run_id AS run_id, r.prototype_root AS prototype_root,
+         r.dev_command AS dev_command
+  FROM prototype_surfaces s
+  JOIN prototype_runs r ON r.id = s.prototype_run_id
+`;
+
+/**
+ * Flip one surface to a fresh restore attempt: `starting`, stale cleared.
+ * No lifecycle event — only terminal readiness states enter the audit trail.
+ */
+function setSurfaceRestoreStarting(
+  projectPath: string,
+  surfaceId: string
+): void {
+  try {
+    withProjectTransaction(projectPath, (db) => {
+      db.prepare(
+        `UPDATE prototype_surfaces
+         SET readiness = 'starting', readiness_reason = NULL,
+             stale = 0, stale_reason = NULL, updated_at = ?
+         WHERE id = ?`
+      ).run(new Date().toISOString(), surfaceId);
+    });
+    emitRecordEvent({
+      kind: "prototype",
+      action: "updated",
+      id: surfaceId,
+      projectPath: path.resolve(projectPath)
+    });
+  } catch {
+    // Best-effort: the probe / respawn below still reports the terminal state.
+  }
+}
+
+export interface RestorePrototypePreviewsResult {
+  ok: true;
+  /** Surfaces whose preview URL still answered — adopted without a respawn. */
+  adopted: string[];
+  /** Surfaces whose dev server was respawned and became ready. */
+  restarted: string[];
+  /** Surfaces whose restore attempt ended in a failed readiness. */
+  failed: string[];
+}
+
+export interface RestorePrototypePreviewsOptions {
+  supervisor?: PreviewSupervisorDeps;
+  /** Overall budget per respawned surface (ms). */
+  timeoutMs?: number;
+}
+
+/**
+ * Session restore after a Runtime (re)launch. Candidates are surfaces a clean
+ * shutdown parked (`runtime_shutdown`) and surfaces an unclean exit left
+ * claiming a live state (ready / starting / installing) — anything NOT stale
+ * for `code_changed` / `dev_server_exited`, which keep the Issue 30 "never
+ * auto-restart" semantics and still require an Agent re-declaration. A
+ * `failed` readiness is terminal and is left alone as well.
+ *
+ * Each candidate is adopted when its stable preview URL still answers, or
+ * respawned from its persisted run record (root + command + port) through the
+ * same supervisor used by recordPreview, so readiness transitions and the
+ * screenshot placeholder behave exactly like a fresh declaration.
+ *
+ * Never rejects: a DB failure yields an empty pass, so the fire-and-forget
+ * Workbench trigger has no unhandled rejection to swallow.
+ */
+export async function restorePrototypePreviews(
+  projectPath: string,
+  options: RestorePrototypePreviewsOptions = {}
+): Promise<RestorePrototypePreviewsResult> {
+  const supervisor = options.supervisor ?? defaultPreviewSupervisorDeps;
+  const empty: RestorePrototypePreviewsResult = {
+    ok: true,
+    adopted: [],
+    restarted: [],
+    failed: []
+  };
+
+  let candidates: RestoreCandidate[];
+  try {
+    const db = openProjectDb(projectPath);
+    try {
+      const rows = db.prepare(RESTORE_CANDIDATE_SELECT).all() as Array<
+        Record<string, unknown>
+      >;
+      candidates = rows
+        .filter(
+          (row) =>
+            row.stale_reason === RUNTIME_SHUTDOWN_STALE_REASON ||
+            (Number(row.stale) === 0 && row.readiness !== "failed")
+        )
+        .map((row) => ({
+          surface: mapSurface(row),
+          prototype_root: String(row.prototype_root),
+          dev_command: String(row.dev_command)
+        }));
+    } finally {
+      closeProjectDb(db);
+    }
+  } catch {
+    return empty;
+  }
+
+  // Flip synchronously, before the first probe await: a Workbench fetch that
+  // triggered this restore already sees honest `starting` rows instead of a
+  // dead "ready" iframe.
+  for (const candidate of candidates) {
+    setSurfaceRestoreStarting(projectPath, candidate.surface.id);
+  }
+
+  const adopted: string[] = [];
+  const restarted: string[] = [];
+  const failed: string[] = [];
+  for (const candidate of candidates) {
+    const { surface } = candidate;
+    // A dev server that survived the previous Runtime is adopted; nothing is
+    // respawned for a URL that already answers as the preview.
+    if (await supervisor.probeUrl(surface.preview_url)) {
+      setPreviewReadiness(projectPath, surface.id, "ready", null);
+      adopted.push(surface.id);
+      continue;
+    }
+    const outcome = await startPreviewServer(
+      {
+        root: path.join(path.resolve(projectPath), candidate.prototype_root),
+        command: candidate.dev_command,
+        port: surface.preview_port,
+        url: surface.preview_url,
+        timeoutMs: options.timeoutMs,
+        onReadiness: (readiness, reason) => {
+          setPreviewReadiness(projectPath, surface.id, readiness, reason);
+          if (readiness === "ready") {
+            void capturePrototypeSurfaceScreenshot(
+              projectPath,
+              surface.id,
+              surface.preview_url
+            );
+          }
+        },
+        onExit: (reason) => {
+          markPrototypeSurfaceStale(projectPath, surface.id, reason);
+        }
+      },
+      supervisor
+    );
+    if (outcome.readiness === "ready") restarted.push(surface.id);
+    else failed.push(surface.id);
+  }
+  return { ok: true, adopted, restarted, failed };
+}
+
+/** Projects whose previews this Runtime process already tried to restore. */
+const restoreAttemptedProjects = new Set<string>();
+
+/**
+ * Restore entry point for the Workbench: at most one restore pass per project
+ * per Runtime process. Returns the in-flight pass, or null when a pass
+ * already ran (callers may fire-and-forget either way).
+ */
+export function restorePrototypePreviewsOnce(
+  projectPath: string,
+  options: RestorePrototypePreviewsOptions = {}
+): Promise<RestorePrototypePreviewsResult> | null {
+  const key = path.resolve(projectPath);
+  if (restoreAttemptedProjects.has(key)) return null;
+  restoreAttemptedProjects.add(key);
+  return restorePrototypePreviews(projectPath, options);
+}
+
+/** Clear the once-per-process restore gate between tests. */
+export function resetPrototypePreviewRestoreForTests(): void {
+  restoreAttemptedProjects.clear();
 }
 
 /**
@@ -453,6 +731,11 @@ export async function recordPreview(
     evidenceVersionIds === null
   ) {
     return { ok: false, reason: "invalid_preview" };
+  }
+  // Runtime owns the shell (spawn with shell: true); the Agent may only name
+  // a package-manager script, never compose a command line.
+  if (!isAllowedDevCommand(devCommand)) {
+    return { ok: false, reason: "dev_command_not_allowed" };
   }
 
   const gate = requireProjectPhase(projectPath, PREVIEW_ALLOWED_PHASES);
@@ -621,6 +904,20 @@ export async function recordPreview(
         // the surface starts fresh instead of inheriting an old stale warning.
         stale: false,
         stale_reason: null,
+        // The UPDATE keeps the previously captured bitmap; it stays as the
+        // placeholder until the new readiness → screenshot round replaces it.
+        screenshot_artifact_path:
+          existingSurface === undefined ||
+          existingSurface.screenshot_artifact_path === null ||
+          existingSurface.screenshot_artifact_path === undefined
+            ? null
+            : String(existingSurface.screenshot_artifact_path),
+        screenshot_captured_at:
+          existingSurface === undefined ||
+          existingSurface.screenshot_captured_at === null ||
+          existingSurface.screenshot_captured_at === undefined
+            ? null
+            : String(existingSurface.screenshot_captured_at),
         created_at: existingSurface ? String(existingSurface.created_at) : now,
         updated_at: now
       };
@@ -658,6 +955,24 @@ export async function recordPreview(
           surface.updated_at
         );
       }
+
+      // Record + event in the same transaction: the run/surface declaration
+      // must exist in the canonical event log, not just the record tables.
+      logEventOnDb(db, "prototype_preview_declared", {
+        run_id: run.run_id,
+        prototype_run_id: run.id,
+        prototype_surface_id: surface.id,
+        surface_key: surface.surface_key,
+        action: existingSurface === undefined ? "created" : "updated",
+        run_created: existingRun === undefined,
+        source_artifact_path: run.source_artifact_path,
+        prototype_root: run.prototype_root,
+        seed_reference_ids: run.seed_reference_ids,
+        evidence_version_ids: run.evidence_version_ids,
+        design_system_version: run.design_system_version,
+        preview_url: surface.preview_url,
+        preview_port: surface.preview_port
+      });
 
       return {
         ok: true as const,
@@ -697,6 +1012,18 @@ export async function recordPreview(
           reason
         );
         if (applied.ok && applied.event_id) lifecycle.eventId = applied.event_id;
+        // Screenshot placeholder (Issue 30): once the preview answers, capture
+        // a bitmap so non-live surfaces show the page instead of text. Both
+        // ready paths (normal probe and occupied-port probe) flow through this
+        // same callback. Fire-and-forget — the tool call must never block on
+        // a headless browser, and a failed capture leaves the old bitmap.
+        if (readiness === "ready") {
+          void capturePrototypeSurfaceScreenshot(
+            projectPath,
+            upserted.surface.id,
+            previewUrl
+          );
+        }
       },
       onExit: (reason) => {
         markPrototypeSurfaceStale(projectPath, upserted.surface.id, reason);

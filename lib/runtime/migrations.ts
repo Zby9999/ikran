@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 28;
+export const CURRENT_SCHEMA_VERSION = 29;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1333,6 +1333,32 @@ CREATE INDEX IF NOT EXISTS idx_prototype_surfaces_created_at
         db.exec(
           `ALTER TABLE prototype_runs
            ADD COLUMN used_candidate_ids_json TEXT NOT NULL DEFAULT '[]'`
+        );
+      }
+    }
+  },
+  {
+    version: 29,
+    up(db) {
+      // Issue 30 screenshot placeholder: when a preview becomes ready, Runtime
+      // captures a bitmap of the preview URL (prototype-screenshot.ts) so the
+      // canvas can show the page instead of a text placeholder whenever the
+      // surface is not the live one. The path is project-relative, like the
+      // evidence-media artifact paths; captured_at records when it was taken.
+      const columns = db
+        .prepare("PRAGMA table_info(prototype_surfaces)")
+        .all() as Array<{ name: string }>;
+      const names = new Set(columns.map((column) => column.name));
+      if (!names.has("screenshot_artifact_path")) {
+        db.exec(
+          `ALTER TABLE prototype_surfaces
+           ADD COLUMN screenshot_artifact_path TEXT`
+        );
+      }
+      if (!names.has("screenshot_captured_at")) {
+        db.exec(
+          `ALTER TABLE prototype_surfaces
+           ADD COLUMN screenshot_captured_at TEXT`
         );
       }
     }

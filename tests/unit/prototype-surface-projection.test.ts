@@ -8,9 +8,12 @@ import {
   buildPrototypeSurfaceProjectionTargets,
   planPrototypeSurfaceProjectionOps
 } from "../../components/workbench/projection/prototype-surface-projection";
+import { planPrototypeSurfaceLiveShapeId } from "../../components/workbench/projection/prototype-surface-live-policy";
 import {
+  PROTOTYPE_SURFACE_LIVE_VIEWPORT_W,
   PROTOTYPE_SURFACE_PROJECTION_DEFAULT_H,
   PROTOTYPE_SURFACE_PROJECTION_DEFAULT_W,
+  prototypeSurfaceLiveViewport,
   prototypeSurfaceStatusText
 } from "../../components/workbench/prototype-surface-shape";
 import { buildFolderPageItems } from "../../components/workbench/folder-page-list";
@@ -33,6 +36,8 @@ function surfaceRecord(
     readiness_reason: null,
     stale: false,
     stale_reason: null,
+    screenshot_artifact_path: null,
+    screenshot_captured_at: null,
     created_at: "2026-08-06T00:00:00.000Z",
     updated_at: "2026-08-06T00:00:00.000Z",
     ...overrides
@@ -59,7 +64,8 @@ describe("prototype surface projection", () => {
         previewUrl: "http://127.0.0.1:4300",
         readiness: "ready",
         stale: false,
-        surfaceName: "Landing"
+        surfaceName: "Landing",
+        screenshotSrc: ""
       },
       meta: {
         canvasRecordId: "prototype-surface:proto-1",
@@ -69,6 +75,43 @@ describe("prototype surface projection", () => {
         surfaceKey: "landing"
       }
     });
+  });
+
+  test("a captured bitmap becomes an authenticated /api/artifacts URL", () => {
+    const ops = planPrototypeSurfaceProjectionOps(
+      buildPrototypeSurfaceProjectionTargets(
+        [
+          surfaceRecord({
+            screenshot_artifact_path:
+              ".ikran/artifacts/prototype-media/proto-1-1754430000000.png",
+            screenshot_captured_at: "2026-08-06T00:05:00.000Z"
+          })
+        ],
+        "session-token"
+      ),
+      [],
+      shapeIdForKey
+    );
+
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({
+      type: "create",
+      props: {
+        screenshotSrc:
+          "/api/artifacts/.ikran/artifacts/prototype-media/" +
+          "proto-1-1754430000000.png?session=session-token"
+      }
+    });
+
+    // No session token → no URL (the artifact endpoint would 401 anyway).
+    expect(
+      buildPrototypeSurfaceProjectionTargets([
+        surfaceRecord({
+          screenshot_artifact_path:
+            ".ikran/artifacts/prototype-media/proto-1-1754430000000.png"
+        })
+      ])[0].props.screenshotSrc
+    ).toBe("");
   });
 
   test("a new frame is packed clear of the seed frames already on the page", () => {
@@ -98,7 +141,8 @@ describe("prototype surface projection", () => {
           readinessReason: "",
           stale: false,
           staleReason: "",
-          surfaceName: "Landing"
+          surfaceName: "Landing",
+          screenshotSrc: ""
         },
         meta: {
           canvasRecordId: "prototype-surface:proto-1",
@@ -128,7 +172,8 @@ describe("prototype surface projection", () => {
           readinessReason: "",
           stale: true,
           staleReason: "code_changed",
-          surfaceName: "Landing"
+          surfaceName: "Landing",
+          screenshotSrc: ""
         }
       }
     ]);
@@ -161,7 +206,8 @@ describe("prototype surface projection", () => {
             readinessReason: "",
             stale: false,
             staleReason: "",
-            surfaceName: ""
+            surfaceName: "",
+            screenshotSrc: ""
           },
           meta: {
             canvasRecordId: "prototype-surface:proto-1",
@@ -175,6 +221,31 @@ describe("prototype surface projection", () => {
       shapeIdForKey
     );
     expect(ops).toEqual([{ type: "delete", id: "shape:proto-1" }]);
+  });
+});
+
+describe("prototypeSurfaceLiveViewport", () => {
+  test("lays out at the virtual viewport width and scales down to the body", () => {
+    const viewport = prototypeSurfaceLiveViewport(700, 800);
+
+    expect(viewport.width).toBe(PROTOTYPE_SURFACE_LIVE_VIEWPORT_W);
+    expect(viewport.scale).toBeCloseTo(700 / PROTOTYPE_SURFACE_LIVE_VIEWPORT_W);
+    // Height grows by the inverse scale so the scaled iframe fills the body.
+    expect(Math.round(viewport.height * viewport.scale)).toBe(800);
+  });
+
+  test("a body wider than the virtual viewport gets a real 1:1 viewport", () => {
+    const viewport = prototypeSurfaceLiveViewport(2000, 900);
+
+    expect(viewport).toEqual({ scale: 1, width: 2000, height: 900 });
+  });
+
+  test("an unmeasured body yields zero sizes (iframe stays hidden)", () => {
+    expect(prototypeSurfaceLiveViewport(0, 0)).toEqual({
+      scale: 1,
+      width: 0,
+      height: 0
+    });
   });
 });
 
@@ -252,5 +323,75 @@ describe("buildFolderPageItems", () => {
         prototypeSurfaces: []
       })
     ).toEqual([{ id: "surface-1", label: "Seed Page", kind: "figma" }]);
+  });
+});
+
+describe("single-live policy", () => {
+  const ready = (shapeId: string) => ({
+    shapeId,
+    readiness: "ready",
+    stale: false,
+    previewUrl: "http://127.0.0.1:4300"
+  });
+
+  test("a selected ready surface is live", () => {
+    expect(
+      planPrototypeSurfaceLiveShapeId({
+        surfaces: [ready("a"), ready("b")],
+        selectedShapeIds: ["b"],
+        autoLiveExitedShapeIds: new Set()
+      })
+    ).toBe("b");
+  });
+
+  test("the sole ready surface defaults to live when nothing is selected", () => {
+    expect(
+      planPrototypeSurfaceLiveShapeId({
+        surfaces: [ready("a")],
+        selectedShapeIds: [],
+        autoLiveExitedShapeIds: new Set()
+      })
+    ).toBe("a");
+  });
+
+  test("an explicitly exited sole surface stays a placeholder until re-selected", () => {
+    expect(
+      planPrototypeSurfaceLiveShapeId({
+        surfaces: [ready("a")],
+        selectedShapeIds: [],
+        autoLiveExitedShapeIds: new Set(["a"])
+      })
+    ).toBeNull();
+    expect(
+      planPrototypeSurfaceLiveShapeId({
+        surfaces: [ready("a")],
+        selectedShapeIds: ["a"],
+        autoLiveExitedShapeIds: new Set(["a"])
+      })
+    ).toBe("a");
+  });
+
+  test("two ready surfaces with no selection: none is live", () => {
+    expect(
+      planPrototypeSurfaceLiveShapeId({
+        surfaces: [ready("a"), ready("b")],
+        selectedShapeIds: [],
+        autoLiveExitedShapeIds: new Set()
+      })
+    ).toBeNull();
+  });
+
+  test("stale, non-ready, or URL-less surfaces are never live", () => {
+    expect(
+      planPrototypeSurfaceLiveShapeId({
+        surfaces: [
+          { ...ready("a"), stale: true },
+          { ...ready("b"), readiness: "starting" },
+          { ...ready("c"), previewUrl: " " }
+        ],
+        selectedShapeIds: [],
+        autoLiveExitedShapeIds: new Set()
+      })
+    ).toBeNull();
   });
 });

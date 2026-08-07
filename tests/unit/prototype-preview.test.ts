@@ -31,6 +31,7 @@ import {
 import {
   PREVIEW_PORT_BASE,
   allocatePreviewPort,
+  isAllowedDevCommand,
   previewUrlForPort,
   startPreviewServer,
   type PreviewSupervisorDeps
@@ -235,6 +236,24 @@ test("record_preview creates the run and surface it froze its inputs from", asyn
       })
     ]);
     expect(listEvents(projectPath, "preview_failed")).toEqual([]);
+
+    // Record + event in one transaction: the run/surface creation is in the
+    // canonical event log, not just the record tables.
+    expect(listEvents(projectPath, "prototype_preview_declared")).toEqual([
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          run_id: "run-30",
+          prototype_run_id: result.run.id,
+          prototype_surface_id: surfaces[0].id,
+          surface_key: "landing",
+          action: "created",
+          run_created: true,
+          source_artifact_path: PROTOTYPE_RELATIVE,
+          seed_reference_ids: [SEED_ID],
+          evidence_version_ids: [SURFACE_ID]
+        })
+      })
+    ]);
   });
 });
 
@@ -560,6 +579,59 @@ test("Issue 27 feedback linkage accepts a real prototype surface id", async () =
         prototypeSurfaceId: "forged-prototype"
       })
     ).toEqual({ ok: false, reason: "linkage_record_not_found" });
+  });
+});
+
+test("record_preview rejects a dev command outside the package-manager whitelist", async () => {
+  await withProject(async (projectPath) => {
+    declarePrototypeArtifact(projectPath);
+    enterPrototypeValidation(projectPath);
+
+    const injected = await recordPreview(
+      projectPath,
+      previewInput({ devCommand: "npm run dev && touch /tmp/pwned" }),
+      { supervisor: supervisor() }
+    );
+    expect(injected).toEqual({ ok: false, reason: "dev_command_not_allowed" });
+
+    const shelled = await recordPreview(
+      projectPath,
+      previewInput({ devCommand: "sh -c 'echo hi'" }),
+      { supervisor: supervisor() }
+    );
+    expect(shelled).toEqual({ ok: false, reason: "dev_command_not_allowed" });
+
+    // Nothing reached the record tables or the event log.
+    expect(listPrototypeSurfaces(projectPath)).toEqual([]);
+    expect(listEvents(projectPath, "prototype_preview_declared")).toEqual([]);
+    expect(listEvents(projectPath, "preview_started")).toEqual([]);
+  });
+});
+
+test("record_preview accepts package-manager script commands", async () => {
+  await withProject(async (projectPath) => {
+    declarePrototypeArtifact(projectPath);
+    enterPrototypeValidation(projectPath);
+
+    for (const devCommand of [
+      "npm run dev",
+      "pnpm dev",
+      "yarn dev",
+      "bun run dev",
+      "npx vite"
+    ]) {
+      expect(isAllowedDevCommand(devCommand)).toBe(true);
+    }
+    for (const devCommand of [
+      "npm run dev; rm -rf /",
+      "npm run dev $(whoami)",
+      "npm run dev > /tmp/x",
+      "npm run dev | cat",
+      "./start.sh",
+      "node server.js"
+    ]) {
+      expect(isAllowedDevCommand(devCommand)).toBe(false);
+    }
   });
 });
 

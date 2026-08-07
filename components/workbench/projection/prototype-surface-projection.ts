@@ -8,6 +8,7 @@ import {
   type PrototypeSurfaceProjectionShape
 } from "../prototype-surface-shape";
 import {
+  artifactScreenshotUrl,
   findNonOverlappingSeedProjectionLayout,
   type SeedProjectionBounds
 } from "./seed-projection";
@@ -48,28 +49,38 @@ export type PrototypeSurfaceProjectionOp =
   | { type: "delete"; id: string };
 
 export function buildPrototypeSurfaceProjectionTargets(
-  surfaces: PrototypeSurfaceRecord[]
+  surfaces: PrototypeSurfaceRecord[],
+  session = ""
 ): PrototypeSurfaceProjectionTarget[] {
-  return surfaces.map((surface) => ({
-    shapeKey: surface.id,
-    w: PROTOTYPE_SURFACE_PROJECTION_DEFAULT_W,
-    h: PROTOTYPE_SURFACE_PROJECTION_DEFAULT_H,
-    props: {
-      previewUrl: surface.preview_url,
-      readiness: surface.readiness,
-      readinessReason: surface.readiness_reason ?? "",
-      stale: surface.stale,
-      staleReason: surface.stale_reason ?? "",
-      surfaceName: surface.name
-    },
-    meta: {
-      canvasRecordId: `prototype-surface:${surface.id}`,
-      runtimeRecordId: surface.id,
-      kind: "prototype_surface",
-      runId: surface.run_id,
-      surfaceKey: surface.surface_key
-    }
-  }));
+  return surfaces.map((surface) => {
+    // Runtime-captured bitmap for the non-live placeholder (Issue 30); served
+    // through /api/artifacts with the startup session token, like seeds.
+    const artifactPath = surface.screenshot_artifact_path?.trim() ?? "";
+    return {
+      shapeKey: surface.id,
+      w: PROTOTYPE_SURFACE_PROJECTION_DEFAULT_W,
+      h: PROTOTYPE_SURFACE_PROJECTION_DEFAULT_H,
+      props: {
+        previewUrl: surface.preview_url,
+        readiness: surface.readiness,
+        readinessReason: surface.readiness_reason ?? "",
+        stale: surface.stale,
+        staleReason: surface.stale_reason ?? "",
+        surfaceName: surface.name,
+        screenshotSrc:
+          artifactPath && session
+            ? artifactScreenshotUrl(artifactPath, session)
+            : ""
+      },
+      meta: {
+        canvasRecordId: `prototype-surface:${surface.id}`,
+        runtimeRecordId: surface.id,
+        kind: "prototype_surface",
+        runId: surface.run_id,
+        surfaceKey: surface.surface_key
+      }
+    };
+  });
 }
 
 export function prototypeSurfacePropsEqual(
@@ -82,7 +93,8 @@ export function prototypeSurfacePropsEqual(
     a.readinessReason === b.readinessReason &&
     a.stale === b.stale &&
     a.staleReason === b.staleReason &&
-    a.surfaceName === b.surfaceName
+    a.surfaceName === b.surfaceName &&
+    a.screenshotSrc === b.screenshotSrc
   );
 }
 

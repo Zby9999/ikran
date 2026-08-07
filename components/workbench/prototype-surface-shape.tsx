@@ -10,13 +10,27 @@
 // WebProgrammingIcon on the right, then the running site filling the body. The
 // body embeds the Runtime-owned preview URL once readiness is `ready`; before
 // that (and when the surface is stale) it shows a placeholder describing the
-// lifecycle state instead of a blank white rectangle.
+// lifecycle state instead of a blank white rectangle. Once Runtime has captured
+// a screenshot of the ready preview, a non-live surface shows that bitmap with
+// a hint overlay instead of the text-only placeholder (Issue 30 screenshot
+// placeholder).
 //
-// The iframe is pointer-events: none on purpose — Issue 30 explicitly excludes
-// hover / DOM inspection, and it keeps canvas drag and selection working.
+// The live preview lays out at a fixed virtual viewport width
+// (PROTOTYPE_SURFACE_LIVE_VIEWPORT_W) and is CSS-scaled down to the body, so a
+// desktop page always fits the frame instead of being cropped 1:1 — the same
+// zoomed-out read the seed reference frames get from bitmap downscaling.
+//
+// Interaction (Issue 30 "focus 后 live iframe 可交互"): the live iframe keeps
+// pointer events on at all times, so the page is clickable / scrollable without
+// selecting the frame first. The iframe swallows pointer and wheel events, so
+// canvas selection, drag and zoom over the body no longer reach tldraw — the
+// header chrome stays the drag/selection handle. (The `tl-stop-scroll-and-zoom`
+// class suggested in Issue 30 does not exist in this tldraw version; an iframe
+// already isolates its wheel events from the canvas.)
 
 import { WebProgrammingIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { useEffect, useRef, useState, type SyntheticEvent } from "react";
 import {
   BaseBoxShapeUtil,
   HTMLContainer,
@@ -25,6 +39,8 @@ import {
   useEditor,
   useValue
 } from "tldraw";
+
+import { planPrototypeSurfaceLiveShapeId } from "./projection/prototype-surface-live-policy";
 
 declare module "@tldraw/tlschema" {
   interface TLGlobalShapePropsMap {
@@ -42,6 +58,8 @@ declare module "@tldraw/tlschema" {
       staleReason: string;
       /** Surface name from Runtime; the header label stays "Prototype". */
       surfaceName: string;
+      /** Runtime-captured bitmap shown when this surface is not the live one. */
+      screenshotSrc: string;
     };
   }
 }
@@ -68,6 +86,34 @@ export const PROTOTYPE_SURFACE_PROJECTION_TYPE =
 export const PROTOTYPE_SURFACE_PROJECTION_DEFAULT_W = 720;
 export const PROTOTYPE_SURFACE_PROJECTION_DEFAULT_H = 848;
 
+/** Virtual viewport width the live preview lays out at before CSS downscaling. */
+export const PROTOTYPE_SURFACE_LIVE_VIEWPORT_W = 1440;
+
+/**
+ * Live-preview sizing: render the iframe at the virtual viewport width and
+ * CSS-scale it into the body so the full page width always fits. Frames wider
+ * than the virtual viewport are treated as a deliberate enlarge — scale locks
+ * at 1 and the page gets a genuinely wider viewport instead of a blurry
+ * upscale. Returns zero sizes until the body has been measured.
+ */
+export function prototypeSurfaceLiveViewport(
+  bodyWidth: number,
+  bodyHeight: number
+): { scale: number; width: number; height: number } {
+  if (bodyWidth <= 0 || bodyHeight <= 0) {
+    return { scale: 1, width: 0, height: 0 };
+  }
+  const scale =
+    bodyWidth >= PROTOTYPE_SURFACE_LIVE_VIEWPORT_W
+      ? 1
+      : bodyWidth / PROTOTYPE_SURFACE_LIVE_VIEWPORT_W;
+  return {
+    scale,
+    width: Math.round(bodyWidth / scale),
+    height: Math.round(bodyHeight / scale)
+  };
+}
+
 const READINESS_LABEL: Record<
   PrototypeSurfaceProjectionShape["props"]["readiness"],
   string
@@ -77,6 +123,17 @@ const READINESS_LABEL: Record<
   ready: "Prototype is running",
   failed: "Prototype dev server failed"
 };
+
+/**
+ * Surfaces the designer explicitly exited (deselected after a live session).
+ * Module-level and session-only: auto-live is a default, and an explicit exit
+ * must stick for the rest of the session without persisting anywhere.
+ */
+const autoLiveExitedShapeIds = new Set<string>();
+
+function getAutoLiveExitedShapeIds(): Set<string> {
+  return autoLiveExitedShapeIds;
+}
 
 /** Designer-facing sentence for the Runtime lifecycle / stale state. */
 export function prototypeSurfaceStatusText(props: {
@@ -109,7 +166,8 @@ function PrototypeSurfaceFrame({
     readinessReason,
     stale,
     staleReason,
-    surfaceName
+    surfaceName,
+    screenshotSrc
   } = shape.props;
   const { canvasRecordId, runtimeRecordId, runId, surfaceKey } = shape.meta;
   const editor = useEditor();
@@ -118,31 +176,55 @@ function PrototypeSurfaceFrame({
     () => editor.getSelectedShapeIds().includes(shape.id),
     [editor, shape.id]
   );
-  // Single-live: only the selected ready surface mounts an iframe. If nothing
-  // is selected, the sole ready surface may stay live so a one-surface demo
-  // still shows the site without an extra click.
-  const isSoleLiveCandidate = useValue(
-    "prototype-surface-sole-live",
+  // Exit stickiness: deselecting the auto-live sole surface marks it as
+  // explicitly exited, so auto-live does not resurrect on the next render.
+  // Selecting it again clears the mark. Session-only, never persisted.
+  const exitedShapeIdsRef = useRef<Set<string>>(getAutoLiveExitedShapeIds());
+  const [exitVersion, setExitVersion] = useState(0);
+  const wasSelectedRef = useRef(isSelected);
+  useEffect(() => {
+    const wasSelected = wasSelectedRef.current;
+    wasSelectedRef.current = isSelected;
+    if (wasSelected === isSelected) return;
+    const exited = exitedShapeIdsRef.current;
+    if (isSelected) {
+      if (exited.delete(shape.id)) setExitVersion((v) => v + 1);
+    } else {
+      exited.add(shape.id);
+      setExitVersion((v) => v + 1);
+    }
+  }, [isSelected, shape.id]);
+  // Single-live: the policy decides which ready surface (if any) mounts an
+  // iframe — selected focus wins; the sole ready surface defaults to live
+  // unless the designer explicitly exited it.
+  const liveShapeId = useValue(
+    "prototype-surface-live",
     () => {
-      const readyIds = editor
+      const surfaces = editor
         .getCurrentPageShapes()
         .filter(
           (candidate) =>
-            candidate.type === PROTOTYPE_SURFACE_PROJECTION_TYPE &&
-            candidate.props.readiness === "ready" &&
-            !candidate.props.stale &&
-            String(candidate.props.previewUrl ?? "").trim().length > 0
+            candidate.type === PROTOTYPE_SURFACE_PROJECTION_TYPE
         )
-        .map((candidate) => candidate.id);
-      return readyIds.length === 1 && readyIds[0] === shape.id;
+        .map((candidate) => ({
+          shapeId: candidate.id,
+          readiness: String(candidate.props.readiness ?? ""),
+          stale: Boolean(candidate.props.stale),
+          previewUrl: String(candidate.props.previewUrl ?? "")
+        }));
+      return planPrototypeSurfaceLiveShapeId({
+        surfaces,
+        selectedShapeIds: [...editor.getSelectedShapeIds()],
+        autoLiveExitedShapeIds: exitedShapeIdsRef.current
+      });
     },
-    [editor, shape.id]
+    [editor, exitVersion]
   );
   const url = previewUrl.trim();
   // A stale surface still points at a URL nothing is serving — showing the
   // placeholder is the warning, an empty iframe would read as a broken site.
   const canLive = readiness === "ready" && !stale && url.length > 0;
-  const showLive = canLive && (isSelected || isSoleLiveCandidate);
+  const showLive = canLive && liveShapeId === shape.id;
   const status = canLive && !showLive
     ? "Select this surface to show the live preview"
     : prototypeSurfaceStatusText({
@@ -151,6 +233,42 @@ function PrototypeSurfaceFrame({
         stale,
         staleReason
       });
+  // Measure the body (layout pixels — ResizeObserver ignores the camera
+  // transform) so the live iframe can lay out at the virtual viewport and be
+  // CSS-scaled to fit. Re-measures on frame resize.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [bodySize, setBodySize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const element = bodyRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (!rect) return;
+      setBodySize((previous) =>
+        previous.width === rect.width && previous.height === rect.height
+          ? previous
+          : { width: rect.width, height: rect.height }
+      );
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const liveViewport = prototypeSurfaceLiveViewport(
+    bodySize.width,
+    bodySize.height
+  );
+  // Header action: open the running site in a real browser tab (D05 focus mode
+  // entry — the canvas frame stays the overview, the tab is the full
+  // experience). Pointer events stop here so the click never reads as a canvas
+  // selection or drag.
+  const stopShapePointer = (event: SyntheticEvent) => {
+    event.stopPropagation();
+  };
+  const openPreviewInTab = (event: SyntheticEvent) => {
+    stopShapePointer(event);
+    if (!url) return;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <HTMLContainer
@@ -178,15 +296,27 @@ function PrototypeSurfaceFrame({
         >
           Prototype
         </p>
-        <HugeiconsIcon
-          className="prototype-surface-frame__icon"
-          icon={WebProgrammingIcon}
-          size={14}
-          color="currentColor"
-          strokeWidth={1.5}
-        />
+        <button
+          type="button"
+          className="prototype-surface-frame__icon-button"
+          data-testid="prototype-surface-projection-open"
+          aria-label="Open prototype in a browser tab"
+          disabled={!url}
+          onPointerDown={stopShapePointer}
+          onMouseDown={stopShapePointer}
+          onClick={openPreviewInTab}
+        >
+          <HugeiconsIcon
+            className="prototype-surface-frame__icon"
+            icon={WebProgrammingIcon}
+            size={14}
+            color="currentColor"
+            strokeWidth={1.5}
+          />
+        </button>
       </div>
       <div
+        ref={bodyRef}
         className="prototype-surface-frame__body"
         data-testid="prototype-surface-projection-body"
         data-live={showLive ? "true" : "false"}
@@ -199,7 +329,36 @@ function PrototypeSurfaceFrame({
             title={surfaceName || "Prototype preview"}
             loading="lazy"
             sandbox="allow-scripts allow-same-origin"
+            style={
+              liveViewport.width > 0
+                ? {
+                    width: liveViewport.width,
+                    height: liveViewport.height,
+                    transform: `scale(${liveViewport.scale})`
+                  }
+                : { visibility: "hidden" }
+            }
           />
+        ) : canLive && screenshotSrc ? (
+          // Not the live surface but a bitmap was captured (Issue 30): show
+          // the page itself with a hint overlay instead of a text-only
+          // placeholder. The img is pointer-transparent so the non-live frame
+          // stays canvas-selectable like the placeholder.
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element -- same-origin /api/artifacts bitmap */}
+            <img
+              className="prototype-surface-frame__screenshot"
+              data-testid="prototype-surface-projection-screenshot"
+              src={screenshotSrc}
+              alt=""
+            />
+            <p
+              className="prototype-surface-frame__screenshot-hint"
+              role="status"
+            >
+              {status}
+            </p>
+          </>
         ) : (
           <div
             className="prototype-surface-frame__placeholder"
@@ -234,7 +393,8 @@ export class PrototypeSurfaceProjectionShapeUtil extends BaseBoxShapeUtil<Protot
     readinessReason: T.string,
     stale: T.boolean,
     staleReason: T.string,
-    surfaceName: T.string
+    surfaceName: T.string,
+    screenshotSrc: T.string
   };
 
   getDefaultProps(): PrototypeSurfaceProjectionShape["props"] {
@@ -246,7 +406,8 @@ export class PrototypeSurfaceProjectionShapeUtil extends BaseBoxShapeUtil<Protot
       readinessReason: "",
       stale: false,
       staleReason: "",
-      surfaceName: ""
+      surfaceName: "",
+      screenshotSrc: ""
     };
   }
 
@@ -266,6 +427,8 @@ export class PrototypeSurfaceProjectionShapeUtil extends BaseBoxShapeUtil<Protot
     return <PrototypeSurfaceFrame shape={shape} />;
   }
 
+  // The workbench suppresses tldraw's native indicators on every custom shape;
+  // the selected state reads through the frame chrome (--selected ring).
   override getIndicatorPath(_shape: PrototypeSurfaceProjectionShape) {
     return undefined;
   }

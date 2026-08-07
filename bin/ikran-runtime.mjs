@@ -51,6 +51,26 @@ const idleMs = Number(process.env.IKRAN_IDLE_SHUTDOWN_MS || 15 * 60_000);
 async function shutdown(code = 0) {
   if (stopping) return;
   stopping = true;
+  // Preview cleanup: park every live surface as stale ("runtime_shutdown")
+  // first — synchronously, so a killed child's exit handler can only ever see
+  // an already-stale row — then kill the Runtime-owned dev servers. The next
+  // launch restores the parked surfaces from their persisted run records.
+  try {
+    const { killAllPreviewServers } = await import(
+      pathToFileURL(path.join(appDir, "lib/runtime/preview-server.ts")).href
+    );
+    const { markPrototypeSurfacesStaleForShutdown } = await import(
+      pathToFileURL(path.join(appDir, "lib/runtime/prototype-surface.ts")).href
+    );
+    const { getActiveProject } = await import(
+      pathToFileURL(path.join(appDir, "lib/runtime/project.ts")).href
+    );
+    const activeProject = getActiveProject();
+    if (activeProject) markPrototypeSurfacesStaleForShutdown(activeProject);
+    killAllPreviewServers();
+  } catch {
+    // Preview cleanup is best-effort; shutdown must never hang on it.
+  }
   // Stop admitting new bridge connections, then let already-started command
   // writes finish before closing transports and the HTTP surface.
   const socketServerClosed = socketServer

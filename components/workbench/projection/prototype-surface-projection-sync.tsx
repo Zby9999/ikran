@@ -24,7 +24,8 @@ import type { PrototypeSurfaceRecord } from "@/lib/runtime/prototype-surface";
 
 function syncPrototypeSurfaceShapes(
   editor: ReturnType<typeof useEditor>,
-  surfaces: PrototypeSurfaceRecord[]
+  surfaces: PrototypeSurfaceRecord[],
+  session: string
 ): void {
   const pageShapes = editor.getCurrentPageShapes();
   const existing: PrototypeSurfaceProjectionExisting[] = pageShapes
@@ -44,7 +45,7 @@ function syncPrototypeSurfaceShapes(
     .map((s) => seedProjectionOccupiedBounds(s as SeedReferenceProjectionShape));
 
   const ops = planPrototypeSurfaceProjectionOps(
-    buildPrototypeSurfaceProjectionTargets(surfaces),
+    buildPrototypeSurfaceProjectionTargets(surfaces, session),
     existing,
     (surfaceId) => String(createShapeId(`prototype-surface:${surfaceId}`)),
     seedBounds
@@ -77,16 +78,19 @@ function syncPrototypeSurfaceShapes(
 }
 
 export function PrototypeSurfaceProjectionSync({
-  prototypeSurfaces
+  prototypeSurfaces,
+  session
 }: {
   prototypeSurfaces: PrototypeSurfaceRecord[];
+  /** Startup session token — screenshot bitmaps load via /api/artifacts. */
+  session: string;
 }) {
   const editor = useEditor();
 
   useEffect(() => {
     if (!editor) return;
-    syncPrototypeSurfaceShapes(editor, prototypeSurfaces);
-  }, [editor, prototypeSurfaces]);
+    syncPrototypeSurfaceShapes(editor, prototypeSurfaces, session);
+  }, [editor, prototypeSurfaces, session]);
 
   return null;
 }

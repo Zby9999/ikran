@@ -7,6 +7,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { authorize } from "../../../lib/runtime/session";
+import { restorePrototypePreviewsOnce } from "../../../lib/runtime/prototype-surface";
 import {
   commandErrorHttpStatus,
   listPrototypeSurfacesCommand,
@@ -32,6 +33,12 @@ export async function GET(request: NextRequest) {
       { status: commandErrorHttpStatus(state.reason) }
     );
   }
+
+  // Session restore (fire-and-forget, at most once per project per Runtime):
+  // surfaces parked by the previous Runtime's shutdown flip to `starting` —
+  // synchronously, so this very response is honest — then are adopted or
+  // respawned while the Workbench follows the normal record-event refresh.
+  void restorePrototypePreviewsOnce(state.project.path);
 
   const listed = listPrototypeSurfacesCommand(state.project.path);
   return NextResponse.json({ ok: true, records: listed.records });

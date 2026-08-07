@@ -284,7 +284,10 @@ export function WorkbenchCanvas({
         savedFrames={savedFrames}
         designLanguageDescription={designLanguageDescription}
       />
-      <PrototypeSurfaceProjectionSync prototypeSurfaces={prototypeSurfaces} />
+      <PrototypeSurfaceProjectionSync
+        prototypeSurfaces={prototypeSurfaces}
+        session={session}
+      />
       {onPutWorkbenchLayout && onFlushWorkbenchLayout ? (
         <WorkbenchLayoutPersistence
           session={session}

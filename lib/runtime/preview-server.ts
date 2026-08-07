@@ -33,6 +33,21 @@ export const PREVIEW_PORT_RANGE = 100;
 export const PREVIEW_READY_TIMEOUT_MS = 90_000;
 const PREVIEW_PROBE_INTERVAL_MS = 250;
 
+/**
+ * The Agent declares a dev command, but Runtime owns the shell — `devCommand`
+ * is executed with `shell: true`, so an unconstrained string would be a raw
+ * exec channel bypassing the semantic-tool boundary. Only package-manager
+ * script invocations are allowed (`npm run dev`, `pnpm dev`, `yarn dev`,
+ * `bun run dev`, `npx vite`); anything with shell metacharacters, pipes,
+ * chaining, or redirection is rejected before it ever reaches spawn.
+ */
+const ALLOWED_DEV_COMMAND =
+  /^(?:(?:npm|pnpm|yarn|bun)(?:\s+run)?\s+[a-zA-Z0-9:_-]+|npx\s+(?:[a-zA-Z0-9:@/._-]+\s+)?[a-zA-Z0-9:@/._-]+)$/;
+
+export function isAllowedDevCommand(command: string): boolean {
+  return ALLOWED_DEV_COMMAND.test(command.trim());
+}
+
 export interface PreviewProcessHandle {
   /** Resolves with the exit description once the dev server process ends. */
   exited: Promise<{ code: number | null; signal: string | null }>;
@@ -60,6 +75,29 @@ export type PreviewStartOutcome = {
   readiness: PreviewReadiness;
   reason: string | null;
 };
+
+/**
+ * Every dev server this Runtime spawned and has not seen exit. The Runtime
+ * process owns these children, so a clean shutdown sweeps the registry
+ * (`killAllPreviewServers`) instead of leaving orphaned servers behind.
+ */
+const livePreviewHandles = new Set<PreviewProcessHandle>();
+
+/**
+ * Kill every Runtime-owned preview dev server. Called on Runtime shutdown;
+ * the surfaces are marked stale (`runtime_shutdown`) separately, and the next
+ * launch restores them from their persisted run records.
+ */
+export function killAllPreviewServers(): void {
+  for (const handle of livePreviewHandles) {
+    try {
+      handle.kill();
+    } catch {
+      // Process already gone — nothing to sweep.
+    }
+  }
+  livePreviewHandles.clear();
+}
 
 export interface PreviewStartInput {
   root: string;
@@ -116,9 +154,11 @@ export async function startPreviewServer(
     command: input.command,
     port: input.port
   });
+  livePreviewHandles.add(handle);
 
   let exitReason: string | null = null;
   void handle.exited.then(() => {
+    livePreviewHandles.delete(handle);
     exitReason = exitReason ?? "dev_server_exited";
   });
 
@@ -137,6 +177,7 @@ export async function startPreviewServer(
   }
 
   handle.kill();
+  livePreviewHandles.delete(handle);
   input.onReadiness("failed", "preview_timeout");
   return { readiness: "failed", reason: "preview_timeout" };
 }
