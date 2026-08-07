@@ -347,3 +347,19 @@ prototype 表面在实现晋升后按惯例删除。
 风格，位置标记因 width=1 视为近满而不渲染）；待有真实代码后应换
 code-backed hero。声明脚本 `.scratch/declare-component-specs.ts`
 （一次性，tsx 直调 `recordArtifactWrittenCommand`）。
+
+### 2026-08-07 — code-backed 通道立项（issue 31/32/33）
+
+真实测试发现：设计系统正式化后组件库仍是抽取时代截图占位——
+`formalize_design_system` 只翻转条目身份，不回写 `codeLinks`，Agent
+引导链也无 code-backed 步骤。本文件「日后再要求 Agent 产 code-backed」
+的约定现立项承接，线性链：
+
+- issue 31：Prototype 代码回写（codeLinks backfill + Formalize 软提示）；
+- issue 32：code-backed capture（origin 字段 + 代码渲染截图）——上文
+  Slice 1「本 slice 未做」中的静态 code-backed 档与 Sticky Navigation
+  整页定位图遗留由此承接；
+- issue 33：code-backed hero 活渲染 + states hover 真切换——「本 slice
+  未做」的活渲染部分，含安全装载边界前置 spike。
+
+preview controls、anatomy overlay 仍未立项，随 33 落地后重估。

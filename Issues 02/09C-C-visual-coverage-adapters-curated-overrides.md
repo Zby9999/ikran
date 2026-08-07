@@ -28,7 +28,7 @@ coverage 结果。
   呈现归 09C-D04（Rules / Tokens 分区），不在本 issue；
 - 09B component inventory 中全部非 gap 组件的 presentation 与 preview outcome；
 - 对实际代码组件的 preview adapters；
-- 对可由结构化 spec 表达的 Source-generated / Schematic renderers；
+- ~~对可由结构化 spec 表达的 Source-generated / Schematic renderers~~（两档决策退役合成档，2026-08-07）；
 - 只影响呈现、不改变 canonical Design System facts 的 curated visual overrides；
 - 跨 foundation / component 的 visual coverage audit 与 honest fallback。
 
@@ -39,8 +39,11 @@ Coverage 不是要求每个 entry 都生成一张独立图片，而是要求每�
 2. 作为 Technical details 支持某个更高层样本；
 3. 因数据不足或不适用而得到明确、可审计的 unavailable / not-applicable 结果。
 
+~~每个非 gap component 必须进入统一 Component Reader，并得到 Code-backed、
+Source-generated、Schematic 或 unavailable 中的一种结果。~~
 每个非 gap component 必须进入统一 Component Reader，并得到 Code-backed、
-Source-generated、Schematic 或 unavailable 中的一种结果。Unavailable 不等于失败，
+Source capture 或 unavailable 中的一种结果（2026-08-07 按 09C-D03 两档决策
+改写，code-backed 通道见 issue 31/32/33）。Unavailable 不等于失败，
 但必须指出缺少的 anatomy、variant、state、responsive behavior、code link 或 adapter，
 ~~不能静默退化成没有内容的右栏。~~
 不能静默退化成无法解释的空白视觉区。
@@ -94,11 +97,12 @@ Rules，不在本次 reference 范围）。取得 reference 后可把 Status 调
 - [ ] Materials 不新建 renderer：leaf 维持 token rows / Rules；不渲染空样本占位，
       也不伪造测量样本。
 - [ ] 每个非 gap component inventory entry 都进入统一 Component Reader，并得到
-      Code-backed、Source-generated、Schematic 或 unavailable outcome。
+      ~~Code-backed、Source-generated、Schematic 或 unavailable outcome~~
+      Code-backed、Source capture 或 unavailable outcome（2026-08-07 两档改写）。
 - [ ] 有有效 code link 和 adapter 的组件使用真实实现；没有 adapter 时不会偷偷使用
       不相关的通用组件替代。
-- [ ] Source-generated / Schematic sample 的 anatomy、variants、states、token links
-      和 responsive behavior 均能追溯到当前 spec。
+- [ ] ~~Source-generated / Schematic sample 的 anatomy、variants、states、token links
+      和 responsive behavior 均能追溯到当前 spec。~~（两档决策后无合成档，2026-08-07）
 - [ ] ~~unavailable outcome 显示具体缺失字段或 adapter，不留下无法解释的空白右栏。~~
 - [ ] unavailable outcome 显示具体缺失字段或 adapter，不留下无法解释的空白视觉区。
 - [ ] visual coverage audit 能列出 consumed、supporting-detail、not-applicable 和
@@ -132,7 +136,7 @@ Rules，不在本次 reference 范围）。取得 reference 后可把 Status 调
 - Curated override 的持久化位置、authoring 入口和版本策略尚未锁定；实现不得在这些
   决策明确前新增 source file 或旁路事实源。
 - 真实项目中哪些 code links 可以安全进入 Code-backed preview 需要在 09C-D03
-  技术验证后确定。
+  技术验证后确定（该验证由 issue 33 的前置 spike 承接，2026-08-07）。
 
 ## Blocked by
 
@@ -147,3 +151,11 @@ Rules，不在本次 reference 范围）。取得 reference 后可把 Status 调
 - 不生成与当前产品无关的通用组件或通用 gap。
 - 不改变 Issue 10 的 Seed reconstruction prototype 或 Issue 12 的规则更新流程。
 - 不恢复 LeafSplit / 右栏空样本占位。
+
+## Comments
+
+- 2026-08-07：按 09C-D03 两档 Origin 决策改写正文与验收中的五档措辞
+  （Code-backed / Source-generated / Schematic / unavailable → Code-backed /
+  Source capture / unavailable），旧措辞以删除线原地保留。code-backed 通道：
+  codeLinks 回写（issue 31）→ code-backed capture（issue 32）→ 活渲染
+  （issue 33，含安全装载边界前置 spike）。

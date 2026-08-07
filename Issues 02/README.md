@@ -55,6 +55,14 @@
 
 演示路线(2026-08-06 变更):优先交付**无 UI 端到端纵切**。29 走 chat 口述路径(只口述拟提升为全局规则的提案,Confirm/Cancel 也在 chat),Workbench 审查 UI 按 `app/prototypes/review-session/` 的 Intake 原型推迟补齐;其余 issue 机制不变。
 
+## Formalize 后续:code-backed 升级链(2026-08-07)
+
+31. `31-prototype-code-backfill-code-links.md` - Prototype 代码回写设计系统:codeLinks backfill 与 Formalize 软提示
+32. `32-code-backed-capture-origin-field.md` - code-backed capture:origin 字段与代码渲染截图
+33. `33-code-backed-hero-live-render.md` - code-backed hero 活渲染(09C-D03 后续 slice,含安全装载边界 spike)
+
+升级链:`31 → 32 → 33`,线性依赖。承接 09C-D03「日后再要求 Agent 产 code-backed」的口头约定:Formalize 只升级条目身份,截图 → 代码组件的呈现迁移由本链完成,软提示不设硬门禁。
+
 ## Post-MVP host adapter investigation
 
 17. `17-codex-app-server-activation-adapter-prototype.md` - Codex App Server Activation Adapter Prototype（不进入 MVP blocking path）
