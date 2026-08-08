@@ -280,6 +280,8 @@ Ikran 的核心不变量：
 - `record_designer_answer`：记录卡片上的 final answer 与 answer source。
 - `record_artifact_written`：Agent 写 source artifact 后声明路径、类型、语义目的和关联记录。
 - `record_preview`：声明或更新 prototype preview/run，并创建 **Prototype** Evidence Surface。
+- `reconcile_designer_conversation`：设计师确认完成或发起 Rule Update 后，提交带稳定消息边界的完整 transcript snapshot 与 decision ledger；Runtime 校验 designer-message provenance 并原子生成 feedback batch，幂等重放不重复写入。
+- `claim_consolidate_review`：只接受 completed reconciliation id，读取已对账 decision batch 与兼容期 legacy feedback，供 Agent 分类和起草 proposals；不得用于设计生成。
 - `propose_rule_update`：记录 rule update proposal，等待设计师确认。
 - `export_research_package`：对达标项目生成研究导出（整条成功语义链路，含闭环前阶段）。
 

@@ -1,15 +1,15 @@
 # Issues 31/32/33 Real Agent Validation Setup — 2026-08-08
 
-三张票(31 codeLinks backfill、32 code-backed capture、33 live hero)的自动化
-验证已全绿(tsc 干净;vitest 1131;playwright design-system-browser/reader 通过),
-剩余验收项是各自的 Real Agent validation。本文档是执行 setup:环境准备、
+三张票(31 codeLinks backfill、32 screenshot 路径退休、33 live hero)的自动化
+验证与后续修订以当前代码为准,剩余验收项是 Real Agent validation。本文档是
+执行 setup:环境准备、
 三条验证流程、通过标准与证据记录方式。真实 smoke 与 automated/mock 分开记录
 (全局约束);结果格式沿用 `docs/manual-agent-smoke-issue07.md`(Result /
 Automated / Real Agent 分节)。
 
 相关契约原文:三张 issue 的「Real Agent validation」节与 2026-08-08 实现记录
 comment;工具的权威行为以 tool description 为准
-(`backfill_component_code_links`、`capture_component_code_hero`、
+(`backfill_component_code_links`、`declare_component_live_heroes`、
 `formalize_design_system` 的 `code_backfill_hints`)。
 
 ## 环境准备
@@ -23,11 +23,12 @@ comment;工具的权威行为以 tool description 为准
    `npm run dev`(127.0.0.1:3000)。Runtime 按 cwd 自动绑定项目
    (tests/cwd-auto-bind.spec.ts);Agent host 加载 Ikran MCP catalog
    (`bin/ikran-runtime.mjs`)后,确认 catalog 含
-   `backfill_component_code_links` 与 `capture_component_code_hero`——不含
-   则 reload catalog(issue07 smoke 的 stale-catalog 教训)。
+   `backfill_component_code_links` 与 `declare_component_live_heroes`,且不含
+   `capture_component_code_hero`;否则 reload catalog(issue07 smoke 的
+   stale-catalog 教训)。
 4. **Pre-flight 检查**(Workbench 或 sqlite 查项目 DB):
    - 项目相位:Flow A 的正式化链路需要 `design_system_formal`;
-     backfill/capture 工具本身无相位门禁,可先做 B/C;
+     backfill/live declaration 工具本身无相位门禁,可先做 B/C;
    - component-spec 条目的 status(candidate/formalized)、现有
      sourceCaptures、codeLinks 现状;
    - `source_artifacts` 中 code/prototype 类声明(31 的校验依赖;缺则 Agent
@@ -53,43 +54,72 @@ comment;工具的权威行为以 tool description 为准
 
 通过标准:issue 31 验收节 + Real Agent validation 节。
 
-## Flow B — Issue 32:code-backed capture
+## Flow B — Issue 32:旧 screenshot 路径退休检查
 
-1. Agent 对含 codeLinks 的组件(至少 Text Link 级一个)调
-   `capture_component_code_hero`:surfaceId 指名渲染该组件的 prototype
-   surface,crop 两遍法(先 plain  inspect,再 crop 框选组件)。
-2. 期望:hero 变 code-backed 档(origin 标记 + popover "Code-backed
-   render" + Code 链接行);旧 code capture 被替换,source captures 不动。
-3. stale:改动一个 codeLinks 指向的代码文件 → Browser 显示 stale caption;
-   重跑工具 → 恢复 fresh。
-4. 诚实回退:preview 不可用或渲染失败 → 零写入,hero 保持
-   source-capture,无空白。
-5. 反向:无 codeLinks 条目 → `no_code_links` 拒绝。
-6. **设计师在真实 Browser 确认 hero 视觉与 origin 标记**(验收必需)。
+1. MCP catalog 不含 `capture_component_code_hero`,避免 Agent 按组件重复打开
+   页面和生成 code PNG。
+2. 旧 `origin: "code"` capture 存在时 Browser 不把它选为 hero;有 source
+   capture 显示 source,否则显示 unavailable。
+3. 执行 Flow C 的 live 声明后,条目的 Active captures 只保留 source
+   evidence;不产生 `design_system_code_capture_recorded` 事件。
 
-通过标准:issue 32 验收节 + Real Agent validation 节。
+通过标准:旧 screenshot 不再是 Active 产品路径,历史数据仍可读取而不崩溃。
 
 ## Flow C — Issue 33:live hero + states 真切换
 
-1. Agent 在 prototype 应用中添加 harness 路由(契约见下),经
-   `record_artifact_written` 声明后,重跑 `capture_component_code_hero`
-   并传 `harnessPath`。
-2. 期望:hero 变 live iframe(sandboxed、只读、pointer-events:none);
-   hover states 名称 → iframe 重导航 `?state=<name>`,组件切真实状态;
-   移出恢复默认。
-3. 回退(三值文案均带原因、无空白):surface not ready;surface stale
-   (code_changed);harness 5s 超时 → 落 32 静态 capture。readiness 恢复
+1. Agent 在 prototype 应用中一次写完所有目标组件的 harness 路由(契约见
+   下),逐个经 `record_artifact_written` 声明。
+2. 所有 harness/code 声明完成后只调用一次 `record_preview`;不要逐组件刷新。
+   每个页面必须显式传 `routePath`(`/` 为首页,例如
+   `/projects/atlas` 为 Atlas),不得假设 Runtime 会从 `sourceArtifactPath`
+   推导框架路由。
+3. 一次批量调用 `declare_component_live_heroes`,每项传
+   `entryId + surfaceId + harnessPath + harnessArtifactPath`。
+4. 期望:hero 变 live iframe(sandboxed、原生 pointer events 开启);default 下
+   直接 hover 组件即可看到真实 hover,且 iframe URL 不变;hover states 名称 →
+   iframe 重导航 `?state=<name>`,用于强制展示状态;移出状态行恢复默认。
+5. 回退(三值文案均带原因、无空白):surface not ready;surface stale
+   (code_changed);harness 5s 超时 → 落 source capture,没有 source 时显示
+   unavailable。readiness 恢复
    (starting→ready)自动重试 live。
-4. digest stale 不回退 live:改代码后 live 仍渲染当前代码,popover 标
-   stale。
-5. 目标组件:**Sticky Navigation 级**(含真实 states);设计师确认。
+6. 修改 harness/code 后 surface 按 Issue 30 正常 stale;Browser 保留最后一张
+   Prototype screenshot,Agent 完成全部修改后再 `record_preview` 一次。
+   非 live screenshot 与 live iframe 必须保持同一 1133px fixed presentation
+   viewport;同时打开多个 Workbench tab 不得触发按各自窗口宽度反复重截、
+   视觉缩放或左右边距变化。
+7. 目标组件:**Sticky Navigation 级**(含真实 states);设计师确认。
 
 Harness 契约(与 tool description 一致):
 
 - 同源相对路径(`/` 开头,禁 `//`、`..`、`?`、`#`、反斜杠),由 Agent
   写作并经 `record_artifact_written` 声明;
 - 独立挂载组件、默认 props、纯呈现;响应 `?state=<name>`(state 名单取自
-  spec `stateMatrix`);不 postMessage、不调 Runtime API。
+  spec `stateMatrix`);不调 Runtime API。为让 Browser 完整包裹组件，harness
+  在挂载时及 `ResizeObserver` 更新时单向上报 body 的 `scrollWidth` /
+  `scrollHeight`：
+
+```ts
+const reportSize = () =>
+  window.parent.postMessage(
+    {
+      type: "ikran:component-size",
+      width: document.body.scrollWidth,
+      height: document.body.scrollHeight
+    },
+    "*"
+  );
+
+const observer = new ResizeObserver(reportSize);
+observer.observe(document.body);
+reportSize();
+```
+
+  Browser 仅接受当前 iframe 且 origin 与 preview URL 一致的几何消息；不向
+  harness 回传 Runtime 数据。尺寸上报是当前 harness 契约的必需部分，不保留
+  旧 harness 的 Runtime 测量回退。
+- harness 内局部隐藏框架开发 chrome,普通 Prototype 仍保留。Next.js 在
+  harness route 添加 `nextjs-portal { display: none !important; }`,不得用
+  `next.config` 的全局 `devIndicators: false`。
 
 示例(Next.js App Router,组件需接受可选 state prop,或由 harness 把
 state 名映射为 props/交互模拟):
@@ -97,12 +127,33 @@ state 名映射为 props/交互模拟):
 ```tsx
 // app/__ikran/component/sticky-navigation/page.tsx
 "use client";
+import { useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { StickyNavigation } from "@/components/StickyNavigation";
 
 export default function Harness() {
   const state = useSearchParams().get("state") ?? undefined;
-  return <StickyNavigation state={state} />;
+  useEffect(() => {
+    const reportSize = () =>
+      window.parent.postMessage(
+        {
+          type: "ikran:component-size",
+          width: document.body.scrollWidth,
+          height: document.body.scrollHeight
+        },
+        "*"
+      );
+    const observer = new ResizeObserver(reportSize);
+    observer.observe(document.body);
+    reportSize();
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <>
+      <style jsx global>{`nextjs-portal { display: none !important; }`}</style>
+      <StickyNavigation state={state} />
+    </>
+  );
 }
 ```
 

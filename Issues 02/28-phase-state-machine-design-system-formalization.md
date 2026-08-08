@@ -2,6 +2,15 @@
 
 Status: resolved
 
+> **修订记录(2026-08-06,code review 收尾修复)**:
+>
+> - **递归重入**:`confirm_prototype` 现接受 `ready_for_new_design → design_system_formal`（新设计 run 的 prototype 经设计师确认后重入正式化），否则第一次 formalize 后相位停在吸收态,Issue 15 的"DS v2 → 第二次新设计"成功递归不可达。完整递归链:formalize v1 → 新设计 run → 反馈/确认规则更新 → confirm_prototype → formalize v2 → 第二个新设计 run。
+> - **Candidate 裁决落地**:`formalize_design_system` 接受 `promoteEntryIds`(chat 审查中设计师选定要转正的 entry id,row id 或 entry_id 均可)。Runtime 在同一事务内校验每个 id 存在且当前为 candidate、翻转 status 为 formalized,并把 `promoted_entry_ids` 写入 `design_system_formalized` 事件 payload;未裁决的保持 candidate。
+>
+> **修订记录(2026-08-07,修改检视声明强制化)**:
+>
+> - **修改检视从"队列空转"变成"必须表态"**:反馈门只盯 `designer_feedback` 队列,以"实现修正"身份直接落进代码、从未落库的修改(如分割线 inset 这类实为可复用 layout 规则的改动)对整个闸门体系不可见。`formalize_design_system` 现要求必填参数 `modificationReview`——一句话检视声明:Agent 表态已检视本 phase 的 prototype 修改、识别出的 rule candidate 去向何处(纯缺陷修正、无候选也是合法结论)。Runtime 只校验非空(空白拒绝,`empty_modification_review`)并把声明原文写入 `design_system_formalized` 事件 payload 的 `modification_review` 字段;判断质量仍是 Agent 的职责,但"无声的跳过"不再可能,跳过必然留痕可审计。`confirm_prototype` 的 next 提示与 MCP instructions 的 flow contract 同步更新。
+
 ## What to build
 
 Runtime 维护项目相位状态机,覆盖 seed 之后的完成链路:
@@ -50,6 +59,8 @@ seed → draft_design_system(待审计) → prototype_validation → design_syst
 - Agent 把 formalize 当成纯状态翻转,跳过反馈回流审查。
 - 设计师绕过 Agent 直接改 prototype 文件,Agent 不知情,回流审查漏掉这些修改。
 - 相位机被实现成线性流程,无法表达回退。
+
+> 2026-08-08 修订:原设计预期每个相位步骤都由设计师驱动;实测后改为 **confirm_prototype 之后 Agent 全链自主推进**(冻结完整 host transcript 并完成 conversation reconciliation → 以返回 id 发起 Consolidate review 消费反馈 → 候选裁决 → formalize)。活动设计对话中不再即时写语义 feedback；反馈审查门槛本身不变——formalize 仍要求每条已对账 feedback 有处置结果。同时相位转换现在会发 record-bus `"phase"` 事件,Workbench 面板随相位实时刷新。
 
 ## Suggested ways through
 

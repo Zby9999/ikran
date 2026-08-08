@@ -1,6 +1,6 @@
 # 33 — code-backed hero 活渲染(09C-D03 后续 slice)
 
-Status: ready-for-agent
+Status: partial（截图无关 Live iframe 路径已落地；Real Agent validation 待做）
 
 09C-D03 Slice 1(commit `c2090ff`)明确推迟的「code-backed hero 活渲染、
 states hover 真切换」由本 issue 承接。issue 32 已提供 code-backed 的
@@ -19,10 +19,12 @@ states hover 真切换」由本 issue 承接。issue 32 已提供 code-backed �
    在本 issue Comments 后才进入实现。
 2. **活渲染 hero**:code-backed 档从 32 的代码渲染截图升级为活组件;
    states hover 切换真实状态(取代 capture 换图/只读名称行)。
-3. **失败显式回退**:装载失败按 32 → source-capture → unavailable 的
-   档位链回退并标明原因;空白是事故,unavailable 是结论(沿用 D03
-   原则)。
-4. 活渲染只读呈现,不提供组件内交互能力(preview controls 明确不做)。
+3. **失败显式回退**:装载失败按 live → source-capture → unavailable 的
+   档位链回退并标明原因;旧 code screenshot 不再是产品档。空白是事故,
+   unavailable 是结论(沿用 D03 原则)。
+4. 活渲染保持 iframe 沙箱边界,但允许组件内部的原生指针交互(default 可直接
+   hover);states 行仍用于强制 focus-visible、disabled 等声明状态。不提供宿主
+   preview controls、跨 frame 控制或 Runtime API 能力。
 
 ## 验收
 
@@ -48,7 +50,7 @@ states hover 真切换」由本 issue 承接。issue 32 已提供 code-backed �
 ## 明确不做
 
 - preview controls、anatomy overlay。
-- 组件内交互/事件响应(纯呈现)。
+- 宿主 preview controls、跨 frame 事件桥接与 Runtime API 访问。
 - code-backed 档之外的呈现形态变更。
 
 ## Blocked by
@@ -136,6 +138,7 @@ harness 内自带切换器:违背设计师确认的「hero states 行 hover 驱�
 2. **harness 约定**(写作指引进 tool description / MCP instructions):Agent
    在 prototype app 提供 `<harnessPath>?state=<name>`,缺省 props 挂载单组件、
    按 `state` 切换;纯呈现,无 postMessage 义务。
+
 3. **view 模型**:`DesignSystemLayoutCapture` 增 `harnessPath`;Runtime 的
    design-system view 把链接 surface 的 `readiness` / `stale` / `previewUrl`
    装饰到 capture view(守住 DSB「只读 /api/design-system」数据纪律,不引
@@ -168,3 +171,48 @@ harness 失效的 Agent 侧修复引导文案。
 - MCP instructions 未加词(预算余量仅 12 字节),harness 约定全部写进 tool description + zod 字段描述。
 - 验证:tsc 干净;全量 vitest 1131 绿;playwright 两 spec 通过。双轴 code review 修复:回退文案拆分、readiness 重试语义(原注释与实现矛盾)、verdict 状态机测试、双排序/双 plan 调用消除、focus 闪烁、liveKey 撞键。
 - 遗留:live-hero 端到端(含 Sticky Navigation 级真实组件 + 设计师确认)属 **Real Agent validation**,setup 见 `docs/real-agent-validation-issues-31-33.md` Flow C;写回形状已三处同形复制(formalize/31/32),第四处出现时提取共享模块;`LiveSurfaceInfo` data clump 重构未做。
+
+### 2026-08-08 — 真实 Agent 验证修订:Live 声明与 screenshot 解耦
+
+真实 Agent 用旧契约为三个组件连续调用截图工具时,同一 Prototype 页面被打开
+六次;同时 harness/code 声明把 surface 标成 `code_changed`,Browser 因此从
+已有截图切成空白 stale frame。修订后的 Active 契约如下:
+
+1. Agent 先写完**全部** standalone harness route,并逐个
+   `record_artifact_written`;不得边写一个边截图/刷新一个。
+2. 全部代码声明完成后只调用一次 `record_preview`,恢复关联 surface 为
+   ready/non-stale;显式传该页面的 `routePath`,因为 `sourceArtifactPath` 不承担
+   框架路由推导。
+3. 一次批量调用 `declare_component_live_heroes`,显式传
+   `entryId + surfaceId + harnessPath + harnessArtifactPath`。Runtime 只校验并
+   写回 `value.liveHero`,不启动浏览器、不截图、不生成 PNG。
+4. Browser hero 固定分档为 live iframe → source capture → unavailable。
+   surface stale/not-ready、harness load timeout 都显示明确原因并保留 source
+   fallback,绝不展示空白 frame。
+5. 旧 `origin: "code"` screenshot 会在新的 live 声明写回时从 Active
+   captures 中退休;MCP catalog 不再注册 `capture_component_code_hero`。
+6. harness 文档必须局部隐藏框架开发 chrome,不得为了组件 hero 全局关闭
+   普通 Prototype 的调试入口。Next.js harness 使用
+   `nextjs-portal { display: none !important; }`;外层 `/` preview 的 Dev
+   Tools 保持原配置。
+7. 2026-08-08 的真实 Browser 反馈覆盖 spike 时的「pointer-events:none」
+   假设:live iframe 开放原生 pointer events,default 状态可直接触发真实 hover;
+   sandbox、跨源隔离和无 Runtime API 访问边界不变。states 行继续承担强制状态。
+
+实现还修复了 legacy top-level `sourceCaptures` 与 `value.sourceCaptures` 的
+合并优先级,避免 live 声明误丢 Figma fallback。自动化覆盖 batch 声明、无
+code screenshot 事件、stale gate、view 装饰以及 Browser 分档。
+
+### 2026-08-08 — live hero 自适应尺寸补充
+
+设计师实测发现固定 `240px` iframe 会裁掉 Project Strip 等大组件。尺寸契约
+补充为：`240px` 仅是小组件的最小展示框；高组件按实际内容撑开；仅当内容
+宽于 hero 可用宽度时等比缩小，外框始终完整包裹渲染结果。
+
+这条补充取代上文「无 postMessage 义务 / 本次不做 postMessage 协议」中仅与
+**几何尺寸**有关的部分。harness 在挂载与 `ResizeObserver` 更新时单向发送
+`{ type: "ikran:component-size", width, height }`；Browser 同时校验
+`event.source === iframe.contentWindow` 与 preview origin，只接受有限范围内的
+正数宽高。该协议不承载 DOM、设计数据、session 或 Runtime API 能力，原安全
+边界不变。尺寸上报是新 harness 的必需契约；测试阶段不为补充前的 harness
+保留 Runtime 测量 API 或 Chromium 兼容路径。

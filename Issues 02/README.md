@@ -46,7 +46,7 @@
 
 ## 收尾链路(2026-08-06 重排,取代原 10/11/12 并续接主线)
 
-27. `27-chat-first-designer-feedback-declaration.md` - Chat-First Designer Feedback 声明通道(反馈即时落库、只写不读、生成隔离)
+27. `27-chat-first-designer-feedback-declaration.md` - Completion-Time Conversation Reconciliation（活动对话零语义写入、冻结 transcript、批量 feedback、生成隔离）
 28. `28-phase-state-machine-design-system-formalization.md` - Phase State Machine 与 Design System 正式化(正式化 = 第一次批量 rule update + v1 翻转)
 29. `29-batch-rule-update-review.md` - 批量 Rule Update 审查(设计师择机 Consolidate,取代 12)
 30. `30-prototype-surfaces-multi-embed-single-live.md` - Prototype Surface 多嵌单活(取代 10/11,仅 focus 的 surface 为 live iframe)

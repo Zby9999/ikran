@@ -81,3 +81,19 @@ issue 31 建立 codeLinks 回写通道后,本 issue 让「截图占位换成代�
 - Browser hero 优先 code capture,`DsVisualOrigin = "code-backed"` 首次赋值;popover 按 origin 分档("Code-backed render" / source,Code 链接行)。
 - 验证:tsc 干净;全量 vitest 1106 绿;playwright design-system-browser/reader 通过(580 行既有布局断言 flaky 一次,单独重跑通过)。双轴 code review 修复:doc comment 归位、screenshot reason 联合收窄去 `as` cast、stale 态 browser 断言补齐。
 - 遗留:**Real Agent validation 未做**(Text Link 级组件 + 设计师确认),setup 见 `docs/real-agent-validation-issues-31-33.md` Flow B。
+
+### 2026-08-08 — 真实 Agent 验证后的取代决定
+
+真实验证暴露了这条截图链的产品级问题:每个组件都要重新打开 Prototype
+页面并截图,多组件/多轮迭代会重复启动页面、堆积无效 PNG,而且截图写入会把
+Prototype Surface 标成 stale,最终让画布显示空白 frame。Issue 33 的修订实现
+因此**完全取代** `capture_component_code_hero` 作为 Active MCP 路径:
+
+- MCP catalog 不再暴露 `capture_component_code_hero`;旧 schema/domain 只保留为
+  历史数据兼容,Agent 不再能走 code-render screenshot 流程。
+- code-backed hero 改为 `declare_component_live_heroes` 的截图无关批量声明;
+  Browser 不再把 `origin: "code"` 的旧 PNG 作为 hero 档。
+- Figma/source capture 继续作为 live 失败时的诚实回退证据;不生成新的 code
+  capture,也不因 component hero 构建反复打开 Prototype 页面。
+
+本条原实现记录保留为决策历史;当前产品契约以 Issue 33 最新修订为准。

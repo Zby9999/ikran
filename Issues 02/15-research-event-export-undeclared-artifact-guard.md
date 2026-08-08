@@ -1,6 +1,6 @@
 # Research Event Export 与 Undeclared Artifact Guard
 
-Status: implemented（MCP export；Workbench action UI 推迟；Evidence/Annotation 独立文件与 Seed lineage 深化可后续补）
+Status: implemented（MCP export，单测覆盖；Workbench action UI 推迟；Evidence/Annotation 独立文件与 Seed lineage 深化可后续补；Real Agent validation 未做）
 
 > **修订记录(2026-08-06)**:导出物新增 `designer-feedback.json`(Issue 27 的原始反馈日志,含未被审查提升的记录,proposal 引用其中子集);入选门槛中的 "Design System v1" 以 Issue 28 的 `formalize_design_system` 相位事件为准;`Blocked by` 中的 10/12 替换为 27/28/29/30。其余不变。
 

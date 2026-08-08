@@ -1,6 +1,6 @@
 # Human-Intent New Prototype Loop
 
-Status: implemented（机制；Workbench intent 入口 UI 仍推迟）
+Status: implemented（机制，单测覆盖；Workbench intent 入口 UI 仍推迟；Real Agent validation 未做）
 
 > **修订记录(2026-08-06)**:原地改写。变化:新增相位门(Design System 未正式化不得开新设计 run,见 Issue 28);新增**会话边界**——新设计 = 新对话会话;新增**生成隔离不变量**——新设计 run 的合法输入仅为设计师新 intent + 当前 design-system source,反馈库、事件日志、annotation、旧对话一律不得进入生成上下文(见 Issue 27)。`record_preview` / Prototype Surface 细节移至 Issue 30;rule update 移至 Issue 29。
 
