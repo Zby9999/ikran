@@ -1,6 +1,7 @@
 node_modules
 .next
 .next-real-seed
+.next-ikran-*
 .playwright-mcp
 .pi-subagents/
 .pi/sandbox.json
@@ -13,6 +14,11 @@ test-results
 Research
 recursive-design-method
 /*.png
+/.scratch/
+/private/
+/tmp-figma/
+/tmp-*.mjs
+/docs/paper/figures/build/
 
 # 技术教学笔记：仅给项目负责人阅读，不进版本库
 teach/
