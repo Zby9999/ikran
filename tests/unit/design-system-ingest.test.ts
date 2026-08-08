@@ -31,6 +31,7 @@ import { getArtifactsDir, getProjectDbPath } from "../../lib/runtime/paths";
 import { registerSeedReference } from "../../lib/runtime/seed-reference";
 import { recordEvidencePackage } from "../../lib/runtime/evidence-package";
 import { codeCaptureDigest } from "../../lib/runtime/code-capture-digest";
+import { collectDesignSystemEntryRows } from "../../lib/runtime/design-system-ingest";
 import { createRegionAnnotation } from "../../lib/runtime/region-annotation";
 import {
   subscribeRecordEvents,
@@ -52,6 +53,45 @@ function withTempProject(fn: (dir: string) => void) {
 
 afterEach(() => {
   resetRecordBusForTests();
+});
+
+test("component-spec ingest merges legacy top-level source captures with nested code captures", () => {
+  const sourceCapture = {
+    nodeName: "Button / source",
+    artifactPath: "design-system/captures/button-source.png",
+    capturedAt: "2026-08-01T00:00:00.000Z"
+  };
+  const codeCapture = {
+    nodeName: "Button / code",
+    artifactPath: "design-system/captures/button-code.png",
+    capturedAt: "2026-08-08T00:00:00.000Z",
+    origin: "code",
+    codeLinks: ["prototype/components/Button.tsx"],
+    codeDigest: "digest"
+  };
+
+  const rows = collectDesignSystemEntryRows("component-spec", {
+    id: "component.button",
+    name: "Button",
+    meaning: "",
+    status: "formalized",
+    links: [],
+    // Older real projects stored Figma captures at the entry envelope.
+    sourceCaptures: [sourceCapture],
+    // Issue 32 wrote generated code captures into value.sourceCaptures.
+    value: {
+      description: "Button",
+      props: [],
+      variants: [],
+      stateMatrix: [],
+      guidelines: [],
+      tokenLinks: [],
+      codeLinks: ["prototype/components/Button.tsx"],
+      sourceCaptures: [codeCapture]
+    }
+  });
+
+  expect(rows[0]!.source_captures).toEqual([sourceCapture, codeCapture]);
 });
 
 function writeProjectFile(dir: string, rel: string, content: unknown) {

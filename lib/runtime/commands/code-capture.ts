@@ -3,6 +3,11 @@ import {
   type CaptureComponentCodeHeroInput,
   type CaptureComponentCodeHeroResult
 } from "../design-system-code-capture";
+import {
+  declareComponentLiveHeroes,
+  type ComponentLiveHeroMapping,
+  type DeclareComponentLiveHeroesResult
+} from "../design-system-live-hero";
 
 /**
  * Agent-triggered code-backed capture (Issue 32): screenshot the component's
@@ -14,4 +19,12 @@ export function captureComponentCodeHeroCommand(
   input: CaptureComponentCodeHeroInput
 ): Promise<CaptureComponentCodeHeroResult> {
   return captureComponentCodeHero(projectPath, input);
+}
+
+/** Issue 33 live path: metadata-only batch declaration; no browser or PNG. */
+export function declareComponentLiveHeroesCommand(
+  projectPath: string,
+  input: { mappings: readonly ComponentLiveHeroMapping[] }
+): DeclareComponentLiveHeroesResult {
+  return declareComponentLiveHeroes(projectPath, input.mappings);
 }

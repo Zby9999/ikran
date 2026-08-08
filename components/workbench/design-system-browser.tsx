@@ -81,11 +81,13 @@ import {
   breadcrumbFor,
   buildColorLeafModel,
   buildDesignSystemBrowserModel,
+  componentHeroFrameLayout,
   componentHeroLiveUrl,
   componentLeafId,
   formatEntryValue,
   heroLiveFallbackCopy,
   heroLiveVerdictReducer,
+  parseComponentHeroSizeMessage,
   planComponentHero,
   sheetReducer,
   sheetEscapeAction,
@@ -102,6 +104,7 @@ import {
   type DsColorToken,
   type DsComponentDetailGroup,
   type DsComponentModel,
+  type DsHeroContentSize,
   type DsLeafId,
   type DsRoute,
   type DsRow,
@@ -2900,14 +2903,17 @@ export function ComponentDetail({
   }
 
   const detail = component.detail;
-  // 09C-D03 two tiers: a code-backed render outranks a source capture —
-  // the hero shows the first code capture when one exists (Issue 32).
-  // Issue 33 upgrades a harness-declared code capture to a live sandboxed
-  // render while its surface stays live; planComponentHero owns the tier
-  // verdict (and the code-first ordering) plus the explicit fallback chain.
+  // Code-backed now means a declared live harness. Generated code screenshots
+  // are not a hero tier; a failed live iframe falls directly to source
+  // evidence or the explicit unavailable placard.
   const captures = component.captures;
   const [hoveredState, setHoveredState] = useState<string | null>(null);
+  const [liveContentSize, setLiveContentSize] =
+    useState<DsHeroContentSize | null>(null);
+  const [liveStageWidth, setLiveStageWidth] = useState(0);
   const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const liveFrameRef = useRef<HTMLIFrameElement>(null);
+  const liveStageRef = useRef<HTMLDivElement>(null);
   // Live verdict, pinned to the attempt key (plan.liveKey) it belongs to via
   // heroLiveVerdictReducer: terminal PER key — a demoted hero never re-arms
   // itself — but a readiness flip or a new capture forms a new key on the
@@ -2917,10 +2923,11 @@ export function ComponentDetail({
     phase: "pending"
   });
   const plan = planComponentHero(
+    component.liveHero,
     captures,
     verdict.phase === "unreachable" ? verdict.key : null
   );
-  const capture = plan.kind === "unavailable" ? null : plan.capture;
+  const capture = plan.kind === "static" ? plan.capture : null;
   // The provenance popover lists the hero's capture first (the plan's tier
   // verdict), the rest in declared order.
   const popoverCaptures =
@@ -2933,7 +2940,51 @@ export function ComponentDetail({
   if (verdict.key !== plan.liveKey) {
     dispatchVerdict({ type: "retarget", key: plan.liveKey });
     setHoveredState(null);
+    setLiveContentSize(null);
   }
+  const liveUrl =
+    plan.kind === "live"
+      ? componentHeroLiveUrl(plan.liveHero, hoveredState)
+      : null;
+  const liveOrigin = useMemo(() => {
+    if (liveUrl === null) return null;
+    try {
+      return new URL(liveUrl).origin;
+    } catch {
+      return null;
+    }
+  }, [liveUrl]);
+  const liveFrameLayout = componentHeroFrameLayout(
+    liveStageWidth,
+    liveContentSize
+  );
+  useLayoutEffect(() => {
+    const stage = liveStageRef.current;
+    if (stage === null || plan.kind !== "live") return;
+    const update = () => setLiveStageWidth(stage.clientWidth);
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [plan.kind, plan.liveKey]);
+  useEffect(() => {
+    if (plan.kind !== "live" || liveOrigin === null) return;
+    const receiveSize = (event: MessageEvent<unknown>) => {
+      const frame = liveFrameRef.current;
+      if (
+        frame === null ||
+        event.source !== frame.contentWindow ||
+        event.origin !== liveOrigin
+      ) {
+        return;
+      }
+      const size = parseComponentHeroSizeMessage(event.data);
+      if (size !== null) setLiveContentSize(size);
+    };
+    window.addEventListener("message", receiveSize);
+    return () => window.removeEventListener("message", receiveSize);
+  }, [liveOrigin, plan.kind]);
   // ~5s without the first iframe load = the harness is gone; demote to the
   // static capture and say why (never a blank hero).
   useEffect(() => {
@@ -2996,7 +3047,9 @@ export function ComponentDetail({
     >
       <section className="dsb-hero" data-testid="ds-component-hero">
         <span className="dsb-hero-origin">
-          {capture ? (
+          {plan.kind === "live" ? (
+            <OriginTag origin="code-backed" />
+          ) : capture ? (
             <SourceCaptureOriginPopover
               captures={popoverCaptures}
               portalContainer={rows.portalContainer}
@@ -3008,20 +3061,42 @@ export function ComponentDetail({
         {plan.kind === "live" ? (
           // Live code-backed tier (Issue 33): the declared harness route on
           // the linked surface's preview origin — the same sandbox boundary
-          // as the canvas surfaces; read-only presentation (pointer-events
-          // none in CSS), states switch via `?state=` re-navigation.
-          <iframe
-            className="dsb-hero-live"
-            data-testid="ds-component-live"
-            src={componentHeroLiveUrl(plan.capture, hoveredState) ?? undefined}
-            title={`Live render of ${plan.capture.nodeName}`}
-            loading="lazy"
-            sandbox="allow-scripts allow-same-origin"
-            tabIndex={-1}
-            onLoad={() =>
-              dispatchVerdict({ type: "loaded", key: plan.liveKey })
+          // as the canvas surfaces. Native pointer interaction is allowed
+          // inside that boundary; declared states can still be forced through
+          // `?state=` re-navigation from the names row.
+          <div
+            ref={liveStageRef}
+            className="dsb-hero-live-stage"
+            data-testid="ds-component-live-stage"
+            style={
+              liveFrameLayout === null
+                ? undefined
+                : { height: liveFrameLayout.displayHeight }
             }
-          />
+          >
+            <iframe
+              ref={liveFrameRef}
+              className="dsb-hero-live"
+              data-testid="ds-component-live"
+              src={liveUrl ?? undefined}
+              title={`Live render of ${component.name}`}
+              loading="lazy"
+              sandbox="allow-scripts allow-same-origin"
+              tabIndex={-1}
+              style={
+                liveFrameLayout === null
+                  ? undefined
+                  : {
+                      width: liveFrameLayout.frameWidth,
+                      height: liveFrameLayout.frameHeight,
+                      transform: `scale(${liveFrameLayout.scale})`
+                    }
+              }
+              onLoad={() =>
+                dispatchVerdict({ type: "loaded", key: plan.liveKey })
+              }
+            />
+          </div>
         ) : capture ? (
           <img
             className="dsb-hero-image"
@@ -3049,7 +3124,7 @@ export function ComponentDetail({
             </span>
           </div>
         )}
-        {plan.kind === "static" && plan.liveFallback !== null ? (
+        {plan.kind !== "live" && plan.liveFallback !== null ? (
           <span
             className="dsb-hero-live-fallback"
             data-testid="ds-component-live-fallback"

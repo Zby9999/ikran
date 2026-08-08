@@ -51,7 +51,10 @@ import { emitRecordEvent } from "./record-bus";
 import { locateEntryObject } from "./design-system-approval";
 import { designSystemEntryContentDigest } from "./design-system-entry-provenance";
 import { codeCaptureDigest } from "./code-capture-digest";
-import { stripSourceCaptures } from "./design-system-ingest";
+import {
+  mergeEntrySourceCaptures,
+  stripSourceCaptures
+} from "./design-system-ingest";
 import {
   isCaptureHarnessPath,
   validateDesignSystemJson
@@ -365,15 +368,19 @@ export async function captureComponentCodeHero(
     return { ok: false, reason: "invalid_design_system_json" };
   }
   // The new render supersedes earlier code captures; source captures stay.
-  const existingCaptures = Array.isArray(entryObject.value.sourceCaptures)
-    ? entryObject.value.sourceCaptures
-    : [];
+  const existingCaptures = mergeEntrySourceCaptures(
+    entryObject.sourceCaptures,
+    entryObject.value.sourceCaptures
+  );
   const keptCaptures = existingCaptures.filter(
     (item) => !(isPlainObject(item) && item.origin === "code")
   );
   const nextCaptures = [...keptCaptures, captureRecord];
   const nextValue = { ...entryObject.value, sourceCaptures: nextCaptures };
   entryObject.value = nextValue;
+  // Canonicalize legacy component specs while this Runtime-owned write-back
+  // already has the file open: component captures live in value only.
+  delete entryObject.sourceCaptures;
   const dbValue = JSON.stringify(stripSourceCaptures(nextValue));
   const dbCaptures = JSON.stringify(nextCaptures);
   // A formalized entry whose content changes needs fresh approval-grade

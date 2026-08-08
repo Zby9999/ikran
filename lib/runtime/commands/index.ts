@@ -71,6 +71,7 @@ export {
 export { captureRuleScreenshotCommand } from "./rule-capture";
 
 export { captureComponentCodeHeroCommand } from "./code-capture";
+export { declareComponentLiveHeroesCommand } from "./code-capture";
 
 export {
   claimConsolidateReviewCommand,
@@ -177,6 +178,8 @@ export {
   captureRuleScreenshotInputShape,
   captureComponentCodeHeroInputSchema,
   captureComponentCodeHeroInputShape,
+  declareComponentLiveHeroesInputSchema,
+  declareComponentLiveHeroesInputShape,
   recordNewDesignRunInputSchema,
   recordNewDesignRunInputShape,
   createOrOpenProjectInputShape,

@@ -1176,7 +1176,18 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(29);
+        expect(CURRENT_SCHEMA_VERSION).toBe(31);
+        expect(
+          db.prepare("PRAGMA table_info(prototype_surfaces)").all()
+        ).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              name: "route_path",
+              notnull: 1,
+              dflt_value: "'/'"
+            })
+          ])
+        );
         expect(tableNames(db)).not.toContain("tasks");
         expect(tableNames(db)).toEqual(
           expect.arrayContaining([
@@ -1205,7 +1216,9 @@ test.describe("PRAGMA user_version migration runner", () => {
             "rule_update_proposals",
             "designer_feedback_dismissals",
             "prototype_runs",
-            "prototype_surfaces"
+            "prototype_surfaces",
+            "conversation_reconciliations",
+            "conversation_reconciliation_feedback"
           ])
         );
         const designSystemColumns = db

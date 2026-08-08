@@ -376,6 +376,7 @@ export const COMPONENT_SPEC_VALUE_FIELDS = [
   "stateMatrix",
   ...RICH_COMPONENT_SPEC_FIELDS,
   "group",
+  "liveHero",
   "sourceCaptures"
 ] as const;
 
@@ -794,6 +795,43 @@ function validateComponentSpec(
         );
         if (!captures.ok) return captures;
       }
+      if (value.liveHero !== undefined) {
+        if (!isPlainObject(value.liveHero)) {
+          return fail("invalid_field_type", {
+            ...ctx,
+            field: "value.liveHero",
+            expected: "object"
+          });
+        }
+        const liveHero = value.liveHero;
+        const unknownLiveField = Object.keys(liveHero).find(
+          (field) =>
+            !["surfaceId", "harnessPath", "harnessArtifactPath"].includes(
+              field
+            )
+        );
+        if (unknownLiveField) {
+          return fail("unknown_field", {
+            ...ctx,
+            field: `value.liveHero.${unknownLiveField}`
+          });
+        }
+        for (const field of ["surfaceId", "harnessPath", "harnessArtifactPath"] as const) {
+          const failure = requireString(liveHero, field, {
+            ...ctx,
+            field: "value.liveHero"
+          });
+          if (failure) return failure;
+        }
+        if (!isCaptureHarnessPath(String(liveHero.harnessPath))) {
+          return fail("invalid_field_type", {
+            ...ctx,
+            field: "value.liveHero.harnessPath",
+            expected:
+              'same-origin relative path ("/" prefix; no "..", scheme/authority, query or fragment)'
+          });
+        }
+      }
       return null;
     }
   }) ?? { ok: true };
@@ -857,8 +895,8 @@ export function isCaptureBearingArtifactPath(artifactPath: string): boolean {
 /** Harness path contract (Issue 33): a same-origin relative route inside the
  * prototype app — leading slash, no scheme/authority ("//host"), no parent
  * traversal, no query/fragment (the hero appends `?state=` itself), no
- * backslashes. Shared by the declaration gate, the capture_component_code_hero
- * input check, and the view's defensive parse. */
+ * backslashes. Shared by the live-hero declaration gate, legacy capture
+ * compatibility, and the view's defensive parse. */
 export function isCaptureHarnessPath(value: string): boolean {
   if (!value.startsWith("/") || value.startsWith("//")) return false;
   if (value.includes("..")) return false;

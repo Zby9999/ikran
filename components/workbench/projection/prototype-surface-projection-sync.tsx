@@ -5,7 +5,7 @@
 // Writes go through mergeRemoteChanges so the designer's own tldraw history
 // never records a projection, and so a create does not fight layout persistence.
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createShapeId, useEditor, type TLShapeId } from "tldraw";
 import {
   PROTOTYPE_SURFACE_PROJECTION_TYPE,
@@ -17,6 +17,7 @@ import type { SeedReferenceProjectionShape } from "../seed-reference-projection-
 import {
   buildPrototypeSurfaceProjectionTargets,
   planPrototypeSurfaceProjectionOps,
+  prototypeSurfaceNeedsScreenshotRefresh,
   type PrototypeSurfaceProjectionExisting
 } from "./prototype-surface-projection";
 import { seedProjectionOccupiedBounds } from "./seed-projection";
@@ -86,11 +87,40 @@ export function PrototypeSurfaceProjectionSync({
   session: string;
 }) {
   const editor = useEditor();
+  const requestedRefreshesRef = useRef(new Set<string>());
 
   useEffect(() => {
     if (!editor) return;
     syncPrototypeSurfaceShapes(editor, prototypeSurfaces, session);
   }, [editor, prototypeSurfaces, session]);
+
+  useEffect(() => {
+    if (!session) return;
+    for (const surface of prototypeSurfaces) {
+      if (!prototypeSurfaceNeedsScreenshotRefresh(surface)) {
+        continue;
+      }
+      const requestKey = surface.id;
+      if (requestedRefreshesRef.current.has(requestKey)) continue;
+      requestedRefreshesRef.current.add(requestKey);
+      void fetch("/api/prototype-surface/screenshot", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-ikran-session": session
+        },
+        body: JSON.stringify({ surfaceId: surface.id })
+      })
+        .catch(() => undefined)
+        .finally(() => {
+          // Runtime emits an authoritative record update after a successful
+          // capture. Every client requests the same canonical viewport, so
+          // multiple Workbench tabs cannot overwrite one another in a
+          // per-window-width feedback loop.
+          requestedRefreshesRef.current.delete(requestKey);
+        });
+    }
+  }, [prototypeSurfaces, session]);
 
   return null;
 }

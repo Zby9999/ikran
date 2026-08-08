@@ -36,9 +36,10 @@ export function confirmPrototypeCommand(
 
 export function formalizeDesignSystemCommand(
   projectPath: string,
-  promoteEntryIds: readonly string[] = []
+  promoteEntryIds: readonly string[] = [],
+  modificationReview: string
 ): FormalizeSuccess | FormalizeFailure {
-  return formalizeDesignSystem(projectPath, promoteEntryIds);
+  return formalizeDesignSystem(projectPath, promoteEntryIds, modificationReview);
 }
 
 export function abandonProjectPhaseCommand(

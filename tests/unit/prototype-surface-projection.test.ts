@@ -6,13 +6,15 @@ import { describe, expect, test } from "vitest";
 
 import {
   buildPrototypeSurfaceProjectionTargets,
-  planPrototypeSurfaceProjectionOps
+  planPrototypeSurfaceProjectionOps,
+  prototypeSurfaceNeedsScreenshotRefresh
 } from "../../components/workbench/projection/prototype-surface-projection";
 import { planPrototypeSurfaceLiveShapeId } from "../../components/workbench/projection/prototype-surface-live-policy";
 import {
   PROTOTYPE_SURFACE_LIVE_VIEWPORT_W,
   PROTOTYPE_SURFACE_PROJECTION_DEFAULT_H,
   PROTOTYPE_SURFACE_PROJECTION_DEFAULT_W,
+  prototypeSurfaceBodyMode,
   prototypeSurfaceLiveViewport,
   prototypeSurfaceStatusText
 } from "../../components/workbench/prototype-surface-shape";
@@ -31,6 +33,8 @@ function surfaceRecord(
     surface_key: "landing",
     name: "Landing",
     preview_url: "http://127.0.0.1:4300",
+    route_path: "/",
+    surface_url: "http://127.0.0.1:4300",
     preview_port: 4300,
     readiness: "ready",
     readiness_reason: null,
@@ -47,6 +51,15 @@ function surfaceRecord(
 const shapeIdForKey = (key: string) => `shape:${key}`;
 
 describe("prototype surface projection", () => {
+  test("a stale surface keeps showing its last captured screenshot", () => {
+    expect(
+      prototypeSurfaceBodyMode({
+        showLive: false,
+        screenshotSrc: "/api/artifacts/prototype.png"
+      })
+    ).toBe("screenshot");
+  });
+
   test("creates one shape per Runtime record with default page proportions", () => {
     const ops = planPrototypeSurfaceProjectionOps(
       buildPrototypeSurfaceProjectionTargets([surfaceRecord()]),
@@ -83,7 +96,7 @@ describe("prototype surface projection", () => {
         [
           surfaceRecord({
             screenshot_artifact_path:
-              ".ikran/artifacts/prototype-media/proto-1-1754430000000.png",
+              ".ikran/artifacts/prototype-media/proto-1-1133.png",
             screenshot_captured_at: "2026-08-06T00:05:00.000Z"
           })
         ],
@@ -99,7 +112,8 @@ describe("prototype surface projection", () => {
       props: {
         screenshotSrc:
           "/api/artifacts/.ikran/artifacts/prototype-media/" +
-          "proto-1-1754430000000.png?session=session-token"
+          "proto-1-1133.png?session=session-token&v=" +
+          "2026-08-06T00%3A05%3A00.000Z"
       }
     });
 
@@ -222,10 +236,29 @@ describe("prototype surface projection", () => {
     );
     expect(ops).toEqual([{ type: "delete", id: "shape:proto-1" }]);
   });
+
+  test("refreshes a ready screenshot only until it uses the canonical viewport", () => {
+    const canonical = surfaceRecord({
+      screenshot_artifact_path:
+        ".ikran/artifacts/prototype-media/proto-1-1133.png"
+    });
+    const perClientWidth = surfaceRecord({
+      screenshot_artifact_path:
+        ".ikran/artifacts/prototype-media/proto-1-1728.png"
+    });
+
+    expect(prototypeSurfaceNeedsScreenshotRefresh(perClientWidth)).toBe(true);
+    expect(prototypeSurfaceNeedsScreenshotRefresh(canonical)).toBe(false);
+    expect(
+      prototypeSurfaceNeedsScreenshotRefresh(
+        { ...perClientWidth, stale: true, stale_reason: "code_changed" }
+      )
+    ).toBe(false);
+  });
 });
 
 describe("prototypeSurfaceLiveViewport", () => {
-  test("lays out at the virtual viewport width and scales down to the body", () => {
+  test("uses the shared presentation viewport and scales down to the body", () => {
     const viewport = prototypeSurfaceLiveViewport(700, 800);
 
     expect(viewport.width).toBe(PROTOTYPE_SURFACE_LIVE_VIEWPORT_W);
@@ -234,10 +267,12 @@ describe("prototypeSurfaceLiveViewport", () => {
     expect(Math.round(viewport.height * viewport.scale)).toBe(800);
   });
 
-  test("a body wider than the virtual viewport gets a real 1:1 viewport", () => {
+  test("a wider body still preserves the screenshot responsive viewport", () => {
     const viewport = prototypeSurfaceLiveViewport(2000, 900);
 
-    expect(viewport).toEqual({ scale: 1, width: 2000, height: 900 });
+    expect(viewport.width).toBe(PROTOTYPE_SURFACE_LIVE_VIEWPORT_W);
+    expect(viewport.scale).toBeCloseTo(2000 / PROTOTYPE_SURFACE_LIVE_VIEWPORT_W);
+    expect(Math.round(viewport.height * viewport.scale)).toBe(900);
   });
 
   test("an unmeasured body yields zero sizes (iframe stays hidden)", () => {

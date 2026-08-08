@@ -16,7 +16,7 @@ const PROJECT_PATH = "/tmp/ikran-screenshot-project";
 const SURFACE_ID = "surface-1";
 const PREVIEW_URL = "http://127.0.0.1:4300";
 const NOW_MS = 1_754_430_000_000;
-const FILE_NAME = `${SURFACE_ID}-${NOW_MS}.png`;
+const FILE_NAME = `${SURFACE_ID}-1133.png`;
 const RELATIVE_PATH = `.ikran/artifacts/prototype-media/${FILE_NAME}`;
 
 type CapturedCalls = {
@@ -26,6 +26,8 @@ type CapturedCalls = {
   closed: boolean;
   writes: Array<{ absolutePath: string; bytes: Buffer }>;
   persists: Array<{ projectPath: string; surfaceId: string; artifactPath: string }>;
+  removals: string[];
+  listedArtifacts: string[];
 };
 
 function deps(
@@ -56,8 +58,16 @@ function deps(
     },
     persist: (projectPath, surfaceId, artifactPath) => {
       calls.persists.push({ projectPath, surfaceId, artifactPath });
-      return { ok: true as const };
+      return {
+        ok: true as const,
+        previous_artifact_path:
+          ".ikran/artifacts/prototype-media/surface-1-old.png"
+      };
     },
+    removeArtifact: (absolutePath) => {
+      calls.removals.push(absolutePath);
+    },
+    listArtifacts: () => calls.listedArtifacts,
     sleep: async () => {},
     now: () => NOW_MS,
     ...overrides
@@ -71,7 +81,13 @@ function freshCalls(): CapturedCalls {
     screenshotOptions: null,
     closed: false,
     writes: [],
-    persists: []
+    persists: [],
+    removals: [],
+    listedArtifacts: [
+      "surface-1-old.png",
+      "surface-1-1754430000000.png",
+      "surface-2-old.png"
+    ]
   };
 }
 
@@ -86,7 +102,7 @@ test("captures the page and persists the project-relative artifact path", async 
   );
 
   expect(result).toEqual({ ok: true, artifact_path: RELATIVE_PATH });
-  expect(calls.viewport).toEqual({ width: 1440, height: 900 });
+  expect(calls.viewport).toEqual({ width: 1133, height: 900 });
   expect(calls.goto).toEqual({
     url: PREVIEW_URL,
     // `load`, never networkidle — a dev server's HMR socket never idles.
@@ -113,6 +129,43 @@ test("captures the page and persists the project-relative artifact path", async 
       artifactPath: RELATIVE_PATH
     }
   ]);
+  expect(calls.removals).toEqual([
+    path.join(
+      PROJECT_PATH,
+      ".ikran",
+      "artifacts",
+      "prototype-media",
+      "surface-1-old.png"
+    ),
+    path.join(
+      PROJECT_PATH,
+      ".ikran",
+      "artifacts",
+      "prototype-media",
+      "surface-1-1754430000000.png"
+    )
+  ]);
+});
+
+test("allows an explicit viewport override for lower-level capture callers", async () => {
+  const calls = freshCalls();
+  const result = await capturePrototypeSurfaceScreenshot(
+    PROJECT_PATH,
+    SURFACE_ID,
+    PREVIEW_URL,
+    deps(calls),
+    { viewportWidth: 1728 }
+  );
+
+  expect(result).toEqual({
+    ok: true,
+    artifact_path:
+      ".ikran/artifacts/prototype-media/surface-1-1728.png"
+  });
+  expect(calls.viewport).toEqual({ width: 1728, height: 900 });
+  expect(calls.persists[0]?.artifactPath).toBe(
+    ".ikran/artifacts/prototype-media/surface-1-1728.png"
+  );
 });
 
 test("a launch failure resolves quietly and touches nothing", async () => {

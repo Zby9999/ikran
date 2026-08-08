@@ -239,11 +239,16 @@ test("feedback MCP surface is write-only", async () => {
   expect(feedbackTools).not.toMatch(/list_designer_feedback|get_designer_feedback/);
 });
 
-test("MCP instructions require declare-on-conclusion and generation isolation", () => {
+test("MCP instructions require completion-time reconciliation and generation isolation", () => {
   expect(Buffer.byteLength(IKRAN_MCP_INSTRUCTIONS, "utf8")).toBeLessThanOrEqual(
     2150
   );
-  expect(IKRAN_MCP_INSTRUCTIONS).toContain("record_designer_feedback");
+  expect(IKRAN_MCP_INSTRUCTIONS).toContain(
+    "reconcile_designer_conversation"
+  );
+  expect(IKRAN_MCP_INSTRUCTIONS).not.toContain(
+    "declare conclusions via record_designer_feedback"
+  );
   expect(IKRAN_MCP_INSTRUCTIONS.toLowerCase()).toMatch(
     /design-system source only|design-system source/
   );

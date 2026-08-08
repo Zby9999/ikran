@@ -257,6 +257,42 @@ test("record_preview creates the run and surface it froze its inputs from", asyn
   });
 });
 
+test("record_preview keeps the server origin separate and opens the explicit page route", async () => {
+  await withProject(async (projectPath) => {
+    declarePrototypeArtifact(projectPath);
+    enterPrototypeValidation(projectPath);
+    const probed: string[] = [];
+
+    const result = await recordPreview(
+      projectPath,
+      previewInput({
+        surfaceKey: "atlas",
+        name: "Atlas Case Study",
+        routePath: "/projects/atlas"
+      }),
+      {
+        supervisor: supervisor({
+          probeUrl: async (url) => {
+            probed.push(url);
+            return true;
+          }
+        })
+      }
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      preview_url: "http://127.0.0.1:4300/projects/atlas",
+      surface: {
+        preview_url: "http://127.0.0.1:4300",
+        route_path: "/projects/atlas",
+        surface_url: "http://127.0.0.1:4300/projects/atlas"
+      }
+    });
+    expect(probed).toContain("http://127.0.0.1:4300/projects/atlas");
+  });
+});
+
 test("record_preview requires a declared prototype artifact and real linkage ids", async () => {
   await withProject(async (projectPath) => {
     enterPrototypeValidation(projectPath);
@@ -299,6 +335,21 @@ test("record_preview requires a declared prototype artifact and real linkage ids
         { supervisor: supervisor() }
       )
     ).toEqual({ ok: false, reason: "artifact_path_escape" });
+
+    for (const routePath of [
+      "projects/atlas",
+      "//example.com/atlas",
+      "/projects/../admin",
+      "/projects/atlas?mode=1",
+      "/projects/atlas#hero",
+      "/projects\\atlas"
+    ]) {
+      expect(
+        await recordPreview(projectPath, previewInput({ routePath }), {
+          supervisor: supervisor()
+        })
+      ).toEqual({ ok: false, reason: "invalid_preview" });
+    }
 
     expect(listPrototypeSurfaces(projectPath)).toEqual([]);
   });

@@ -7,9 +7,10 @@ import {
 } from "../consolidate-review";
 
 export function claimConsolidateReviewCommand(
-  projectPath: string
+  projectPath: string,
+  input: { reconciliationId: string }
 ): ClaimConsolidateReviewResult {
-  return claimConsolidateReview(projectPath);
+  return claimConsolidateReview(projectPath, input.reconciliationId);
 }
 
 export function dismissDesignerFeedbackCommand(

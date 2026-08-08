@@ -10,6 +10,7 @@ import { registerArtifactTools } from "./artifact-tools";
 import { registerRuleUpdateTools } from "./rule-update-tools";
 import { registerConsolidateReviewTools } from "./consolidate-review-tools";
 import { registerDesignerFeedbackTools } from "./feedback-tools";
+import { registerConversationReconciliationTools } from "./conversation-reconciliation-tools";
 import { registerPrototypePreviewTools } from "./prototype-preview-tools";
 import { registerRuleCaptureTools } from "./rule-capture-tools";
 import { registerNewDesignRunTools } from "./new-design-run-tools";
@@ -41,6 +42,7 @@ export function registerIkranTools(
   registerArtifactTools(mcp, deps);
   registerRuleUpdateTools(mcp, deps);
   registerDesignerFeedbackTools(mcp, deps);
+  registerConversationReconciliationTools(mcp, deps);
   registerPrototypePreviewTools(mcp, deps);
   registerRuleCaptureTools(mcp, deps);
   registerNewDesignRunTools(mcp, deps);

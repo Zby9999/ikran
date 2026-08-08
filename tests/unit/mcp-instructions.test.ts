@@ -25,10 +25,15 @@ describe("MCP instructions channel split", () => {
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("rule taxonomy");
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("never move silently");
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("rule-update proposal");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("record_designer_feedback");
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
+      "reconcile_designer_conversation"
+    );
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("design-system source only");
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("never feedback");
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("capture_rule_screenshot");
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
+      "declare_component_live_heroes"
+    );
     expect(IKRAN_MCP_INSTRUCTIONS).toContain(
       "never reuse existing capture files"
     );

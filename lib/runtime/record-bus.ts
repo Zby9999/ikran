@@ -13,6 +13,7 @@ export type RecordBusKind =
   | "alignment"
   | "artifact"
   | "design-system"
+  | "phase"
   | "prototype";
 export type RecordBusAction = "created" | "updated" | "deleted";
 

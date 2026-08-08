@@ -86,9 +86,9 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
         expect(events.folder_selected).toBeTruthy();
         expect(typeof createSc.session).toBe("string");
         expect(String(createSc.workbench_url)).toMatch(URL_RE);
-        expect(createSc.next_action).toEqual({
-          tool: "wait_for_agent_command"
-        });
+        // Fresh project with zero Seed References: the wait is not armed
+        // (no designer handoff can arrive before registration completes).
+        expect(createSc.next_action).toBeUndefined();
         const token = createSc.session as string;
         const workbenchUrl = createSc.workbench_url as string;
         const port = Number(workbenchUrl.match(/127\.0\.0\.1:(\d+)\//)?.[1]);

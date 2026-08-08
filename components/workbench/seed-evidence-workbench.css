@@ -349,13 +349,15 @@
   cursor: not-allowed;
 }
 
-/* Prototype phase (Figma 729:1465) — pill + grey waiting status on one row. */
+/* Prototype phase (Figma 729:1465) — pill left, grey waiting status right. */
 .seed-workbench__folder-prototype {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   width: 100%;
   min-width: 0;
+  padding-right: 8px;
 }
 
 .seed-workbench__folder-prototype-status {
@@ -1112,51 +1114,82 @@
 }
 
 /* Prototype Evidence Surface frame (Issue 30, Figma 729:1640) — grey chrome
-   with a "Prototype" label + WebProgramming icon, then the running site. The
-   body is white so an installing / failed / stale placeholder reads as page
-   chrome rather than a broken screenshot. */
+   with a "Prototype" label + WebProgramming icon, then the running site in an
+   inner bordered box. The body is white so an installing / failed / stale
+   placeholder reads as page chrome rather than a broken screenshot. */
 .prototype-surface-frame {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  border: 1px solid #c1c1c1;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #ffffff;
   border-radius: 8px;
   background: #dcdcdc;
-  box-shadow: 0 4px 4px rgba(0, 0, 0, 0.25);
+  box-shadow:
+    0 4px 8px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(0, 0, 0, 0.1);
   overflow: hidden;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
 }
 
+/* tldraw's native indicator is suppressed on workbench shapes, so the selected
+   (focus) state reads through this ring on the chrome. */
 .prototype-surface-frame--selected {
-  border-color: #8f8f8f;
+  box-shadow:
+    0 4px 8px rgba(0, 0, 0, 0.25),
+    0 0 0 2px #7a7a7a;
 }
 
 .prototype-surface-frame__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
   flex: 0 0 auto;
-  height: 29px;
-  padding: 0 10px;
-  border-bottom: 1px solid #c7c7c7;
+  height: 20px;
   color: #575757;
 }
 
 .prototype-surface-frame__title {
   margin: 0;
+  padding: 0 6px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #3d3d3d;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 400;
   line-height: normal;
-  letter-spacing: -0.36px;
+  letter-spacing: -0.3px;
+}
+
+.prototype-surface-frame__icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.prototype-surface-frame__icon-button:hover:not(:disabled) {
+  background: rgba(61, 61, 61, 0.08);
+}
+
+.prototype-surface-frame__icon-button:disabled {
+  cursor: default;
+  opacity: 0.4;
 }
 
 .prototype-surface-frame__icon {
@@ -1165,24 +1198,27 @@
 
 .prototype-surface-frame__body {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #c7c7c7;
+  border-radius: 4px;
   background: #ffffff;
   overflow: hidden;
 }
 
-/* Runtime owns the dev server; the canvas only mirrors it. Pointer events stay
-   off so canvas drag / selection keep working — Issue 30 excludes hover and
-   DOM inspection inside the preview. */
+/* Runtime owns the dev server; the canvas only mirrors it. The iframe lays out
+   at the Workbench browser's viewport width and is CSS-scaled to the body
+   (inline style), keeping the same responsive breakpoint as the page opened in
+   a tab. Pointer events stay on so the page remains clickable / scrollable —
+   Issue 30: focus 后 live iframe 可交互. Pointer/wheel events stop at the iframe,
+   so canvas selection, drag and zoom over the body go through the header chrome
+   or the surrounding canvas instead. */
 .prototype-surface-frame__live {
-  width: 100%;
-  height: 100%;
+  display: block;
   border: 0;
-  pointer-events: none;
+  transform-origin: top left;
 }
 
 .prototype-surface-frame__placeholder {
@@ -1230,6 +1266,41 @@
   font-size: 11px;
   font-weight: 400;
   letter-spacing: -0.33px;
+}
+
+/* Runtime-captured bitmap for a non-live ready surface (Issue 30 screenshot
+   placeholder). Scale from the top-left by width, matching the live iframe;
+   the frame body clips any vertical overflow. */
+.prototype-surface-frame__screenshot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+
+/* Same copy as __placeholder-text, pinned bottom-center over the bitmap with
+   a translucent light background so it stays readable on any screenshot. */
+.prototype-surface-frame__screenshot-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  margin: 0;
+  max-width: 260px;
+  padding: 4px 10px;
+  box-sizing: border-box;
+  color: #575757;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: normal;
+  letter-spacing: -0.36px;
+  text-align: center;
+  pointer-events: none;
 }
 
 /* Region Annotation marker (Issue 06) — on-surface box only.

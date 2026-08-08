@@ -84,6 +84,15 @@ export type PreviewStartOutcome = {
 const livePreviewHandles = new Set<PreviewProcessHandle>();
 
 /**
+ * Handles stopped by Runtime shutdown rather than by an unexpected process
+ * exit. A WeakSet lets the later `exited` continuation distinguish those two
+ * causes without retaining completed handles. Shutdown parking owns the
+ * surface state; if that best-effort DB write failed, leaving the previous
+ * live row untouched lets the next Runtime recover it as an unclean shutdown.
+ */
+const intentionallyStoppedPreviewHandles = new WeakSet<PreviewProcessHandle>();
+
+/**
  * Kill every Runtime-owned preview dev server. Called on Runtime shutdown;
  * the surfaces are marked stale (`runtime_shutdown`) separately, and the next
  * launch restores them from their persisted run records.
@@ -91,6 +100,7 @@ const livePreviewHandles = new Set<PreviewProcessHandle>();
 export function killAllPreviewServers(): void {
   for (const handle of livePreviewHandles) {
     try {
+      intentionallyStoppedPreviewHandles.add(handle);
       handle.kill();
     } catch {
       // Process already gone — nothing to sweep.
@@ -170,7 +180,11 @@ export async function startPreviewServer(
     if (await deps.probeUrl(input.url)) {
       input.onReadiness("ready", null);
       // No auto-restart: a later exit only marks the surface stale.
-      void handle.exited.then(() => input.onExit("dev_server_exited"));
+      void handle.exited.then(() => {
+        if (!intentionallyStoppedPreviewHandles.has(handle)) {
+          input.onExit("dev_server_exited");
+        }
+      });
       return { readiness: "ready", reason: null };
     }
     await deps.sleep(PREVIEW_PROBE_INTERVAL_MS);

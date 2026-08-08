@@ -217,6 +217,72 @@ test("shutdown marking is idempotent and never touches code_changed staleness", 
   });
 });
 
+test("an intentional shutdown remains restorable when the initial park write is busy", async () => {
+  await withProject(async (projectPath) => {
+    declarePrototypeArtifact(projectPath);
+    enterPrototypeValidation(projectPath);
+
+    let resolveExit!: (value: {
+      code: number | null;
+      signal: string | null;
+    }) => void;
+    const exited = new Promise<{
+      code: number | null;
+      signal: string | null;
+    }>((resolve) => {
+      resolveExit = resolve;
+    });
+    const preview = await recordPreview(projectPath, previewInput(), {
+      supervisor: supervisor({
+        startDevServer: () => ({
+          exited,
+          kill: () => resolveExit({ code: null, signal: "SIGTERM" })
+        })
+      })
+    });
+    if (!preview.ok) throw new Error(JSON.stringify(preview));
+
+    // Reproduce the real shutdown race: another short transaction owns the
+    // writer lock, so the best-effort runtime_shutdown park cannot commit.
+    const lock = new DatabaseSync(getProjectDbPath(projectPath));
+    lock.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE");
+    try {
+      expect(markPrototypeSurfacesStaleForShutdown(projectPath)).toEqual({
+        ok: false,
+        reason: "db_error"
+      });
+    } finally {
+      lock.exec("ROLLBACK");
+      lock.close();
+    }
+
+    // Runtime intentionally kills its owned child after the failed park. That
+    // exit must not become terminal `dev_server_exited`; an honest ready row
+    // is recoverable on the next launch as an unclean-shutdown candidate.
+    killAllPreviewServers();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    let spawned = 0;
+    const restored = await restorePrototypePreviews(projectPath, {
+      supervisor: supervisor({
+        probeUrl: async () => spawned > 0,
+        startDevServer: () => {
+          spawned += 1;
+          return { exited: new Promise(() => {}), kill: () => {} };
+        }
+      })
+    });
+
+    expect(restored.restarted).toEqual([preview.surface.id]);
+    expect(spawned).toBe(1);
+    expect(getPrototypeSurface(projectPath, preview.surface.id)).toMatchObject({
+      readiness: "ready",
+      stale: false,
+      stale_reason: null
+    });
+  });
+});
+
 test("a failed readiness is terminal: no shutdown parking, no restore retry", async () => {
   await withProject(async (projectPath) => {
     declarePrototypeArtifact(projectPath);

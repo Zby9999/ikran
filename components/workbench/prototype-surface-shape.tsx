@@ -15,10 +15,10 @@
 // a hint overlay instead of the text-only placeholder (Issue 30 screenshot
 // placeholder).
 //
-// The live preview lays out at a fixed virtual viewport width
-// (PROTOTYPE_SURFACE_LIVE_VIEWPORT_W) and is CSS-scaled down to the body, so a
-// desktop page always fits the frame instead of being cropped 1:1 — the same
-// zoomed-out read the seed reference frames get from bitmap downscaling.
+// The live preview and Runtime screenshot share one fixed presentation
+// viewport and are CSS-scaled down to the body. Matching those source
+// viewports preserves responsive margins when switching between bitmap and
+// iframe while keeping the single managed screenshot stable across tabs.
 //
 // Interaction (Issue 30 "focus 后 live iframe 可交互"): the live iframe keeps
 // pointer events on at all times, so the page is clickable / scrollable without
@@ -39,6 +39,8 @@ import {
   useEditor,
   useValue
 } from "tldraw";
+
+import { PROTOTYPE_PRESENTATION_VIEWPORT_WIDTH } from "@/lib/runtime/prototype-screenshot-shared";
 
 import { planPrototypeSurfaceLiveShapeId } from "./projection/prototype-surface-live-policy";
 
@@ -86,15 +88,18 @@ export const PROTOTYPE_SURFACE_PROJECTION_TYPE =
 export const PROTOTYPE_SURFACE_PROJECTION_DEFAULT_W = 720;
 export const PROTOTYPE_SURFACE_PROJECTION_DEFAULT_H = 848;
 
-/** Virtual viewport width the live preview lays out at before CSS downscaling. */
-export const PROTOTYPE_SURFACE_LIVE_VIEWPORT_W = 1440;
+/** Shared source viewport for live iframe and its stable screenshot. */
+export const PROTOTYPE_SURFACE_LIVE_VIEWPORT_W =
+  PROTOTYPE_PRESENTATION_VIEWPORT_WIDTH;
 
 /**
- * Live-preview sizing: render the iframe at the virtual viewport width and
- * CSS-scale it into the body so the full page width always fits. Frames wider
- * than the virtual viewport are treated as a deliberate enlarge — scale locks
- * at 1 and the page gets a genuinely wider viewport instead of a blurry
- * upscale. Returns zero sizes until the body has been measured.
+ * Live-preview sizing: render the iframe at the same fixed presentation width
+ * as the managed screenshot, then CSS-scale it into the body. This makes a
+ * live/non-live switch geometrically stable even when several Workbench tabs
+ * have different window widths. The source width remains fixed even when a
+ * frame is wider, because changing it would choose a different responsive
+ * layout from the screenshot. Returns zero sizes until the body has been
+ * measured.
  */
 export function prototypeSurfaceLiveViewport(
   bodyWidth: number,
@@ -103,15 +108,25 @@ export function prototypeSurfaceLiveViewport(
   if (bodyWidth <= 0 || bodyHeight <= 0) {
     return { scale: 1, width: 0, height: 0 };
   }
-  const scale =
-    bodyWidth >= PROTOTYPE_SURFACE_LIVE_VIEWPORT_W
-      ? 1
-      : bodyWidth / PROTOTYPE_SURFACE_LIVE_VIEWPORT_W;
+  const viewportWidth = PROTOTYPE_SURFACE_LIVE_VIEWPORT_W;
+  const scale = bodyWidth / viewportWidth;
   return {
     scale,
-    width: Math.round(bodyWidth / scale),
+    width: Math.round(viewportWidth),
     height: Math.round(bodyHeight / scale)
   };
+}
+
+/** Visual body tier. A stale/starting surface is not live, but its last
+ * successful bitmap remains useful context and must not collapse into an
+ * empty status frame. */
+export function prototypeSurfaceBodyMode(input: {
+  showLive: boolean;
+  screenshotSrc: string;
+}): "live" | "screenshot" | "placeholder" {
+  if (input.showLive) return "live";
+  if (input.screenshotSrc.trim().length > 0) return "screenshot";
+  return "placeholder";
 }
 
 const READINESS_LABEL: Record<
@@ -225,6 +240,7 @@ function PrototypeSurfaceFrame({
   // placeholder is the warning, an empty iframe would read as a broken site.
   const canLive = readiness === "ready" && !stale && url.length > 0;
   const showLive = canLive && liveShapeId === shape.id;
+  const bodyMode = prototypeSurfaceBodyMode({ showLive, screenshotSrc });
   const status = canLive && !showLive
     ? "Select this surface to show the live preview"
     : prototypeSurfaceStatusText({
@@ -234,8 +250,9 @@ function PrototypeSurfaceFrame({
         staleReason
       });
   // Measure the body (layout pixels — ResizeObserver ignores the camera
-  // transform) so the live iframe can lay out at the virtual viewport and be
-  // CSS-scaled to fit. Re-measures on frame resize.
+  // transform) so the live iframe can be CSS-scaled to fit. The source width
+  // stays fixed and shared with screenshot capture; only frame geometry is
+  // observed, so window resizing cannot change the page's responsive layout.
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [bodySize, setBodySize] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -321,7 +338,7 @@ function PrototypeSurfaceFrame({
         data-testid="prototype-surface-projection-body"
         data-live={showLive ? "true" : "false"}
       >
-        {showLive ? (
+        {bodyMode === "live" ? (
           <iframe
             className="prototype-surface-frame__live"
             data-testid="prototype-surface-projection-live"
@@ -339,7 +356,7 @@ function PrototypeSurfaceFrame({
                 : { visibility: "hidden" }
             }
           />
-        ) : canLive && screenshotSrc ? (
+        ) : bodyMode === "screenshot" ? (
           // Not the live surface but a bitmap was captured (Issue 30): show
           // the page itself with a hint overlay instead of a text-only
           // placeholder. The img is pointer-transparent so the non-live frame

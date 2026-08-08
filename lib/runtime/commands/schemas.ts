@@ -317,7 +317,13 @@ export const cancelRuleUpdateInputSchema = z.object(
   cancelRuleUpdateInputShape
 );
 
-export const claimConsolidateReviewInputShape = {} as const;
+export const claimConsolidateReviewInputShape = {
+  reconciliationId: z
+    .string()
+    .describe(
+      "Completed bounded conversation reconciliation returned by reconcile_designer_conversation."
+    )
+} as const;
 
 export const claimConsolidateReviewInputSchema = z.object(
   claimConsolidateReviewInputShape
@@ -345,6 +351,12 @@ export const recordPreviewInputShape = {
     .describe(
       "Project-relative path of the prototype/code artifact already declared via record_artifact_written."
     ),
+  routePath: z
+    .string()
+    .optional()
+    .describe(
+      "Absolute URL path of this previewable page inside the Runtime-owned dev server, for example `/` or `/projects/atlas`. Defaults to `/`; URLs, `//`, dot segments, query strings, fragments and backslashes are rejected."
+    ),
   prototypeRoot: z
     .string()
     .optional()
@@ -354,7 +366,9 @@ export const recordPreviewInputShape = {
   devCommand: z
     .string()
     .optional()
-    .describe("Dev server command Runtime runs. Defaults to `npm run dev`."),
+    .describe(
+      "Dev server command Runtime runs. Defaults to `npm run dev`. Must be a plain package-manager script invocation (e.g. `npm run dev`, `pnpm dev`, `npx vite`); shell chaining, pipes, redirects, or arbitrary commands are rejected."
+    ),
   surfaceKey: z
     .string()
     .optional()
@@ -441,12 +455,39 @@ export const captureComponentCodeHeroInputShape = {
     .string()
     .optional()
     .describe(
-      'Optional live-render harness route YOU add to the prototype app (Issue 33): a same-origin relative path such as "/__ikran/component/button" that mounts this component standalone with default props and re-renders on the ?state=<name> query (state names come from the spec\'s stateMatrix — do not re-declare them). Pure presentation: no postMessage bridge, no Runtime API calls. Declaring it upgrades the Design System Browser hero from this static capture to a live sandboxed iframe render of the current code; omit it to keep the static code-backed capture only.'
+      'Optional live-render harness route YOU add to the prototype app (Issue 33): a same-origin relative path such as "/__ikran/component/button" that mounts this component standalone with default props and re-renders on the ?state=<name> query (state names come from the spec\'s stateMatrix — do not re-declare them). Pure presentation: no Runtime API calls. To let the Design System Browser fit the full component, the harness must report document.body.scrollWidth and document.body.scrollHeight to parent with postMessage({ type: "ikran:component-size", width, height }, "*") on mount and from a ResizeObserver; the parent accepts geometry only from this iframe and preview origin. Declaring it upgrades the Design System Browser hero from this static capture to a live sandboxed iframe render of the current code; omit it to keep the static code-backed capture only.'
     )
 } as const;
 
 export const captureComponentCodeHeroInputSchema = z.object(
   captureComponentCodeHeroInputShape
+);
+
+export const declareComponentLiveHeroesInputShape = {
+  mappings: z.array(
+    z.object({
+      entryId: z
+        .string()
+        .describe("Component spec row id or stable entry_id."),
+      surfaceId: z
+        .string()
+        .describe("Ready, non-stale Prototype Evidence Surface id."),
+      harnessPath: z
+        .string()
+        .describe(
+          'Same-origin component route such as "/__ikran/component/button"; it must honor ?state=<name>.'
+        ),
+      harnessArtifactPath: z
+        .string()
+        .describe(
+          'Project-relative harness source file already declared as a code/prototype artifact. Its default state must retain native pointer hover. It must report document.body.scrollWidth and document.body.scrollHeight on mount and ResizeObserver updates with parent.postMessage({ type: "ikran:component-size", width, height }, "*") so the Browser can fit and proportionally scale it. It must hide framework dev chrome inside the harness only (Next.js: nextjs-portal { display: none !important; }); do not disable dev indicators for the normal prototype.'
+        )
+    })
+  )
+} as const;
+
+export const declareComponentLiveHeroesInputSchema = z.object(
+  declareComponentLiveHeroesInputShape
 );
 
 export const recordNewDesignRunInputShape = {

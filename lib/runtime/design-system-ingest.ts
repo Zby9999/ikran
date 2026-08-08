@@ -201,6 +201,34 @@ export function stripSourceCaptures(
 }
 
 /**
+ * Component specs in early real projects can contain both a legacy envelope
+ * `sourceCaptures` array (usually Figma/source evidence) and the current
+ * `value.sourceCaptures` array (where Issue 32 wrote generated captures).
+ * Treat both as one logical collection. Artifact path is the stable identity;
+ * a later declaration wins without moving the capture's original position.
+ */
+export function mergeEntrySourceCaptures(
+  envelope: unknown,
+  nested: unknown
+): unknown[] {
+  const merged = new Map<string, unknown>();
+  let anonymous = 0;
+  for (const capture of [
+    ...(Array.isArray(envelope) ? envelope : []),
+    ...(Array.isArray(nested) ? nested : [])
+  ]) {
+    const key =
+      isPlainObject(capture) &&
+      typeof capture.artifactPath === "string" &&
+      capture.artifactPath.trim().length > 0
+        ? `artifact:${capture.artifactPath.trim()}`
+        : `anonymous:${anonymous++}:${JSON.stringify(capture)}`;
+    merged.set(key, capture);
+  }
+  return [...merged.values()];
+}
+
+/**
  * Flatten a schema-validated file into ingest rows. Mirrors the shapes owned
  * by ./design-system-schema; callers must have run validateDesignSystemJson
  * first (declaration + ingest both do).
@@ -232,11 +260,10 @@ export function collectDesignSystemEntryRows(
       kind: entry.kind ?? null,
       domain,
       value,
-      source_captures: Array.isArray(entry.sourceCaptures)
-        ? entry.sourceCaptures
-        : isPlainObject(entry.value) && Array.isArray(entry.value.sourceCaptures)
-          ? entry.value.sourceCaptures
-          : [],
+      source_captures: mergeEntrySourceCaptures(
+        entry.sourceCaptures,
+        isPlainObject(entry.value) ? entry.value.sourceCaptures : undefined
+      ),
       meaning: entry.meaning ?? "",
       status: entry.status,
       links: entry.links,

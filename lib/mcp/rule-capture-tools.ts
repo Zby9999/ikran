@@ -1,10 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
-  captureComponentCodeHeroCommand,
-  captureComponentCodeHeroInputSchema,
   captureRuleScreenshotCommand,
   captureRuleScreenshotInputSchema,
+  declareComponentLiveHeroesCommand,
+  declareComponentLiveHeroesInputSchema,
   requireActiveProjectCommand
 } from "../runtime/commands";
 import {
@@ -38,25 +38,25 @@ export function registerRuleCaptureTools(
   );
 
   mcp.registerTool(
-    "capture_component_code_hero",
+    "declare_component_live_heroes",
     {
       description:
-        "Generate the code-backed hero capture for ONE component spec entry (Issue 32): Runtime screenshots the component's CURRENT code rendering — the preview URL of the Prototype Evidence Surface you name — and writes the capture back into the entry's sourceCaptures with origin \"code\", replacing any previous code capture (source captures are never touched). Gate: the entry must be a component spec whose value.codeLinks were backfilled via backfill_component_code_links, and every linked code file must exist; the capture freezes those files' content digest, and the Design System Browser marks the capture stale once the code changes (never auto-regenerated — re-run this tool to refresh). Use crop to frame the component (two passes, like capture_rule_screenshot: plain, inspect, then crop). Honest failure: when the entry has no codeLinks, the surface preview is unavailable, or the render fails, NOTHING is written and the entry keeps its existing captures — the hero falls back to source-capture / unavailable instead of going blank. Live hero (Issue 33): pass harnessPath to upgrade the hero from this static capture to a live sandboxed render — harnessPath is a same-origin relative route YOU add to the prototype app (e.g. \"/__ikran/component/button\") that mounts the component standalone with default props and re-renders on the ?state=<name> query (state names come from the spec's stateMatrix; pure presentation, no postMessage, no Runtime API calls). The hero falls back to this static capture with a reason caption whenever the live surface is not ready or the harness stops loading — digest staleness never takes down the live render.",
-      inputSchema: captureComponentCodeHeroInputSchema
+        'Declare live iframe heroes for one or more component specs without taking screenshots. First write ALL standalone harness routes, declare every harness file with record_artifact_written, then call record_preview ONCE so the linked surface is ready and non-stale; finally call this batch tool. Each mapping explicitly binds entryId + surfaceId + harnessPath + harnessArtifactPath. Runtime validates component codeLinks, declared code/prototype artifacts, the surface/root relationship and readiness, then writes value.liveHero into each source spec atomically. No Chromium is launched and no code-render PNG is created. The Design System Browser renders <previewUrl><harnessPath>; its default route must retain native pointer hover, while declared states are forced through ?state=<name>. On mount and ResizeObserver updates, report document.body.scrollWidth and document.body.scrollHeight with parent.postMessage({ type: "ikran:component-size", width, height }, "*"); the Browser uses it to grow around tall components and proportionally fit over-wide ones. On failure it falls back directly to the existing source capture or explicit unavailable state. The harness document must suppress framework development chrome locally without disabling it for the normal prototype; for Next.js, add `nextjs-portal { display: none !important; }` to the harness route only and do NOT set global next.config devIndicators=false.',
+      inputSchema: declareComponentLiveHeroesInputSchema
     },
     async (args) => {
       const rt = await ensureRuntime();
       const active = requireActiveProjectCommand();
       if (!active.ok) {
-        return failureResult("capture_component_code_hero", active.reason, rt);
+        return failureResult("declare_component_live_heroes", active.reason, rt);
       }
-      const result = await captureComponentCodeHeroCommand(
+      const result = declareComponentLiveHeroesCommand(
         active.project.path,
         args
       );
       return result.ok
         ? successResult(rt, result)
-        : failureResult("capture_component_code_hero", result.reason, rt);
+        : failureResult("declare_component_live_heroes", result.reason, rt);
     }
   );
 }

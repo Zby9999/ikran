@@ -199,6 +199,30 @@ export function getAlignmentPreparation(
   }
 }
 
+/**
+ * Stages in which a designer Workbench action can still enqueue a durable
+ * Agent command: Next phase → prepare_design_intent_alignment, Complete →
+ * prepare_initial_design_system. Outside this window no durable command will
+ * ever arrive, so re-arming wait_for_agent_command is a guaranteed idle hang.
+ */
+export const DESIGNER_HANDOFF_STAGES: ReadonlySet<WorkflowStage> = new Set([
+  "seed-reference-registration",
+  "alignment-preparing",
+  "alignment-answering"
+]);
+
+export function getProjectWorkflowStage(projectPath: string): WorkflowStage {
+  const db = openProjectDb(projectPath);
+  try {
+    const row = db
+      .prepare(`SELECT stage FROM project_workflow WHERE singleton = 1`)
+      .get() as { stage: string } | undefined;
+    return (row?.stage ?? "seed-reference-registration") as WorkflowStage;
+  } finally {
+    closeProjectDb(db);
+  }
+}
+
 function snapshotDataOnDb(
   db: DatabaseType
 ): AlignmentInputSnapshotData | PreparationFailure {

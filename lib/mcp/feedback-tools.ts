@@ -19,7 +19,7 @@ export function registerDesignerFeedbackTools(
     "record_designer_feedback",
     {
       description:
-        "Declare one designer modification conclusion from Agent-host chat. Call once per concluded change — not per conversational turn. Runtime validates optional evidence-surface / prototype-surface / region / seed-reference linkage ids; forged ids are rejected. Records a designer_feedback row plus designer_feedback_recorded event. Write-only: do not read the feedback library for design generation; only Issue 29 Consolidate review reads it. Optional opaqueContext (e.g. host-browser DOM selector) is stored without Runtime validation or coordinate mapping.",
+        "Legacy compatibility escape hatch for importing one already-concluded feedback record. Do NOT call this during active Agent-host design conversation. Normal completion and Rule Update must use reconcile_designer_conversation so Runtime receives a frozen transcript range, designer-message provenance, and one atomic decision batch. Runtime validates optional evidence/prototype/region/seed linkage ids.",
       inputSchema: recordDesignerFeedbackInputSchema
     },
     async (args) => {

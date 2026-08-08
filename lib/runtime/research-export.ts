@@ -25,6 +25,7 @@ import {
   type LoggedEvent
 } from "./events";
 import { NEW_DESIGN_RUN_KIND } from "./new-design-run";
+import { decodeOpaqueJson, parseJsonStringArray } from "./json-columns";
 import { getExportDir, getProjectConfigPath } from "./paths";
 import { mapSeedRow } from "./seed-row-map";
 
@@ -198,25 +199,6 @@ export function evaluateResearchExportEligibilityFromEvents(
   };
 }
 
-function parseJsonArray(raw: string | null | undefined): string[] {
-  if (typeof raw !== "string" || raw.trim().length === 0) return [];
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? parsed.map((v) => String(v)) : [];
-  } catch {
-    return [];
-  }
-}
-
-function parseOpaque(raw: string | null | undefined): unknown {
-  if (typeof raw !== "string" || raw.trim().length === 0) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return raw;
-  }
-}
-
 function loadExcludedProposalIds(db: DatabaseType): Set<string> {
   const rows = db
     .prepare(
@@ -295,7 +277,7 @@ function loadDeclaredArtifactsOnDb(
     path: row.path,
     artifact_type: row.artifact_type,
     semantic_purpose: row.semantic_purpose,
-    related_record_ids: parseJsonArray(row.related_record_ids_json),
+    related_record_ids: parseJsonStringArray(row.related_record_ids_json),
     readiness: row.readiness,
     declaration_version: row.declaration_version,
     status: row.status,
@@ -479,18 +461,18 @@ function loadPrototypeRuns(db: DatabaseType): Record<string, unknown>[] {
     source_artifact_path: String(row.source_artifact_path),
     prototype_root: String(row.prototype_root),
     dev_command: String(row.dev_command),
-    seed_reference_ids: parseJsonArray(
+    seed_reference_ids: parseJsonStringArray(
       typeof row.seed_reference_ids_json === "string"
         ? row.seed_reference_ids_json
         : null
     ),
-    evidence_version_ids: parseJsonArray(
+    evidence_version_ids: parseJsonStringArray(
       typeof row.evidence_version_ids_json === "string"
         ? row.evidence_version_ids_json
         : null
     ),
     design_system_version: String(row.design_system_version),
-    used_candidate_ids: parseJsonArray(
+    used_candidate_ids: parseJsonStringArray(
       typeof row.used_candidate_ids_json === "string"
         ? row.used_candidate_ids_json
         : null
@@ -533,9 +515,9 @@ function loadConfirmedRuleProposals(
     title: row.title,
     change_description: row.change_description,
     reason: row.reason,
-    affected_items: parseJsonArray(row.affected_items_json),
+    affected_items: parseJsonStringArray(row.affected_items_json),
     // Designer-feedback evidence ids are a subset of this list; keep linkage.
-    evidence_record_ids: parseJsonArray(row.evidence_record_ids_json),
+    evidence_record_ids: parseJsonStringArray(row.evidence_record_ids_json),
     status: row.status,
     source_artifact_path: row.source_artifact_path,
     entry_id: row.entry_id,
@@ -573,7 +555,7 @@ function loadDesignerFeedback(db: DatabaseType): Record<string, unknown>[] {
     prototype_surface_id: row.prototype_surface_id,
     region_annotation_id: row.region_annotation_id,
     seed_reference_id: row.seed_reference_id,
-    opaque_context: parseOpaque(row.opaque_context_json),
+    opaque_context: decodeOpaqueJson(row.opaque_context_json),
     created_at: row.created_at
   }));
 }

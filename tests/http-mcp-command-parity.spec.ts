@@ -67,6 +67,8 @@ test("one-process Workbench + HTTP + MCP + SSE vertical preserves parity", async
     expect(toolNames).toContain("get_project_readiness");
     expect(toolNames).toContain("set_design_language_description");
     expect(toolNames).toContain("update_seed_reference_note");
+    expect(toolNames).toContain("declare_component_live_heroes");
+    expect(toolNames).not.toContain("capture_component_code_hero");
     expect(toolNames).not.toContain("register_seed_reference");
     expect(toolNames).not.toContain("record_evidence_package");
     expect(toolNames).not.toContain("list_pending_seed_evidence");

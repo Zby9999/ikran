@@ -209,11 +209,10 @@ test.describe("Ikran Issue 02/01 — open_workbench MCP tool", () => {
         expect(info1.url).toBeTruthy();
         expect(info1.url).toMatch(URL_RE);
         expect(info1.nextAction).toEqual({
-          tool: "create_or_open_project",
-          then: "wait_for_agent_command"
+          tool: "create_or_open_project"
         });
         expect(info1.text).toMatch(
-          /do not end (?:the )?turn.*wait_for_agent_command/is
+          /do not end (?:the )?turn.*create_or_open_project/is
         );
 
         // Persistent Runtime owner: Cursor's stdio bridge has a different PID.

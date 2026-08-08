@@ -165,6 +165,20 @@ export interface DesignSystemLayoutCapture {
   surfaceStale: boolean;
 }
 
+/** Component live iframe declaration (Issue 33 revised): independent from
+ * generated screenshots. The source spec owns the explicit harness mapping;
+ * Runtime decorates it with the linked surface lifecycle for one-fetch DSB
+ * planning. */
+export interface DesignSystemLiveHeroView {
+  surfaceId: string;
+  harnessPath: string;
+  harnessArtifactPath: string;
+  codeLinks: string[];
+  previewUrl: string | null;
+  surfaceReadiness: DesignSystemCaptureSurfaceReadiness | null;
+  surfaceStale: boolean;
+}
+
 export interface DesignSystemEntryView {
   /**
    * DB row id (uuid) — volatile across re-ingests (replace-by-source deletes
@@ -196,6 +210,8 @@ export interface DesignSystemEntryView {
    * 09C-D03 component spec hero). Undefined for other sections and for
    * entries that declare no captures. */
   captures?: DesignSystemLayoutCapture[];
+  /** Component specs only: a screenshot-free live harness declaration. */
+  liveHero?: DesignSystemLiveHeroView | null;
 }
 
 export interface DesignSystemView {
@@ -373,6 +389,35 @@ function capturesOfRaw(
     });
   }
   return captures.length > 0 ? captures : undefined;
+}
+
+function liveHeroOfValue(
+  value: unknown,
+  liveSurfaceOf: (surfaceId: string) => LiveSurfaceInfo | null
+): DesignSystemLiveHeroView | null {
+  if (!isPlainObject(value) || !isPlainObject(value.liveHero)) return null;
+  const declaration = value.liveHero;
+  if (
+    !nonEmptyString(declaration.surfaceId) ||
+    !nonEmptyString(declaration.harnessPath) ||
+    !isCaptureHarnessPath(declaration.harnessPath) ||
+    !nonEmptyString(declaration.harnessArtifactPath) ||
+    !Array.isArray(value.codeLinks) ||
+    value.codeLinks.length === 0 ||
+    !value.codeLinks.every(nonEmptyString)
+  ) {
+    return null;
+  }
+  const surface = liveSurfaceOf(declaration.surfaceId);
+  return {
+    surfaceId: declaration.surfaceId,
+    harnessPath: declaration.harnessPath,
+    harnessArtifactPath: declaration.harnessArtifactPath,
+    codeLinks: value.codeLinks as string[],
+    previewUrl: surface?.previewUrl ?? null,
+    surfaceReadiness: surface?.readiness ?? null,
+    surfaceStale: surface?.stale ?? false
+  };
 }
 
 /** evidenceVersionIds referenced by a stored alignment anchor (anchor_json).
@@ -662,6 +707,9 @@ function buildDesignSystemViewFromDb(
                   liveSurfaceOf
                 )
               }
+            : {}),
+          ...(row.section === "components.spec"
+            ? { liveHero: liveHeroOfValue(value, liveSurfaceOf) }
             : {})
         },
         versionIds: [...new Set(versionIds)]

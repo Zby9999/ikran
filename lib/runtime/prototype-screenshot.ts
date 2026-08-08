@@ -14,14 +14,26 @@
 // devDependency). All host effects go through `PrototypeScreenshotDeps` so
 // unit tests exercise the flow without a browser.
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync
+} from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import { getArtifactsDir } from "./paths";
 import { setPrototypeSurfaceScreenshot } from "./prototype-surface";
+import {
+  normalizePrototypeScreenshotViewportWidth,
+  prototypeScreenshotFileName,
+  PROTOTYPE_SCREENSHOT_DEFAULT_VIEWPORT_WIDTH,
+  PROTOTYPE_SCREENSHOT_VIEWPORT_HEIGHT
+} from "./prototype-screenshot-shared";
 
 const PROTOTYPE_MEDIA_DIR_NAME = "prototype-media";
-const SCREENSHOT_VIEWPORT = { width: 1440, height: 900 };
 const SCREENSHOT_GOTO_TIMEOUT_MS = 15_000;
 /** Settle time after `load` for client-side rendering to paint. */
 const SCREENSHOT_RENDER_WAIT_MS = 1_500;
@@ -51,7 +63,13 @@ export interface PrototypeScreenshotDeps {
     projectPath: string,
     surfaceId: string,
     artifactPath: string
-  ): { ok: true } | { ok: false; reason: string };
+  ):
+    | { ok: true; previous_artifact_path: string | null }
+    | { ok: false; reason: string };
+  /** Remove a superseded managed screenshot after the DB points at the new one. */
+  removeArtifact(absolutePath: string): void;
+  /** Enumerate managed screenshot filenames for orphan cleanup. */
+  listArtifacts(absoluteDirectory: string): string[];
   sleep(ms: number): Promise<void>;
   now(): number;
 }
@@ -59,6 +77,11 @@ export interface PrototypeScreenshotDeps {
 export type PrototypeScreenshotResult =
   | { ok: true; artifact_path: string }
   | { ok: false; reason: string };
+
+export type PrototypeScreenshotOptions = {
+  /** CSS viewport width to match the Workbench browser's responsive layout. */
+  viewportWidth?: number;
+};
 
 export const defaultPrototypeScreenshotDeps: PrototypeScreenshotDeps = {
   async launchBrowser() {
@@ -69,10 +92,35 @@ export const defaultPrototypeScreenshotDeps: PrototypeScreenshotDeps = {
   },
   writeArtifact(absolutePath, bytes) {
     mkdirSync(path.dirname(absolutePath), { recursive: true });
-    writeFileSync(absolutePath, bytes);
+    const temporaryPath = `${absolutePath}.${randomUUID()}.tmp`;
+    try {
+      writeFileSync(temporaryPath, bytes);
+      renameSync(temporaryPath, absolutePath);
+    } catch (error) {
+      try {
+        unlinkSync(temporaryPath);
+      } catch {
+        // The temporary file was never created or was already moved.
+      }
+      throw error;
+    }
   },
   persist(projectPath, surfaceId, artifactPath) {
     return setPrototypeSurfaceScreenshot(projectPath, surfaceId, artifactPath);
+  },
+  removeArtifact(absolutePath) {
+    try {
+      unlinkSync(absolutePath);
+    } catch {
+      // Cleanup is best-effort; the DB already points at the valid new image.
+    }
+  },
+  listArtifacts(absoluteDirectory) {
+    try {
+      return readdirSync(absoluteDirectory);
+    } catch {
+      return [];
+    }
   },
   sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -92,8 +140,12 @@ export async function capturePrototypeSurfaceScreenshot(
   projectPath: string,
   surfaceId: string,
   previewUrl: string,
-  deps: PrototypeScreenshotDeps = defaultPrototypeScreenshotDeps
+  deps: PrototypeScreenshotDeps = defaultPrototypeScreenshotDeps,
+  options: PrototypeScreenshotOptions = {}
 ): Promise<PrototypeScreenshotResult> {
+  const viewportWidth = normalizePrototypeScreenshotViewportWidth(
+    options.viewportWidth ?? PROTOTYPE_SCREENSHOT_DEFAULT_VIEWPORT_WIDTH
+  );
   let browser: PrototypeScreenshotBrowser;
   try {
     browser = await deps.launchBrowser();
@@ -104,7 +156,10 @@ export async function capturePrototypeSurfaceScreenshot(
   let bytes: Buffer;
   try {
     const page = await browser.newPage();
-    await page.setViewportSize(SCREENSHOT_VIEWPORT);
+    await page.setViewportSize({
+      width: viewportWidth,
+      height: PROTOTYPE_SCREENSHOT_VIEWPORT_HEIGHT
+    });
     await page.goto(previewUrl, {
       waitUntil: "load",
       timeout: SCREENSHOT_GOTO_TIMEOUT_MS
@@ -124,7 +179,9 @@ export async function capturePrototypeSurfaceScreenshot(
     }
   }
 
-  const fileName = `${encodeURIComponent(surfaceId)}-${deps.now()}.png`;
+  // One rebuildable placeholder per surface. Atomic overwrite prevents an
+  // iteration trail of timestamped PNGs from accumulating indefinitely.
+  const fileName = prototypeScreenshotFileName(surfaceId, viewportWidth);
   // Stored project-relative with forward slashes, matching evidence-media's
   // `.ikran/artifacts/evidence-media/...` convention, so the Workbench serves
   // it through /api/artifacts.
@@ -145,5 +202,19 @@ export async function capturePrototypeSurfaceScreenshot(
 
   const persisted = deps.persist(projectPath, surfaceId, relativePath);
   if (!persisted.ok) return { ok: false, reason: persisted.reason };
+  const managedRoot = path.resolve(
+    getArtifactsDir(projectPath),
+    PROTOTYPE_MEDIA_DIR_NAME
+  );
+  const surfacePrefix = `${encodeURIComponent(surfaceId)}-`;
+  for (const candidate of deps.listArtifacts(managedRoot)) {
+    if (
+      candidate !== fileName &&
+      candidate.startsWith(surfacePrefix) &&
+      candidate.toLowerCase().endsWith(".png")
+    ) {
+      deps.removeArtifact(path.join(managedRoot, candidate));
+    }
+  }
   return { ok: true, artifact_path: relativePath };
 }

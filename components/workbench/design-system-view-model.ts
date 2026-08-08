@@ -22,6 +22,7 @@ import { specPathMatchesSourceArtifact } from "@/lib/runtime/design-system-spec-
 import type {
   DesignSystemEntryView,
   DesignSystemLayoutCapture,
+  DesignSystemLiveHeroView,
   DesignSystemView
 } from "@/lib/runtime/design-system-view";
 import type { DesignIntentAlignmentSnapshot } from "@/lib/runtime/design-intent-alignment";
@@ -30,6 +31,7 @@ export type {
   DesignSystemEntryView,
   DesignSystemEntryEvidence,
   DesignSystemLayoutCapture,
+  DesignSystemLiveHeroView,
   DesignSystemView
 } from "@/lib/runtime/design-system-view";
 
@@ -402,6 +404,8 @@ export interface DsComponentModel {
   detail: DsComponentDetail | null;
   /** Source captures the Runtime view decorated onto the spec ([] = none). */
   captures: DesignSystemLayoutCapture[];
+  /** Screenshot-free code-backed iframe declaration. */
+  liveHero: DesignSystemLiveHeroView | null;
   chips: string[];
 }
 
@@ -514,26 +518,22 @@ function componentStatusOf(
 
 /* ------------------------- hero live plan (Issue 33) ------------------------- */
 
-/** Why a DECLARED live hero could not render and fell back to the static
- * capture. "surface_not_ready": the linked prototype surface is not running
+/** Why a DECLARED live hero could not render and fell back to source evidence.
+ * "surface_not_ready": the linked prototype surface is not running
  * (readiness not "ready", or its row is gone). "surface_stale": the surface
  * is up but was marked stale (code changed / dev server exited) and is not
  * re-serving the current code. "live_unreachable": the surface looked live
  * but the harness iframe never finished loading (the harness moved or
- * broke). A static code capture WITHOUT a harness declaration is the plain
- * Issue-32 tier, not a fallback. */
+ * broke). */
 export type DsHeroLiveFallbackReason =
   | "surface_not_ready"
   | "surface_stale"
   | "live_unreachable";
 
 /** Hero tier for the component placard: live sandboxed render of the current
- * code when a harness was declared and its surface is live; otherwise the
- * best static capture (code-backed outranks source); otherwise the explicit
- * unavailable block. The chain live → code capture → source capture →
- * unavailable mirrors the 09C-D03 two-tier decision, and digest staleness
- * never takes down the live render (live always renders the current code —
- * the stale flag stays on the origin popover only). `liveKey` identifies the
+ * code when a harness was declared and its surface is live; otherwise a
+ * source capture; otherwise the explicit unavailable block. Generated code
+ * screenshots are deliberately absent from this chain. `liveKey` identifies the
  * current live target AND its readiness (see componentHeroLiveKey) so the
  * client can pin its load-timeout verdict to it: the verdict is terminal per
  * key, and a changed key — new capture, or the surface's readiness/staleness
@@ -541,7 +541,7 @@ export type DsHeroLiveFallbackReason =
 export type DsHeroPlan =
   | {
       kind: "live";
-      capture: DesignSystemLayoutCapture;
+      liveHero: DesignSystemLiveHeroView;
       liveKey: string | null;
     }
   | {
@@ -550,7 +550,11 @@ export type DsHeroPlan =
       liveFallback: DsHeroLiveFallbackReason | null;
       liveKey: string | null;
     }
-  | { kind: "unavailable"; liveKey: null };
+  | {
+      kind: "unavailable";
+      liveFallback: DsHeroLiveFallbackReason | null;
+      liveKey: string | null;
+    };
 
 /** Identity of the live-hero attempt: the render target (preview origin +
  * harness route + capture) PLUS the surface's readiness/staleness. The
@@ -561,15 +565,15 @@ export type DsHeroPlan =
  * Every segment is URI-encoded so the separator cannot collide. Null when
  * the capture declares no harness (no live attempt possible). */
 export function componentHeroLiveKey(
-  capture: DesignSystemLayoutCapture
+  liveHero: DesignSystemLiveHeroView | null
 ): string | null {
-  if (capture.origin !== "code" || capture.harnessPath === null) return null;
+  if (liveHero === null) return null;
   return [
-    capture.previewUrl,
-    capture.harnessPath,
-    capture.artifactPath,
-    capture.surfaceReadiness,
-    String(capture.surfaceStale)
+    liveHero.previewUrl,
+    liveHero.harnessPath,
+    liveHero.harnessArtifactPath,
+    liveHero.surfaceReadiness,
+    String(liveHero.surfaceStale)
   ]
     .map((segment) => encodeURIComponent(String(segment)))
     .join("|");
@@ -580,39 +584,121 @@ export function componentHeroLiveKey(
  * plan demotes to the static capture with "live_unreachable". Owns the
  * code-first tier ordering — callers pass captures in declared order. */
 export function planComponentHero(
+  liveHero: DesignSystemLiveHeroView | null,
   captures: readonly DesignSystemLayoutCapture[],
   unreachableKey: string | null
 ): DsHeroPlan {
-  const sorted = [...captures].sort(
-    (a, b) => Number(b.origin === "code") - Number(a.origin === "code")
-  );
-  const capture = sorted[0];
-  if (!capture) return { kind: "unavailable", liveKey: null };
-  const liveKey = componentHeroLiveKey(capture);
-  if (capture.origin === "code" && capture.harnessPath !== null) {
+  const capture = captures.find((item) => item.origin === "source") ?? null;
+  const liveKey = componentHeroLiveKey(liveHero);
+  if (liveHero !== null) {
     if (unreachableKey !== null && unreachableKey === liveKey) {
-      return { kind: "static", capture, liveFallback: "live_unreachable", liveKey };
+      return capture
+        ? { kind: "static", capture, liveFallback: "live_unreachable", liveKey }
+        : { kind: "unavailable", liveFallback: "live_unreachable", liveKey };
     }
-    if (capture.previewUrl === null || capture.surfaceReadiness !== "ready") {
-      return { kind: "static", capture, liveFallback: "surface_not_ready", liveKey };
+    if (liveHero.previewUrl === null || liveHero.surfaceReadiness !== "ready") {
+      return capture
+        ? { kind: "static", capture, liveFallback: "surface_not_ready", liveKey }
+        : { kind: "unavailable", liveFallback: "surface_not_ready", liveKey };
     }
-    if (capture.surfaceStale) {
-      return { kind: "static", capture, liveFallback: "surface_stale", liveKey };
+    if (liveHero.surfaceStale) {
+      return capture
+        ? { kind: "static", capture, liveFallback: "surface_stale", liveKey }
+        : { kind: "unavailable", liveFallback: "surface_stale", liveKey };
     }
-    return { kind: "live", capture, liveKey };
+    return { kind: "live", liveHero, liveKey };
   }
-  return { kind: "static", capture, liveFallback: null, liveKey };
+  return capture
+    ? { kind: "static", capture, liveFallback: null, liveKey }
+    : { kind: "unavailable", liveFallback: null, liveKey: null };
 }
 
 /** The harness URL the live iframe navigates to. `state` is a spec
  * stateMatrix name; null restores the harness default (no query). */
 export function componentHeroLiveUrl(
-  capture: DesignSystemLayoutCapture,
+  liveHero: DesignSystemLiveHeroView,
   state: string | null
 ): string | null {
-  if (capture.previewUrl === null || capture.harnessPath === null) return null;
-  const base = `${capture.previewUrl}${capture.harnessPath}`;
+  if (liveHero.previewUrl === null) return null;
+  const base = `${liveHero.previewUrl}${liveHero.harnessPath}`;
   return state === null ? base : `${base}?state=${encodeURIComponent(state)}`;
+}
+
+/** One-way sizing message emitted by a standalone component harness. The
+ * parent validates both event.source and event.origin before accepting it;
+ * the harness only reports geometry and never receives Runtime data. */
+export const DS_HERO_SIZE_MESSAGE = "ikran:component-size";
+
+export type DsHeroContentSize = {
+  width: number;
+  height: number;
+};
+
+export type DsHeroFrameLayout = {
+  frameWidth: number;
+  frameHeight: number;
+  displayHeight: number;
+  scale: number;
+};
+
+/** Small components keep a useful presentation stage instead of collapsing
+ * to their raw control height. Larger components expand the stage. */
+export const DS_HERO_MIN_FRAME_HEIGHT = 240;
+const DS_HERO_MAX_REPORTED_SIZE = 100_000;
+
+/** Parse the deliberately tiny cross-origin harness protocol. Rejecting
+ * non-finite and implausibly large values keeps untrusted preview documents
+ * from influencing the Workbench layout outside this component stage. */
+export function parseComponentHeroSizeMessage(
+  value: unknown
+): DsHeroContentSize | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  if (record.type !== DS_HERO_SIZE_MESSAGE) return null;
+  const width = Number(record.width);
+  const height = Number(record.height);
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0 ||
+    width > DS_HERO_MAX_REPORTED_SIZE ||
+    height > DS_HERO_MAX_REPORTED_SIZE
+  ) {
+    return null;
+  }
+  return { width, height };
+}
+
+/** Fit a measured live component into the available stage. Height is
+ * content-driven; only over-wide content is uniformly scaled down. The
+ * iframe itself stays at the unscaled layout size so responsive code and
+ * pointer coordinates remain truthful. */
+export function componentHeroFrameLayout(
+  stageWidth: number,
+  contentSize: DsHeroContentSize | null
+): DsHeroFrameLayout | null {
+  if (!Number.isFinite(stageWidth) || stageWidth <= 0) return null;
+  if (contentSize === null) {
+    return {
+      frameWidth: stageWidth,
+      frameHeight: DS_HERO_MIN_FRAME_HEIGHT,
+      displayHeight: DS_HERO_MIN_FRAME_HEIGHT,
+      scale: 1
+    };
+  }
+  const frameWidth = Math.max(stageWidth, contentSize.width);
+  const scale = Math.min(1, stageWidth / frameWidth);
+  const displayHeight = Math.max(
+    DS_HERO_MIN_FRAME_HEIGHT,
+    contentSize.height * scale
+  );
+  return {
+    frameWidth,
+    frameHeight: Math.max(contentSize.height, displayHeight / scale),
+    displayHeight,
+    scale
+  };
 }
 
 /** Client-side live phase: the iframe mounts optimistically ("pending"); its
@@ -667,11 +753,11 @@ export const DS_HERO_STATE_DEBOUNCE_MS = 150;
 export function heroLiveFallbackCopy(reason: DsHeroLiveFallbackReason): string {
   switch (reason) {
     case "surface_not_ready":
-      return "Live preview unavailable — the prototype surface is not running; showing the code render.";
+      return "Live preview unavailable — the prototype surface is not running; showing the source fallback.";
     case "surface_stale":
-      return "Live preview unavailable — the prototype surface is stale (its code changed); showing the code render.";
+      return "Live preview unavailable — the prototype surface is stale (its code changed); showing the source fallback.";
     case "live_unreachable":
-      return "Live preview unreachable — the harness stopped loading; showing the code render.";
+      return "Live preview unreachable — the harness stopped loading; showing the source fallback.";
   }
 }
 
@@ -842,6 +928,7 @@ export function buildDesignSystemBrowserModel(
       spec,
       detail: parseComponentDetail(spec),
       captures: spec?.captures ?? [],
+      liveHero: spec?.liveHero ?? null,
       chips: statusChips(entries)
     };
   };

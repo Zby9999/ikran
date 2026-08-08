@@ -13,6 +13,10 @@ import {
   type SeedProjectionBounds
 } from "./seed-projection";
 import type { PrototypeSurfaceRecord } from "@/lib/runtime/prototype-surface";
+import {
+  normalizePrototypeScreenshotViewportWidth,
+  prototypeScreenshotViewportWidthFromPath
+} from "@/lib/runtime/prototype-screenshot-shared";
 
 export type PrototypeSurfaceProjectionTarget = {
   /** Stable tldraw shape id key — the Runtime surface id. */
@@ -61,7 +65,7 @@ export function buildPrototypeSurfaceProjectionTargets(
       w: PROTOTYPE_SURFACE_PROJECTION_DEFAULT_W,
       h: PROTOTYPE_SURFACE_PROJECTION_DEFAULT_H,
       props: {
-        previewUrl: surface.preview_url,
+        previewUrl: surface.surface_url,
         readiness: surface.readiness,
         readinessReason: surface.readiness_reason ?? "",
         stale: surface.stale,
@@ -69,7 +73,9 @@ export function buildPrototypeSurfaceProjectionTargets(
         surfaceName: surface.name,
         screenshotSrc:
           artifactPath && session
-            ? artifactScreenshotUrl(artifactPath, session)
+            ? `${artifactScreenshotUrl(artifactPath, session)}&v=${encodeURIComponent(
+                surface.screenshot_captured_at ?? ""
+              )}`
             : ""
       },
       meta: {
@@ -95,6 +101,26 @@ export function prototypeSurfacePropsEqual(
     a.staleReason === b.staleReason &&
     a.surfaceName === b.surfaceName &&
     a.screenshotSrc === b.screenshotSrc
+  );
+}
+
+/** A usable cached bitmap must have been captured at this browser's viewport.
+ * Legacy filenames carry no width and therefore require one refresh. */
+export function prototypeSurfaceNeedsScreenshotRefresh(
+  surface: PrototypeSurfaceRecord
+): boolean {
+  if (
+    surface.readiness !== "ready" ||
+    surface.stale ||
+    surface.surface_url.trim().length === 0 ||
+    (surface.screenshot_artifact_path?.trim().length ?? 0) === 0
+  ) {
+    return false;
+  }
+  return (
+    prototypeScreenshotViewportWidthFromPath(
+      surface.screenshot_artifact_path
+    ) !== normalizePrototypeScreenshotViewportWidth(undefined)
   );
 }
 

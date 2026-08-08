@@ -13,7 +13,16 @@ import { expect, test } from "vitest";
 
 import { initializeProjectDb } from "../../lib/runtime/db";
 import { logEvent, listEvents } from "../../lib/runtime/events";
-import { NEW_DESIGN_RUN_KIND } from "../../lib/runtime/new-design-run";
+import {
+  NEW_DESIGN_RUN_KIND,
+  recordNewDesignRun
+} from "../../lib/runtime/new-design-run";
+import { recordDesignerFeedback } from "../../lib/runtime/designer-feedback";
+import {
+  confirmDraftDesignSystem,
+  confirmPrototype,
+  formalizeDesignSystem
+} from "../../lib/runtime/project-phase";
 import { getExportDir, getProjectDbPath } from "../../lib/runtime/paths";
 import {
   evaluateResearchExportEligibility,
@@ -255,6 +264,101 @@ test("eligibility rejects incomplete recursion and accepts the full sequence", (
       run_id: "run-2",
       kind: NEW_DESIGN_RUN_KIND
     });
+    expect(evaluateResearchExportEligibility(projectPath)).toMatchObject({
+      eligible: true,
+      missing: []
+    });
+  });
+});
+
+function setPhase(projectPath: string, phase: string): void {
+  const db = new DatabaseSync(getProjectDbPath(projectPath));
+  try {
+    db.prepare(
+      `UPDATE project_phase SET phase = ?, updated_at = ? WHERE singleton = 1`
+    ).run(phase, "2026-08-06T00:00:00.000Z");
+  } finally {
+    db.close();
+  }
+}
+
+function consumeFeedback(projectPath: string, feedbackId: string): void {
+  const db = new DatabaseSync(getProjectDbPath(projectPath));
+  try {
+    db.prepare(
+      `INSERT INTO designer_feedback_review_consumption
+       (feedback_id, proposal_id, consumed_at)
+       VALUES (?, 'proposal-1', ?)`
+    ).run(feedbackId, "2026-08-06T12:00:00.000Z");
+  } finally {
+    db.close();
+  }
+}
+
+function insertSeedReference(projectPath: string): void {
+  const db = new DatabaseSync(getProjectDbPath(projectPath));
+  try {
+    db.prepare(
+      `INSERT INTO seed_references
+       (id, figma_seed_reference, original_design_intent, created_at,
+        registered_via, file_key, node_id)
+       VALUES ('seed-1', 'https://www.figma.com/design/AbCdEf/X?node-id=1-2',
+               '', '2026-08-06T00:00:00.000Z', 'agent', 'AbCdEf', '1:2')`
+    ).run();
+  } finally {
+    db.close();
+  }
+}
+
+test("the real command chain reaches eligibility without forged events", () => {
+  withProject((projectPath) => {
+    // Seed reconstruction prerequisite: a new design run requires a Seed.
+    insertSeedReference(projectPath);
+    // v1: draft → prototype validation → formal → formalized.
+    setPhase(projectPath, "draft_design_system");
+    expect(confirmDraftDesignSystem(projectPath)).toMatchObject({ ok: true });
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    expect(formalizeDesignSystem(projectPath, [], "reviewed")).toMatchObject({
+      ok: true
+    });
+    expect(evaluateResearchExportEligibility(projectPath).missing).toContain(
+      "first_new_design_run"
+    );
+
+    // First new design run + designer feedback on it.
+    const run1 = recordNewDesignRun(projectPath, {
+      runId: "run-1",
+      intent: "First new design"
+    });
+    expect(run1).toMatchObject({ ok: true });
+    const feedback = recordDesignerFeedback(projectPath, {
+      summary: "Tighten the hero spacing.",
+      runId: "run-1",
+      sessionId: "session-1"
+    });
+    expect(feedback.ok).toBe(true);
+    if (!feedback.ok) return;
+    consumeFeedback(projectPath, feedback.feedback.id);
+
+    // v2: confirm the new-design prototype (re-entry from
+    // ready_for_new_design), then formalize again.
+    expect(confirmPrototype(projectPath)).toMatchObject({
+      ok: true,
+      from_phase: "ready_for_new_design"
+    });
+    expect(formalizeDesignSystem(projectPath, [], "reviewed")).toMatchObject({
+      ok: true
+    });
+    expect(evaluateResearchExportEligibility(projectPath).missing).toEqual([
+      "second_new_design_run"
+    ]);
+
+    // Second new design run completes the recursion.
+    const run2 = recordNewDesignRun(projectPath, {
+      runId: "run-2",
+      intent: "Second new design"
+    });
+    expect(run2).toMatchObject({ ok: true });
     expect(evaluateResearchExportEligibility(projectPath)).toMatchObject({
       eligible: true,
       missing: []

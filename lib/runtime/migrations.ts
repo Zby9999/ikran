@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 29;
+export const CURRENT_SCHEMA_VERSION = 31;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1361,6 +1361,69 @@ CREATE INDEX IF NOT EXISTS idx_prototype_surfaces_created_at
            ADD COLUMN screenshot_captured_at TEXT`
         );
       }
+    }
+  },
+  {
+    version: 30,
+    up(db) {
+      // Issue 30 multi-page correction: preview_url remains the Runtime-owned
+      // dev-server origin; route_path identifies the page represented by this
+      // surface. Existing surfaces were origin-only and therefore map to `/`.
+      const columns = db
+        .prepare("PRAGMA table_info(prototype_surfaces)")
+        .all() as Array<{ name: string }>;
+      const names = new Set(columns.map((column) => column.name));
+      if (!names.has("route_path")) {
+        db.exec(
+          `ALTER TABLE prototype_surfaces
+           ADD COLUMN route_path TEXT NOT NULL DEFAULT '/'`
+        );
+      }
+    }
+  },
+  {
+    version: 31,
+    up(db) {
+      // Conversation reconciliation replaces interruption-prone per-turn
+      // semantic feedback capture. The immutable bounded transcript and its
+      // derived decision batch commit together; legacy feedback remains valid.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS conversation_reconciliations (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  start_message_id TEXT NOT NULL,
+  end_message_id TEXT NOT NULL,
+  transcript_json TEXT NOT NULL,
+  transcript_sha256 TEXT NOT NULL,
+  payload_sha256 TEXT NOT NULL,
+  message_count INTEGER NOT NULL,
+  decision_count INTEGER NOT NULL,
+  completed_at TEXT NOT NULL,
+  UNIQUE (conversation_id, start_message_id, end_message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_conversation_reconciliations_session
+  ON conversation_reconciliations(run_id, session_id, completed_at);
+
+CREATE TABLE IF NOT EXISTS conversation_reconciliation_feedback (
+  reconciliation_id TEXT NOT NULL
+    REFERENCES conversation_reconciliations(id) ON DELETE RESTRICT,
+  feedback_id TEXT NOT NULL UNIQUE
+    REFERENCES designer_feedback(id) ON DELETE RESTRICT,
+  decision_disposition TEXT NOT NULL CHECK (decision_disposition IN (
+    'final_decision',
+    'superseded',
+    'local_exception',
+    'open_gap'
+  )),
+  source_message_ids_json TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  PRIMARY KEY (reconciliation_id, position)
+);
+CREATE INDEX IF NOT EXISTS idx_reconciliation_feedback_reconciliation
+  ON conversation_reconciliation_feedback(reconciliation_id, position);
+      `);
     }
   }
 ];

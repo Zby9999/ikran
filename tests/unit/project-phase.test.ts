@@ -18,6 +18,9 @@ import {
   requireProjectPhase
 } from "../../lib/runtime/project-phase";
 
+const REVIEW =
+  "Reviewed the phase's prototype modifications; no reusable-rule candidates.";
+
 function withProject(run: (projectPath: string) => void): void {
   const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-project-phase-"));
   try {
@@ -71,7 +74,7 @@ test("happy path advances seed → draft → prototype → formal → ready_for_
       ok: true,
       phase: "design_system_formal"
     });
-    expect(formalizeDesignSystem(projectPath)).toMatchObject({
+    expect(formalizeDesignSystem(projectPath, [], REVIEW)).toMatchObject({
       ok: true,
       phase: "ready_for_new_design"
     });
@@ -100,14 +103,14 @@ test("out-of-order phase declarations are rejected with current phase", () => {
       reason: "phase_gate",
       phase: "seed"
     });
-    expect(formalizeDesignSystem(projectPath)).toEqual({
+    expect(formalizeDesignSystem(projectPath, [], REVIEW)).toEqual({
       ok: false,
       reason: "phase_gate",
       phase: "seed"
     });
 
     setPhase(projectPath, "draft_design_system");
-    expect(formalizeDesignSystem(projectPath)).toEqual({
+    expect(formalizeDesignSystem(projectPath, [], REVIEW)).toEqual({
       ok: false,
       reason: "phase_gate",
       phase: "draft_design_system"
@@ -182,7 +185,7 @@ test("formalize rejects when unreviewed designer_feedback remains", () => {
     expect(feedback.ok).toBe(true);
     if (!feedback.ok) return;
 
-    expect(formalizeDesignSystem(projectPath)).toEqual({
+    expect(formalizeDesignSystem(projectPath, [], REVIEW)).toEqual({
       ok: false,
       reason: "unreviewed_feedback",
       phase: "design_system_formal",
@@ -191,7 +194,7 @@ test("formalize rejects when unreviewed designer_feedback remains", () => {
     expect(getProjectPhase(projectPath)).toBe("design_system_formal");
 
     consumeFeedback(projectPath, feedback.feedback.id);
-    expect(formalizeDesignSystem(projectPath)).toMatchObject({
+    expect(formalizeDesignSystem(projectPath, [], REVIEW)).toMatchObject({
       ok: true,
       phase: "ready_for_new_design"
     });
@@ -330,7 +333,7 @@ test("confirm_prototype re-enters design_system_formal from ready_for_new_design
     setPhase(projectPath, "draft_design_system");
     confirmDraftDesignSystem(projectPath);
     confirmPrototype(projectPath);
-    expect(formalizeDesignSystem(projectPath)).toMatchObject({ ok: true });
+    expect(formalizeDesignSystem(projectPath, [], REVIEW)).toMatchObject({ ok: true });
     expect(getProjectPhase(projectPath)).toBe("ready_for_new_design");
 
     // Issue 15 recursion: a new-design-run prototype is confirmed, then the
@@ -340,7 +343,7 @@ test("confirm_prototype re-enters design_system_formal from ready_for_new_design
       phase: "design_system_formal",
       from_phase: "ready_for_new_design"
     });
-    expect(formalizeDesignSystem(projectPath)).toMatchObject({
+    expect(formalizeDesignSystem(projectPath, [], REVIEW)).toMatchObject({
       ok: true,
       phase: "ready_for_new_design"
     });
@@ -366,7 +369,7 @@ test("formalize adjudicates candidates: listed ids flip to formalized, rest stay
     insertCandidateEntry(projectPath, "cand-a");
     insertCandidateEntry(projectPath, "cand-b");
 
-    const result = formalizeDesignSystem(projectPath, ["cand-a"]);
+    const result = formalizeDesignSystem(projectPath, ["cand-a"], REVIEW);
     expect(result).toMatchObject({ ok: true, phase: "ready_for_new_design" });
 
     expect(entryStatus(projectPath, "cand-a")).toBe("formalized");
@@ -395,7 +398,7 @@ test("phase transitions emit record-bus invalidation events", () => {
       ]);
 
       events.length = 0;
-      expect(formalizeDesignSystem(projectPath)).toMatchObject({ ok: true });
+      expect(formalizeDesignSystem(projectPath, [], REVIEW)).toMatchObject({ ok: true });
       // No promotions → phase event only, no design-system invalidation.
       expect(events).toEqual([
         { kind: "phase", action: "updated", id: "project-phase" }
@@ -405,7 +408,7 @@ test("phase transitions emit record-bus invalidation events", () => {
       events.length = 0;
       confirmPrototype(projectPath);
       insertCandidateEntry(projectPath, "cand-a");
-      expect(formalizeDesignSystem(projectPath, ["cand-a"])).toMatchObject({
+      expect(formalizeDesignSystem(projectPath, ["cand-a"], REVIEW)).toMatchObject({
         ok: true
       });
       expect(events).toEqual([
@@ -422,7 +425,7 @@ test("phase transitions emit record-bus invalidation events", () => {
         runId: "run-1",
         sessionId: "session-1"
       });
-      expect(formalizeDesignSystem(projectPath).ok).toBe(false);
+      expect(formalizeDesignSystem(projectPath, [], REVIEW).ok).toBe(false);
       expect(events).toEqual([]);
     } finally {
       unsubscribe();
@@ -436,11 +439,11 @@ test("formalize rejects unknown or non-candidate promoteEntryIds without side ef
     insertCandidateEntry(projectPath, "cand-a");
     insertCandidateEntry(projectPath, "formal-x", "formalized");
 
-    expect(formalizeDesignSystem(projectPath, ["missing"])).toEqual({
+    expect(formalizeDesignSystem(projectPath, ["missing"], REVIEW)).toEqual({
       ok: false,
       reason: "candidate_entry_not_found"
     });
-    expect(formalizeDesignSystem(projectPath, ["formal-x"])).toEqual({
+    expect(formalizeDesignSystem(projectPath, ["formal-x"], REVIEW)).toEqual({
       ok: false,
       reason: "candidate_entry_not_candidate"
     });
@@ -458,7 +461,7 @@ test("formalize writes promoted statuses back to source files with approval-grad
     insertCandidateEntry(projectPath, "cand-a");
     insertCandidateEntry(projectPath, "cand-b");
 
-    expect(formalizeDesignSystem(projectPath, ["cand-a"])).toMatchObject({
+    expect(formalizeDesignSystem(projectPath, ["cand-a"], REVIEW)).toMatchObject({
       ok: true
     });
 
@@ -505,7 +508,7 @@ test("formalize fails closed when a promoted entry is missing from its source fi
       "utf8"
     );
 
-    expect(formalizeDesignSystem(projectPath, ["cand-a"])).toMatchObject({
+    expect(formalizeDesignSystem(projectPath, ["cand-a"], REVIEW)).toMatchObject({
       ok: false,
       reason: "entry_not_in_source_file"
     });
@@ -513,6 +516,38 @@ test("formalize fails closed when a promoted entry is missing from its source fi
     expect(getProjectPhase(projectPath)).toBe("design_system_formal");
     expect(listEvents(projectPath, "design_system_formalized")).toEqual([]);
     expect(listEvents(projectPath, "design_system_entry_approved")).toEqual([]);
+  });
+});
+
+test("formalize rejects an empty or whitespace-only modification review without side effects", () => {
+  withProject((projectPath) => {
+    setPhase(projectPath, "design_system_formal");
+
+    for (const empty of ["", "   ", "\n\t"]) {
+      expect(formalizeDesignSystem(projectPath, [], empty)).toEqual({
+        ok: false,
+        reason: "empty_modification_review"
+      });
+    }
+    expect(getProjectPhase(projectPath)).toBe("design_system_formal");
+    expect(listEvents(projectPath, "design_system_formalized")).toEqual([]);
+  });
+});
+
+test("formalize persists the modification review on the formalized event", () => {
+  withProject((projectPath) => {
+    setPhase(projectPath, "design_system_formal");
+
+    expect(formalizeDesignSystem(projectPath, [], `  ${REVIEW}  `)).toMatchObject(
+      { ok: true }
+    );
+    expect(listEvents(projectPath, "design_system_formalized")).toEqual([
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          modification_review: REVIEW
+        })
+      })
+    ]);
   });
 });
 
@@ -528,11 +563,11 @@ test("formalize hints at promoted entries that still only have sourceCaptures (I
     });
     const noEvidence = insertSpecCandidateEntry(projectPath, "Badge");
 
-    const result = formalizeDesignSystem(projectPath, [
-      captureOnly,
-      codeBacked,
-      noEvidence
-    ]);
+    const result = formalizeDesignSystem(
+      projectPath,
+      [captureOnly, codeBacked, noEvidence],
+      REVIEW
+    );
     expect(result).toMatchObject({ ok: true, phase: "ready_for_new_design" });
     if (!result.ok) return;
 
@@ -551,12 +586,12 @@ test("formalize returns no backfill hints when promoted entries have code links 
       codeLinks: ["prototypes/components/Card.tsx"]
     });
 
-    const promoted = formalizeDesignSystem(projectPath, [codeBacked]);
+    const promoted = formalizeDesignSystem(projectPath, [codeBacked], REVIEW);
     expect(promoted).toMatchObject({ ok: true });
     if (promoted.ok) expect(promoted.code_backfill_hints).toEqual([]);
 
     confirmPrototype(projectPath);
-    const unpromoted = formalizeDesignSystem(projectPath);
+    const unpromoted = formalizeDesignSystem(projectPath, [], REVIEW);
     expect(unpromoted).toMatchObject({ ok: true });
     if (unpromoted.ok) expect(unpromoted.code_backfill_hints).toEqual([]);
   });

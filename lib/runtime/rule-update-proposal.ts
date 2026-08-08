@@ -14,6 +14,7 @@ import { withProjectTransaction } from "./db";
 import { isCaptureBearingArtifactPath } from "./design-system-schema";
 import { assertArtifactPathInProject } from "./evidence-package";
 import { buildLoggedEvent, insertEvent } from "./events";
+import { parseJsonStringArray } from "./json-columns";
 import { canonicalizeArtifactPath } from "./source-artifact";
 
 export const RULE_UPDATE_PROPOSAL_KINDS = ["new", "update", "move"] as const;
@@ -183,15 +184,6 @@ function canonicalProjectPath(
   return canonical === null ? { ok: false } : { ok: true, value: canonical };
 }
 
-function parseJsonStringArray(value: string): string[] {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
-  } catch {
-    return [];
-  }
-}
-
 function mapProposalRow(row: ProposalRow): RuleUpdateProposal {
   return {
     proposal_id: row.id,
@@ -319,9 +311,26 @@ export function proposeRuleUpdate(
       const evidenceStatements = EVIDENCE_TABLES.map((table) =>
         db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`)
       );
+      const reconciliationDisposition = db.prepare(
+        `SELECT decision_disposition
+         FROM conversation_reconciliation_feedback
+         WHERE feedback_id = ?`
+      );
       for (const recordId of proposal.evidence_record_ids) {
         if (!evidenceStatements.some((statement) => statement.get(recordId))) {
           return { ok: false as const, reason: "evidence_record_not_found" };
+        }
+        const reconciled = reconciliationDisposition.get(recordId) as
+          | { decision_disposition: string }
+          | undefined;
+        if (
+          reconciled !== undefined &&
+          reconciled.decision_disposition !== "final_decision"
+        ) {
+          return {
+            ok: false as const,
+            reason: "non_final_reconciliation_evidence"
+          };
         }
       }
 

@@ -19,6 +19,11 @@ import {
 const emptyInputSchema = z.object({});
 
 const formalizeInputSchema = z.object({
+  modificationReview: z
+    .string()
+    .describe(
+      "Required modification-review attestation: one sentence declaring that you inspected this phase's prototype modifications for reusable-rule candidates, and where any identified candidates went (e.g. 'Reviewed the phase's modifications; the divider inset fix became proposal <id>, the rest were page-local defect fixes with no reusable rule.'). Pure defect fixes are a fine outcome — what is not allowed is skipping the judgment. Recorded verbatim on the design_system_formalized event; an empty or whitespace-only value is rejected with empty_modification_review."
+    ),
   promoteEntryIds: z
     .array(z.string())
     .optional()
@@ -68,7 +73,7 @@ export function registerProjectPhaseTools(
     "confirm_prototype",
     {
       description:
-        "Declare that the designer confirmed Prototype modifications and audit. Advances prototype_validation to design_system_formal; also re-enters design_system_formal from ready_for_new_design after a new-design-run prototype is confirmed, so the Design System can be formalized again (v2, v3, …). After advancing, keep the turn going autonomously — do not stop to ask: claim_consolidate_review to give every designer feedback an outcome (consumed via confirm_rule_update, or dismiss_designer_feedback with a reason), adjudicate candidates with the designer, backfill code links for the components this phase's prototype produced via backfill_component_code_links, then call formalize_design_system. Prototype file edits must go through the Agent (chat → Agent edit → record_designer_feedback); do not edit prototype files directly. Rejected out of order.",
+        "Declare that the designer confirmed Prototype modifications and audit. Advances prototype_validation to design_system_formal; also re-enters design_system_formal from ready_for_new_design after a new-design-run prototype is confirmed. After advancing, keep the turn going autonomously: freeze the complete current host-conversation range and call reconcile_designer_conversation; pass its id to claim_consolidate_review and give every feedback an outcome; then review reusable candidates, backfill code links, and formalize. Do not write semantic feedback during active dialogue. Prototype file edits must go through the Agent; do not edit prototype files directly. Rejected out of order.",
       inputSchema: emptyInputSchema
     },
     async () => {
@@ -81,7 +86,7 @@ export function registerProjectPhaseTools(
       return result.ok
         ? successResult(rt, {
             ...result,
-            next: "Continue autonomously: claim_consolidate_review → outcome every feedback → backfill_component_code_links for prototype-produced components → formalize_design_system. Do not stop to ask."
+            next: "Continue autonomously: freeze the completed host transcript → reconcile_designer_conversation → claim_consolidate_review(reconciliationId) → outcome every feedback → backfill_component_code_links → formalize_design_system."
           })
         : phaseFailure("confirm_prototype", result, rt);
     }
@@ -119,7 +124,7 @@ export function registerProjectPhaseTools(
     "formalize_design_system",
     {
       description:
-        "Formalize the Design System and advance design_system_formal to ready_for_new_design. Requires every designer_feedback row to be marked consumed in designer_feedback_review_consumption (written when Issue 29 confirms a proposal that references that feedback); otherwise rejects with unreviewed_feedback_count. Pass promoteEntryIds to adjudicate Candidates chosen during the chat review: those entries flip candidate → formalized in the same transaction, and their source files are rewritten with the formalized status so file and DB stay in step; unlisted candidates stay candidate. The result carries code_backfill_hints: promoted component specs whose codeLinks are still empty while sourceCaptures remain their only provenance — an advisory gap list for backfill_component_code_links, never a rejection. Rejected out of order.",
+        "Formalize the Design System and advance design_system_formal to ready_for_new_design. Requires every designer_feedback row to be marked consumed in designer_feedback_review_consumption (written when Issue 29 confirms a proposal that references that feedback); otherwise rejects with unreviewed_feedback_count. Requires modificationReview: your one-sentence attestation that this phase's prototype modifications were inspected for reusable-rule candidates — the review itself is mandatory even when its outcome is 'no reusable rules'. Pass promoteEntryIds to adjudicate Candidates chosen during the chat review: those entries flip candidate → formalized in the same transaction, and their source files are rewritten with the formalized status so file and DB stay in step; unlisted candidates stay candidate. The result carries code_backfill_hints: promoted component specs whose codeLinks are still empty while sourceCaptures remain their only provenance — an advisory gap list for backfill_component_code_links, never a rejection. Rejected out of order.",
       inputSchema: formalizeInputSchema
     },
     async (args) => {
@@ -130,7 +135,8 @@ export function registerProjectPhaseTools(
       }
       const result = formalizeDesignSystemCommand(
         active.project.path,
-        args.promoteEntryIds ?? []
+        args.promoteEntryIds ?? [],
+        args.modificationReview
       );
       return result.ok
         ? successResult(rt, result)

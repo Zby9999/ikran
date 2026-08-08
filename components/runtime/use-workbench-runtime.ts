@@ -99,7 +99,11 @@ export function annotationSignature(records: RegionAnnotationRecord[]): string {
   );
 }
 
-function prototypeSignature(records: PrototypeSurfaceRecord[]): string {
+export function prototypeSignature(records: PrototypeSurfaceRecord[]): string {
+  // screenshot_artifact_path / screenshot_captured_at land AFTER readiness
+  // flips to ready (headless capture is async); omitting them would drop the
+  // post-capture reload and the unfocused surface would never show its
+  // placeholder screenshot.
   return records
     .map(
       (r) =>
@@ -108,10 +112,14 @@ function prototypeSignature(records: PrototypeSurfaceRecord[]): string {
           r.surface_key,
           r.name,
           r.preview_url,
+          r.route_path,
+          r.surface_url,
           r.readiness,
           r.readiness_reason ?? "",
           r.stale ? "1" : "0",
-          r.stale_reason ?? ""
+          r.stale_reason ?? "",
+          r.screenshot_artifact_path ?? "",
+          r.screenshot_captured_at ?? ""
         ].join(":")
     )
     .join("|");

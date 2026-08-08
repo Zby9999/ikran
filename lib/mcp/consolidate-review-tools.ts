@@ -21,16 +21,16 @@ export function registerConsolidateReviewTools(
     "claim_consolidate_review",
     {
       description:
-        "Claim one designer-initiated Consolidate review. This is the ONLY read path for the designer feedback library — never read it for design generation, and never start a review on your own; call this only when the designer asks for it in chat. Returns every designer_feedback record with its linkage ids and disposition (unreviewed / consumed / dismissed) plus the unreviewed ids, and records consolidate_review_started. Aggregate by run/session and linkage (multiple rounds on the same surface or component become one proposal; a decision later overturned is represented by the latest decision only), classify with the six-part taxonomy, then draft proposals via propose_rule_update. Narrate in chat only the proposals that would become global rules (reusable_candidate / proposed_update); report the other dispositions only when the designer asks. Every record needs an outcome: consumed by a confirmed proposal, or dismiss_designer_feedback with a reason.",
+        "Claim Consolidate only after reconcile_designer_conversation completed the frozen Agent-host transcript review; pass its reconciliation id. This is the ONLY read path for designer feedback and must never be used for design generation. Returns the reconciled decision ledger plus legacy feedback with linkage, transcript provenance, and review disposition. Use final decisions as current evidence; preserve superseded/local/open-gap outcomes rather than promoting them silently. Draft global proposals via propose_rule_update and give every feedback record an outcome through a confirmed proposal or dismiss_designer_feedback.",
       inputSchema: claimConsolidateReviewInputSchema
     },
-    async () => {
+    async (args) => {
       const rt = await ensureRuntime();
       const active = requireActiveProjectCommand();
       if (!active.ok) {
         return failureResult("claim_consolidate_review", active.reason, rt);
       }
-      const result = claimConsolidateReviewCommand(active.project.path);
+      const result = claimConsolidateReviewCommand(active.project.path, args);
       return result.ok
         ? successResult(rt, result)
         : failureResult("claim_consolidate_review", result.reason, rt);

@@ -1095,30 +1095,48 @@ describe("syncWarningAppliesToRoute (per-page warning mounting)", () => {
 /* ---------------------- hero live plan (Issue 33) ---------------------- */
 
 import {
+  componentHeroFrameLayout,
   componentHeroLiveKey,
   componentHeroLiveUrl,
   heroLiveFallbackCopy,
   heroLiveVerdictReducer,
+  parseComponentHeroSizeMessage,
   planComponentHero,
   type DesignSystemLayoutCapture,
+  type DesignSystemLiveHeroView,
   type DsHeroLiveVerdict
 } from "@/components/workbench/design-system-view-model";
 
-function heroCapture(
+function sourceCapture(
   partial: Partial<DesignSystemLayoutCapture> = {}
 ): DesignSystemLayoutCapture {
   return {
     nodeId: null,
     nodeName: "Button",
-    artifactPath: "design-system/captures/button-code.png",
+    artifactPath: "design-system/captures/button-source.png",
     capturedAt: "2026-08-07T14:00:00.000Z",
     surfaceId: "proto-surface-1",
     stale: false,
     nodeRect: null,
-    origin: "code",
-    codeLinks: ["components/Button.tsx"],
-    codeDigest: "digest-1",
+    origin: "source",
+    codeLinks: null,
+    codeDigest: null,
+    harnessPath: null,
+    previewUrl: null,
+    surfaceReadiness: null,
+    surfaceStale: false,
+    ...partial
+  };
+}
+
+function liveHero(
+  partial: Partial<DesignSystemLiveHeroView> = {}
+): DesignSystemLiveHeroView {
+  return {
+    surfaceId: "proto-surface-1",
     harnessPath: "/__ikran/component/button",
+    harnessArtifactPath: "prototype/app/__ikran/component/button/page.tsx",
+    codeLinks: ["prototype/components/Button.tsx"],
     previewUrl: "http://127.0.0.1:4401",
     surfaceReadiness: "ready",
     surfaceStale: false,
@@ -1127,22 +1145,21 @@ function heroCapture(
 }
 
 const LIVE_KEY =
-  "http%3A%2F%2F127.0.0.1%3A4401|%2F__ikran%2Fcomponent%2Fbutton|design-system%2Fcaptures%2Fbutton-code.png|ready|false";
+  "http%3A%2F%2F127.0.0.1%3A4401|%2F__ikran%2Fcomponent%2Fbutton|prototype%2Fapp%2F__ikran%2Fcomponent%2Fbutton%2Fpage.tsx|ready|false";
 
 describe("componentHeroLiveKey (Issue 33)", () => {
   test("identifies target + readiness, URI-encoded per segment", () => {
-    expect(componentHeroLiveKey(heroCapture())).toBe(LIVE_KEY);
-    // No harness declared → no live attempt.
-    expect(componentHeroLiveKey(heroCapture({ harnessPath: null }))).toBeNull();
+    expect(componentHeroLiveKey(liveHero())).toBe(LIVE_KEY);
+    expect(componentHeroLiveKey(null)).toBeNull();
   });
 
   test("a readiness / staleness flip forms a new key; unchanged state keeps it", () => {
-    const ready = heroCapture();
-    const starting = heroCapture({ surfaceReadiness: "starting" });
-    const stale = heroCapture({ surfaceStale: true });
+    const ready = liveHero();
+    const starting = liveHero({ surfaceReadiness: "starting" });
+    const stale = liveHero({ surfaceStale: true });
     expect(componentHeroLiveKey(starting)).not.toBe(LIVE_KEY);
     expect(componentHeroLiveKey(stale)).not.toBe(LIVE_KEY);
-    expect(componentHeroLiveKey(heroCapture())).toBe(
+    expect(componentHeroLiveKey(liveHero())).toBe(
       componentHeroLiveKey(ready)
     );
   });
@@ -1150,34 +1167,31 @@ describe("componentHeroLiveKey (Issue 33)", () => {
 
 describe("planComponentHero (Issue 33)", () => {
   test("no captures is the explicit unavailable tier", () => {
-    expect(planComponentHero([], null)).toEqual({
+    expect(planComponentHero(null, [], null)).toEqual({
       kind: "unavailable",
+      liveFallback: null,
       liveKey: null
     });
   });
 
-  test("harness + live surface renders live — digest staleness does not demote", () => {
-    const capture = heroCapture();
-    expect(planComponentHero([capture], null)).toEqual({
+  test("declared harness + live surface renders live without a code screenshot", () => {
+    const hero = liveHero();
+    expect(planComponentHero(hero, [], null)).toEqual({
       kind: "live",
-      capture,
-      liveKey: LIVE_KEY
-    });
-    // A digest-stale capture still renders live: live always renders the
-    // current code; the stale flag stays on the origin popover.
-    const stale = heroCapture({ stale: true });
-    expect(planComponentHero([stale], null)).toEqual({
-      kind: "live",
-      capture: stale,
+      liveHero: hero,
       liveKey: LIVE_KEY
     });
   });
 
-  test("a code capture without a harness is the plain static tier, no fallback reason", () => {
-    const capture = heroCapture({ harnessPath: null });
-    expect(planComponentHero([capture], null)).toEqual({
-      kind: "static",
-      capture,
+  test("a legacy code screenshot is never selected as a hero", () => {
+    const code = sourceCapture({
+      origin: "code",
+      codeLinks: ["prototype/components/Button.tsx"],
+      codeDigest: "digest",
+      artifactPath: "design-system/captures/button-code.png"
+    });
+    expect(planComponentHero(null, [code], null)).toEqual({
+      kind: "unavailable",
       liveFallback: null,
       liveKey: null
     });
@@ -1189,60 +1203,52 @@ describe("planComponentHero (Issue 33)", () => {
       { surfaceReadiness: "failed" as const },
       { previewUrl: null, surfaceReadiness: null }
     ]) {
-      const capture = heroCapture(partial);
-      expect(planComponentHero([capture], null)).toEqual({
+      const hero = liveHero(partial);
+      const capture = sourceCapture();
+      expect(planComponentHero(hero, [capture], null)).toEqual({
         kind: "static",
         capture,
         liveFallback: "surface_not_ready",
-        liveKey: componentHeroLiveKey(capture)
+        liveKey: componentHeroLiveKey(hero)
       });
     }
   });
 
   test("a stale surface falls back with surface_stale — the server is running but not serving current code", () => {
-    const capture = heroCapture({ surfaceStale: true });
-    expect(planComponentHero([capture], null)).toEqual({
+    const hero = liveHero({ surfaceStale: true });
+    const capture = sourceCapture();
+    expect(planComponentHero(hero, [capture], null)).toEqual({
       kind: "static",
       capture,
       liveFallback: "surface_stale",
-      liveKey: componentHeroLiveKey(capture)
+      liveKey: componentHeroLiveKey(hero)
     });
   });
 
   test("an unreachable iframe falls back with live_unreachable, pinned to its key", () => {
-    const capture = heroCapture();
-    expect(planComponentHero([capture], LIVE_KEY)).toEqual({
+    const hero = liveHero();
+    const capture = sourceCapture();
+    expect(planComponentHero(hero, [capture], LIVE_KEY)).toEqual({
       kind: "static",
       capture,
       liveFallback: "live_unreachable",
       liveKey: LIVE_KEY
     });
     // A verdict pinned to a DIFFERENT key does not demote this attempt.
-    expect(planComponentHero([capture], "some-other-key").kind).toBe("live");
+    expect(planComponentHero(hero, [capture], "some-other-key").kind).toBe("live");
   });
 
-  test("the chain: code capture outranks source capture at every static tier", () => {
-    const source = heroCapture({
-      nodeId: "1:99",
-      origin: "source",
-      codeLinks: null,
-      codeDigest: null,
-      harnessPath: null,
-      previewUrl: null,
-      surfaceReadiness: null,
-      artifactPath: "design-system/captures/button.png"
-    });
-    const code = heroCapture({ harnessPath: null });
-    // Declared source-first; the code capture still leads.
-    const plan = planComponentHero([source, code], null);
+  test("the chain is live iframe → source capture → unavailable", () => {
+    const source = sourceCapture();
+    const code = sourceCapture({ origin: "code" });
+    const plan = planComponentHero(null, [code, source], null);
     expect(plan).toEqual({
       kind: "static",
-      capture: code,
+      capture: source,
       liveFallback: null,
       liveKey: null
     });
-    // Source only → static source capture.
-    expect(planComponentHero([source], null)).toEqual({
+    expect(planComponentHero(null, [source], null)).toEqual({
       kind: "static",
       capture: source,
       liveFallback: null,
@@ -1253,24 +1259,74 @@ describe("planComponentHero (Issue 33)", () => {
 
 describe("componentHeroLiveUrl (Issue 33)", () => {
   test("builds the harness URL on the surface origin; state rides ?state=", () => {
-    const capture = heroCapture();
-    expect(componentHeroLiveUrl(capture, null)).toBe(
+    const hero = liveHero();
+    expect(componentHeroLiveUrl(hero, null)).toBe(
       "http://127.0.0.1:4401/__ikran/component/button"
     );
-    expect(componentHeroLiveUrl(capture, "hover")).toBe(
+    expect(componentHeroLiveUrl(hero, "hover")).toBe(
       "http://127.0.0.1:4401/__ikran/component/button?state=hover"
     );
-    expect(componentHeroLiveUrl(capture, "focus visible")).toBe(
+    expect(componentHeroLiveUrl(hero, "focus visible")).toBe(
       "http://127.0.0.1:4401/__ikran/component/button?state=focus%20visible"
     );
   });
 
-  test("no preview URL or harness means no live URL", () => {
+  test("no preview URL means no live URL", () => {
     expect(
-      componentHeroLiveUrl(heroCapture({ previewUrl: null }), "hover")
+      componentHeroLiveUrl(liveHero({ previewUrl: null }), "hover")
+    ).toBeNull();
+  });
+});
+
+describe("live hero content fitting", () => {
+  test("keeps a fixed minimum stage for a small component", () => {
+    expect(componentHeroFrameLayout(720, { width: 120, height: 40 })).toEqual({
+      frameWidth: 720,
+      frameHeight: 240,
+      displayHeight: 240,
+      scale: 1
+    });
+  });
+
+  test("grows to show a tall component completely", () => {
+    expect(componentHeroFrameLayout(720, { width: 720, height: 640 })).toEqual({
+      frameWidth: 720,
+      frameHeight: 640,
+      displayHeight: 640,
+      scale: 1
+    });
+  });
+
+  test("scales only an over-wide component and preserves its aspect ratio", () => {
+    expect(componentHeroFrameLayout(720, { width: 960, height: 480 })).toEqual({
+      frameWidth: 960,
+      frameHeight: 480,
+      displayHeight: 360,
+      scale: 0.75
+    });
+  });
+
+  test("accepts only finite, bounded component-size messages", () => {
+    expect(
+      parseComponentHeroSizeMessage({
+        type: "ikran:component-size",
+        width: 720,
+        height: 640
+      })
+    ).toEqual({ width: 720, height: 640 });
+    expect(
+      parseComponentHeroSizeMessage({
+        type: "unrelated",
+        width: 720,
+        height: 640
+      })
     ).toBeNull();
     expect(
-      componentHeroLiveUrl(heroCapture({ harnessPath: null }), "hover")
+      parseComponentHeroSizeMessage({
+        type: "ikran:component-size",
+        width: Number.POSITIVE_INFINITY,
+        height: 640
+      })
     ).toBeNull();
   });
 });
@@ -1307,7 +1363,7 @@ describe("heroLiveVerdictReducer (Issue 33)", () => {
   test("a readiness flip retargets and re-arms the attempt (starting → ready retry)", () => {
     // The surface was starting: the hero fell back with surface_not_ready.
     const startingKey = componentHeroLiveKey(
-      heroCapture({ surfaceReadiness: "starting" })
+      liveHero({ surfaceReadiness: "starting" })
     )!;
     const before: DsHeroLiveVerdict = { key: startingKey, phase: "pending" };
     // Refetch reports ready → new key → retarget re-arms exactly once.
@@ -1342,7 +1398,7 @@ describe("heroLiveFallbackCopy (Issue 33)", () => {
       "surface_stale",
       "live_unreachable"
     ] as const) {
-      expect(heroLiveFallbackCopy(reason)).toContain("showing the code render");
+      expect(heroLiveFallbackCopy(reason)).toContain("showing the source fallback");
     }
   });
 });

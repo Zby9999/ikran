@@ -19,6 +19,7 @@ import { initializeProjectDb } from "../../lib/runtime/db";
 import { listEvents } from "../../lib/runtime/events";
 import { getProjectDbPath } from "../../lib/runtime/paths";
 import { recordDesignerFeedback } from "../../lib/runtime/designer-feedback";
+import { reconcileDesignerConversation } from "../../lib/runtime/conversation-reconciliation";
 import {
   claimConsolidateReview,
   dismissDesignerFeedback
@@ -29,9 +30,9 @@ import {
   proposeRuleUpdate
 } from "../../lib/runtime/rule-update-proposal";
 import {
-  countUnreviewedDesignerFeedback,
+  countUnreviewedDesignerFeedbackOnDb,
   formalizeDesignSystem,
-  listUnreviewedDesignerFeedback
+  listUnreviewedDesignerFeedbackOnDb
 } from "../../lib/runtime/project-phase";
 import { recordSourceArtifact } from "../../lib/runtime/source-artifact";
 
@@ -55,6 +56,48 @@ function recordFeedback(projectPath: string, summary: string): string {
   });
   if (!result.ok) throw new Error(`feedback setup failed: ${result.reason}`);
   return result.feedback.id;
+}
+
+function completedReconciliation(projectPath: string): string {
+  const id = "legacy-feedback-review";
+  const result = reconcileDesignerConversation(projectPath, {
+    reviewId: id,
+    conversationId: "legacy-feedback-conversation",
+    runId: "run-1",
+    sessionId: "session-1",
+    startMessageId: "legacy-review-message",
+    endMessageId: "legacy-review-message",
+    messages: [
+      {
+        id: "legacy-review-message",
+        role: "designer",
+        content: "开始审查兼容期 feedback。"
+      }
+    ],
+    decisions: []
+  });
+  if (!result.ok) {
+    throw new Error(`reconciliation setup failed: ${result.reason}`);
+  }
+  return id;
+}
+
+function countUnreviewed(projectPath: string): number {
+  const db = new DatabaseSync(getProjectDbPath(projectPath));
+  try {
+    return countUnreviewedDesignerFeedbackOnDb(db);
+  } finally {
+    db.close();
+  }
+}
+
+function listUnreviewed(projectPath: string): string[] {
+  const db = new DatabaseSync(getProjectDbPath(projectPath));
+  try {
+    return listUnreviewedDesignerFeedbackOnDb(db);
+  } finally {
+    db.close();
+  }
 }
 
 function insertLayoutRuleEntry(projectPath: string, sourcePath: string): void {
@@ -137,12 +180,15 @@ function proposeReusableCandidate(
   );
 }
 
-test("claim_consolidate_review returns the whole feedback library and records the start event", () => {
+test("claim_consolidate_review returns selected reconciliation plus legacy feedback and records the start event", () => {
   withProject((projectPath) => {
     const first = recordFeedback(projectPath, "Keep the sticky bar opaque.");
     const second = recordFeedback(projectPath, "Tighten the card gap.");
 
-    const claim = claimConsolidateReview(projectPath);
+    const claim = claimConsolidateReview(
+      projectPath,
+      completedReconciliation(projectPath)
+    );
     expect(claim.ok).toBe(true);
     if (!claim.ok) return;
 
@@ -203,7 +249,10 @@ test("claim_consolidate_review preserves linkage ids and opaque context", () => 
     });
     expect(verbatim.ok).toBe(true);
 
-    const claim = claimConsolidateReview(projectPath);
+    const claim = claimConsolidateReview(
+      projectPath,
+      completedReconciliation(projectPath)
+    );
     expect(claim.ok).toBe(true);
     if (!claim.ok || !linked.ok || !verbatim.ok) return;
 
@@ -349,7 +398,7 @@ test("propose_rule_update rejects forged evidence, unknown kind, and unknown cla
 test("confirm_rule_update consumes feedback evidence and clears the unreviewed count", () => {
   withProject((projectPath) => {
     const consumedId = recordFeedback(projectPath, "Sticky bar stays opaque.");
-    expect(countUnreviewedDesignerFeedback(projectPath)).toBe(1);
+    expect(countUnreviewed(projectPath)).toBe(1);
 
     const proposal = proposeReusableCandidate(projectPath, [consumedId]);
     expect(proposal.ok).toBe(true);
@@ -357,7 +406,7 @@ test("confirm_rule_update consumes feedback evidence and clears the unreviewed c
     const proposalId = proposal.proposal.proposal_id;
 
     // Proposing alone must not change any disposition.
-    expect(countUnreviewedDesignerFeedback(projectPath)).toBe(1);
+    expect(countUnreviewed(projectPath)).toBe(1);
 
     const confirmed = confirmRuleUpdate(projectPath, { proposalId });
     expect(confirmed).toMatchObject({
@@ -374,8 +423,8 @@ test("confirm_rule_update consumes feedback evidence and clears the unreviewed c
     expect(consumptionRows(projectPath)).toEqual([
       { feedback_id: consumedId, proposal_id: proposalId }
     ]);
-    expect(countUnreviewedDesignerFeedback(projectPath)).toBe(0);
-    expect(listUnreviewedDesignerFeedback(projectPath)).toEqual([]);
+    expect(countUnreviewed(projectPath)).toBe(0);
+    expect(listUnreviewed(projectPath)).toEqual([]);
 
     expect(listEvents(projectPath, "rule_update_confirmed")).toEqual([
       expect.objectContaining({
@@ -402,7 +451,10 @@ test("confirm_rule_update consumes feedback evidence and clears the unreviewed c
     ).toEqual({ ok: false, reason: "proposal_not_found" });
 
     // The confirmed review claim reports the recorded disposition.
-    const claim = claimConsolidateReview(projectPath);
+    const claim = claimConsolidateReview(
+      projectPath,
+      completedReconciliation(projectPath)
+    );
     expect(claim.ok).toBe(true);
     if (!claim.ok) return;
     expect(claim.feedback[0]).toMatchObject({
@@ -471,7 +523,7 @@ test("cancel_rule_update closes the proposal without consuming evidence or touch
       status: "canceled"
     });
     expect(consumptionRows(projectPath)).toEqual([]);
-    expect(countUnreviewedDesignerFeedback(projectPath)).toBe(1);
+    expect(countUnreviewed(projectPath)).toBe(1);
     expect(readFileSync(sourcePath, "utf8")).toBe(before);
 
     expect(listEvents(projectPath, "rule_update_canceled")).toEqual([
@@ -490,7 +542,7 @@ test("dismiss_designer_feedback records an explicit disposition and clears unrev
   withProject((projectPath) => {
     const first = recordFeedback(projectPath, "One-off tweak on this page.");
     const second = recordFeedback(projectPath, "Another one-off tweak.");
-    expect(countUnreviewedDesignerFeedback(projectPath)).toBe(2);
+    expect(countUnreviewed(projectPath)).toBe(2);
 
     expect(
       dismissDesignerFeedback(projectPath, {
@@ -498,7 +550,7 @@ test("dismiss_designer_feedback records an explicit disposition and clears unrev
         reason: "Local exception; no global rule."
       })
     ).toEqual({ ok: false, reason: "feedback_record_not_found" });
-    expect(countUnreviewedDesignerFeedback(projectPath)).toBe(2);
+    expect(countUnreviewed(projectPath)).toBe(2);
 
     expect(
       dismissDesignerFeedback(projectPath, {
@@ -519,14 +571,17 @@ test("dismiss_designer_feedback records an explicit disposition and clears unrev
     if (!dismissed.ok) return;
     expect(dismissed.event_ids.length).toBe(2);
 
-    expect(countUnreviewedDesignerFeedback(projectPath)).toBe(0);
+    expect(countUnreviewed(projectPath)).toBe(0);
     expect(
       listEvents(projectPath, "designer_feedback_dismissed").map(
         (event) => event.payload.feedback_id
       )
     ).toEqual([first, second]);
 
-    const claim = claimConsolidateReview(projectPath);
+    const claim = claimConsolidateReview(
+      projectPath,
+      completedReconciliation(projectPath)
+    );
     expect(claim.ok).toBe(true);
     if (!claim.ok) return;
     expect(claim.feedback.map((row) => row.review_state)).toEqual([
@@ -545,7 +600,7 @@ test("formalize stays gated until every feedback record is confirmed or dismisse
     const consumedId = recordFeedback(projectPath, "Promote sticky opacity.");
     const dismissedId = recordFeedback(projectPath, "One-off page tweak.");
 
-    expect(formalizeDesignSystem(projectPath)).toEqual({
+    expect(formalizeDesignSystem(projectPath, [], "reviewed")).toEqual({
       ok: false,
       reason: "unreviewed_feedback",
       phase: "design_system_formal",
@@ -561,7 +616,7 @@ test("formalize stays gated until every feedback record is confirmed or dismisse
       }).ok
     ).toBe(true);
 
-    expect(formalizeDesignSystem(projectPath)).toEqual({
+    expect(formalizeDesignSystem(projectPath, [], "reviewed")).toEqual({
       ok: false,
       reason: "unreviewed_feedback",
       phase: "design_system_formal",
@@ -575,7 +630,7 @@ test("formalize stays gated until every feedback record is confirmed or dismisse
       }).ok
     ).toBe(true);
 
-    expect(formalizeDesignSystem(projectPath)).toMatchObject({
+    expect(formalizeDesignSystem(projectPath, [], "reviewed")).toMatchObject({
       ok: true,
       phase: "ready_for_new_design"
     });

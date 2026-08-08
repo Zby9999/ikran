@@ -38,6 +38,10 @@ import {
   type PreviewSupervisorDeps
 } from "./preview-server";
 import { capturePrototypeSurfaceScreenshot } from "./prototype-screenshot";
+import {
+  composePrototypeSurfaceUrl,
+  normalizePrototypeRoutePath
+} from "./prototype-route";
 
 /** Phases where a prototype preview is meaningful (post confirm_draft). */
 export const PREVIEW_ALLOWED_PHASES = [
@@ -68,7 +72,12 @@ export interface PrototypeSurfaceRecord {
   run_id: string;
   surface_key: string;
   name: string;
+  /** Runtime-owned dev-server origin; component harnesses mount from here. */
   preview_url: string;
+  /** Page represented by this surface inside preview_url. */
+  route_path: string;
+  /** Derived page URL used by the canvas, screenshot and readiness probe. */
+  surface_url: string;
   preview_port: number;
   readiness: PreviewReadiness;
   readiness_reason: string | null;
@@ -86,6 +95,8 @@ export interface RecordPreviewInput {
   runId: string;
   /** Declared prototype/code artifact this preview was built from. */
   sourceArtifactPath: string;
+  /** Explicit page path inside the preview server; defaults to `/`. */
+  routePath?: string;
   /** Project-relative prototype root; defaults to the project root. */
   prototypeRoot?: string;
   devCommand?: string;
@@ -207,6 +218,11 @@ function mapSurface(row: Record<string, unknown>): PrototypeSurfaceRecord {
     surface_key: String(row.surface_key),
     name: String(row.name),
     preview_url: String(row.preview_url),
+    route_path: String(row.route_path ?? "/"),
+    surface_url: composePrototypeSurfaceUrl(
+      String(row.preview_url),
+      String(row.route_path ?? "/")
+    ),
     preview_port: Number(row.preview_port),
     readiness: String(row.readiness) as PreviewReadiness,
     readiness_reason:
@@ -305,7 +321,9 @@ export function setPreviewReadiness(
             prototype_run_id: surface.prototype_run_id,
             run_id: surface.run_id,
             surface_key: surface.surface_key,
-            preview_url: surface.preview_url,
+            preview_origin: surface.preview_url,
+            route_path: surface.route_path,
+            preview_url: surface.surface_url,
             readiness,
             ...(reason === null ? {} : { reason })
           }
@@ -337,7 +355,13 @@ export function setPrototypeSurfaceScreenshot(
   projectPath: string,
   surfaceId: string,
   artifactPath: string
-): { ok: true; event_id: string | null } | { ok: false; reason: string } {
+):
+  | {
+      ok: true;
+      event_id: string | null;
+      previous_artifact_path: string | null;
+    }
+  | { ok: false; reason: string } {
   try {
     const result = withProjectTransaction(projectPath, (db) => {
       const row = db
@@ -346,6 +370,7 @@ export function setPrototypeSurfaceScreenshot(
       if (!row) {
         return { ok: false as const, reason: "surface_record_not_found" };
       }
+      const previousArtifactPath = mapSurface(row).screenshot_artifact_path;
       const now = new Date().toISOString();
       db.prepare(
         `UPDATE prototype_surfaces
@@ -353,7 +378,11 @@ export function setPrototypeSurfaceScreenshot(
              updated_at = ?
          WHERE id = ?`
       ).run(artifactPath, now, now, surfaceId);
-      return { ok: true as const, event_id: null };
+      return {
+        ok: true as const,
+        event_id: null,
+        previous_artifact_path: previousArtifactPath
+      };
     });
     if (result.ok) {
       emitRecordEvent({
@@ -425,7 +454,9 @@ function markSurfacesStaleOnDb(
       prototype_run_id: surface.prototype_run_id,
       run_id: surface.run_id,
       surface_key: surface.surface_key,
-      preview_url: surface.preview_url,
+      preview_origin: surface.preview_url,
+      route_path: surface.route_path,
+      preview_url: surface.surface_url,
       reason
     });
     staleIds.push(surface.id);
@@ -606,7 +637,7 @@ export async function restorePrototypePreviews(
     const { surface } = candidate;
     // A dev server that survived the previous Runtime is adopted; nothing is
     // respawned for a URL that already answers as the preview.
-    if (await supervisor.probeUrl(surface.preview_url)) {
+    if (await supervisor.probeUrl(surface.surface_url)) {
       setPreviewReadiness(projectPath, surface.id, "ready", null);
       adopted.push(surface.id);
       continue;
@@ -616,7 +647,7 @@ export async function restorePrototypePreviews(
         root: path.join(path.resolve(projectPath), candidate.prototype_root),
         command: candidate.dev_command,
         port: surface.preview_port,
-        url: surface.preview_url,
+        url: surface.surface_url,
         timeoutMs: options.timeoutMs,
         onReadiness: (readiness, reason) => {
           setPreviewReadiness(projectPath, surface.id, readiness, reason);
@@ -624,7 +655,7 @@ export async function restorePrototypePreviews(
             void capturePrototypeSurfaceScreenshot(
               projectPath,
               surface.id,
-              surface.preview_url
+              surface.surface_url
             );
           }
         },
@@ -719,6 +750,7 @@ export async function recordPreview(
 
   const runId = trimmed(input.runId);
   const sourceArtifactPath = trimmed(input.sourceArtifactPath);
+  const routePath = normalizePrototypeRoutePath(input.routePath);
   const surfaceKey = trimmed(input.surfaceKey) || DEFAULT_SURFACE_KEY;
   const name = trimmed(input.name) || surfaceKey;
   const devCommand = trimmed(input.devCommand) || DEFAULT_DEV_COMMAND;
@@ -727,6 +759,7 @@ export async function recordPreview(
   if (
     runId.length === 0 ||
     sourceArtifactPath.length === 0 ||
+    routePath === null ||
     seedReferenceIds === null ||
     evidenceVersionIds === null
   ) {
@@ -792,6 +825,7 @@ export async function recordPreview(
     return { ok: false, reason: "no_available_preview_port" };
   }
   const previewUrl = previewUrlForPort(port);
+  const surfaceUrl = composePrototypeSurfaceUrl(previewUrl, routePath);
 
   let upserted: UpsertOutcome;
   try {
@@ -897,6 +931,8 @@ export async function recordPreview(
         surface_key: surfaceKey,
         name,
         preview_url: previewUrl,
+        route_path: routePath,
+        surface_url: surfaceUrl,
         preview_port: port,
         readiness: "starting",
         readiness_reason: null,
@@ -924,13 +960,14 @@ export async function recordPreview(
       if (existingSurface) {
         db.prepare(
           `UPDATE prototype_surfaces
-           SET name = ?, preview_url = ?, preview_port = ?, readiness = ?,
+           SET name = ?, preview_url = ?, route_path = ?, preview_port = ?, readiness = ?,
                readiness_reason = NULL, stale = 0, stale_reason = NULL,
                updated_at = ?
            WHERE id = ?`
         ).run(
           surface.name,
           surface.preview_url,
+          surface.route_path,
           surface.preview_port,
           surface.readiness,
           surface.updated_at,
@@ -939,16 +976,17 @@ export async function recordPreview(
       } else {
         db.prepare(
           `INSERT INTO prototype_surfaces (
-             id, prototype_run_id, surface_key, name, preview_url,
+             id, prototype_run_id, surface_key, name, preview_url, route_path,
              preview_port, readiness, readiness_reason, stale, stale_reason,
              created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, ?, ?)`
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, ?, ?)`
         ).run(
           surface.id,
           surface.prototype_run_id,
           surface.surface_key,
           surface.name,
           surface.preview_url,
+          surface.route_path,
           surface.preview_port,
           surface.readiness,
           surface.created_at,
@@ -970,7 +1008,9 @@ export async function recordPreview(
         seed_reference_ids: run.seed_reference_ids,
         evidence_version_ids: run.evidence_version_ids,
         design_system_version: run.design_system_version,
-        preview_url: surface.preview_url,
+        preview_origin: surface.preview_url,
+        route_path: surface.route_path,
+        preview_url: surface.surface_url,
         preview_port: surface.preview_port
       });
 
@@ -1002,7 +1042,7 @@ export async function recordPreview(
       root: path.join(path.resolve(projectPath), upserted.run.prototype_root),
       command: upserted.run.dev_command,
       port,
-      url: previewUrl,
+      url: surfaceUrl,
       timeoutMs: options.timeoutMs,
       onReadiness: (readiness, reason) => {
         const applied = setPreviewReadiness(
@@ -1021,7 +1061,7 @@ export async function recordPreview(
           void capturePrototypeSurfaceScreenshot(
             projectPath,
             upserted.surface.id,
-            previewUrl
+            surfaceUrl
           );
         }
       },
@@ -1042,7 +1082,7 @@ export async function recordPreview(
       readiness_reason: outcome.reason
     },
     readiness: outcome.readiness,
-    preview_url: previewUrl,
+    preview_url: surfaceUrl,
     event_id: lifecycle.eventId
   };
 }

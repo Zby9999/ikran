@@ -12,6 +12,7 @@
 
 import { withProjectTransaction } from "./db";
 import { buildLoggedEvent, insertEvent } from "./events";
+import { decodeOpaqueJson } from "./json-columns";
 import { listUnreviewedDesignerFeedbackOnDb } from "./project-phase";
 
 export type DesignerFeedbackReviewState =
@@ -29,6 +30,14 @@ export interface ConsolidateReviewFeedback {
   region_annotation_id: string | null;
   seed_reference_id: string | null;
   opaque_context: unknown;
+  reconciliation_id: string | null;
+  decision_disposition:
+    | "final_decision"
+    | "superseded"
+    | "local_exception"
+    | "open_gap"
+    | null;
+  source_message_ids: string[];
   created_at: string;
   review_state: DesignerFeedbackReviewState;
   consumed_by_proposal_id: string | null;
@@ -42,6 +51,7 @@ export type ClaimConsolidateReviewResult =
       feedback_count: number;
       unreviewed_feedback_ids: string[];
       unreviewed_feedback_count: number;
+      reconciliation_id: string | null;
       event_id: string;
     }
   | { ok: false; reason: string };
@@ -72,25 +82,13 @@ type FeedbackJoinRow = {
   region_annotation_id: string | null;
   seed_reference_id: string | null;
   opaque_context_json: string | null;
+  reconciliation_id: string | null;
+  decision_disposition: ConsolidateReviewFeedback["decision_disposition"];
+  source_message_ids_json: string | null;
   created_at: string;
   consumed_by_proposal_id: string | null;
   dismissed_reason: string | null;
 };
-
-/**
- * Mirror of designer-feedback.ts encoding: strings are stored verbatim and
- * structured values as JSON text. Only structured payloads are decoded so a
- * verbatim selector string always round-trips unchanged.
- */
-function decodeOpaqueContext(value: string | null): unknown {
-  if (value === null) return null;
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return parsed !== null && typeof parsed === "object" ? parsed : value;
-  } catch {
-    return value;
-  }
-}
 
 function reviewStateOf(row: FeedbackJoinRow): DesignerFeedbackReviewState {
   if (row.consumed_by_proposal_id !== null) return "consumed";
@@ -104,26 +102,47 @@ function reviewStateOf(row: FeedbackJoinRow): DesignerFeedbackReviewState {
  * `consolidate_review_started`. Runtime never triggers this on its own.
  */
 export function claimConsolidateReview(
-  projectPath: string
+  projectPath: string,
+  reconciliationId: string
 ): ClaimConsolidateReviewResult {
   try {
     return withProjectTransaction(projectPath, (db) => {
+      const boundedReconciliationId = reconciliationId.trim();
+      if (
+        boundedReconciliationId.length === 0 ||
+        !db
+          .prepare("SELECT 1 FROM conversation_reconciliations WHERE id = ?")
+          .get(boundedReconciliationId)
+      ) {
+        return {
+          ok: false as const,
+          reason: "conversation_reconciliation_not_found"
+        };
+      }
+
       const rows = db
         .prepare(
           `SELECT f.id, f.summary, f.run_id, f.session_id,
                   f.evidence_surface_id, f.prototype_surface_id,
                   f.region_annotation_id, f.seed_reference_id,
                   f.opaque_context_json, f.created_at,
+                  rf.reconciliation_id, rf.decision_disposition,
+                  rf.source_message_ids_json,
                   c.proposal_id AS consumed_by_proposal_id,
                   d.reason AS dismissed_reason
            FROM designer_feedback f
+           LEFT JOIN conversation_reconciliation_feedback rf
+             ON rf.feedback_id = f.id
            LEFT JOIN designer_feedback_review_consumption c
              ON c.feedback_id = f.id
            LEFT JOIN designer_feedback_dismissals d
              ON d.feedback_id = f.id
-           ORDER BY f.created_at ASC, f.id ASC`
+           WHERE rf.reconciliation_id = ? OR rf.reconciliation_id IS NULL
+           ORDER BY f.created_at ASC,
+                    COALESCE(rf.position, 2147483647) ASC,
+                    f.id ASC`
         )
-        .all() as FeedbackJoinRow[];
+        .all(boundedReconciliationId) as FeedbackJoinRow[];
 
       const feedback: ConsolidateReviewFeedback[] = rows.map((row) => ({
         id: row.id,
@@ -134,15 +153,23 @@ export function claimConsolidateReview(
         prototype_surface_id: row.prototype_surface_id,
         region_annotation_id: row.region_annotation_id,
         seed_reference_id: row.seed_reference_id,
-        opaque_context: decodeOpaqueContext(row.opaque_context_json),
+        opaque_context: decodeOpaqueJson(row.opaque_context_json),
+        reconciliation_id: row.reconciliation_id,
+        decision_disposition: row.decision_disposition,
+        source_message_ids: row.source_message_ids_json === null
+          ? []
+          : JSON.parse(row.source_message_ids_json) as string[],
         created_at: row.created_at,
         review_state: reviewStateOf(row),
         consumed_by_proposal_id: row.consumed_by_proposal_id,
         dismissed_reason: row.dismissed_reason
       }));
 
-      const unreviewedIds = listUnreviewedDesignerFeedbackOnDb(db);
+      const unreviewedIds = feedback
+        .filter((item) => item.review_state === "unreviewed")
+        .map((item) => item.id);
       const event = buildLoggedEvent("consolidate_review_started", {
+        reconciliation_id: boundedReconciliationId,
         feedback_count: feedback.length,
         unreviewed_feedback_count: unreviewedIds.length,
         unreviewed_feedback_ids: unreviewedIds
@@ -155,6 +182,7 @@ export function claimConsolidateReview(
         feedback_count: feedback.length,
         unreviewed_feedback_ids: unreviewedIds,
         unreviewed_feedback_count: unreviewedIds.length,
+        reconciliation_id: boundedReconciliationId,
         event_id: event.event_id
       };
     });

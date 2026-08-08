@@ -56,6 +56,7 @@ export type PhaseCommandSuccess = {
 
 export type FormalizeFailure =
   | PhaseGateFailure
+  | { ok: false; reason: "empty_modification_review" }
   | {
       ok: false;
       reason: "unreviewed_feedback";
@@ -333,14 +334,27 @@ function codeBackfillHintsFor(
  * written file matches the DB rows, so pre-existing drift stays visible to
  * the lazy sync.
  *
+ * `modificationReview` is the mandatory modification-review attestation: one
+ * free-text sentence in which the Agent declares it inspected the phase's
+ * prototype modifications for reusable-rule candidates (and where any
+ * identified candidates went). The Runtime only enforces presence — the
+ * judgment itself is the Agent's; the point is that skipping the review
+ * silently is no longer possible. It is persisted on the
+ * `design_system_formalized` event payload.
+ *
  * The success result also carries `code_backfill_hints` (Issue 31): promoted
  * component specs whose codeLinks are still empty while sourceCaptures remain
  * their only provenance. Advisory only — never a rejection path.
  */
 export function formalizeDesignSystem(
   projectPath: string,
-  promoteEntryIds: readonly string[] = []
+  promoteEntryIds: readonly string[] = [],
+  modificationReview: string
 ): FormalizeSuccess | FormalizeFailure {
+  const review = modificationReview.trim();
+  if (review.length === 0) {
+    return { ok: false, reason: "empty_modification_review" };
+  }
   const promoteIds = [
     ...new Set(
       promoteEntryIds.map((id) => id.trim()).filter((id) => id.length > 0)
@@ -546,7 +560,8 @@ export function formalizeDesignSystem(
         from_phase: "design_system_formal",
         phase: "ready_for_new_design",
         command: "formalize_design_system",
-        promoted_entry_ids: promoteIds
+        promoted_entry_ids: promoteIds,
+        modification_review: review
       });
       insertEvent(db, event);
       // Approval-grade provenance per promoted entry: the status gate checks
