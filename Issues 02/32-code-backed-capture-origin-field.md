@@ -70,3 +70,14 @@ issue 31 建立 codeLinks 回写通道后,本 issue 让「截图占位换成代�
 ## Blocked by
 
 - 31(codeLinks 回写通道与文件存在性校验)。
+
+## Comments
+
+### 2026-08-08 — 实现记录(commit `d5558a2`,已推送)
+
+- capture 模型增 `origin: "source" | "code"`:schema 校验(absent 合法 = source;`"code"` 必带非空 `codeLinks` + `codeDigest`)、ingest 透传、view 解析默认 source;旧数据向后兼容有单测钉死。origin 存同一 `source_captures_json` 列,migrations 无需改。
+- stale:code capture 写入时冻结 `codeCaptureDigest`(sha256 over 排序后的 `path:fileSha256` 行);view 每次读取重算,文件变化/缺失/越界 → D02 stale caption,不自动重生成;code capture 不套 Figma surface stale 判定(surfaceId 仅作 provenance)。
+- 新工具 `capture_component_code_hero`:Agent 指名渲染该组件的 prototype surface(完整复用 `capture_rule_screenshot` 链路 + crop 两遍法),截图以 `origin: "code"` 写回并替换旧 code capture(source captures 不动);渲染失败发生在任何写入之前,零写入诚实回退;formalized 条目补 approval 溯源。偏离说明:渲染形态为「Agent 指名 surface + crop」而非框架无关单挂组件——组件 props/依赖不确定,正是 spec 的 open gap,活渲染/隔离 harness 属 33。
+- Browser hero 优先 code capture,`DsVisualOrigin = "code-backed"` 首次赋值;popover 按 origin 分档("Code-backed render" / source,Code 链接行)。
+- 验证:tsc 干净;全量 vitest 1106 绿;playwright design-system-browser/reader 通过(580 行既有布局断言 flaky 一次,单独重跑通过)。双轴 code review 修复:doc comment 归位、screenshot reason 联合收窄去 `as` cast、stale 态 browser 断言补齐。
+- 遗留:**Real Agent validation 未做**(Text Link 级组件 + 设计师确认),setup 见 `docs/real-agent-validation-issues-31-33.md` Flow B。

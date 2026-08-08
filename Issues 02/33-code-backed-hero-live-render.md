@@ -156,3 +156,15 @@ Browser 侧(live hero + 回退档 + states hover + e2e fixture)1–1.5 天;
 
 遗留待实现时定:多组件详情页连续浏览时 iframe 挂载上限(open gap 同款);
 harness 失效的 Agent 侧修复引导文案。
+
+### 2026-08-08 — 实现记录(commit `c8eaff0`,已推送)
+
+按上方 spike 契约落地:
+
+- 扩展 `capture_component_code_hero` 可选 `harnessPath`(不并列新工具:保持 32 的「一次声明一条 code capture、重触发整体替换」单写入口)。同源相对路径校验 `isCaptureHarnessPath`(`/` 开头,禁 `//` `..` `?` `#` 反斜杠)收拢在 schema 层,声明门/工具输入/view 防御解析三处共享;`harnessPath` 只允许出现在 `origin: "code"` capture 上。
+- view 装饰:code capture 的 surfaceId 实时 join prototype_surfaces,下发 `previewUrl` / `surfaceReadiness` / `surfaceStale` 随 `GET /api/design-system`(守住 DSB 单 fetch 纪律);source capture 不 join(它的 surfaceId 是 Figma 证据谱系)。
+- hero `planComponentHero` 纯函数分档:live(code capture + harnessPath + ready 且非 stale)→ static + 原因 → source → unavailable;回退原因三值 `surface_not_ready` / `surface_stale` / `live_unreachable`,文案均以 "showing the code render" 收尾;**digest stale 不回退 live**。无 harness 的组件与 32 逐字节平价(有回归测试)。
+- live iframe:`sandbox="allow-scripts allow-same-origin"` + `pointer-events: none` + tabIndex -1;states hover 150ms 防抖重导航 `<harnessPath>?state=<name>`(state 名单取自 stateMatrix;focus 移出行才恢复默认);5s 无首次 load → `live_unreachable`。verdict 键控 `componentHeroLiveKey`(含 readiness/stale 段,各段 encodeURIComponent):readiness 翻转(starting→ready)自动重试,终态不循环 flicker;可测接缝为纯 reducer `heroLiveVerdictReducer`。
+- MCP instructions 未加词(预算余量仅 12 字节),harness 约定全部写进 tool description + zod 字段描述。
+- 验证:tsc 干净;全量 vitest 1131 绿;playwright 两 spec 通过。双轴 code review 修复:回退文案拆分、readiness 重试语义(原注释与实现矛盾)、verdict 状态机测试、双排序/双 plan 调用消除、focus 闪烁、liveKey 撞键。
+- 遗留:live-hero 端到端(含 Sticky Navigation 级真实组件 + 设计师确认)属 **Real Agent validation**,setup 见 `docs/real-agent-validation-issues-31-33.md` Flow C;写回形状已三处同形复制(formalize/31/32),第四处出现时提取共享模块;`LiveSurfaceInfo` data clump 重构未做。

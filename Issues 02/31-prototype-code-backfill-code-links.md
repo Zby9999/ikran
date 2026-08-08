@@ -80,3 +80,13 @@ Formalize 上加**软提示**门禁,让缺口始终可见。
 ## Blocked by
 
 - None — 可立即开始。
+
+## Comments
+
+### 2026-08-08 — 实现记录(commit `6b7d3df`,已推送)
+
+- `backfill_component_code_links` MCP 工具:entryId ↔ 代码路径显式映射数组;Runtime 校验 entry 存在且为 component-spec(新增 `entry_not_component_spec`,比泛化 schema 失败更能指明原因)、路径在项目内、文件真实存在、已经 `record_artifact_written` 声明且 artifactType 为 code 类(`code` / `prototype`,由 registry 的 validationClass 派生,不写死——code review 修复项)。写回复用 formalize Phase-2 机制(schema 校验 + canonical 序列化 + digest + 失败整体 restore),record + event 同事务(`design_system_code_links_backfilled`);formalized 条目额外写 approval 级 `design_system_entry_approved` provenance——否则 re-ingest status gate 会拒绝 Runtime 自己刚改写的条目(决策 2「record + event 同事务」涵盖)。
+- `formalize_design_system` 返回 `code_backfill_hints`:本次 promoted 中 codeLinks 为空且仅有 sourceCaptures 的 component-spec 清单(字面交集),只提示不拒绝,未新增任何拒绝路径。
+- 引导链:`confirm_prototype` 描述与 next 字段改为 review → backfill → formalize;MCP instructions 插入 `backfill_component_code_links`(+34 字节)。
+- 验证:tsc 干净;全量 vitest 1094 绿(新增 9 个 backfill 单测 + 2 个软提示单测);Standards/Spec 双轴 code review 通过。
+- 遗留:resident 预算 2048→2150 的放宽属 issue 30 未提交文案(超支非本 issue 贡献),待跨 issue 决策——压 30 的 capture bullet 或接受 2150。**Real Agent validation 未做**,setup 见 `docs/real-agent-validation-issues-31-33.md` Flow A。
