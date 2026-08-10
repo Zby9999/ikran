@@ -210,9 +210,33 @@ code screenshot 事件、stale gate、view 装饰以及 Browser 分档。
 宽于 hero 可用宽度时等比缩小，外框始终完整包裹渲染结果。
 
 这条补充取代上文「无 postMessage 义务 / 本次不做 postMessage 协议」中仅与
-**几何尺寸**有关的部分。harness 在挂载与 `ResizeObserver` 更新时单向发送
-`{ type: "ikran:component-size", width, height }`；Browser 同时校验
-`event.source === iframe.contentWindow` 与 preview origin，只接受有限范围内的
-正数宽高。该协议不承载 DOM、设计数据、session 或 Runtime API 能力，原安全
-边界不变。尺寸上报是新 harness 的必需契约；测试阶段不为补充前的 harness
-保留 Runtime 测量 API 或 Chromium 兼容路径。
+**几何尺寸**有关的部分。2026-08-08 的首版消息只含 body 的 `width/height`；
+它已被下方 2026-08-10 的 version 2 root-bounds 协议取代。协议始终只承载
+几何，不承载 DOM、设计数据、session 或 Runtime API 能力，原安全边界不变。
+
+### 2026-08-10 — 真实 Agent 反馈：live component 自动居中
+
+真实 Text Link harness 暴露了尺寸补充中的两个耦合缺口：harness 上报
+`document.body.scrollWidth` 时，小组件会被浏览器默认 block 布局误报为整个
+iframe viewport；Browser 随后又把该 full-stage iframe 固定在 `(0, 0)`，所以
+组件视觉中心落在展台左上，而不是 D03 已锁定的「组件居中」。
+
+Active 几何契约改为 version 2：harness 用唯一
+`[data-ikran-component-root]` 紧包组件及其交互 halo/portal，marker 自身不得
+transform、不得有负向 overflow；`html/body` 归零且禁止文档滚动。每次挂载、
+root resize 与 viewport resize 都从同一坐标系上报
+`{ type, version: 2, href, x, y, width, height }`。`href` 绑定当前 state 导航，
+helper 必须在每次 default/state document 安装时捕获该 href，避免旧 document
+的迟到消息覆盖新 state；Browser 同时校验 source、preview
+origin、精确 href、有限非负 bounds，且 root 横向 extent 必须完整落在
+1133px presentation viewport 内。
+
+Browser 保留与 Prototype screenshot 相同的 1133px fixed presentation
+viewport，只平移 iframe 让 root 的视觉中心落到展台中心；过宽 root 等比缩小，
+这里「过宽」只指宽于 hero 展台、但不超过 1133px 的 root。240px 只保留为
+最小展台高度。每次 default/state 导航的有效 v2 bounds 到达前 iframe 隐藏；
+父侧用 `liveKey + href` 绑定该次导航的 loaded/timeout verdict，旧 state 的迟到
+消息或 timer 不能结算新 state，连续 state 导航也会各自重启完整 5 秒窗口。5 秒
+仍无有效消息则走现有 source-capture/unavailable 回退。旧 body-size/v1 harness
+不会被静默当成已居中，必须迁移到 v2。Runtime 仍不跨源读取或改写项目 DOM；
+sandbox、pointer interaction 与 state query 的其余契约不变。

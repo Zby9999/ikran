@@ -94,29 +94,58 @@ Harness 契约(与 tool description 一致):
 - 同源相对路径(`/` 开头,禁 `//`、`..`、`?`、`#`、反斜杠),由 Agent
   写作并经 `record_artifact_written` 声明;
 - 独立挂载组件、默认 props、纯呈现;响应 `?state=<name>`(state 名单取自
-  spec `stateMatrix`);不调 Runtime API。为让 Browser 完整包裹组件，harness
-  在挂载时及 `ResizeObserver` 更新时单向上报 body 的 `scrollWidth` /
-  `scrollHeight`：
+  spec `stateMatrix`);不调 Runtime API。组件必须放在唯一的
+  `[data-ikran-component-root]` 下。`html/body` 必须 `margin: 0` 且
+  `overflow: hidden`；marker root 留在非负 document 坐标、不得 transform 或
+  产生负向 overflow。focus ring、box-shadow 与 portal 用 root 内部的对称正向
+  halo/padding 容纳，portal container 也必须落在 root 内。这样 root 才是真正的
+  完整视觉/滚动边界，而不是 body/viewport 的整栏宽；`x + width` 不得超过
+  固定 1133px presentation viewport。
+- Agent 在项目内写一次并复用下面的 sizing helper（同样用
+  `record_artifact_written` 声明）。它在挂载、root resize 与 viewport resize
+  时发送 version 2 消息；`href` 把报告绑定到当前 default/state document：
 
 ```ts
-const reportSize = () =>
-  window.parent.postMessage(
-    {
-      type: "ikran:component-size",
-      width: document.body.scrollWidth,
-      height: document.body.scrollHeight
-    },
-    "*"
-  );
-
-const observer = new ResizeObserver(reportSize);
-observer.observe(document.body);
-reportSize();
+// lib/ikran-component-harness.ts
+export function installIkranComponentSizing(root: HTMLElement) {
+  // Bind the document URL at install time. A report queued by the previous
+  // state must keep its old href so the parent can reject it after navigation.
+  const href = window.location.href;
+  const report = () => {
+    const rect = root.getBoundingClientRect();
+    window.parent.postMessage(
+      {
+        type: "ikran:component-size",
+        version: 2,
+        href,
+        x: rect.left,
+        y: rect.top,
+        width: Math.max(root.scrollWidth, rect.width),
+        height: Math.max(root.scrollHeight, rect.height)
+      },
+      "*"
+    );
+  };
+  const observer = new ResizeObserver(report);
+  observer.observe(root);
+  window.addEventListener("resize", report);
+  const animationFrame = requestAnimationFrame(report);
+  return () => {
+    cancelAnimationFrame(animationFrame);
+    window.removeEventListener("resize", report);
+    observer.disconnect();
+  };
+}
 ```
 
-  Browser 仅接受当前 iframe 且 origin 与 preview URL 一致的几何消息；不向
-  harness 回传 Runtime 数据。尺寸上报是当前 harness 契约的必需部分，不保留
-  旧 harness 的 Runtime 测量回退。
+  Browser 仅接受当前 iframe、preview origin 与当前 href 完全匹配的有限非负
+  bounds；不向 harness 回传 Runtime 数据。iframe 始终保持与 Prototype
+  screenshot 相同的 1133px presentation viewport，Browser 平移它使 root 在
+  240px 最小展台内水平/垂直居中；root 宽于 hero 展台（但不超过 1133px）时
+  等比缩小。每次 default/state 导航的首个有效 v2 报告前 iframe 隐藏；父侧以
+  `liveKey + href` 区分尝试，旧 state 的迟到 report/timeout 不得结算当前 state，
+  连续 state 导航各自获得完整 5 秒窗口。5 秒无报告走已有静态回退；旧
+  body-size/v1 harness 必须迁移。
 - harness 内局部隐藏框架开发 chrome,普通 Prototype 仍保留。Next.js 在
   harness route 添加 `nextjs-portal { display: none !important; }`,不得用
   `next.config` 的全局 `devIndicators: false`。
@@ -127,31 +156,37 @@ state 名映射为 props/交互模拟):
 ```tsx
 // app/__ikran/component/sticky-navigation/page.tsx
 "use client";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { StickyNavigation } from "@/components/StickyNavigation";
+import { installIkranComponentSizing } from "@/lib/ikran-component-harness";
 
 export default function Harness() {
   const state = useSearchParams().get("state") ?? undefined;
+  const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const reportSize = () =>
-      window.parent.postMessage(
-        {
-          type: "ikran:component-size",
-          width: document.body.scrollWidth,
-          height: document.body.scrollHeight
-        },
-        "*"
-      );
-    const observer = new ResizeObserver(reportSize);
-    observer.observe(document.body);
-    reportSize();
-    return () => observer.disconnect();
-  }, []);
+    const root = rootRef.current;
+    if (root === null) return;
+    return installIkranComponentSizing(root);
+  }, [state]);
   return (
     <>
-      <style jsx global>{`nextjs-portal { display: none !important; }`}</style>
-      <StickyNavigation state={state} />
+      <style jsx global>{`
+        html, body { margin: 0; overflow: hidden; }
+        nextjs-portal { display: none !important; }
+      `}</style>
+      <div
+        ref={rootRef}
+        data-ikran-component-root
+        style={{
+          display: "inline-block",
+          position: "relative",
+          padding: 8,
+          boxSizing: "border-box"
+        }}
+      >
+        <StickyNavigation state={state} />
+      </div>
     </>
   );
 }

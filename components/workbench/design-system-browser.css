@@ -1842,9 +1842,10 @@
   justify-content: center;
 }
 
-/* Live code-backed tier (Issue 33): a small component keeps a 240px stage;
- * the harness reports larger content so the stage can grow to fit. Oversized
- * widths are scaled uniformly inside this clipping boundary. */
+/* Live code-backed tier (Issue 33): the iframe keeps the shared fixed
+ * presentation viewport while its measured component root is translated to
+ * the center. The stage grows for tall roots and clips only empty iframe
+ * space; over-wide roots are scaled uniformly. */
 .dsb-hero-live-stage {
   position: relative;
   width: 100%;

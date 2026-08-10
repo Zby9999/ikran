@@ -1279,85 +1279,315 @@ describe("componentHeroLiveUrl (Issue 33)", () => {
 });
 
 describe("live hero content fitting", () => {
-  test("keeps a fixed minimum stage for a small component", () => {
-    expect(componentHeroFrameLayout(720, { width: 120, height: 40 })).toEqual({
-      frameWidth: 720,
+  test("centers a small component within the fixed minimum stage", () => {
+    const content = { x: 0, y: 0, width: 120, height: 40 };
+    const layout = componentHeroFrameLayout(720, content);
+    expect(layout).toEqual({
+      frameWidth: 1133,
       frameHeight: 240,
+      frameLeft: 300,
+      frameTop: 100,
+      displayHeight: 240,
+      scale: 1
+    });
+    expect(
+      layout!.frameLeft +
+        (content.x + content.width / 2) * layout!.scale
+    ).toBe(720 / 2);
+    expect(
+      layout!.frameTop +
+        (content.y + content.height / 2) * layout!.scale
+    ).toBe(layout!.displayHeight / 2);
+  });
+
+  test("centers positive root offsets without changing the iframe viewport", () => {
+    expect(
+      componentHeroFrameLayout(720, {
+        x: 24,
+        y: 16,
+        width: 120,
+        height: 40
+      })
+    ).toEqual({
+      frameWidth: 1133,
+      frameHeight: 240,
+      frameLeft: 276,
+      frameTop: 84,
       displayHeight: 240,
       scale: 1
     });
   });
 
   test("grows to show a tall component completely", () => {
-    expect(componentHeroFrameLayout(720, { width: 720, height: 640 })).toEqual({
-      frameWidth: 720,
+    expect(
+      componentHeroFrameLayout(720, {
+        x: 0,
+        y: 0,
+        width: 720,
+        height: 640
+      })
+    ).toEqual({
+      frameWidth: 1133,
       frameHeight: 640,
+      frameLeft: 0,
+      frameTop: 0,
       displayHeight: 640,
       scale: 1
     });
   });
 
   test("scales only an over-wide component and preserves its aspect ratio", () => {
-    expect(componentHeroFrameLayout(720, { width: 960, height: 480 })).toEqual({
-      frameWidth: 960,
+    expect(
+      componentHeroFrameLayout(720, {
+        x: 0,
+        y: 0,
+        width: 960,
+        height: 480
+      })
+    ).toEqual({
+      frameWidth: 1133,
       frameHeight: 480,
+      frameLeft: 0,
+      frameTop: 0,
       displayHeight: 360,
       scale: 0.75
     });
   });
 
-  test("accepts only finite, bounded component-size messages", () => {
+  test("centers an over-wide short component after scaling it down", () => {
     expect(
-      parseComponentHeroSizeMessage({
-        type: "ikran:component-size",
-        width: 720,
-        height: 640
+      componentHeroFrameLayout(720, {
+        x: 0,
+        y: 0,
+        width: 960,
+        height: 80
       })
-    ).toEqual({ width: 720, height: 640 });
+    ).toEqual({
+      frameWidth: 1133,
+      frameHeight: 240,
+      frameLeft: 0,
+      frameTop: 90,
+      displayHeight: 240,
+      scale: 0.75
+    });
+  });
+
+  test("keeps one responsive viewport across component-width breakpoints", () => {
+    const narrow = componentHeroFrameLayout(720, {
+      x: 0,
+      y: 0,
+      width: 600,
+      height: 80
+    });
+    const wide = componentHeroFrameLayout(720, {
+      x: 0,
+      y: 0,
+      width: 960,
+      height: 80
+    });
+    expect(narrow!.frameWidth).toBe(1133);
+    expect(wide!.frameWidth).toBe(1133);
+  });
+
+  test("rejects a root that would change the fixed presentation viewport", () => {
     expect(
-      parseComponentHeroSizeMessage({
-        type: "unrelated",
-        width: 720,
-        height: 640
+      componentHeroFrameLayout(720, {
+        x: 0,
+        y: 0,
+        width: 1134,
+        height: 80
       })
     ).toBeNull();
+  });
+
+  test("centers fractional Text Link bounds without rounding drift", () => {
+    const content = { x: 0, y: 0, width: 144.3046875, height: 72 };
+    const layout = componentHeroFrameLayout(870, content)!;
     expect(
-      parseComponentHeroSizeMessage({
-        type: "ikran:component-size",
-        width: Number.POSITIVE_INFINITY,
-        height: 640
-      })
+      layout.frameLeft + (content.x + content.width / 2) * layout.scale
+    ).toBeCloseTo(870 / 2, 8);
+    expect(
+      layout.frameTop + (content.y + content.height / 2) * layout.scale
+    ).toBeCloseTo(layout.displayHeight / 2, 8);
+  });
+
+  test("accepts only current, versioned, finite component-size messages", () => {
+    const href = "http://127.0.0.1:4401/__ikran/component/button";
+    expect(
+      parseComponentHeroSizeMessage(
+        {
+          type: "ikran:component-size",
+          version: 2,
+          href,
+          x: 24,
+          y: 16,
+          width: 720,
+          height: 640
+        },
+        href
+      )
+    ).toEqual({ x: 24, y: 16, width: 720, height: 640 });
+    expect(
+      parseComponentHeroSizeMessage(
+        {
+          type: "ikran:component-size",
+          version: 2,
+          href: `${href}?state=hover`,
+          x: 0,
+          y: 0,
+          width: 720,
+          height: 640
+        },
+        href
+      )
+    ).toBeNull();
+    expect(
+      parseComponentHeroSizeMessage(
+        {
+          type: "ikran:component-size",
+          version: 2,
+          href,
+          x: -1,
+          y: 0,
+          width: 720,
+          height: 640
+        },
+        href
+      )
+    ).toBeNull();
+    expect(
+      parseComponentHeroSizeMessage(
+        {
+          type: "ikran:component-size",
+          version: 2,
+          href,
+          x: 100,
+          y: 0,
+          width: 1100,
+          height: 640
+        },
+        href
+      )
+    ).toBeNull();
+    expect(
+      parseComponentHeroSizeMessage(
+        {
+          type: "ikran:component-size",
+          href,
+          x: 0,
+          y: 0,
+          width: 720,
+          height: 640
+        },
+        href
+      )
     ).toBeNull();
   });
 });
 
 describe("heroLiveVerdictReducer (Issue 33)", () => {
-  const pending: DsHeroLiveVerdict = { key: LIVE_KEY, phase: "pending" };
+  const href = "http://127.0.0.1:3001/__ikran/component/button";
+  const stateHref = `${href}?state=hover`;
+  const pending: DsHeroLiveVerdict = {
+    key: LIVE_KEY,
+    href,
+    phase: "pending"
+  };
 
-  test("pending resolves once, terminally, per key", () => {
+  test("pending resolves terminally within one navigation", () => {
     expect(
-      heroLiveVerdictReducer(pending, { type: "loaded", key: LIVE_KEY })
-    ).toEqual({ key: LIVE_KEY, phase: "live" });
+      heroLiveVerdictReducer(pending, {
+        type: "loaded",
+        key: LIVE_KEY,
+        href
+      })
+    ).toEqual({ key: LIVE_KEY, href, phase: "live" });
     expect(
-      heroLiveVerdictReducer(pending, { type: "timeout", key: LIVE_KEY })
-    ).toEqual({ key: LIVE_KEY, phase: "unreachable" });
-    // Late events after a verdict are ignored (state switches re-fire load).
-    const live = { key: LIVE_KEY, phase: "live" as const };
+      heroLiveVerdictReducer(pending, {
+        type: "timeout",
+        key: LIVE_KEY,
+        href
+      })
+    ).toEqual({ key: LIVE_KEY, href, phase: "unreachable" });
+    // Late events after a verdict are ignored until an explicit navigation.
+    const live = { key: LIVE_KEY, href, phase: "live" as const };
     expect(
-      heroLiveVerdictReducer(live, { type: "timeout", key: LIVE_KEY })
+      heroLiveVerdictReducer(live, {
+        type: "timeout",
+        key: LIVE_KEY,
+        href
+      })
     ).toEqual(live);
-    const unreachable = { key: LIVE_KEY, phase: "unreachable" as const };
+    const unreachable = {
+      key: LIVE_KEY,
+      href,
+      phase: "unreachable" as const
+    };
     expect(
-      heroLiveVerdictReducer(unreachable, { type: "loaded", key: LIVE_KEY })
+      heroLiveVerdictReducer(unreachable, {
+        type: "loaded",
+        key: LIVE_KEY,
+        href
+      })
     ).toEqual(unreachable);
   });
 
-  test("events from a superseded attempt never corrupt the current one", () => {
-    // The key moved on (readiness flipped); a late timeout from the old
-    // iframe must not demote the fresh attempt.
+  test("a state URL navigation re-arms geometry on the same live key", () => {
+    const live: DsHeroLiveVerdict = { key: LIVE_KEY, href, phase: "live" };
     expect(
-      heroLiveVerdictReducer(pending, { type: "timeout", key: "old-key" })
+      heroLiveVerdictReducer(live, {
+        type: "navigate",
+        key: LIVE_KEY,
+        href: stateHref
+      })
+    ).toEqual({ key: LIVE_KEY, href: stateHref, phase: "pending" });
+  });
+
+  test("events from a superseded target or state navigation are ignored", () => {
+    // The target key moved on (readiness flipped).
+    expect(
+      heroLiveVerdictReducer(pending, {
+        type: "timeout",
+        key: "old-key",
+        href
+      })
     ).toEqual(pending);
+    // The state URL moved on while the same iframe/contentWindow was reused.
+    const next = heroLiveVerdictReducer(pending, {
+      type: "navigate",
+      key: LIVE_KEY,
+      href: stateHref
+    });
+    expect(
+      heroLiveVerdictReducer(next, {
+        type: "loaded",
+        key: LIVE_KEY,
+        href
+      })
+    ).toEqual(next);
+    expect(
+      heroLiveVerdictReducer(next, {
+        type: "timeout",
+        key: LIVE_KEY,
+        href
+      })
+    ).toEqual(next);
+  });
+
+  test("pending state-to-state navigation creates a distinct timer attempt", () => {
+    const hoverPending: DsHeroLiveVerdict = {
+      key: LIVE_KEY,
+      href: stateHref,
+      phase: "pending"
+    };
+    const disabledHref = `${href}?state=disabled`;
+    expect(
+      heroLiveVerdictReducer(hoverPending, {
+        type: "navigate",
+        key: LIVE_KEY,
+        href: disabledHref
+      })
+    ).toEqual({ key: LIVE_KEY, href: disabledHref, phase: "pending" });
   });
 
   test("a readiness flip retargets and re-arms the attempt (starting → ready retry)", () => {
@@ -1365,18 +1595,31 @@ describe("heroLiveVerdictReducer (Issue 33)", () => {
     const startingKey = componentHeroLiveKey(
       liveHero({ surfaceReadiness: "starting" })
     )!;
-    const before: DsHeroLiveVerdict = { key: startingKey, phase: "pending" };
+    const before: DsHeroLiveVerdict = {
+      key: startingKey,
+      href: null,
+      phase: "pending"
+    };
     // Refetch reports ready → new key → retarget re-arms exactly once.
     const rearmed = heroLiveVerdictReducer(before, {
       type: "retarget",
-      key: LIVE_KEY
+      key: LIVE_KEY,
+      href
     });
-    expect(rearmed).toEqual({ key: LIVE_KEY, phase: "pending" });
+    expect(rearmed).toEqual({ key: LIVE_KEY, href, phase: "pending" });
     // Retargeting to the SAME key is a no-op — a demoted verdict stays
     // terminal, never loops back into the iframe.
-    const demoted: DsHeroLiveVerdict = { key: LIVE_KEY, phase: "unreachable" };
+    const demoted: DsHeroLiveVerdict = {
+      key: LIVE_KEY,
+      href,
+      phase: "unreachable"
+    };
     expect(
-      heroLiveVerdictReducer(demoted, { type: "retarget", key: LIVE_KEY })
+      heroLiveVerdictReducer(demoted, {
+        type: "retarget",
+        key: LIVE_KEY,
+        href
+      })
     ).toEqual(demoted);
   });
 });
@@ -1390,7 +1633,7 @@ describe("heroLiveFallbackCopy (Issue 33)", () => {
       "prototype surface is stale"
     );
     expect(heroLiveFallbackCopy("live_unreachable")).toContain(
-      "harness stopped loading"
+      "did not report valid component geometry"
     );
     // Every caption lands on what is shown instead — never a blank hero.
     for (const reason of [

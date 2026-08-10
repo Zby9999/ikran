@@ -74,6 +74,7 @@ import {
 import { artifactScreenshotUrl } from "./projection/seed-projection";
 import {
   DS_HERO_LIVE_TIMEOUT_MS,
+  DS_HERO_PRESENTATION_VIEWPORT_WIDTH,
   DS_HERO_STATE_DEBOUNCE_MS,
   DS_SECTION_NAMES,
   TOKEN_LAYER_LABELS,
@@ -2908,18 +2909,21 @@ export function ComponentDetail({
   // evidence or the explicit unavailable placard.
   const captures = component.captures;
   const [hoveredState, setHoveredState] = useState<string | null>(null);
-  const [liveContentSize, setLiveContentSize] =
-    useState<DsHeroContentSize | null>(null);
+  const [liveMeasurement, setLiveMeasurement] = useState<{
+    href: string;
+    bounds: DsHeroContentSize;
+  } | null>(null);
   const [liveStageWidth, setLiveStageWidth] = useState(0);
   const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const liveFrameRef = useRef<HTMLIFrameElement>(null);
   const liveStageRef = useRef<HTMLDivElement>(null);
-  // Live verdict, pinned to the attempt key (plan.liveKey) it belongs to via
-  // heroLiveVerdictReducer: terminal PER key — a demoted hero never re-arms
-  // itself — but a readiness flip or a new capture forms a new key on the
-  // next view refetch and gets exactly one fresh attempt.
+  // Live verdict, pinned to the target key (plan.liveKey) it belongs to via
+  // heroLiveVerdictReducer. A new target re-arms after readiness/capture
+  // changes; each declared state URL also starts a fresh geometry attempt.
+  // A geometry timeout demotes the target instead of looping a blank iframe.
   const [verdict, dispatchVerdict] = useReducer(heroLiveVerdictReducer, {
     key: null,
+    href: null,
     phase: "pending"
   });
   const plan = planComponentHero(
@@ -2934,18 +2938,37 @@ export function ComponentDetail({
     capture === null
       ? captures
       : [capture, ...captures.filter((item) => item !== capture)];
-  // A new attempt key re-arms the verdict (adjust-during-render); the
-  // unreachable verdict stays pinned to its own key, so demotion never loops
-  // back into the live iframe.
-  if (verdict.key !== plan.liveKey) {
-    dispatchVerdict({ type: "retarget", key: plan.liveKey });
-    setHoveredState(null);
-    setLiveContentSize(null);
-  }
   const liveUrl =
     plan.kind === "live"
       ? componentHeroLiveUrl(plan.liveHero, hoveredState)
       : null;
+  // A new target re-arms the verdict (adjust-during-render); the unreachable
+  // verdict stays pinned to its own key, so demotion never loops back into the
+  // live iframe. Include the first navigation URL in the new attempt identity.
+  if (verdict.key !== plan.liveKey) {
+    dispatchVerdict({
+      type: "retarget",
+      key: plan.liveKey,
+      href: liveUrl
+    });
+    setHoveredState(null);
+    setLiveMeasurement(null);
+  }
+  // Each query-state navigation is a fresh geometry attempt even though it
+  // shares the same surface/live key. Discard the old bounds before commit so
+  // a differently-sized state never flashes at the previous state's offset.
+  // The URL also gives messages and timers an attempt identity.
+  if (
+    plan.kind === "live" &&
+    liveUrl !== null &&
+    verdict.key === plan.liveKey &&
+    verdict.href !== liveUrl
+  ) {
+    setLiveMeasurement(null);
+    dispatchVerdict({ type: "navigate", key: plan.liveKey, href: liveUrl });
+  }
+  const liveContentSize =
+    liveMeasurement?.href === liveUrl ? liveMeasurement.bounds : null;
   const liveOrigin = useMemo(() => {
     if (liveUrl === null) return null;
     try {
@@ -2958,6 +2981,10 @@ export function ComponentDetail({
     liveStageWidth,
     liveContentSize
   );
+  const liveFrameTransform =
+    liveFrameLayout === null
+      ? null
+      : `translate(${liveFrameLayout.frameLeft}px, ${liveFrameLayout.frameTop}px) scale(${liveFrameLayout.scale})`;
   useLayoutEffect(() => {
     const stage = liveStageRef.current;
     if (stage === null || plan.kind !== "live") return;
@@ -2969,7 +2996,7 @@ export function ComponentDetail({
     return () => observer.disconnect();
   }, [plan.kind, plan.liveKey]);
   useEffect(() => {
-    if (plan.kind !== "live" || liveOrigin === null) return;
+    if (plan.kind !== "live" || liveOrigin === null || liveUrl === null) return;
     const receiveSize = (event: MessageEvent<unknown>) => {
       const frame = liveFrameRef.current;
       if (
@@ -2979,22 +3006,39 @@ export function ComponentDetail({
       ) {
         return;
       }
-      const size = parseComponentHeroSizeMessage(event.data);
-      if (size !== null) setLiveContentSize(size);
+      const size = parseComponentHeroSizeMessage(event.data, liveUrl);
+      if (size !== null) {
+        setLiveMeasurement({ href: liveUrl, bounds: size });
+        dispatchVerdict({
+          type: "loaded",
+          key: plan.liveKey,
+          href: liveUrl
+        });
+      }
     };
     window.addEventListener("message", receiveSize);
     return () => window.removeEventListener("message", receiveSize);
-  }, [liveOrigin, plan.kind]);
-  // ~5s without the first iframe load = the harness is gone; demote to the
-  // static capture and say why (never a blank hero).
+  }, [liveOrigin, liveUrl, plan.kind, plan.liveKey]);
+  // ~5s without the first valid v2 geometry report = the harness is gone or
+  // still on the legacy body-size contract; demote to the static capture and
+  // say why instead of displaying an uncentered or blank hero.
   useEffect(() => {
-    if (plan.kind !== "live" || verdict.phase !== "pending") return;
+    if (
+      plan.kind !== "live" ||
+      liveUrl === null ||
+      verdict.key !== plan.liveKey ||
+      verdict.href !== liveUrl ||
+      verdict.phase !== "pending"
+    ) {
+      return;
+    }
     const key = plan.liveKey;
+    const href = liveUrl;
     const timer = setTimeout(() => {
-      dispatchVerdict({ type: "timeout", key });
+      dispatchVerdict({ type: "timeout", key, href });
     }, DS_HERO_LIVE_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [plan.kind, plan.liveKey, verdict.phase]);
+  }, [liveUrl, plan.kind, plan.liveKey, verdict.href, verdict.key, verdict.phase]);
   // States row hover/focus drives `?state=<name>` re-navigation, debounced;
   // leaving the row restores the harness default immediately.
   const scheduleState = useCallback((name: string | null) => {
@@ -3085,15 +3129,17 @@ export function ComponentDetail({
               tabIndex={-1}
               style={
                 liveFrameLayout === null
-                  ? undefined
+                  ? {
+                      width: DS_HERO_PRESENTATION_VIEWPORT_WIDTH,
+                      visibility: "hidden"
+                    }
                   : {
                       width: liveFrameLayout.frameWidth,
                       height: liveFrameLayout.frameHeight,
-                      transform: `scale(${liveFrameLayout.scale})`
+                      transform: liveFrameTransform ?? undefined,
+                      visibility:
+                        liveContentSize === null ? "hidden" : "visible"
                     }
-              }
-              onLoad={() =>
-                dispatchVerdict({ type: "loaded", key: plan.liveKey })
               }
             />
           </div>

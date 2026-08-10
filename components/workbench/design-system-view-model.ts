@@ -19,6 +19,7 @@
 //     leaves; alias references render as "→ layer.name".
 
 import { specPathMatchesSourceArtifact } from "@/lib/runtime/design-system-spec-path";
+import { PROTOTYPE_PRESENTATION_VIEWPORT_WIDTH } from "@/lib/runtime/prototype-screenshot-shared";
 import type {
   DesignSystemEntryView,
   DesignSystemLayoutCapture,
@@ -523,8 +524,8 @@ function componentStatusOf(
  * (readiness not "ready", or its row is gone). "surface_stale": the surface
  * is up but was marked stale (code changed / dev server exited) and is not
  * re-serving the current code. "live_unreachable": the surface looked live
- * but the harness iframe never finished loading (the harness moved or
- * broke). */
+ * but the harness did not provide valid, current-navigation component
+ * geometry (the route moved, broke, or still uses the legacy protocol). */
 export type DsHeroLiveFallbackReason =
   | "surface_not_ready"
   | "surface_stale"
@@ -535,9 +536,9 @@ export type DsHeroLiveFallbackReason =
  * source capture; otherwise the explicit unavailable block. Generated code
  * screenshots are deliberately absent from this chain. `liveKey` identifies the
  * current live target AND its readiness (see componentHeroLiveKey) so the
- * client can pin its load-timeout verdict to it: the verdict is terminal per
- * key, and a changed key — new capture, or the surface's readiness/staleness
- * flipping on a refetch — re-arms the attempt exactly once. */
+ * client can pin its geometry-timeout verdict to it. A changed key — new
+ * capture, or the surface's readiness/staleness flipping on a refetch —
+ * re-arms the target; state URL navigation re-arms within that same key. */
 export type DsHeroPlan =
   | {
       kind: "live";
@@ -579,10 +580,11 @@ export function componentHeroLiveKey(
     .join("|");
 }
 
-/** Tier verdict for the hero. `unreachableKey` is the client's timed-out
- * live key (heroLiveVerdictReducer); when it matches the current attempt the
- * plan demotes to the static capture with "live_unreachable". Owns the
- * code-first tier ordering — callers pass captures in declared order. */
+/** Tier verdict for the hero. `unreachableKey` is the client's geometry-
+ * timed-out live key (heroLiveVerdictReducer); when it matches the current
+ * attempt the plan demotes to the static capture with "live_unreachable".
+ * Owns the code-first tier ordering — callers pass captures in declared
+ * order. */
 export function planComponentHero(
   liveHero: DesignSystemLiveHeroView | null,
   captures: readonly DesignSystemLayoutCapture[],
@@ -628,8 +630,13 @@ export function componentHeroLiveUrl(
  * parent validates both event.source and event.origin before accepting it;
  * the harness only reports geometry and never receives Runtime data. */
 export const DS_HERO_SIZE_MESSAGE = "ikran:component-size";
+export const DS_HERO_SIZE_PROTOCOL_VERSION = 2;
 
 export type DsHeroContentSize = {
+  /** Tight visual/scroll bounds of the declared component root, in iframe
+   * document coordinates. The marker itself must not be transformed. */
+  x: number;
+  y: number;
   width: number;
   height: number;
 };
@@ -637,6 +644,8 @@ export type DsHeroContentSize = {
 export type DsHeroFrameLayout = {
   frameWidth: number;
   frameHeight: number;
+  frameLeft: number;
+  frameTop: number;
   displayHeight: number;
   scale: number;
 };
@@ -644,36 +653,61 @@ export type DsHeroFrameLayout = {
 /** Small components keep a useful presentation stage instead of collapsing
  * to their raw control height. Larger components expand the stage. */
 export const DS_HERO_MIN_FRAME_HEIGHT = 240;
-const DS_HERO_MAX_REPORTED_SIZE = 100_000;
+/** Match the stable responsive context used by Prototype live/screenshot
+ * surfaces. Empty iframe space is clipped by the hero stage; the measured
+ * component root, rather than the viewport, is what gets centered. */
+export const DS_HERO_PRESENTATION_VIEWPORT_WIDTH =
+  PROTOTYPE_PRESENTATION_VIEWPORT_WIDTH;
+const DS_HERO_MAX_REPORTED_EXTENT = 16_384;
 
 /** Parse the deliberately tiny cross-origin harness protocol. Rejecting
  * non-finite and implausibly large values keeps untrusted preview documents
  * from influencing the Workbench layout outside this component stage. */
 export function parseComponentHeroSizeMessage(
-  value: unknown
+  value: unknown,
+  expectedHref: string
 ): DsHeroContentSize | null {
   if (typeof value !== "object" || value === null) return null;
   const record = value as Record<string, unknown>;
-  if (record.type !== DS_HERO_SIZE_MESSAGE) return null;
-  const width = Number(record.width);
-  const height = Number(record.height);
   if (
-    !Number.isFinite(width) ||
-    !Number.isFinite(height) ||
-    width <= 0 ||
-    height <= 0 ||
-    width > DS_HERO_MAX_REPORTED_SIZE ||
-    height > DS_HERO_MAX_REPORTED_SIZE
+    record.type !== DS_HERO_SIZE_MESSAGE ||
+    record.version !== DS_HERO_SIZE_PROTOCOL_VERSION ||
+    typeof record.href !== "string"
   ) {
     return null;
   }
-  return { width, height };
+  try {
+    if (new URL(record.href).href !== new URL(expectedHref).href) return null;
+  } catch {
+    return null;
+  }
+  const { x, y, width, height } = record;
+  if (
+    typeof x !== "number" ||
+    typeof y !== "number" ||
+    typeof width !== "number" ||
+    typeof height !== "number" ||
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    x < 0 ||
+    y < 0 ||
+    width <= 0 ||
+    height <= 0 ||
+    x + width > DS_HERO_PRESENTATION_VIEWPORT_WIDTH ||
+    y + height > DS_HERO_MAX_REPORTED_EXTENT
+  ) {
+    return null;
+  }
+  return { x, y, width, height };
 }
 
 /** Fit a measured live component into the available stage. Height is
- * content-driven; only over-wide content is uniformly scaled down. The
- * iframe itself stays at the unscaled layout size so responsive code and
- * pointer coordinates remain truthful. */
+ * content-driven; only over-wide content is uniformly scaled down. The iframe
+ * keeps the product's fixed presentation viewport; a harness whose root
+ * exceeds that viewport is invalid rather than allowed to change responsive
+ * breakpoints. */
 export function componentHeroFrameLayout(
   stageWidth: number,
   contentSize: DsHeroContentSize | null
@@ -681,69 +715,101 @@ export function componentHeroFrameLayout(
   if (!Number.isFinite(stageWidth) || stageWidth <= 0) return null;
   if (contentSize === null) {
     return {
-      frameWidth: stageWidth,
+      frameWidth: DS_HERO_PRESENTATION_VIEWPORT_WIDTH,
       frameHeight: DS_HERO_MIN_FRAME_HEIGHT,
+      frameLeft: 0,
+      frameTop: 0,
       displayHeight: DS_HERO_MIN_FRAME_HEIGHT,
       scale: 1
     };
   }
-  const frameWidth = Math.max(stageWidth, contentSize.width);
-  const scale = Math.min(1, stageWidth / frameWidth);
-  const displayHeight = Math.max(
+  if (
+    !Number.isFinite(contentSize.x) ||
+    !Number.isFinite(contentSize.y) ||
+    !Number.isFinite(contentSize.width) ||
+    !Number.isFinite(contentSize.height) ||
+    contentSize.x < 0 ||
+    contentSize.y < 0 ||
+    contentSize.width <= 0 ||
+    contentSize.height <= 0 ||
+    contentSize.x + contentSize.width >
+      DS_HERO_PRESENTATION_VIEWPORT_WIDTH ||
+    contentSize.y + contentSize.height > DS_HERO_MAX_REPORTED_EXTENT
+  ) {
+    return null;
+  }
+  const frameWidth = DS_HERO_PRESENTATION_VIEWPORT_WIDTH;
+  const frameHeight = Math.max(
     DS_HERO_MIN_FRAME_HEIGHT,
-    contentSize.height * scale
+    contentSize.y + contentSize.height
   );
+  const scale = Math.min(1, stageWidth / contentSize.width);
+  const scaledHeight = contentSize.height * scale;
+  const displayHeight = Math.max(DS_HERO_MIN_FRAME_HEIGHT, scaledHeight);
   return {
     frameWidth,
-    frameHeight: Math.max(contentSize.height, displayHeight / scale),
+    frameHeight,
+    frameLeft:
+      stageWidth / 2 -
+      (contentSize.x + contentSize.width / 2) * scale,
+    frameTop:
+      displayHeight / 2 -
+      (contentSize.y + contentSize.height / 2) * scale,
     displayHeight,
     scale
   };
 }
 
-/** Client-side live phase: the iframe mounts optimistically ("pending"); its
- * first load promotes to "live", a timeout with no load demotes to
- * "unreachable" (the plan then falls back to the static capture, noting the
- * reason). Terminal per key — once demoted, the hero stays static for this
- * live target. */
+/** Client-side live phase: a harness navigation starts "pending"; its first
+ * valid, current-URL geometry report promotes to "live", while a timeout
+ * demotes to "unreachable" and the plan falls back. A new declared state URL
+ * explicitly re-arms pending on the same live key. */
 export type DsHeroLivePhase = "pending" | "live" | "unreachable";
 
-/** The load verdict pinned to the live key it belongs to. Events carry the
- * key they fired for, so a late event from a superseded attempt (the view
- * refetched, the key moved on) is ignored instead of corrupting the new
- * attempt's verdict. */
+/** The geometry-readiness verdict pinned to the exact harness navigation it
+ * belongs to. `key` identifies the live surface; `href` distinguishes default
+ * and declared-state navigations on that surface. Both are required so a late
+ * message/timer from the previous iframe document cannot settle the current
+ * attempt. */
 export type DsHeroLiveVerdict = {
   key: string | null;
+  href: string | null;
   phase: DsHeroLivePhase;
 };
 
 export type DsHeroLiveVerdictAction =
   /** The plan's liveKey changed (new capture, readiness flip) → re-arm. */
-  | { type: "retarget"; key: string | null }
-  | { type: "loaded"; key: string | null }
-  | { type: "timeout"; key: string | null };
+  | { type: "retarget"; key: string | null; href: string | null }
+  /** The same harness navigated to another declared `?state=` URL. */
+  | { type: "navigate"; key: string | null; href: string }
+  | { type: "loaded"; key: string | null; href: string }
+  | { type: "timeout"; key: string | null; href: string };
 
 export function heroLiveVerdictReducer(
   verdict: DsHeroLiveVerdict,
   action: DsHeroLiveVerdictAction
 ): DsHeroLiveVerdict {
-  if (action.key !== verdict.key) {
-    return action.type === "retarget"
-      ? { key: action.key, phase: "pending" }
+  if (action.type === "retarget") {
+    return action.key === verdict.key
+      ? verdict
+      : { key: action.key, href: action.href, phase: "pending" };
+  }
+  if (action.type === "navigate") {
+    return action.key === verdict.key
+      ? { key: action.key, href: action.href, phase: "pending" }
       : verdict;
   }
+  if (action.key !== verdict.key || action.href !== verdict.href) return verdict;
   if (verdict.phase !== "pending") return verdict;
   switch (action.type) {
-    case "retarget":
-      return verdict;
     case "loaded":
-      return { key: verdict.key, phase: "live" };
+      return { ...verdict, phase: "live" };
     case "timeout":
-      return { key: verdict.key, phase: "unreachable" };
+      return { ...verdict, phase: "unreachable" };
   }
 }
 
-/** Iframe load grace before the hero demotes to the static capture. */
+/** Grace for a valid, current-URL geometry report before static fallback. */
 export const DS_HERO_LIVE_TIMEOUT_MS = 5000;
 /** Hover/focus debounce before the iframe re-navigates to `?state=<name>`. */
 export const DS_HERO_STATE_DEBOUNCE_MS = 150;
@@ -757,7 +823,7 @@ export function heroLiveFallbackCopy(reason: DsHeroLiveFallbackReason): string {
     case "surface_stale":
       return "Live preview unavailable — the prototype surface is stale (its code changed); showing the source fallback.";
     case "live_unreachable":
-      return "Live preview unreachable — the harness stopped loading; showing the source fallback.";
+      return "Live preview unavailable — the harness did not report valid component geometry; showing the source fallback.";
   }
 }
 

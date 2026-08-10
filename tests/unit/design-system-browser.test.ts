@@ -939,6 +939,7 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
     expect(html).toContain('sandbox="allow-scripts allow-same-origin"');
     expect(html).toContain('loading="lazy"');
     expect(html).toContain('tabindex="-1"');
+    expect(html).toContain('style="width:1133px;visibility:hidden"');
     expect(html).toContain(
       'src="http://127.0.0.1:4401/__ikran/component/button"'
     );
