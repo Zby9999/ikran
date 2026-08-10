@@ -13,6 +13,7 @@ import {
   readRuntimeEndpoint,
   removeRuntimeEndpoint
 } from "../lib/runtime/runtime-endpoint.mjs";
+import { importTsxModule } from "../lib/runtime/tsx-module-interop.mjs";
 import { assertProdBuildMatchesSource } from "../lib/runtime/version-stamp.mjs";
 
 const argv = process.argv.slice(2);
@@ -41,13 +42,13 @@ if (!existsSync(path.join(appDir, "app"))) process.exit(1);
 if (prod) assertProdBuildMatchesSource({ appDir, prod, nextDistDir });
 
 const mcpLibDir = path.join(appDir, "lib/mcp");
-const { registerIkranTools, IKRAN_MCP_INSTRUCTIONS } = await import(
+const { registerIkranTools, IKRAN_MCP_INSTRUCTIONS } = await importTsxModule(
   pathToFileURL(path.join(mcpLibDir, "register-tools.ts")).href
 );
-const { resolveWorkingFolder } = await import(
+const { resolveWorkingFolder } = await importTsxModule(
   pathToFileURL(path.join(mcpLibDir, "discover-working-folder.ts")).href
 );
-const { createRuntimeLifecycle, registerRuntimeControl } = await import(
+const { createRuntimeLifecycle, registerRuntimeControl } = await importTsxModule(
   pathToFileURL(path.join(appDir, "lib/runtime/runtime-lifecycle.ts")).href
 );
 
@@ -65,13 +66,13 @@ async function shutdown(code = 0) {
   // an already-stale row — then kill the Runtime-owned dev servers. The next
   // launch restores the parked surfaces from their persisted run records.
   try {
-    const { killAllPreviewServers } = await import(
+    const { killAllPreviewServers } = await importTsxModule(
       pathToFileURL(path.join(appDir, "lib/runtime/preview-server.ts")).href
     );
-    const { markPrototypeSurfacesStaleForShutdown } = await import(
+    const { markPrototypeSurfacesStaleForShutdown } = await importTsxModule(
       pathToFileURL(path.join(appDir, "lib/runtime/prototype-surface.ts")).href
     );
-    const { getActiveProject } = await import(
+    const { getActiveProject } = await importTsxModule(
       pathToFileURL(path.join(appDir, "lib/runtime/project.ts")).href
     );
     const activeProject = getActiveProject();
