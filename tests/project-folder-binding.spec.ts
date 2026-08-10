@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { expect, test as base } from "./fixtures";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,6 +9,13 @@ let port = 3000;
 let baseURL = "http://localhost:3000";
 let testFolder = "";
 let otherFolder = "";
+
+const test = base.extend<{ folder: string }>({
+  folder: async ({ runtime }, use) => {
+    const folder = runtime.createProjectFolder("02-bind-");
+    await use(folder);
+  }
+});
 
 function rawPost(
   route: string,
@@ -23,17 +30,14 @@ function rawGet(route: string, headers: Record<string, string>) {
 }
 
 test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", () => {
-  test.beforeEach(async ({ runtime }) => {
+  test.beforeEach(async ({ runtime, folder }) => {
     port = runtime.port;
     baseURL = runtime.baseURL;
-    testFolder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-"));
+    testFolder = folder;
   });
 
   test.afterEach(() => {
-    if (testFolder) {
-      rmSync(testFolder, { recursive: true, force: true });
-      testFolder = "";
-    }
+    testFolder = "";
     if (otherFolder) {
       rmSync(otherFolder, { recursive: true, force: true });
       otherFolder = "";
