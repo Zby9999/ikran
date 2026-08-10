@@ -13,6 +13,7 @@ import {
   rawPost as httpPost
 } from "./helpers/http";
 import { connectFigmaForTests } from "./helpers/figma-connection";
+import { openIkranDb } from "./helpers/db";
 import {
   claimAlignmentPreparationCommand,
   finalizeAlignmentPreparation
@@ -162,9 +163,7 @@ async function agentCaptureSeed(
 function readEvents(folder: string): { type: string; payload: Record<string, unknown> }[] {
   const dbPath = path.join(folder, ".ikran", "ikran.db");
   if (!existsSync(dbPath)) return [];
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { DatabaseSync } = require("node:sqlite");
-  const db = new DatabaseSync(dbPath);
+  const db = openIkranDb(dbPath);
   try {
     return (
       db
@@ -187,9 +186,7 @@ function readSeedReferences(folder: string): Array<{
 }> {
   const dbPath = path.join(folder, ".ikran", "ikran.db");
   if (!existsSync(dbPath)) return [];
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { DatabaseSync } = require("node:sqlite");
-  const db = new DatabaseSync(dbPath);
+  const db = openIkranDb(dbPath);
   try {
     return db
       .prepare("SELECT * FROM seed_references ORDER BY created_at ASC")

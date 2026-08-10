@@ -19,6 +19,7 @@ recursive-design-method
 /tmp-figma/
 /tmp-*.mjs
 /docs/paper/figures/build/
+/dist/release/
 
 # 技术教学笔记：仅给项目负责人阅读，不进版本库
 teach/

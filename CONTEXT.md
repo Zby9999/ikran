@@ -15,6 +15,39 @@ canonical events, prototype preview lifecycle, and schema validation. It is the
 only writer of source-of-truth records. One process, two surfaces.
 _Avoid_: server, backend, service
 
+**Ikran Test Release**:
+A versioned, allowlisted GitHub Release for external testing. It preserves
+Runtime, Workbench, and MCP capability while excluding repository research
+archives, local installation state, credentials, generated caches, and real
+project data. The repository remains the complete development record; a Test
+Release is the supported lightweight distribution boundary.
+_Avoid_: source archive, repository snapshot, npm package
+
+**Product Test Kit**:
+The Test Release asset for a product tester: Runtime, Workbench, MCP, locked
+dependency metadata, and setup and launch guidance. The Release Gate exercises
+its minimal artifact smoke after clean extraction. It starts without project
+state and does not contain the full contributor test corpus. Its first
+supported platform is macOS on Apple silicon.
+_Avoid_: demo data bundle, preinstalled checkout
+
+**Contributor Verification Kit**:
+The Test Release asset for a developer tester. It contains the Product Test Kit
+capabilities plus the complete automated verification surface and deterministic
+synthetic fixtures or local substitutes. It never relies on a real Figma
+credential, real research data, or a contributor's existing machine state.
+_Avoid_: development archive, full repository clone
+
+**Release Gate**:
+The acceptance boundary for an Ikran Test Release: type checking, unit tests,
+end-to-end tests, and clean extraction followed by dependency installation,
+build, Runtime/Workbench/MCP smoke verification, and cleanup must all pass on
+the declared platform. An Agent host is described as **verified** only after a
+host-native smoke test for that exact release; configuration without such a
+test is experimental.
+_Avoid_: CI succeeded (when only one part of the gate ran), historical host
+validation
+
 **Workbench URL**:
 The localhost URL returned by the Agent after Runtime starts the HTTP Web UI,
 for example `http://127.0.0.1:{port}/?session={token}`. The designer may open it

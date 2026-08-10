@@ -9,10 +9,10 @@
 // and any failure (no Playwright, navigation timeout, write error) resolves
 // quietly and leaves the previously captured bitmap in place.
 //
-// `playwright-core` is imported dynamically inside the capture — the MCP /
-// Runtime process must not hard-require it (it ships via the @playwright/test
-// devDependency). All host effects go through `PrototypeScreenshotDeps` so
-// unit tests exercise the flow without a browser.
+// `playwright-core` is a direct Runtime dependency but is imported dynamically
+// so ordinary MCP commands do not eagerly initialize browser control. All host
+// effects go through `PrototypeScreenshotDeps` so unit tests exercise the flow
+// without a browser.
 
 import {
   mkdirSync,

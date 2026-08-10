@@ -353,7 +353,6 @@ test("09C-A reader projection: atlas and leaf pages", async ({
       rules: [
         {
           id: "quiet-motion",
-          name: "Quiet motion",
           value: "Routine feedback never competes with content. Use short feedback to explain a state change, avoid decorative loops, and preserve the same information when motion is reduced.",
           meaning: "Animation supports comprehension.",
           status: "candidate",
@@ -361,7 +360,6 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         },
         {
           id: "frequent-actions",
-          name: "Frequent actions",
           value: "Repeated actions should never accumulate animation cost. Switch tabs and sibling views without transitional movement, and keep keyboard-initiated actions free of motion.",
           meaning: "Frequency determines whether motion belongs.",
           status: "candidate",
@@ -369,7 +367,6 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         },
         {
           id: "keyboard-parity",
-          name: "Keyboard parity",
           value: "Every pointer action needs an equivalent keyboard path.",
           meaning: "Input method does not limit capability.",
           status: "gap",

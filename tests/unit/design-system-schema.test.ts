@@ -939,6 +939,16 @@ test.describe("layout-rules.json / interaction-rules.json", () => {
       reason: "unknown_field",
       details: { field: "hiddenRootBody" }
     });
+
+    expect(
+      validateDesignSystemJson("interaction-rules.json", {
+        rules: [entry({ name: "Quiet motion" })]
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "unknown_field",
+      details: { field: "name" }
+    });
   });
 
   test("accepts prose rule bodies while keeping meaning required", () => {

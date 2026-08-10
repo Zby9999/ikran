@@ -6,6 +6,7 @@ import {
   rawGet as httpGet,
   rawPost as httpPost
 } from "./helpers/http";
+import { openIkranDb } from "./helpers/db";
 
 // Issue 06 — Region Annotation Workbench projection + Annotate toggle.
 // Agent-written annotations arrive via SSE; designer annotations exercise the
@@ -352,9 +353,7 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     await expect(marker).toHaveAttribute("data-author", "agent");
 
     // Audit event present in canonical SQLite events.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { DatabaseSync } = require("node:sqlite");
-    const db = new DatabaseSync(path.join(folder, ".ikran", "ikran.db"));
+    const db = openIkranDb(path.join(folder, ".ikran", "ikran.db"));
     try {
       const types = (
         db.prepare("SELECT type FROM events ORDER BY id ASC").all() as Array<{
@@ -452,9 +451,7 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     await expect(card).toContainText("Move this toolbar 8px up");
 
     // Direct DB proof complements the API assertion above.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { DatabaseSync } = require("node:sqlite");
-    const db = new DatabaseSync(path.join(folder, ".ikran", "ikran.db"));
+    const db = openIkranDb(path.join(folder, ".ikran", "ikran.db"));
     try {
       const stored = db
         .prepare(
@@ -754,9 +751,7 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     await expect(card).toHaveAttribute("data-editing", "false");
     await expect(card).toContainText("Second pass — tightened spacing");
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { DatabaseSync } = require("node:sqlite");
-    const db = new DatabaseSync(path.join(folder, ".ikran", "ikran.db"));
+    const db = openIkranDb(path.join(folder, ".ikran", "ikran.db"));
     try {
       const stored = db
         .prepare("SELECT body FROM region_annotations WHERE id = ?")

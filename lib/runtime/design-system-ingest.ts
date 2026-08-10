@@ -287,7 +287,12 @@ export function collectDesignSystemEntryRows(
       for (const layer of TOKEN_LAYERS) {
         const entries = root[layer] as Record<string, unknown>;
         let position = 0;
-        for (const [name, raw] of Object.entries(entries)) {
+        // Token layers are object maps, not authored arrays. Runtime's
+        // canonical write-back sorts object keys, so derive DB position from
+        // that same order; otherwise the first status edit reorders the file
+        // and makes the next source/DB semantic CAS fail on position alone.
+        for (const name of Object.keys(entries).sort()) {
+          const raw = entries[name]!;
           out.push(
             row(
               raw,

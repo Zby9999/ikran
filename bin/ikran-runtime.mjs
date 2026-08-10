@@ -2,7 +2,7 @@
 import "tsx";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { chmodSync, existsSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -25,6 +25,15 @@ const host = option("--host", process.env.IKRAN_HOST || "127.0.0.1");
 const requestedPort = Number(option("--port", process.env.IKRAN_PORT || ""));
 const port = Number.isFinite(requestedPort) && requestedPort > 0 ? requestedPort : undefined;
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const packageVersion = (() => {
+  const manifest = JSON.parse(
+    readFileSync(path.join(appDir, "package.json"), "utf8")
+  );
+  if (typeof manifest.version !== "string" || manifest.version.length === 0) {
+    throw new Error("Ikran package version is missing.");
+  }
+  return manifest.version;
+})();
 const stateDir = process.env.IKRAN_STATE_DIR || path.join(homedir(), ".ikran");
 const socketPath = path.join(stateDir, "runtime-mcp.sock");
 const nextDistDir = process.env.IKRAN_NEXT_DIST_DIR || undefined;
@@ -117,7 +126,7 @@ socketServer = createServer((socket) => {
   sockets.add(socket);
   const release = lifecycle.acquire("mcp");
   const mcp = new McpServer(
-    { name: "ikran", version: "0.1.0" },
+    { name: "ikran", version: packageVersion },
     { instructions: IKRAN_MCP_INSTRUCTIONS }
   );
   const registerTool = mcp.registerTool.bind(mcp);

@@ -72,6 +72,7 @@ import {
   type LayoutRuleProjection
 } from "./design-system-layout-projection";
 import { artifactScreenshotUrl } from "./projection/seed-projection";
+import { createDesignSystemViewClient } from "./design-system-view-client";
 import {
   DS_HERO_LIVE_TIMEOUT_MS,
   DS_HERO_PRESENTATION_VIEWPORT_WIDTH,
@@ -1989,32 +1990,51 @@ export function LayoutLeafPage({
 function useDesignSystemView(session: string, open: boolean) {
   const [view, setView] = useState<DesignSystemView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const clientRef = useRef<
+    ReturnType<typeof createDesignSystemViewClient> | null
+  >(null);
 
-  const load = useCallback(async () => {
-    try {
-      const response = await fetch("/api/design-system", {
-        cache: "no-store",
-        headers: { "x-ikran-session": session }
-      });
-      const data = (await response.json().catch(() => ({}))) as {
-        ok?: boolean;
-        view?: DesignSystemView;
-        error?: string;
-      };
-      if (response.ok && data.ok === true && data.view) {
-        setView(data.view);
+  useEffect(() => {
+    const client = createDesignSystemViewClient(session, {
+      onView: (nextView) => {
+        setView(nextView);
         setError(null);
-      } else {
-        setError(data.error ?? "load_failed");
-      }
-    } catch {
-      setError("network");
-    }
+      },
+      onError: setError
+    });
+    clientRef.current = client;
+    return () => {
+      client.dispose();
+      if (clientRef.current === client) clientRef.current = null;
+    };
   }, [session]);
+
+  const load = useCallback(
+    () =>
+      clientRef.current?.load() ??
+      Promise.resolve({ ok: false as const, disposed: true as const }),
+    []
+  );
+  const updateView = useCallback(
+    (update: React.SetStateAction<DesignSystemView | null>) => {
+      // An optimistic mutation is newer than every GET already in flight.
+      clientRef.current?.invalidate();
+      setView(update);
+    },
+    []
+  );
+  const beginMutation = useCallback(
+    () =>
+      clientRef.current?.beginMutation() ?? {
+        ready: Promise.resolve(),
+        finish() {}
+      },
+    []
+  );
 
   useEffect(() => {
     if (open) void load();
-  }, [open, load]);
+  }, [open, load, session]);
 
   // Authoritative refresh on the design-system record-bus kind (ingest,
   // approval commit) — same SSE channel the rest of the workbench uses.
@@ -2028,7 +2048,7 @@ function useDesignSystemView(session: string, open: boolean) {
     [session, load]
   );
 
-  return { view, setView, error, reload: load };
+  return { view, setView: updateView, error, reload: load, beginMutation };
 }
 
 /** Mount/unmount timing so the close transition can run before unmount. */
@@ -2084,7 +2104,8 @@ export function DesignSystemBrowser({
   readOnly?: boolean;
   onClose: (source: SheetCloseSource) => void;
 }) {
-  const { view, setView, error, reload } = useDesignSystemView(session, open);
+  const { view, setView, error, reload, beginMutation } =
+    useDesignSystemView(session, open);
   const prefersReducedMotion = usePrefersReducedMotion();
   const { mounted, shown } = useSheetPresence(
     open,
@@ -2150,6 +2171,7 @@ export function DesignSystemBrowser({
           type: "start"
         })
       }));
+      const mutation = beginMutation();
       // Optimistic switch; SSE refetch confirms, failure reverts below.
       setView((prev) =>
         prev
@@ -2163,6 +2185,7 @@ export function DesignSystemBrowser({
       );
       let reason: string | null = null;
       let details: unknown;
+      await mutation.ready;
       try {
         const response = await fetch("/api/design-system", {
           method: "POST",
@@ -2201,6 +2224,7 @@ export function DesignSystemBrowser({
       } catch {
         reason = "network";
       }
+      mutation.finish();
 
       if (reason === null) {
         setApprovals((prev) => ({
@@ -2232,7 +2256,7 @@ export function DesignSystemBrowser({
           : prev
       );
     },
-    [session, reload, setView]
+    [beginMutation, session, reload, setView]
   );
 
   const editEntry = useCallback(
