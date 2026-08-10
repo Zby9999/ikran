@@ -181,7 +181,7 @@ export type RuntimeMutationResult =
   | { ok: true; reused?: boolean; seedId?: string }
   | { ok: false; error: string };
 
-type RuntimeFetch = (
+export type RuntimeFetch = (
   input: RequestInfo | URL,
   init?: RequestInit
 ) => Promise<Response>;
@@ -207,6 +207,22 @@ type JsonResult = {
   ok: boolean;
   status: number;
   data: Record<string, unknown>;
+};
+
+export type ProjectBootstrapSnapshot = {
+  project: { path: string; name: string } | null;
+  cwdCandidate: {
+    path: string;
+    kind: "resume" | "init" | "manual";
+  } | null;
+  cwdMatchesActive: boolean;
+};
+
+type ProjectBootstrapOptions = {
+  fetcher?: RuntimeFetch;
+  sleep?: (ms: number) => Promise<void>;
+  maxAttempts?: number;
+  backoffMs?: readonly number[];
 };
 
 async function fetchJson(
@@ -245,6 +261,75 @@ function resultError(...results: JsonResult[]): string {
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Loads the Runtime-global active project before the setup/workbench branch is
+ * chosen. A transient read failure must not strand a valid project in the
+ * empty setup state for the lifetime of the page.
+ */
+export async function loadProjectBootstrap(
+  session: string,
+  options: ProjectBootstrapOptions = {}
+): Promise<
+  | { ok: true; snapshot: ProjectBootstrapSnapshot }
+  | { ok: false; error: string }
+> {
+  const fetcher = options.fetcher ?? fetch;
+  const sleep = options.sleep ?? defaultSleep;
+  const maxAttempts = options.maxAttempts ?? LOAD_MAX_ATTEMPTS;
+  const backoffMs = options.backoffMs ?? LOAD_BACKOFF_MS;
+  let lastError = "load_failed";
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (attempt > 0) {
+      const delay = backoffMs[Math.min(attempt - 1, backoffMs.length - 1)] ?? 0;
+      if (delay > 0) await sleep(delay);
+    }
+
+    const result = await fetchJson(fetcher, "/api/project", session, {
+      method: "GET"
+    });
+    if (!result.ok) {
+      lastError = resultError(result);
+      const retryable =
+        result.status === 0 ||
+        result.status === 408 ||
+        result.status === 429 ||
+        result.status >= 500;
+      if (!retryable) {
+        return { ok: false, error: lastError };
+      }
+      continue;
+    }
+
+    const project = result.data.project;
+    const cwdCandidate = result.data.cwd_candidate;
+    return {
+      ok: true,
+      snapshot: {
+        project:
+          project &&
+          typeof project === "object" &&
+          typeof (project as { path?: unknown }).path === "string" &&
+          typeof (project as { name?: unknown }).name === "string"
+            ? (project as { path: string; name: string })
+            : null,
+        cwdCandidate:
+          cwdCandidate &&
+          typeof cwdCandidate === "object" &&
+          typeof (cwdCandidate as { path?: unknown }).path === "string" &&
+          ["resume", "init", "manual"].includes(
+            String((cwdCandidate as { kind?: unknown }).kind)
+          )
+            ? (cwdCandidate as ProjectBootstrapSnapshot["cwdCandidate"])
+            : null,
+        cwdMatchesActive: result.data.cwd_matches_active === true
+      }
+    };
+  }
+
+  return { ok: false, error: lastError };
 }
 
 /**

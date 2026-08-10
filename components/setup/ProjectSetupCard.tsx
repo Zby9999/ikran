@@ -17,6 +17,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { folderErrorMessage } from "../../lib/runtime/folder-error-message";
 import {
+  loadProjectBootstrap,
   subscribeRuntimeEvents,
   type RuntimeHeartbeatEvent
 } from "../runtime/runtime-client";
@@ -176,75 +177,64 @@ export function ProjectSetupCard({
   useEffect(() => {
     let cancelled = false;
     async function loadProjectState() {
-      try {
-        const response = await fetch("/api/project", {
-          cache: "no-store",
-          headers: { "x-ikran-session": bootstrap.session }
+      const result = await loadProjectBootstrap(bootstrap.session);
+      if (cancelled) return;
+      if (!result.ok) {
+        setProject({
+          status: "error",
+          message: folderErrorMessage(result.error)
         });
-        if (!response.ok) {
-          return;
-        }
-        const data = (await response.json()) as {
-          ok: boolean;
-          project?: { path: string; name: string } | null;
-          cwd_candidate?:
-            | { path: string; kind: "resume" | "init" | "manual" }
-            | null;
-          cwd_matches_active?: boolean;
-        };
-        if (cancelled) return;
-
-        const candidate = data.cwd_candidate ?? null;
-        const active = data.ok ? data.project : null;
-
-        // The working folder (cwd) is chosen before the conversation. If it
-        // already has .ikran AND is already the active binding, just show
-        // complete (no rebind -> no event spam on refresh).
-        if (
-          active &&
-          candidate &&
-          candidate.kind === "resume" &&
-          data.cwd_matches_active
-        ) {
-          setProject({
-            status: "bound",
-            path: active.path,
-            name: active.name
-          });
-          return;
-        }
-
-        // Working folder has .ikran but is not the active binding -> bind it
-        // (the cwd working folder is authoritative).
-        if (candidate && candidate.kind === "resume") {
-          // Keep the path available if auto-bind fails so the same row can retry.
-          setCwdCandidate({ path: candidate.path, kind: candidate.kind });
-          await bindFolder(candidate.path);
-          return;
-        }
-
-        // An active project exists from a prior bind this session -> show it.
-        if (active) {
-          setProject({
-            status: "bound",
-            path: active.path,
-            name: active.name
-          });
-          return;
-        }
-
-        // Working folder is bindable but not yet initialized -> offer a
-        // one-click "Initialize here" (do NOT auto-bind; the user clicks).
-        if (candidate && (candidate.kind === "init" || candidate.kind === "manual")) {
-          setCwdCandidate({ path: candidate.path, kind: candidate.kind });
-          return;
-        }
-
-        // No working folder known (IKRAN_CWD not forwarded).
-        setCwdCandidate(null);
-      } catch {
-        // ignore; UI stays in idle/selecting state
+        return;
       }
+
+      const candidate = result.snapshot.cwdCandidate;
+      const active = result.snapshot.project;
+
+      // The working folder (cwd) is chosen before the conversation. If it
+      // already has .ikran AND is already the active binding, just show
+      // complete (no rebind -> no event spam on refresh).
+      if (
+        active &&
+        candidate &&
+        candidate.kind === "resume" &&
+        result.snapshot.cwdMatchesActive
+      ) {
+        setProject({
+          status: "bound",
+          path: active.path,
+          name: active.name
+        });
+        return;
+      }
+
+      // Working folder has .ikran but is not the active binding -> bind it
+      // (the cwd working folder is authoritative).
+      if (candidate && candidate.kind === "resume") {
+        // Keep the path available if auto-bind fails so the same row can retry.
+        setCwdCandidate({ path: candidate.path, kind: candidate.kind });
+        await bindFolder(candidate.path);
+        return;
+      }
+
+      // An active project exists from a prior bind this session -> show it.
+      if (active) {
+        setProject({
+          status: "bound",
+          path: active.path,
+          name: active.name
+        });
+        return;
+      }
+
+      // Working folder is bindable but not yet initialized -> offer a
+      // one-click "Initialize here" (do NOT auto-bind; the user clicks).
+      if (candidate && (candidate.kind === "init" || candidate.kind === "manual")) {
+        setCwdCandidate({ path: candidate.path, kind: candidate.kind });
+        return;
+      }
+
+      // No working folder known (IKRAN_CWD not forwarded).
+      setCwdCandidate(null);
     }
     void loadProjectState();
     return () => {

@@ -211,6 +211,52 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     await expect(page.getByRole("button", { name: "Start Building" })).toBeEnabled();
   });
 
+  test("refresh recovers the bound project after one transient project read failure", async ({
+    page
+  }) => {
+    let sessionToken: string | null = null;
+    await page.route("**/api/**", async (route) => {
+      const token = route.request().headers()["x-ikran-session"];
+      if (token) sessionToken = token;
+      await route.continue();
+    });
+    await page.goto(baseURL + "/");
+    await expect(page.getByTestId("runtime-label")).toContainText(
+      "Runtime connected"
+    );
+    await page.unroute("**/api/**");
+    if (!sessionToken) throw new Error("Runtime session token was not captured");
+
+    const bindResult = await rawPost(
+      "/api/project/bind",
+      { path: testFolder },
+      { host: `localhost:${port}`, "x-ikran-session": sessionToken }
+    );
+    expect(bindResult.status).toBe(200);
+
+    let projectReads = 0;
+    await page.route("**/api/project", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.continue();
+        return;
+      }
+      projectReads += 1;
+      if (projectReads === 1) {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: '{"ok":false,"error":"transient_500"}'
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto(`${baseURL}/?view=workbench`);
+    await expect(page.getByTestId("seed-workbench")).toBeVisible();
+    expect(projectReads).toBe(2);
+  });
+
   test("rejects invalid project folders", async ({ page }) => {
     let sessionToken: string | null = null;
     await page.route("**/api/**", async (route) => {
