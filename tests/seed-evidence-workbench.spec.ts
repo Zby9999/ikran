@@ -543,7 +543,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       return claimAlignmentPreparationCommand(folder);
     };
     const create = async (attemptId: string, section: string, index: number) => {
-      const annotation = createAgentAnnotation(folder, {
+      const createAnnotation = () => createAgentAnnotation(folder, {
         alignmentAttemptId: attemptId,
         idempotencyKey: `${attemptId}:${section}:assumption`,
         section,
@@ -552,6 +552,11 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
         body: `The current ${section} choices appear intentional.`,
         anchor
       });
+      let annotation = createAnnotation();
+      for (let retry = 0; !annotation.ok && annotation.reason === "db_error" && retry < 4; retry += 1) {
+        await page.waitForTimeout(25);
+        annotation = createAnnotation();
+      }
       if (!annotation.ok) return annotation;
       for (let retry = 0; retry < 5; retry += 1) {
         const result = createQuestionCard(folder, {
@@ -580,7 +585,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     const firstAttempt = await readAttempt();
     expect((await claim()).ok).toBe(true);
     const oldPreparingCard = await create(firstAttempt, "design-principle", 1);
-    expect(oldPreparingCard.ok).toBe(true);
+    expect(oldPreparingCard, JSON.stringify(oldPreparingCard)).toMatchObject({ ok: true });
     await page.reload();
     await enterWorkbench(page, { port: runtime.port, sessionToken: token });
     await page.getByRole("button", { name: "Back to Seed Reference" }).click();
@@ -671,7 +676,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     };
     const proposedCards: Array<{ id: string; answer: string }> = [];
     for (const section of ALIGNMENT_SECTIONS) {
-      expect(createAgentAnnotation(folder, {
+      const createAnnotation = () => createAgentAnnotation(folder, {
         alignmentAttemptId: attemptId,
         idempotencyKey: `07e:${section}:assumption`,
         section,
@@ -679,7 +684,13 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
         title: "Section Hypothesis",
         body: `The current ${section} choices appear intentional.`,
         anchor
-      }).ok).toBe(true);
+      });
+      let annotation = createAnnotation();
+      for (let retry = 0; !annotation.ok && annotation.reason === "db_error" && retry < 4; retry += 1) {
+        await page.waitForTimeout(25);
+        annotation = createAnnotation();
+      }
+      expect(annotation, JSON.stringify(annotation)).toMatchObject({ ok: true });
       for (let index = 1; index <= 2; index += 1) {
         const proposedAnswer = `Proposal ${index} for ${section}`;
         let created = createQuestionCard(folder, {
