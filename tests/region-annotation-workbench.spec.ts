@@ -1,6 +1,5 @@
 import { expect, test as base } from "./fixtures";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import path from "node:path";
 import {
   rawGet as httpGet,
@@ -13,15 +12,9 @@ import { openIkranDb } from "./helpers/db";
 // real tldraw pointer/keyboard → injected Runtime client mutation chain.
 
 const test = base.extend<{ folder: string }>({
-  folder: async ({}, use) => {
-    const folder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-06-ann-"));
+  folder: async ({ runtime }, use) => {
+    const folder = runtime.createProjectFolder("06-ann-");
     await use(folder);
-    rmSync(folder, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 50
-    });
   }
 });
 

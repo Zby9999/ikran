@@ -1,10 +1,8 @@
 import { expect, test as base } from "./fixtures";
 import {
   existsSync,
-  mkdtempSync,
   rmSync
 } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   rawDelete as httpDelete,
@@ -36,15 +34,9 @@ import {
 // intent write UI.
 
 const test = base.extend<{ folder: string }>({
-  folder: async ({}, use) => {
-    const folder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-04-"));
+  folder: async ({ runtime }, use) => {
+    const folder = runtime.createProjectFolder("04-");
     await use(folder);
-    rmSync(folder, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 50
-    });
   }
 });
 
@@ -280,7 +272,19 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     await expect(confirmation).toContainText("Are you sure you want to shut down ikran?");
     await expect(confirmation.getByRole("button", { name: "Yes" })).toBeVisible();
 
-    await page.mouse.click(500, 100);
+    const overlay = page.locator('[data-slot="dialog-overlay"]');
+    await expect(overlay).toBeVisible();
+    // Radix deliberately arms pointer-down-outside on the next task so the
+    // click which opened the dialog cannot immediately dismiss it. Wait for
+    // that interactive frame, then click the real overlay rather than a fixed
+    // viewport coordinate which may not be outside at every font/viewport.
+    await confirmation.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        })
+    );
+    await overlay.click({ position: { x: 1, y: 1 } });
     await expect(confirmation).toBeHidden();
     await expect(trigger).toBeVisible();
     expect(stopRequests).toBe(0);

@@ -1,22 +1,15 @@
 // Task 11 — SSE `event: record` after domain commit; active-project filter; no leak.
 
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import path from "node:path";
 import { expect, test as base } from "./fixtures";
 import { rawPost as httpPost } from "./helpers/http";
 import { openRecordSse } from "./helpers/sse";
 
 const test = base.extend<{ folder: string }>({
-  folder: async ({}, use) => {
-    const folder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-record-sse-"));
+  folder: async ({ runtime }, use) => {
+    const folder = runtime.createProjectFolder("record-sse-");
     await use(folder);
-    rmSync(folder, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 50
-    });
   }
 });
 
