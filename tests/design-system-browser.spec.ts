@@ -550,11 +550,14 @@ test("09A design system browser: declare → render → approve write-back", asy
     await page.getByRole("button", { name: "Interaction", exact: true }).click();
     const interactionRule = page.getByTestId("ds-interaction-rule-1");
     await expect(interactionRule.getByRole("button", { name: "Save" })).toHaveCount(0);
-    const rowBeforeEdit = await interactionRule
-      .locator(".dsb-interaction-ledger-row")
-      .boundingBox();
     const bodyReadOnly = interactionRule.locator(".dsb-card-desc");
-    const bodyBeforeEdit = await bodyReadOnly.boundingBox();
+    const bodyOffsetBefore = await bodyReadOnly.evaluate((element) => {
+      const row = element.closest(".dsb-interaction-ledger-row");
+      if (!row) return null;
+      return (
+        element.getBoundingClientRect().top - row.getBoundingClientRect().top
+      );
+    });
     const typographyBeforeEdit = await bodyReadOnly.evaluate((element) => {
       const style = getComputedStyle(element);
       return {
@@ -570,10 +573,13 @@ test("09A design system browser: declare → render → approve write-back", asy
     await editButton.click();
     await expect(editButton).toHaveAttribute("aria-pressed", "true");
     const bodyInput = interactionRule.getByLabel("Rule body");
-    const rowAfterEdit = await interactionRule
-      .locator(".dsb-interaction-ledger-row")
-      .boundingBox();
-    const bodyAfterEdit = await bodyInput.boundingBox();
+    const bodyOffsetAfter = await bodyInput.evaluate((element) => {
+      const row = element.closest(".dsb-interaction-ledger-row");
+      if (!row) return null;
+      return (
+        element.getBoundingClientRect().top - row.getBoundingClientRect().top
+      );
+    });
     const typographyAfterEdit = await bodyInput.evaluate((element) => {
       const style = getComputedStyle(element);
       return {
@@ -583,15 +589,12 @@ test("09A design system browser: declare → render → approve write-back", asy
         lineHeight: style.lineHeight
       };
     });
-    const bodyOffsetBefore =
-      bodyBeforeEdit && rowBeforeEdit ? bodyBeforeEdit.y - rowBeforeEdit.y : null;
-    const bodyOffsetAfter =
-      bodyAfterEdit && rowAfterEdit ? bodyAfterEdit.y - rowAfterEdit.y : null;
     expect(bodyOffsetBefore).not.toBeNull();
     expect(bodyOffsetAfter).not.toBeNull();
-    // Browser font metrics can differ by a subpixel while the parallel suite
-    // is warming fonts. Two CSS pixels still catches a visible layout jump.
-    expect(Math.abs(bodyOffsetAfter! - bodyOffsetBefore!)).toBeLessThanOrEqual(2);
+    // Read the body and its row in one browser layout snapshot. Separate
+    // boundingBox calls can observe different frames while the sheet settles,
+    // even though the body's position inside the row is unchanged.
+    expect(bodyOffsetAfter).toBeCloseTo(bodyOffsetBefore!, 4);
     expect(typographyAfterEdit).toEqual(typographyBeforeEdit);
     const titleInput = interactionRule.getByLabel("Rule title");
     await titleInput.fill("Measured feedback");
