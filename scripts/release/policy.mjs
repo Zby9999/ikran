@@ -1,8 +1,11 @@
 import path from "node:path";
 
+export const RELEASE_LICENSE = "Apache-2.0";
+
 const SHARED_FILES = Object.freeze([
   ".node-version",
   ".npmrc",
+  "LICENSE",
   "README.md",
   "package.json",
   "package-lock.json",
@@ -32,7 +35,6 @@ const SHARED_ANCHORS = Object.freeze([
 ]);
 
 const OPTIONAL_RELEASE_DOCS = Object.freeze([
-  "LICENSE",
   "LICENSE.md",
   "SECURITY.md",
   "CHANGELOG.md"

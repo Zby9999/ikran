@@ -13,7 +13,7 @@
 // directly, the alignment flow is driven through MCP tools + the alignment
 // HTTP surface, and the Workbench page follows along via the live SSE channel.
 
-import { existsSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -33,6 +33,7 @@ import {
 } from "./helpers/alignment";
 import { enterCanvas } from "./helpers/workbench";
 import { openIkranDb } from "./helpers/db";
+import { writeSyntheticCapture } from "./helpers/synthetic-capture";
 
 async function patchAlignment(
   workbenchUrl: string,
@@ -281,9 +282,8 @@ test("09A design system browser: declare → render → approve write-back", asy
       "utf-8"
     );
     mkdirSync(path.join(designSystemDir, "captures"), { recursive: true });
-    copyFileSync(
-      path.join(process.cwd(), "tests", "fixtures", "layout-capture-grid.png"),
-      path.join(designSystemDir, "captures", "button-source.png")
+    writeSyntheticCapture(
+      path.join(designSystemDir, "captures", "button-source.svg")
     );
     const buttonCodeLinks = ["components/Button.tsx"];
     writeSource("design-system/components/button.json", {
@@ -321,7 +321,7 @@ test("09A design system browser: declare → render → approve write-back", asy
         sourceCaptures: [
           {
             nodeName: "Button",
-            artifactPath: "design-system/captures/button-source.png",
+            artifactPath: "design-system/captures/button-source.svg",
             capturedAt: "2026-08-07T14:00:00.000Z",
             origin: "source"
           }
@@ -515,7 +515,7 @@ test("09A design system browser: declare → render → approve write-back", asy
     await expect(heroOrigin).toHaveAttribute("data-origin", "source-capture");
     await expect(page.locator(".dsb-hero-image")).toHaveAttribute(
       "src",
-      /design-system\/captures\/button-source\.png/
+      /design-system\/captures\/button-source\.svg/
     );
     // Hover provenance: the popover marks the source evidence.
     await heroOrigin.hover();

@@ -44,6 +44,7 @@ describe("release selection policy", () => {
     const paths = files.map((file: { path: string }) => file.path);
 
     expect(paths).toContain("README.md");
+    expect(paths).toContain("LICENSE");
     expect(paths).toContain(".node-version");
     expect(paths).toContain(".npmrc");
     expect(paths).toContain("app/page.tsx");
@@ -63,6 +64,11 @@ describe("release selection policy", () => {
     expect(packageJson.dependencies["@playwright/test"]).toBeUndefined();
     expect(packageJson.devDependencies["@playwright/test"]).toBeTruthy();
     expect(packageJson.scripts["setup:product"]).toContain("npm ci --omit=dev");
+    expect(packageJson.license).toBe("Apache-2.0");
+    const packageLock = JSON.parse(
+      files.find((file: { path: string }) => file.path === "package-lock.json").content.toString("utf8")
+    );
+    expect(packageLock.packages[""].license).toBe(packageJson.license);
   });
 
   test("adds the complete verification surface only for Contributor", async () => {
@@ -71,6 +77,7 @@ describe("release selection policy", () => {
 
     expect(paths).toContain("playwright.config.ts");
     expect(paths).toContain("vitest.config.ts");
+    expect(paths).toContain("LICENSE");
     expect(paths).toContain("tests/global-setup.ts");
     expect(paths).toContain("tests/unit/release-selection.test.ts");
     expect(paths).toContain("scripts/release/build.mjs");
@@ -84,6 +91,33 @@ describe("release selection policy", () => {
 
     await expect(selectReleaseFiles({ repoRoot: fixture, kit: "product" })).rejects.toMatchObject({
       code: "missing_required_path"
+    });
+  });
+
+  test("fails closed when the distribution license is missing", async () => {
+    const fixture = makeRepositoryFixture();
+    unlinkSync(path.join(fixture, "LICENSE"));
+
+    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "product" })).rejects.toMatchObject({
+      code: "missing_required_path",
+      details: { path: "LICENSE" }
+    });
+  });
+
+  test("fails closed when package metadata drifts from the distribution license", async () => {
+    const fixture = makeRepositoryFixture();
+    const manifestPath = path.join(fixture, "package.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    manifest.license = "MIT";
+    writeFileSync(manifestPath, `${JSON.stringify(manifest)}\n`);
+
+    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "product" })).rejects.toMatchObject({
+      code: "release_license_mismatch",
+      details: {
+        expected: "Apache-2.0",
+        packageJson: "MIT",
+        packageLock: "Apache-2.0"
+      }
     });
   });
 
@@ -210,6 +244,7 @@ describe("deterministic release build", () => {
       "ikran-product-test-kit-0.1.0-alpha.1/RELEASE-MANIFEST.json"
     );
     expect(tarPaths).toContain("ikran-product-test-kit-0.1.0-alpha.1/package.json");
+    expect(tarPaths).toContain("ikran-product-test-kit-0.1.0-alpha.1/LICENSE");
     expect(tarPaths.some(isForbidden)).toBe(false);
     const tarModes = new Map(tarEntries.map((entry) => [entry.path, entry.mode]));
     for (const executable of ["bin/ikran.mjs", "bin/ikran-mcp.mjs", "bin/ikran-runtime.mjs"]) {
@@ -285,6 +320,7 @@ function makeRepositoryFixture() {
     `${JSON.stringify({
       name: "fixture",
       version: "0.1.0-alpha.1",
+      license: "Apache-2.0",
       private: true,
       scripts: {
         "setup:product": "npm ci --omit=dev && node scripts/release/prune-product-install.mjs && npx --no-install playwright-core install chromium && npm run build"
@@ -300,13 +336,22 @@ function makeRepositoryFixture() {
       name: "fixture",
       version: "0.1.0-alpha.1",
       lockfileVersion: 3,
-      packages: { "": { name: "fixture", version: "0.1.0-alpha.1", dependencies, devDependencies } }
+      packages: {
+        "": {
+          name: "fixture",
+          version: "0.1.0-alpha.1",
+          license: "Apache-2.0",
+          dependencies,
+          devDependencies
+        }
+      }
     })}\n`
   );
 
   const files: Record<string, string> = {
     ".node-version": "22.13.1\n",
     ".npmrc": "engine-strict=true\n",
+    "LICENSE": "Apache License\nVersion 2.0, January 2004\n",
     "README.md": "# Fixture\n",
     "next.config.ts": "export default {};\n",
     "next-env.d.ts": "/// <reference types=\"next\" />\n",

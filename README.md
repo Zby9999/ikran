@@ -193,6 +193,19 @@ Kit archives; their manifests are also embedded inside each archive.
 
 ## License
 
-No repository-level software license has been declared yet. The font license
-under `app/fonts/` applies only to that bundled font, not to the Ikran source as
-a whole.
+Except where a file or directory states otherwise, original Ikran software and
+documentation selected into the Product Test Kit or Contributor Verification
+Kit are licensed under the Apache License 2.0. See [`LICENSE`](LICENSE).
+
+This grant does not relicense any third-party material, whether or not that
+material is present in a Release Kit. The bundled font under `app/fonts/`
+remains licensed under the SIL Open Font License 1.1. Third-party names and
+brand assets under `public/icons/` remain subject to their owners' rights.
+Research archives and project material excluded from both Release
+Kits—including `Attempts/`, `.scratch/`, `workflow/`, `Design issue/`,
+`Issues 02/`, `Research/`, and third-party Figma or evidence content—are not
+licensed under Apache-2.0 by this notice and retain their existing copyright
+or license status.
+
+Apache-2.0 does not grant permission to use the Ikran name, logo, or other
+project marks except as required to describe the origin of the software.

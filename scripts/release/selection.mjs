@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import {
   ReleasePolicyError,
+  RELEASE_LICENSE,
   assertSafeReleasePath,
   getReleaseKit,
   sensitiveContentReason
@@ -229,6 +230,21 @@ function validatePackageBoundary(files, kit) {
   if (!packageLock.packages || !packageLock.packages[""]) {
     throw new ReleasePolicyError("invalid_package_lock", "package-lock.json has no root package");
   }
+  const lockRoot = packageLock.packages[""];
+  if (
+    packageJson.license !== RELEASE_LICENSE ||
+    lockRoot.license !== RELEASE_LICENSE
+  ) {
+    throw new ReleasePolicyError(
+      "release_license_mismatch",
+      `Release package metadata must declare ${RELEASE_LICENSE} consistently`,
+      {
+        expected: RELEASE_LICENSE,
+        packageJson: packageJson.license ?? null,
+        packageLock: lockRoot.license ?? null
+      }
+    );
+  }
 
   const npmrc = byPath.get(".npmrc").content.toString("utf8");
   const npmrcDirectives = npmrc
@@ -248,8 +264,6 @@ function validatePackageBoundary(files, kit) {
   if (kit.id !== "product") return;
   const dependencies = packageJson.dependencies ?? {};
   const devDependencies = packageJson.devDependencies ?? {};
-  const lockRoot = packageLock.packages[""];
-
   for (const dependency of PRODUCT_BUILD_DEPENDENCIES) {
     if (!dependencies[dependency]) {
       throw new ReleasePolicyError(
