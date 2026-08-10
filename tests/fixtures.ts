@@ -31,11 +31,15 @@ export interface RuntimeHandle {
   /** Per-worker temp dir holding the isolated runtime-state.json. */
   stateDir: string;
   /**
+   * Clears this worker's active-project pointer before a test that requires
+   * the unbound setup state. Call only before the test starts using Runtime.
+   */
+  resetActiveProjectForTest(): void;
+  /**
    * Creates a project folder owned by this worker. It is removed only after
    * the worker Runtime process group has stopped, so live SSE/API work cannot
    * recreate SQLite files while Playwright is tearing the fixture down.
-   * This also clears the worker's active-project pointer; call it once per
-   * test, before binding the returned folder.
+   * Call it once per test, before binding the returned folder.
    */
   createProjectFolder(prefix: string): string;
 }
@@ -137,10 +141,14 @@ export const test = base.extend<{}, { runtime: RuntimeHandle }>({
 
       try {
         await waitForRuntime(port);
+        const resetActiveProjectForTest = () => {
+          rmSync(path.join(stateDir, "runtime-state.json"), { force: true });
+        };
         await use({
           baseURL: `http://localhost:${port}`,
           port,
           stateDir,
+          resetActiveProjectForTest,
           createProjectFolder(prefix) {
             if (!/^[a-z0-9][a-z0-9-]*-$/i.test(prefix)) {
               throw new Error(`invalid e2e project folder prefix: ${prefix}`);
@@ -149,7 +157,7 @@ export const test = base.extend<{}, { runtime: RuntimeHandle }>({
             // active project. Each test project therefore starts by clearing
             // the worker-local pointer; project data itself remains owned by
             // this fixture until the Runtime process group has stopped.
-            rmSync(path.join(stateDir, "runtime-state.json"), { force: true });
+            resetActiveProjectForTest();
             return mkdtempSync(path.join(projectRoot, prefix));
           }
         });

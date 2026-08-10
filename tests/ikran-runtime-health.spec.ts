@@ -28,6 +28,7 @@ function rawGet(headers: Record<string, string>) {
 
 test.describe("Ikran Issue 02/01 — Workbench URL opens the session shell", () => {
   test.beforeEach(async ({ runtime }) => {
+    runtime.resetActiveProjectForTest();
     port = runtime.port;
     baseURL = runtime.baseURL;
   });
