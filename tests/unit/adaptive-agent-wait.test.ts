@@ -14,14 +14,100 @@ import {
   reportWorkbenchPresence,
   waitForAgentCommand
 } from "../../lib/runtime/adaptive-agent-wait";
-import { initializeProjectDb } from "../../lib/runtime/db";
+import {
+  closeProjectDb,
+  initializeProjectDb,
+  openProjectDb
+} from "../../lib/runtime/db";
 import { recordEvidencePackage } from "../../lib/runtime/evidence-package";
 import { listEvents } from "../../lib/runtime/events";
 import { prepareDesignIntentAlignment } from "../../lib/runtime/alignment-preparation";
 import { setDesignLanguageDescription } from "../../lib/runtime/project-readiness";
 import { registerSeedReference } from "../../lib/runtime/seed-reference";
 
+const readEligibleWait = () =>
+  ({
+    ok: true,
+    eligible: true,
+    stage: "alignment-answering",
+    seed_reference_count: 1
+  }) as const;
+
 describe("adaptive Agent wait lease", () => {
+  test("returns not_applicable before Seed Reference registration", async () => {
+    const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-wait-no-seed-"));
+    try {
+      initializeProjectDb(projectPath);
+      await expect(
+        waitForAgentCommand(projectPath, { windowMs: 0 })
+      ).resolves.toEqual({
+        ok: true,
+        reason: "not_applicable",
+        command: null,
+        stage: "seed-reference-registration",
+        not_applicable_reason: "seed_reference_required"
+      });
+    } finally {
+      rmSync(projectPath, { recursive: true, force: true });
+    }
+  });
+
+  test("returns not_applicable outside a designer handoff stage", async () => {
+    const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-wait-finished-"));
+    try {
+      initializeProjectDb(projectPath);
+      const seed = registerSeedReference(projectPath, {
+        figmaSeedReference:
+          "https://www.figma.com/design/WaitDone/Mock?node-id=1:2",
+        originalDesignIntent: "Finished wait fixture"
+      });
+      if (!seed.ok) throw new Error(seed.reason);
+      const db = openProjectDb(projectPath);
+      try {
+        db.prepare(
+          `UPDATE project_workflow
+           SET stage = 'initial-design-system-preparing', updated_at = ?
+           WHERE singleton = 1`
+        ).run("2026-08-10T00:00:00.000Z");
+      } finally {
+        closeProjectDb(db);
+      }
+
+      await expect(
+        waitForAgentCommand(projectPath, { windowMs: 0 })
+      ).resolves.toEqual({
+        ok: true,
+        reason: "not_applicable",
+        command: null,
+        stage: "initial-design-system-preparing",
+        not_applicable_reason: "outside_designer_handoff"
+      });
+    } finally {
+      rmSync(projectPath, { recursive: true, force: true });
+    }
+  });
+
+  test("fails closed when wait eligibility state cannot be read", async () => {
+    const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-wait-state-error-"));
+    try {
+      initializeProjectDb(projectPath);
+      await expect(
+        waitForAgentCommand(projectPath, {
+          windowMs: 0,
+          readWaitEligibility: () => {
+            throw new Error("injected workflow read failure");
+          }
+        })
+      ).resolves.toEqual({
+        ok: false,
+        reason: "state_unavailable",
+        command: null
+      });
+    } finally {
+      rmSync(projectPath, { recursive: true, force: true });
+    }
+  });
+
   test("starts with one three-minute window and rolls to now plus three minutes", () => {
     const lease = createWaitLease(1_000);
     expect(ADAPTIVE_WAIT_WINDOW_MS).toBe(180_000);
@@ -124,7 +210,10 @@ describe("adaptive Agent wait lease", () => {
     const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-wait-clock-"));
     try {
       initializeProjectDb(projectPath);
-      const result = waitForAgentCommand(projectPath, { windowMs: 180 });
+      const result = waitForAgentCommand(projectPath, {
+        windowMs: 180,
+        readWaitEligibility: readEligibleWait
+      });
       await vi.advanceTimersByTimeAsync(120);
       reportWorkbenchPresence(projectPath, {
         visible: true,
@@ -207,7 +296,8 @@ describe("adaptive Agent wait lease", () => {
       expect(listEvents(projectPath)).toHaveLength(beforeEvents);
       const controller = new AbortController();
       const waiting = waitForAgentCommand(projectPath, {
-        signal: controller.signal
+        signal: controller.signal,
+        readWaitEligibility: readEligibleWait
       });
       controller.abort();
       await expect(waiting).resolves.toEqual({
@@ -229,6 +319,7 @@ describe("adaptive Agent wait lease", () => {
       initializeProjectDb(projectPath);
       const waiting = waitForAgentCommand(projectPath, {
         windowMs: 180,
+        readWaitEligibility: readEligibleWait,
         readPendingCommand: () => {
           reads += 1;
           if (reads === 1) throw new Error("transient database lock");
@@ -269,6 +360,7 @@ describe("adaptive Agent wait lease", () => {
       initializeProjectDb(projectPath);
       const waiting = waitForAgentCommand(projectPath, {
         windowMs: 180,
+        readWaitEligibility: readEligibleWait,
         readPendingCommand: () => {
           throw new Error("persistent database lock");
         }

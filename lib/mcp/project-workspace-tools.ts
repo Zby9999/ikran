@@ -11,11 +11,7 @@ import {
 } from "../runtime/commands";
 import { type RegisterIkranToolsDeps } from "./shared";
 import { getProjectPhase } from "../runtime/project-phase";
-import { getProjectReadiness } from "../runtime/project-readiness";
-import {
-  DESIGNER_HANDOFF_STAGES,
-  getProjectWorkflowStage
-} from "../runtime/alignment-preparation";
+import { readAgentCommandWaitEligibility } from "../runtime/adaptive-agent-wait";
 
 const WAIT_FOR_COMMAND_ACTION = {
   tool: "wait_for_agent_command"
@@ -39,15 +35,8 @@ const NO_WAIT_DIRECTIVE =
  * complete (after that, no command will ever arrive again).
  */
 function shouldArmWaitForCommand(projectPath: string): boolean {
-  try {
-    if (getProjectReadiness(projectPath).seedReferenceCount === 0) {
-      return false;
-    }
-    return DESIGNER_HANDOFF_STAGES.has(getProjectWorkflowStage(projectPath));
-  } catch {
-    // State unreadable: preserve the previous always-arm behavior.
-    return true;
-  }
+  const eligibility = readAgentCommandWaitEligibility(projectPath);
+  return eligibility.ok && eligibility.eligible;
 }
 
 function projectSuccessContent(

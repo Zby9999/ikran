@@ -19,6 +19,7 @@ Workbench presence 只是控制等待租约的 ephemeral operational signal，�
 ## Acceptance criteria
 
 - [x] 没有 pending command 时，Agent 可调用语义 wait surface；有 pending command 时立即返回最早可执行 command，不人为等待完整窗口。
+- [x] pending command 优先于阶段门；没有 pending command 时，仅 Seed Reference 已存在且 workflow 处于 designer handoff 阶段才允许新建 lease。其他阶段立即返回 `not_applicable`，状态不可读时返回 `state_unavailable`，不得默认进入等待。
 - [x] 初始等待窗为三分钟；有效 engaged signal 将 deadline 重置为当前时间加三分钟，而不是累计增加固定时长。
 - [x] engaged 至少要求页面可见、处于焦点且存在近期设计师交互、未提交编辑活动或已提交语义活动之一；仅保持页面连接、后台打开或机械 heartbeat 不能无限续期。
 - [x] 连续有效活动可以跨越多个三分钟窗口保持等待；活动停止并越过 deadline 后，wait 以明确的 idle/no-command 结果结束。
@@ -35,4 +36,4 @@ Workbench presence 只是控制等待租约的 ephemeral operational signal，�
 
 ## Completion report — 2026-07-22
 
-已加入 `wait_for_agent_command` 三分钟滚动 lease、Runtime 内存 presence bus、可取消等待和 pending command 快速返回；Workbench 仅复用 visibility/focus/interaction/edit/semantic 信号，不写 canonical 数据也不新增视觉。验证通过：TypeScript typecheck、5 个相关 Vitest 文件共 31 项（时间路径使用 fake clock）、one-process Workbench→presence→MCP wait→durable command production 纵向测试，以及 Agent 使用 Browser Use 对无新增 UI 与真实 presence endpoint 命中的审查。
+已加入 `wait_for_agent_command` 三分钟滚动 lease、Runtime 内存 presence bus、可取消等待和 pending command 快速返回；Workbench 仅复用 visibility/focus/interaction/edit/semantic 信号，不写 canonical 数据也不新增视觉。2026-08-10 增补 fail-closed 阶段门：pending command 仍可跨阶段立即读取；无 pending 时只在 designer handoff window 建立 lease，其他阶段 `not_applicable`，状态读取失败 `state_unavailable`。验证通过：TypeScript typecheck、相关 Vitest（时间路径使用 fake clock）、one-process Workbench→presence→MCP wait→durable command production 纵向测试，以及 Agent 使用 Browser Use 对无新增 UI 与真实 presence endpoint 命中的审查。

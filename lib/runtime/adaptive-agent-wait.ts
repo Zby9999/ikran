@@ -2,6 +2,12 @@ import path from "node:path";
 
 import { closeProjectDb, openProjectDb } from "./db";
 import { subscribeRecordEvents } from "./record-bus";
+import {
+  DESIGNER_HANDOFF_STAGES,
+  getProjectWorkflowStage,
+  type WorkflowStage
+} from "./alignment-preparation";
+import { getProjectReadiness } from "./project-readiness";
 
 export const ADAPTIVE_WAIT_WINDOW_MS = 3 * 60 * 1000;
 
@@ -92,6 +98,85 @@ export type PendingAgentCommand = {
   created_at: string;
 };
 
+export type AgentCommandWaitEligibility =
+  | {
+      ok: true;
+      eligible: true;
+      stage: WorkflowStage;
+      seed_reference_count: number;
+    }
+  | {
+      ok: true;
+      eligible: false;
+      stage: WorkflowStage;
+      seed_reference_count: number;
+      reason: "seed_reference_required" | "outside_designer_handoff";
+    }
+  | { ok: false; reason: "state_unavailable" };
+
+/**
+ * Read the complete lease-eligibility state. A caller may still retrieve an
+ * already-pending Agent command outside this window, but it must not start a
+ * new Adaptive Agent wait there.
+ */
+export function readAgentCommandWaitEligibility(
+  projectPath: string
+): AgentCommandWaitEligibility {
+  try {
+    const stage = getProjectWorkflowStage(projectPath);
+    const seedReferenceCount =
+      getProjectReadiness(projectPath).seedReferenceCount;
+    if (seedReferenceCount === 0) {
+      return {
+        ok: true,
+        eligible: false,
+        stage,
+        seed_reference_count: seedReferenceCount,
+        reason: "seed_reference_required"
+      };
+    }
+    if (!DESIGNER_HANDOFF_STAGES.has(stage)) {
+      return {
+        ok: true,
+        eligible: false,
+        stage,
+        seed_reference_count: seedReferenceCount,
+        reason: "outside_designer_handoff"
+      };
+    }
+    return {
+      ok: true,
+      eligible: true,
+      stage,
+      seed_reference_count: seedReferenceCount
+    };
+  } catch {
+    return { ok: false, reason: "state_unavailable" };
+  }
+}
+
+export type WaitForAgentCommandResult =
+  | { ok: true; reason: "command_available"; command: PendingAgentCommand }
+  | {
+      ok: true;
+      reason: "idle_no_command" | "page_closed_no_command" | "cancelled";
+      command: null;
+    }
+  | {
+      ok: true;
+      reason: "not_applicable";
+      command: null;
+      stage: WorkflowStage;
+      not_applicable_reason:
+        | "seed_reference_required"
+        | "outside_designer_handoff";
+    }
+  | {
+      ok: false;
+      reason: "command_read_failed" | "state_unavailable";
+      command: null;
+    };
+
 export function findEarliestPendingAgentCommand(
   projectPath: string
 ): PendingAgentCommand | null {
@@ -135,27 +220,49 @@ export async function waitForAgentCommand(
     windowMs?: number;
     now?: () => number;
     readPendingCommand?: (projectPath: string) => PendingAgentCommand | null;
+    readWaitEligibility?: (
+      projectPath: string
+    ) => AgentCommandWaitEligibility;
   } = {}
-): Promise<
-  | { ok: true; reason: "command_available"; command: PendingAgentCommand }
-  | {
-      ok: true;
-      reason: "idle_no_command" | "page_closed_no_command" | "cancelled";
-      command: null;
-    }
-  | { ok: false; reason: "command_read_failed"; command: null }
-> {
+): Promise<WaitForAgentCommandResult> {
   const readPendingCommand =
     options.readPendingCommand ?? findEarliestPendingAgentCommand;
+  const readWaitEligibility =
+    options.readWaitEligibility ?? readAgentCommandWaitEligibility;
   let immediate: PendingAgentCommand | null = null;
+  let immediateCommandReadFailed = false;
   try {
     immediate = readPendingCommand(projectPath);
   } catch {
     // A transient read failure must not crash the Runtime or strand a waiter.
     // Presence, record-bus activity, and the lease deadline will retry below.
+    immediateCommandReadFailed = true;
   }
   if (immediate) {
     return { ok: true, reason: "command_available", command: immediate };
+  }
+  let initialEligibility: AgentCommandWaitEligibility;
+  try {
+    initialEligibility = readWaitEligibility(projectPath);
+  } catch {
+    return { ok: false, reason: "state_unavailable", command: null };
+  }
+  if (!initialEligibility.ok) {
+    return { ok: false, reason: "state_unavailable", command: null };
+  }
+  if (!initialEligibility.eligible) {
+    // Do not report not_applicable when the pending-command read itself was
+    // unavailable: a durable command could already exist and must win.
+    if (immediateCommandReadFailed) {
+      return { ok: false, reason: "command_read_failed", command: null };
+    }
+    return {
+      ok: true,
+      reason: "not_applicable",
+      command: null,
+      stage: initialEligibility.stage,
+      not_applicable_reason: initialEligibility.reason
+    };
   }
   const now = options.now ?? Date.now;
   const windowMs = options.windowMs ?? ADAPTIVE_WAIT_WINDOW_MS;
@@ -189,6 +296,33 @@ export async function waitForAgentCommand(
       }
       return "empty";
     };
+    const checkEligibility = ():
+      | "eligible"
+      | "not_applicable"
+      | "failed" => {
+      let eligibility: AgentCommandWaitEligibility;
+      try {
+        eligibility = readWaitEligibility(projectPath);
+      } catch {
+        finish({ ok: false, reason: "state_unavailable", command: null });
+        return "failed";
+      }
+      if (!eligibility.ok) {
+        finish({ ok: false, reason: "state_unavailable", command: null });
+        return "failed";
+      }
+      if (!eligibility.eligible) {
+        finish({
+          ok: true,
+          reason: "not_applicable",
+          command: null,
+          stage: eligibility.stage,
+          not_applicable_reason: eligibility.reason
+        });
+        return "not_applicable";
+      }
+      return "eligible";
+    };
     const schedule = () => {
       if (timer) clearTimeout(timer);
       const decision = waitLeaseDecision(lease, now());
@@ -197,20 +331,25 @@ export async function waitForAgentCommand(
         if (commandState === "failed") {
           finish({ ok: false, reason: "command_read_failed", command: null });
         } else if (commandState === "empty") {
-          finish({ ok: true, reason: decision.reason, command: null });
+          if (checkEligibility() === "eligible") {
+            finish({ ok: true, reason: decision.reason, command: null });
+          }
         }
         return;
       }
       timer = setTimeout(schedule, Math.max(1, decision.remainingMs));
     };
     const unsubscribePresence = subscribePresence(projectPath, (presence) => {
-      if (checkCommand() === "found") return;
+      const commandState = checkCommand();
+      if (commandState !== "empty") return;
+      if (checkEligibility() !== "eligible") return;
       lease = applyPresenceToLease(lease, presence, now(), windowMs);
       schedule();
     });
     const unsubscribeRecords = subscribeRecordEvents((event) => {
       if (path.resolve(event.projectPath) === path.resolve(projectPath)) {
-        checkCommand();
+        const commandState = checkCommand();
+        if (commandState === "empty") checkEligibility();
       }
     });
     const onAbort = () =>
