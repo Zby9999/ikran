@@ -79,4 +79,15 @@ test.describe("architecture — workbench canvas projection split (Task 12)", ()
     expect(del).toMatch(/source/);
     expect(guard).toMatch(/source\s*!==\s*["']user["']/);
   });
+
+  test("alignment projection stays mounted with empty authoritative records", () => {
+    const text = readFileSync(CANVAS, "utf8");
+
+    // An abandoned attempt makes alignment null without remounting Tldraw.
+    // The sync controller must receive [] so it can delete the old attempt's
+    // projected cards, targets, and connectors from the existing store.
+    expect(text).toMatch(/questions=\{alignment\?\.question_cards\s*\?\?\s*\[\]\}/);
+    expect(text).toMatch(/annotations=\{alignment\?\.annotations\s*\?\?\s*\[\]\}/);
+    expect(text).not.toMatch(/\{alignment\s*\?\s*\(\s*<AlignmentProjectionSync/);
+  });
 });

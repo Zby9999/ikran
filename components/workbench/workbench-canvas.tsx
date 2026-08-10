@@ -311,16 +311,17 @@ export function WorkbenchCanvas({
         annotations={annotations}
         currentStage={alignmentStage}
       />
-      {alignment ? (
-        <AlignmentProjectionSync
-          currentStage={alignmentStage}
-          readOnly={
-            alignment.preparation.workflow.stage !== "alignment-answering"
-          }
-          questions={alignment.question_cards}
-          annotations={alignment.annotations}
-        />
-      ) : null}
+      {/* Keep the projector mounted when an attempt is abandoned. Its empty
+          authoritative input removes the previous attempt's tldraw shapes;
+          unmounting it here would leave those shapes in the shared store. */}
+      <AlignmentProjectionSync
+        currentStage={alignmentStage}
+        readOnly={
+          alignment?.preparation.workflow.stage !== "alignment-answering"
+        }
+        questions={alignment?.question_cards ?? []}
+        annotations={alignment?.annotations ?? []}
+      />
       <AlignmentCardInteractionController />
       <ExclusiveDialogController />
       <RegionAnnotationToolController
