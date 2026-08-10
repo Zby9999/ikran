@@ -1,8 +1,5 @@
 import { expect, test as base } from "./fixtures";
-import {
-  existsSync,
-  rmSync
-} from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   rawDelete as httpDelete,
@@ -245,10 +242,6 @@ async function assertNoWorkbenchSeedWriteUi(
 }
 
 test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed", () => {
-  test.beforeEach(async ({ runtime }) => {
-    rmSync(path.join(runtime.stateDir, "runtime-state.json"), { force: true });
-  });
-
   test("Shutdown expands to the Figma confirmation, dismisses outside, and stops only on Yes", async ({
     page,
     runtime,

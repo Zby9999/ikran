@@ -1,6 +1,5 @@
 // Task 11 — SSE `event: record` after domain commit; active-project filter; no leak.
 
-import { rmSync } from "node:fs";
 import path from "node:path";
 import { expect, test as base } from "./fixtures";
 import { rawPost as httpPost } from "./helpers/http";
@@ -50,10 +49,6 @@ async function captureToken(
 }
 
 test.describe("Task 11 — SSE record invalidation", () => {
-  test.beforeEach(async ({ runtime }) => {
-    rmSync(path.join(runtime.stateDir, "runtime-state.json"), { force: true });
-  });
-
   test("POST seed emits event:record for active project; disconnect cleans up", async ({
     page,
     runtime,

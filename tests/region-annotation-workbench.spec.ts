@@ -1,5 +1,4 @@
 import { expect, test as base } from "./fixtures";
-import { rmSync } from "node:fs";
 import path from "node:path";
 import {
   rawGet as httpGet,
@@ -208,10 +207,6 @@ async function mediaBox(
 }
 
 test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
-  test.beforeEach(async ({ runtime }) => {
-    rmSync(path.join(runtime.stateDir, "runtime-state.json"), { force: true });
-  });
-
   // Regression: Agent tools return workbench_url; opening/reloading that URL must
   // NOT bounce the designer back to Project Setup (ephemeral showSeedWorkbench).
   test("reloading Workbench URL after Start Building stays on seed canvas", async ({
