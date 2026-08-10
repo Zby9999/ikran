@@ -912,6 +912,35 @@ test.describe("component-spec", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("layout-rules.json / interaction-rules.json", () => {
+  test("rejects source-only fields that the DB and Workbench do not project", () => {
+    const hiddenEntryField = {
+      rules: [
+        {
+          ...entry({ value: "Use a stable grid." }),
+          hiddenBody: "Undeclared source-only rule body"
+        }
+      ]
+    };
+    expect(
+      validateDesignSystemJson("layout-rules.json", hiddenEntryField)
+    ).toMatchObject({
+      ok: false,
+      reason: "unknown_field",
+      details: { field: "hiddenBody" }
+    });
+
+    expect(
+      validateDesignSystemJson("interaction-rules.json", {
+        ...validRulesJson(),
+        hiddenRootBody: "Undeclared file-level body"
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "unknown_field",
+      details: { field: "hiddenRootBody" }
+    });
+  });
+
   test("accepts prose rule bodies while keeping meaning required", () => {
     const proseRule = {
       id: "interaction-prose",

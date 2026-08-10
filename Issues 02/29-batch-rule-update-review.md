@@ -2,6 +2,8 @@
 
 Status: implemented（MVP chat 路径，单测覆盖；UI slice 仍推迟；Real Agent validation 未做）
 
+> **2026-08-10 proposal-first 硬门修订**：初始抽取 / Draft review 仍可直接形成第一版 Design System；从 Prototype validation 起，所有 Agent-authored Design System declaration 必须携带 confirmed `proposalId`，且 proposal 必须属于当前 phase/review cycle 并授权正在声明的具体 source path。省略、旧轮次、无关路径都不再绕过校验，lazy file→DB sync 也不再吸收未授权磁盘改动。每轮 formalize 另外要求 latest `confirm_prototype` 后真实完成 reconciliation + 与该 confirmation 显式绑定的 Consolidate；存在 canonical preview 时 reconciliation `runId` 必须与本轮 Prototype run 一致；空结论也是一轮有效审查。
+
 > **验证状态说明(2026-08-06)**:下方【MVP】AC 的勾选依据是 deterministic 单测(`tests/unit/consolidate-review.test.ts` 等),**不是**真实 Agent 冒烟。"Real Agent validation"一节仍未执行,演示前需补。
 
 > **2026-08-08 中断可靠性修订**：Consolidate 不再假设活动对话中已经逐结论即时落库。设计师确认完成或发起 Rule Update 后，Agent 必须先通过 Issue 27 的 `reconcile_designer_conversation` 冻结完整 transcript 范围并原子提交 decision batch，再把返回的 `reconciliationId` 传给 `claim_consolidate_review`。
@@ -19,7 +21,7 @@ Rule update 的提案时机由设计师选择，不是每次交互后即时提�
 
 硬边界(继承 Issue 12,Runtime 硬校验):
 
-- Confirm 后 Agent 才写 design-system source artifact,且 `record_artifact_written` **必须关联 confirmed proposal id**;Cancel 不修改任何 source artifact。
+- Confirm 后 Agent 才写 design-system source artifact,且 Prototype validation 之后的 `record_artifact_written` **必须关联当前 cycle、同一 source path 的 confirmed proposal id**；省略、旧轮次、路径不符、未知或未 confirmed 都被 Runtime 拒绝，lazy sync 不构成旁路；Cancel 不修改任何 source artifact。
 - Proposal 记录 reason、affected items、classification、linked evidence(evidence id 可为 Issue 27 的 feedback 记录或既有五类)。
 - 事件日志记录 proposal created / confirmed / canceled,导出保留链路(Issue 15)。
 
@@ -43,7 +45,7 @@ Rule update 的提案时机由设计师选择，不是每次交互后即时提�
 - [x] 【MVP】后续明确纠正作为 `final_decision`，被覆盖决定以 `superseded` 保留审计但不单独提升为规则；每项至少有一条 designer-authored source。
 - [x] 【MVP】chat 口述只呈现拟提升为全局规则的提案(可复用候选 / 拟议更新);其余分类的去向可在 chat 按需查询。
 - [x] 【MVP】Confirm / Cancel 在 chat 表达,Agent 经声明命令落库。【UI】Proposal 面板逐条 Confirm / Cancel。
-- [x] 【MVP】Confirm 后 Agent 写 source artifact 并 `record_artifact_written` 关联 proposal id;Runtime 校验关联,缺失拒绝。（携带 proposalId 时硬校验 confirmed;缺失时由 instructions 约束,与演示 handoff 一致）
+- [x] 【MVP】Confirm 后 Agent 写 source artifact 并 `record_artifact_written` 关联 proposal id；Runtime 硬校验字段存在、proposal 已 confirmed、属于当前 cycle，且授权同一 source path；任一条件不满足即拒绝。
 - [x] 【MVP】Cancel 不修改 source artifact。
 - [x] 【MVP】支持 chat 明确指示的单条即时提案(逃生口),同样 Confirm 才生效。
 - [ ] 【UI】Workbench 状态区显示待审查反馈计数;无任何自动触发。
@@ -67,7 +69,7 @@ Rule update 的提案时机由设计师选择，不是每次交互后即时提�
 
 - Tool/prompt 明确 rule update 必须 proposal-first;confirm 前禁止写 source artifact 由 Runtime 硬校验兜底。
 - 提案按落库时的 run/session 分组与 linkage 聚合,不靠事后语义聚类。
-- Confirm 后的 `record_artifact_written` 必须关联 proposal id,Runtime 在 export 中保留链路。
+- Confirm 后的 `record_artifact_written` 必须关联当前 cycle、同一 source path 的 proposal id，Runtime 在 export 中保留链路。
 - 待审查计数只是展示,审查入口只响应设计师显式发起。
 
 ## Blocked by

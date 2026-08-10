@@ -125,7 +125,8 @@ export function loadDesignSystemLinkIndex(
        WHERE type IN (
          'design_system_entry_approved',
          'design_system_entry_reverted',
-         'design_system_entry_edited'
+         'design_system_entry_edited',
+         'design_system_source_metadata_reconciled'
        )
        ORDER BY rowid`
     )
@@ -134,6 +135,30 @@ export function loadDesignSystemLinkIndex(
   for (const event of designerStatusEvents) {
     try {
       const payload = JSON.parse(event.payload) as Record<string, unknown>;
+      if (event.type === "design_system_source_metadata_reconciled") {
+        if (
+          typeof payload.source_artifact_path !== "string" ||
+          !Array.isArray(payload.entries)
+        ) continue;
+        for (const rawEntry of payload.entries) {
+          if (
+            rawEntry === null ||
+            typeof rawEntry !== "object" ||
+            Array.isArray(rawEntry)
+          ) continue;
+          const entry = rawEntry as Record<string, unknown>;
+          if (typeof entry.entry_id !== "string") continue;
+          const identity = `${payload.source_artifact_path}\u0000${entry.entry_id}`;
+          currentApprovals.set(
+            identity,
+            entry.db_status === "formalized" &&
+              typeof entry.resolved_content_digest === "string"
+              ? entry.resolved_content_digest
+              : null
+          );
+        }
+        continue;
+      }
       if (
         typeof payload.source_artifact_path !== "string" ||
         typeof payload.entry_id !== "string"

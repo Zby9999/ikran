@@ -28,11 +28,15 @@ import { validateDesignSystemJson } from "../../lib/runtime/design-system-schema
 import type { DesignSystemFileKind } from "../../lib/runtime/design-system-schema";
 import { approveDesignSystemEntryCommand } from "../../lib/runtime/commands";
 import { commandErrorHttpStatus } from "../../lib/runtime/commands";
-import { listEvents } from "../../lib/runtime/events";
+import { listEvents, logEvent } from "../../lib/runtime/events";
 import { initializeProjectDb } from "../../lib/runtime/db";
 import { getArtifactsDir, getProjectDbPath } from "../../lib/runtime/paths";
 import { registerSeedReference } from "../../lib/runtime/seed-reference";
 import { recordEvidencePackage } from "../../lib/runtime/evidence-package";
+import {
+  confirmRuleUpdate,
+  proposeRuleUpdate
+} from "../../lib/runtime/rule-update-proposal";
 import {
   subscribeRecordEvents,
   resetRecordBusForTests,
@@ -829,6 +833,66 @@ describe("approval transitions and rejections", () => {
       expect(listEvents(dir, "design_system_entry_approved").length).toBe(0);
     });
   });
+
+  test("DB/file drift: hidden semantic changes cannot be approved from a stale view", () => {
+    withTempProject((dir) => {
+      seedAndIngest(dir);
+      const relativePath = "design-system/design-system.json";
+      const source = JSON.parse(readProjectFile(dir, relativePath));
+      source.principles.find(
+        (principle: { id: string }) => principle.id === "p1"
+      ).meaning = "Undeclared semantic change that the designer has not reviewed";
+      writeProjectFile(dir, relativePath, source);
+
+      const res = approve(dir, relativePath, "p1");
+      expect(res).toMatchObject({
+        ok: false,
+        reason: "source_db_drift"
+      });
+      expect(entryRow(dir, relativePath, "p1")).toMatchObject({
+        meaning: "克制",
+        status: "candidate"
+      });
+      expect(
+        JSON.parse(readProjectFile(dir, relativePath)).principles.find(
+          (principle: { id: string }) => principle.id === "p1"
+        )
+      ).toMatchObject({
+        meaning: "Undeclared semantic change that the designer has not reviewed",
+        status: "candidate"
+      });
+      expect(listEvents(dir, "design_system_entry_approved")).toHaveLength(0);
+    });
+  });
+
+  test("approval rejects source bytes that changed after command preflight", () => {
+    withTempProject((dir) => {
+      seedAndIngest(dir);
+      const relativePath = "design-system/design-system.json";
+      const expectedSourceDigest = sha256OfFile(dir, relativePath);
+      const source = JSON.parse(readProjectFile(dir, relativePath));
+      source.principles.find(
+        (principle: { id: string }) => principle.id === "p2"
+      ).meaning = "Concurrent source write after preflight";
+      writeProjectFile(dir, relativePath, source);
+
+      const res = approveDesignSystemEntry(
+        dir,
+        {
+          sourceArtifactPath: relativePath,
+          entryId: "p1",
+          targetStatus: "formalized"
+        },
+        { expectedSourceDigest }
+      );
+      expect(res).toMatchObject({
+        ok: false,
+        reason: "concurrent_source_changed"
+      });
+      expect(entryRow(dir, relativePath, "p1")?.status).toBe("candidate");
+      expect(listEvents(dir, "design_system_entry_approved")).toHaveLength(0);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1170,6 +1234,156 @@ describe("atomicity + LWW race", () => {
         meaning: "Concurrent designer edit",
         status: "candidate"
       });
+    });
+  });
+
+  test("protected approval never rolls back a superseding source write with the same target status", () => {
+    withTempProject((dir) => {
+      seedAndIngest(dir);
+      const relativePath = "design-system/layout-rules.json";
+      const expectedSourceDigest = sha256OfFile(dir, relativePath);
+      const res = approveDesignSystemEntry(
+        dir,
+        {
+          sourceArtifactPath: relativePath,
+          entryId: "layout-1",
+          targetStatus: "formalized"
+        },
+        {
+          expectedSourceDigest,
+          beforeCommit: () => {
+            const source = JSON.parse(readProjectFile(dir, relativePath));
+            source.rules[0].meaning = "Pending Rule Update writer semantics";
+            source.rules[0].status = "formalized";
+            writeProjectFile(dir, relativePath, source);
+          }
+        }
+      );
+      expect(res).toMatchObject({
+        ok: false,
+        reason: "concurrent_edit_superseded"
+      });
+      expect(
+        JSON.parse(readProjectFile(dir, relativePath)).rules[0]
+      ).toMatchObject({
+        meaning: "Pending Rule Update writer semantics",
+        status: "formalized"
+      });
+      expect(entryRow(dir, relativePath, "layout-1")).toMatchObject({
+        meaning: "主栅格",
+        status: "candidate"
+      });
+      expect(listEvents(dir, "design_system_entry_approved")).toHaveLength(0);
+    });
+  });
+
+  test("transaction semantic CAS preserves a DB-only concurrent edit", () => {
+    withTempProject((dir) => {
+      seedAndIngest(dir);
+      const relativePath = "design-system/layout-rules.json";
+      const res = approveDesignSystemEntry(
+        dir,
+        {
+          sourceArtifactPath: relativePath,
+          entryId: "layout-1",
+          targetStatus: "formalized"
+        },
+        {
+          beforeCommit: () => {
+            const db = new DatabaseSync(getProjectDbPath(dir));
+            try {
+              db.prepare(
+                `UPDATE design_system_entries
+                 SET meaning = 'Concurrent DB-only edit'
+                 WHERE source_artifact_path = ? AND entry_id = ?`
+              ).run(relativePath, "layout-1");
+            } finally {
+              db.close();
+            }
+          }
+        }
+      );
+      expect(res).toMatchObject({
+        ok: false,
+        reason: "concurrent_edit_superseded"
+      });
+      expect(entryRow(dir, relativePath, "layout-1")).toMatchObject({
+        meaning: "Concurrent DB-only edit",
+        status: "candidate"
+      });
+      expect(
+        JSON.parse(readProjectFile(dir, relativePath)).rules[0]
+      ).toMatchObject({ meaning: "主栅格", status: "candidate" });
+      expect(listEvents(dir, "design_system_entry_approved")).toHaveLength(0);
+    });
+  });
+
+  test("protected approval aborts when a reviewed proposal appears after preflight", () => {
+    withTempProject((dir) => {
+      seedAndIngest(dir);
+      const relativePath = "design-system/layout-rules.json";
+      const db = new DatabaseSync(getProjectDbPath(dir));
+      try {
+        db.prepare(
+          "UPDATE project_phase SET phase = 'design_system_formal' WHERE singleton = 1"
+        ).run();
+      } finally {
+        db.close();
+      }
+      const confirmation = logEvent(dir, "project_phase_confirmed", {
+        from_phase: "prototype_validation",
+        phase: "design_system_formal",
+        command: "confirm_prototype"
+      });
+      logEvent(dir, "conversation_reconciliation_completed", {
+        reconciliation_id: "approval-race-review"
+      });
+      logEvent(dir, "consolidate_review_started", {
+        reconciliation_id: "approval-race-review",
+        prototype_confirmation_event_id: confirmation.event_id
+      });
+
+      const expectedSourceDigest = sha256OfFile(dir, relativePath);
+      const res = approveDesignSystemEntry(
+        dir,
+        {
+          sourceArtifactPath: relativePath,
+          entryId: "layout-1",
+          targetStatus: "formalized"
+        },
+        {
+          expectedSourceDigest,
+          beforeCommit: () => {
+            const proposal = proposeRuleUpdate(dir, {
+              kind: "update",
+              classification: "proposed_update",
+              title: "Concurrent layout update",
+              changeDescription: "A reviewed Rule Update started after approval preflight.",
+              reason: "The pending writer must win the source authorization window.",
+              affectedItems: ["Layout rules"],
+              evidenceRecordIds: ["card-edited"],
+              sourceArtifactPath: relativePath
+            });
+            expect(proposal.ok).toBe(true);
+            if (!proposal.ok) return;
+            expect(
+              confirmRuleUpdate(dir, {
+                proposalId: proposal.proposal.proposal_id
+              }).ok
+            ).toBe(true);
+          }
+        }
+      );
+      expect(res).toMatchObject({
+        ok: false,
+        reason: "source_db_drift",
+        details: { conflict: "pending_rule_update_write" }
+      });
+      expect(entryRow(dir, relativePath, "layout-1")?.status).toBe("candidate");
+      expect(
+        JSON.parse(readProjectFile(dir, relativePath)).rules[0].status
+      ).toBe("candidate");
+      expect(listEvents(dir, "design_system_entry_approved")).toHaveLength(0);
     });
   });
 

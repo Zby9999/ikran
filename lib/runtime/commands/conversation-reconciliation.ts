@@ -36,7 +36,11 @@ export const reconcileDesignerConversationInputShape = {
     .string()
     .describe("Stable idempotency id; reuse it when an interrupted completion turn resumes."),
   conversationId: z.string().describe("Stable Agent-host conversation id."),
-  runId: z.string().describe("Prototype/design run represented by this conversation."),
+  runId: z
+    .string()
+    .describe(
+      "Prototype/design run represented by this conversation; after confirm_prototype it must match the current record_preview runId."
+    ),
   sessionId: z.string().describe("Design session represented by this review."),
   startMessageId: z.string().describe("First message id in the frozen review range."),
   endMessageId: z.string().describe("Last message id in the frozen review range."),

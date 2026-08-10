@@ -177,7 +177,7 @@ describe("Alignment completion handoff", () => {
     }
   });
 
-  test("atomically freezes the attempt, advances workflow, and creates one pending next command", () => {
+  test("atomically freezes the attempt, advances workflow, and creates one pending next command", async () => {
     const fixture = createAnsweringFixture();
     try {
       expect(
@@ -201,6 +201,16 @@ describe("Alignment completion handoff", () => {
           command_type: "prepare_initial_design_system",
           status: "pending",
           alignment_attempt_id: fixture.attemptId
+        }
+      });
+      await expect(
+        waitForAgentCommand(fixture.projectPath, { windowMs: 0 })
+      ).resolves.toMatchObject({
+        ok: true,
+        reason: "command_available",
+        command: {
+          id: completed.ok ? completed.command.id : "",
+          command_type: "prepare_initial_design_system"
         }
       });
 

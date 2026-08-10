@@ -9,6 +9,10 @@ import { listEvents } from "../../lib/runtime/events";
 import { getProjectDbPath } from "../../lib/runtime/paths";
 import { recordDesignerFeedback } from "../../lib/runtime/designer-feedback";
 import { subscribeRecordEvents } from "../../lib/runtime/record-bus";
+import { recordSourceArtifact } from "../../lib/runtime/source-artifact";
+import { sourceContentDigestOf } from "../../lib/runtime/source-artifact-digest";
+import { claimConsolidateReview } from "../../lib/runtime/consolidate-review";
+import { reconcileDesignerConversation } from "../../lib/runtime/conversation-reconciliation";
 import {
   abandonProjectPhase,
   confirmDraftDesignSystem,
@@ -59,6 +63,85 @@ function consumeFeedback(
   }
 }
 
+function completeEmptyRuleUpdateReview(
+  projectPath: string,
+  cycle: string
+): void {
+  const reviewId = `review-${cycle}`;
+  const messageId = `message-${cycle}`;
+  expect(
+    reconcileDesignerConversation(projectPath, {
+      reviewId,
+      conversationId: `conversation-${cycle}`,
+      runId: `run-${cycle}`,
+      sessionId: `session-${cycle}`,
+      startMessageId: messageId,
+      endMessageId: messageId,
+      messages: [
+        {
+          id: messageId,
+          role: "designer",
+          content: "Prototype confirmed; no reusable rule changes."
+        }
+      ],
+      decisions: []
+    })
+  ).toMatchObject({
+    ok: true,
+    reconciliation: { id: reviewId, decision_count: 0 }
+  });
+  expect(claimConsolidateReview(projectPath, reviewId)).toMatchObject({
+    ok: true,
+    reconciliation_id: reviewId
+  });
+}
+
+function declareLayoutRuleSource(projectPath: string): {
+  relativePath: string;
+  absolutePath: string;
+} {
+  const db = new DatabaseSync(getProjectDbPath(projectPath));
+  try {
+    db.prepare(
+      `INSERT INTO alignment_question_cards
+       (id, section, observation, question, final_answer, answer_source,
+        anchor_json, created_at, updated_at)
+       VALUES ('card-formalize-source', 'layout', 'Observed', 'Keep?', 'Yes',
+               'designer-edited', '{}', ?, ?)`
+    ).run("2026-08-10T00:00:00.000Z", "2026-08-10T00:00:00.000Z");
+  } finally {
+    db.close();
+  }
+
+  const relativePath = "design-system/layout-rules.json";
+  const absolutePath = path.join(projectPath, relativePath);
+  mkdirSync(path.dirname(absolutePath), { recursive: true });
+  writeFileSync(
+    absolutePath,
+    JSON.stringify({
+      rules: [
+        {
+          id: "layout.original",
+          value: "Keep the original layout rule.",
+          meaning: "Original layout",
+          status: "candidate",
+          links: ["card-formalize-source"]
+        }
+      ]
+    }),
+    "utf8"
+  );
+  expect(
+    recordSourceArtifact(projectPath, {
+      path: relativePath,
+      artifactType: "layout-rules.json",
+      semanticPurpose: "Initial layout rules",
+      relatedRecordIds: ["card-formalize-source"]
+    }).ok
+  ).toBe(true);
+  return { relativePath, absolutePath };
+}
+
 test("happy path advances seed → draft → prototype → formal → ready_for_new_design", () => {
   withProject((projectPath) => {
     expect(getProjectPhase(projectPath)).toBe("seed");
@@ -74,6 +157,7 @@ test("happy path advances seed → draft → prototype → formal → ready_for_
       ok: true,
       phase: "design_system_formal"
     });
+    completeEmptyRuleUpdateReview(projectPath, "happy-v1");
     expect(formalizeDesignSystem(projectPath, [], REVIEW)).toMatchObject({
       ok: true,
       phase: "ready_for_new_design"
@@ -88,6 +172,273 @@ test("happy path advances seed → draft → prototype → formal → ready_for_
         })
       })
     ]);
+  });
+});
+
+test("formalize requires a Rule Update review after Prototype confirmation even when there is no feedback", () => {
+  withProject((projectPath) => {
+    setPhase(projectPath, "prototype_validation");
+    expect(confirmPrototype(projectPath)).toMatchObject({
+      ok: true,
+      phase: "design_system_formal"
+    });
+
+    expect(formalizeDesignSystem(projectPath, [], REVIEW)).toEqual({
+      ok: false,
+      reason: "rule_update_review_required",
+      phase: "design_system_formal"
+    });
+    expect(listEvents(projectPath, "design_system_formalized")).toEqual([]);
+  });
+});
+
+test("formalize rejects undeclared Design System drift instead of absorbing an Agent-added rule", () => {
+  withProject((projectPath) => {
+    const db = new DatabaseSync(getProjectDbPath(projectPath));
+    try {
+      db.prepare(
+        `INSERT INTO alignment_question_cards
+         (id, section, observation, question, final_answer, answer_source,
+          anchor_json, created_at, updated_at)
+         VALUES ('card-rule-review', 'layout', 'Observed', 'Keep?', 'Yes',
+                 'designer-edited', '{}', ?, ?)`
+      ).run("2026-08-10T00:00:00.000Z", "2026-08-10T00:00:00.000Z");
+    } finally {
+      db.close();
+    }
+
+    const relativePath = "design-system/layout-rules.json";
+    const absolutePath = path.join(projectPath, relativePath);
+    mkdirSync(path.dirname(absolutePath), { recursive: true });
+    const initialRule = {
+      id: "layout.original",
+      value: "Keep the original layout rule.",
+      meaning: "Original layout",
+      status: "candidate",
+      links: ["card-rule-review"]
+    };
+    writeFileSync(
+      absolutePath,
+      JSON.stringify({ rules: [initialRule] }),
+      "utf8"
+    );
+    expect(
+      recordSourceArtifact(projectPath, {
+        path: relativePath,
+        artifactType: "layout-rules.json",
+        semanticPurpose: "Initial layout rules",
+        relatedRecordIds: ["card-rule-review"]
+      }).ok
+    ).toBe(true);
+
+    setPhase(projectPath, "prototype_validation");
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "undeclared-rule-drift");
+
+    writeFileSync(
+      absolutePath,
+      JSON.stringify({
+        rules: [
+          initialRule,
+          {
+            id: "layout.agent-added",
+            value: "An Agent-invented reusable rule.",
+            meaning: "Agent-added layout",
+            status: "candidate",
+            links: ["card-rule-review"]
+          }
+        ]
+      }),
+      "utf8"
+    );
+
+    expect(formalizeDesignSystem(projectPath, [], REVIEW)).toEqual({
+      ok: false,
+      reason: "rule_update_proposal_required",
+      phase: "design_system_formal",
+      changed_artifact_paths: [relativePath]
+    });
+    expect(getProjectPhase(projectPath)).toBe("design_system_formal");
+    expect(listEvents(projectPath, "design_system_formalized")).toEqual([]);
+  });
+});
+
+test("formalize fails closed when a declared Design System source is missing", () => {
+  withProject((projectPath) => {
+    const { relativePath, absolutePath } = declareLayoutRuleSource(projectPath);
+    setPhase(projectPath, "prototype_validation");
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "missing-declared-source");
+    rmSync(absolutePath);
+
+    expect(formalizeDesignSystem(projectPath, [], REVIEW)).toEqual({
+      ok: false,
+      reason: "design_system_source_not_ready",
+      phase: "design_system_formal",
+      source_warnings: [
+        { path: relativePath, reason: "source_file_missing" }
+      ]
+    });
+    expect(getProjectPhase(projectPath)).toBe("design_system_formal");
+    expect(listEvents(projectPath, "design_system_formalized")).toEqual([]);
+  });
+});
+
+test("formalize fails closed when a declared Design System source is invalid", () => {
+  withProject((projectPath) => {
+    const { relativePath, absolutePath } = declareLayoutRuleSource(projectPath);
+    setPhase(projectPath, "prototype_validation");
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "invalid-declared-source");
+    writeFileSync(absolutePath, "{ not-json", "utf8");
+
+    expect(formalizeDesignSystem(projectPath, [], REVIEW)).toMatchObject({
+      ok: false,
+      reason: "design_system_source_not_ready",
+      phase: "design_system_formal",
+      source_warnings: [
+        { path: relativePath, reason: "invalid_json" }
+      ]
+    });
+    expect(getProjectPhase(projectPath)).toBe("design_system_formal");
+    expect(listEvents(projectPath, "design_system_formalized")).toEqual([]);
+  });
+});
+
+test("formalize rejects promoted-source drift that lands after the source snapshot", () => {
+  withProject((projectPath) => {
+    const { absolutePath } = declareLayoutRuleSource(projectPath);
+    setPhase(projectPath, "prototype_validation");
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "promotion-baseline-race");
+
+    const result = formalizeDesignSystem(
+      projectPath,
+      ["layout.original"],
+      REVIEW,
+      {
+        afterSourceSnapshot: () => {
+          const source = JSON.parse(readFileSync(absolutePath, "utf8")) as {
+            rules: Array<Record<string, unknown>>;
+          };
+          source.rules[0].value = "External drift after the accepted snapshot.";
+          writeFileSync(absolutePath, JSON.stringify(source), "utf8");
+        }
+      }
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "design_system_source_changed_during_formalize",
+      phase: "design_system_formal",
+      source_issues: [
+        {
+          path: "design-system/layout-rules.json",
+          reason: "source_content_changed"
+        }
+      ]
+    });
+    expect(entryStatus(projectPath, "layout.original")).toBe("candidate");
+    expect(getProjectPhase(projectPath)).toBe("design_system_formal");
+  });
+});
+
+test("formalize never overwrites source drift that lands immediately before a promotion write", () => {
+  withProject((projectPath) => {
+    const { absolutePath } = declareLayoutRuleSource(projectPath);
+    setPhase(projectPath, "prototype_validation");
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "promotion-prewrite-race");
+
+    const result = formalizeDesignSystem(
+      projectPath,
+      ["layout.original"],
+      REVIEW,
+      {
+        beforePromotionWrite: () => {
+          const source = JSON.parse(readFileSync(absolutePath, "utf8")) as {
+            rules: Array<Record<string, unknown>>;
+          };
+          source.rules[0].meaning = "Host write immediately before promotion.";
+          writeFileSync(absolutePath, JSON.stringify(source), "utf8");
+        }
+      }
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "design_system_source_changed_during_formalize",
+      phase: "design_system_formal",
+      source_issues: [
+        {
+          path: "design-system/layout-rules.json",
+          reason: "source_content_changed"
+        }
+      ]
+    });
+    const preserved = JSON.parse(readFileSync(absolutePath, "utf8")) as {
+      rules: Array<{ meaning: string }>;
+    };
+    expect(preserved.rules[0].meaning).toBe(
+      "Host write immediately before promotion."
+    );
+    expect(entryStatus(projectPath, "layout.original")).toBe("candidate");
+    expect(getProjectPhase(projectPath)).toBe("design_system_formal");
+  });
+});
+
+test("formalize never overwrites a host write that races its final digest check", () => {
+  withProject((projectPath) => {
+    const { absolutePath } = declareLayoutRuleSource(projectPath);
+    setPhase(projectPath, "prototype_validation");
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "promotion-final-race");
+
+    const result = formalizeDesignSystem(
+      projectPath,
+      ["layout.original"],
+      REVIEW,
+      {
+        beforeSourceDigestVerification: () => {
+          const source = JSON.parse(readFileSync(absolutePath, "utf8")) as {
+            rules: Array<Record<string, unknown>>;
+          };
+          source.rules[0].meaning = "Newer host write must survive restore.";
+          writeFileSync(absolutePath, JSON.stringify(source), "utf8");
+        }
+      }
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "design_system_source_changed_during_formalize",
+      phase: "design_system_formal"
+    });
+    const preserved = JSON.parse(readFileSync(absolutePath, "utf8")) as {
+      rules: Array<{ meaning: string }>;
+    };
+    expect(preserved.rules[0].meaning).toBe(
+      "Newer host write must survive restore."
+    );
+    expect(entryStatus(projectPath, "layout.original")).toBe("candidate");
+    expect(getProjectPhase(projectPath)).toBe("design_system_formal");
+  });
+});
+
+test("a Rule Update review from before the latest Prototype confirmation cannot satisfy formalize", () => {
+  withProject((projectPath) => {
+    setPhase(projectPath, "prototype_validation");
+    completeEmptyRuleUpdateReview(projectPath, "premature-review");
+    expect(confirmPrototype(projectPath)).toMatchObject({
+      ok: true,
+      phase: "design_system_formal"
+    });
+
+    expect(formalizeDesignSystem(projectPath, [], REVIEW)).toEqual({
+      ok: false,
+      reason: "rule_update_review_required",
+      phase: "design_system_formal"
+    });
   });
 });
 
@@ -176,7 +527,7 @@ test("requireProjectPhase gates future record_preview and new-design-run callers
 
 test("formalize rejects when unreviewed designer_feedback remains", () => {
   withProject((projectPath) => {
-    setPhase(projectPath, "design_system_formal");
+    setPhase(projectPath, "prototype_validation");
     const feedback = recordDesignerFeedback(projectPath, {
       summary: "Keep sticky opacity.",
       runId: "run-1",
@@ -184,6 +535,8 @@ test("formalize rejects when unreviewed designer_feedback remains", () => {
     });
     expect(feedback.ok).toBe(true);
     if (!feedback.ok) return;
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "unreviewed-feedback");
 
     expect(formalizeDesignSystem(projectPath, [], REVIEW)).toEqual({
       ok: false,
@@ -245,6 +598,45 @@ function insertCandidateEntry(
     links: ["card-1"]
   });
   writeFileSync(absolutePath, JSON.stringify(json), "utf8");
+  trackDesignSystemFixtureSource(
+    projectPath,
+    "design-system/layout-rules.json",
+    "layout-rules.json"
+  );
+}
+
+function trackDesignSystemFixtureSource(
+  projectPath: string,
+  relativePath: string,
+  artifactType: string
+): void {
+  const content = readFileSync(path.join(projectPath, relativePath), "utf8");
+  const now = "2026-08-06T00:00:00.000Z";
+  const db = new DatabaseSync(getProjectDbPath(projectPath));
+  try {
+    db.prepare(
+      `INSERT INTO source_artifacts
+       (id, path, artifact_type, semantic_purpose,
+        related_record_ids_json, readiness, declaration_version, status,
+        created_at, updated_at, content_digest)
+       VALUES (?, ?, ?, 'project-phase fixture', '[]', NULL, 1, 'ingested',
+               ?, ?, ?)
+       ON CONFLICT(path) DO UPDATE SET
+         artifact_type = excluded.artifact_type,
+         status = 'ingested',
+         updated_at = excluded.updated_at,
+         content_digest = excluded.content_digest`
+    ).run(
+      `fixture-source:${relativePath}`,
+      relativePath,
+      artifactType,
+      now,
+      now,
+      sourceContentDigestOf(content)
+    );
+  } finally {
+    db.close();
+  }
 }
 
 /**
@@ -306,6 +698,7 @@ function insertSpecCandidateEntry(
   } finally {
     db.close();
   }
+  trackDesignSystemFixtureSource(projectPath, rel, "component-spec");
   return entryId;
 }
 
@@ -319,8 +712,10 @@ function entryStatus(projectPath: string, id: string): string {
   const db = new DatabaseSync(getProjectDbPath(projectPath));
   try {
     const row = db
-      .prepare(`SELECT status FROM design_system_entries WHERE id = ?`)
-      .get(id) as { status: string };
+      .prepare(
+        `SELECT status FROM design_system_entries WHERE id = ? OR entry_id = ?`
+      )
+      .get(id, id) as { status: string };
     return row.status;
   } finally {
     db.close();
@@ -333,6 +728,7 @@ test("confirm_prototype re-enters design_system_formal from ready_for_new_design
     setPhase(projectPath, "draft_design_system");
     confirmDraftDesignSystem(projectPath);
     confirmPrototype(projectPath);
+    completeEmptyRuleUpdateReview(projectPath, "recursion-v1");
     expect(formalizeDesignSystem(projectPath, [], REVIEW)).toMatchObject({ ok: true });
     expect(getProjectPhase(projectPath)).toBe("ready_for_new_design");
 
@@ -343,6 +739,7 @@ test("confirm_prototype re-enters design_system_formal from ready_for_new_design
       phase: "design_system_formal",
       from_phase: "ready_for_new_design"
     });
+    completeEmptyRuleUpdateReview(projectPath, "recursion-v2");
     expect(formalizeDesignSystem(projectPath, [], REVIEW)).toMatchObject({
       ok: true,
       phase: "ready_for_new_design"
@@ -365,9 +762,11 @@ test("confirm_prototype re-enters design_system_formal from ready_for_new_design
 
 test("formalize adjudicates candidates: listed ids flip to formalized, rest stay candidate", () => {
   withProject((projectPath) => {
-    setPhase(projectPath, "design_system_formal");
+    setPhase(projectPath, "prototype_validation");
     insertCandidateEntry(projectPath, "cand-a");
     insertCandidateEntry(projectPath, "cand-b");
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "candidate-adjudication");
 
     const result = formalizeDesignSystem(projectPath, ["cand-a"], REVIEW);
     expect(result).toMatchObject({ ok: true, phase: "ready_for_new_design" });
@@ -396,6 +795,7 @@ test("phase transitions emit record-bus invalidation events", () => {
       expect(events).toEqual([
         { kind: "phase", action: "updated", id: "project-phase" }
       ]);
+      completeEmptyRuleUpdateReview(projectPath, "record-bus-v1");
 
       events.length = 0;
       expect(formalizeDesignSystem(projectPath, [], REVIEW)).toMatchObject({ ok: true });
@@ -407,6 +807,7 @@ test("phase transitions emit record-bus invalidation events", () => {
       // Promotions additionally invalidate the Design System Browser.
       events.length = 0;
       confirmPrototype(projectPath);
+      completeEmptyRuleUpdateReview(projectPath, "record-bus-v2");
       insertCandidateEntry(projectPath, "cand-a");
       expect(formalizeDesignSystem(projectPath, ["cand-a"], REVIEW)).toMatchObject({
         ok: true
@@ -418,8 +819,9 @@ test("phase transitions emit record-bus invalidation events", () => {
       ]);
 
       // Failed transitions emit nothing.
+      confirmPrototype(projectPath);
+      completeEmptyRuleUpdateReview(projectPath, "record-bus-v3");
       events.length = 0;
-      setPhase(projectPath, "design_system_formal");
       recordDesignerFeedback(projectPath, {
         summary: "block",
         runId: "run-1",
@@ -435,9 +837,11 @@ test("phase transitions emit record-bus invalidation events", () => {
 
 test("formalize rejects unknown or non-candidate promoteEntryIds without side effects", () => {
   withProject((projectPath) => {
-    setPhase(projectPath, "design_system_formal");
+    setPhase(projectPath, "prototype_validation");
     insertCandidateEntry(projectPath, "cand-a");
     insertCandidateEntry(projectPath, "formal-x", "formalized");
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "invalid-candidate-ids");
 
     expect(formalizeDesignSystem(projectPath, ["missing"], REVIEW)).toEqual({
       ok: false,
@@ -457,9 +861,11 @@ test("formalize rejects unknown or non-candidate promoteEntryIds without side ef
 
 test("formalize writes promoted statuses back to source files with approval-grade provenance", () => {
   withProject((projectPath) => {
-    setPhase(projectPath, "design_system_formal");
+    setPhase(projectPath, "prototype_validation");
     insertCandidateEntry(projectPath, "cand-a");
     insertCandidateEntry(projectPath, "cand-b");
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "promotion-writeback");
 
     expect(formalizeDesignSystem(projectPath, ["cand-a"], REVIEW)).toMatchObject({
       ok: true
@@ -496,9 +902,9 @@ test("formalize writes promoted statuses back to source files with approval-grad
   });
 });
 
-test("formalize fails closed when a promoted entry is missing from its source file", () => {
+test("formalize treats a promoted entry missing from its source as unauthorized drift", () => {
   withProject((projectPath) => {
-    setPhase(projectPath, "design_system_formal");
+    setPhase(projectPath, "prototype_validation");
     insertCandidateEntry(projectPath, "cand-a");
     // Source file loses the entry while the DB row stays — drift must stop
     // the promotion instead of being cemented in.
@@ -507,10 +913,13 @@ test("formalize fails closed when a promoted entry is missing from its source fi
       JSON.stringify({ rules: [] }),
       "utf8"
     );
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "missing-source-entry");
 
     expect(formalizeDesignSystem(projectPath, ["cand-a"], REVIEW)).toMatchObject({
       ok: false,
-      reason: "entry_not_in_source_file"
+      reason: "rule_update_proposal_required",
+      changed_artifact_paths: ["design-system/layout-rules.json"]
     });
     expect(entryStatus(projectPath, "cand-a")).toBe("candidate");
     expect(getProjectPhase(projectPath)).toBe("design_system_formal");
@@ -521,7 +930,9 @@ test("formalize fails closed when a promoted entry is missing from its source fi
 
 test("formalize rejects an empty or whitespace-only modification review without side effects", () => {
   withProject((projectPath) => {
-    setPhase(projectPath, "design_system_formal");
+    setPhase(projectPath, "prototype_validation");
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "empty-modification-review");
 
     for (const empty of ["", "   ", "\n\t"]) {
       expect(formalizeDesignSystem(projectPath, [], empty)).toEqual({
@@ -536,7 +947,9 @@ test("formalize rejects an empty or whitespace-only modification review without 
 
 test("formalize persists the modification review on the formalized event", () => {
   withProject((projectPath) => {
-    setPhase(projectPath, "design_system_formal");
+    setPhase(projectPath, "prototype_validation");
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "persisted-modification-review");
 
     expect(formalizeDesignSystem(projectPath, [], `  ${REVIEW}  `)).toMatchObject(
       { ok: true }
@@ -553,7 +966,7 @@ test("formalize persists the modification review on the formalized event", () =>
 
 test("formalize hints at promoted entries that still only have sourceCaptures (Issue 31 soft hint)", () => {
   withProject((projectPath) => {
-    setPhase(projectPath, "design_system_formal");
+    setPhase(projectPath, "prototype_validation");
     const captureOnly = insertSpecCandidateEntry(projectPath, "Button", {
       captures: [SPEC_CAPTURE]
     });
@@ -562,6 +975,8 @@ test("formalize hints at promoted entries that still only have sourceCaptures (I
       captures: [SPEC_CAPTURE]
     });
     const noEvidence = insertSpecCandidateEntry(projectPath, "Badge");
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "capture-hints");
 
     const result = formalizeDesignSystem(
       projectPath,
@@ -581,16 +996,19 @@ test("formalize hints at promoted entries that still only have sourceCaptures (I
 
 test("formalize returns no backfill hints when promoted entries have code links or none are promoted", () => {
   withProject((projectPath) => {
-    setPhase(projectPath, "design_system_formal");
+    setPhase(projectPath, "prototype_validation");
     const codeBacked = insertSpecCandidateEntry(projectPath, "Card", {
       codeLinks: ["prototypes/components/Card.tsx"]
     });
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "no-backfill-hints-v1");
 
     const promoted = formalizeDesignSystem(projectPath, [codeBacked], REVIEW);
     expect(promoted).toMatchObject({ ok: true });
     if (promoted.ok) expect(promoted.code_backfill_hints).toEqual([]);
 
     confirmPrototype(projectPath);
+    completeEmptyRuleUpdateReview(projectPath, "no-backfill-hints-v2");
     const unpromoted = formalizeDesignSystem(projectPath, [], REVIEW);
     expect(unpromoted).toMatchObject({ ok: true });
     if (unpromoted.ok) expect(unpromoted.code_backfill_hints).toEqual([]);

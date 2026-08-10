@@ -2,6 +2,11 @@
 
 Status: resolved
 
+> **修订记录(2026-08-10,真实 Agent Rule Update 稳定性修复)**:
+>
+> - `formalize_design_system` 不再把非空 `modificationReview` 当作完成审查的替代品：最新一次 `confirm_prototype` 之后必须真实完成 `reconcile_designer_conversation → claim_consolidate_review`，且 Consolidate 事件显式绑定该 Prototype confirmation；存在 canonical preview 时 reconciliation 的 `runId` 还必须匹配本轮 Prototype run。即使结论是零反馈、零规则变化也必须走完。缺失返回 `rule_update_review_required`。
+> - 从 `prototype_validation` 起，Agent 对 Design System source 的写入必须携带 confirmed `proposalId`。proposal 必须属于当前 phase/review cycle，并只授权它声明的 source path；旧轮次或无关文件的 proposal 不可复用。`record_artifact_written` 省略时返回 `rule_update_proposal_required`；Browser lazy sync 对未声明磁盘漂移保留 last-good DB 数据而不再静默吸收，formalize 会拒绝未授权、缺失、非法或提交前再次变化的 source。设计师 Browser 直接编辑仍走独立 Runtime write path，不受该 Agent proposal gate 影响。
+
 > **修订记录(2026-08-06,code review 收尾修复)**:
 >
 > - **递归重入**:`confirm_prototype` 现接受 `ready_for_new_design → design_system_formal`（新设计 run 的 prototype 经设计师确认后重入正式化），否则第一次 formalize 后相位停在吸收态,Issue 15 的"DS v2 → 第二次新设计"成功递归不可达。完整递归链:formalize v1 → 新设计 run → 反馈/确认规则更新 → confirm_prototype → formalize v2 → 第二个新设计 run。
@@ -31,7 +36,7 @@ seed → draft_design_system(待审计) → prototype_validation → design_syst
 - **Candidate 的裁决点**:DS 条目分 Formalized(设计师确认,生成硬参考)与 Candidate(未确认,低优先级软参考,冲突时 Formalized 优先)两级。正式化时,通过 prototype 验证的 Candidate 转为 Formalized;未裁决的 Candidate 保持软参考地位,不得无限积压。
 - **Prototype 迭代期间的修改必须经 Agent 之手**(设计师在 chat 指示、Agent 改代码、反馈照常落库);设计师不直接改 prototype 文件,否则正式化时的回流审查会漏。
 - **回退路径**:Prototype 审计暴露 Draft 根本性问题时,可声明退回 seed/extraction 阶段(abandon 语义事件),状态机不假装线性。
-- 硬校验只管**声明顺序**(未 confirm draft 不能 record prototype;未 confirm prototype 不能 formalize;未 formalize 不能开新设计 run),不管文件本身——与现有 evidence 校验边界一致。研究导出(Issue 15)的有效性依赖这个事件序列。
+- 硬校验覆盖**声明顺序与 Rule Update 授权边界**：未 confirm draft 不能 record prototype；未 confirm prototype 不能 formalize；本轮 confirm 后未真实完成 reconciliation + Consolidate 不能 formalize；Prototype validation 之后未关联 confirmed proposal 的 Agent Design System 写入或磁盘漂移不能进入 Runtime；未 formalize 不能开新 design run。Runtime 不判断规则内容本身是否“好”，但会拒绝绕过正式审查/授权的写入。研究导出(Issue 15)的有效性依赖这个事件序列。
 
 ## User stories covered
 
@@ -42,7 +47,7 @@ seed → draft_design_system(待审计) → prototype_validation → design_syst
 - [x] Runtime 持久化项目相位,相位转换经声明命令驱动并记录语义事件。
 - [x] `confirm_draft_design_system` / `confirm_prototype` / `formalize_design_system` 三个命令按上述语义实现。
 - [x] 乱序声明被拒绝(未 confirm draft 声明 record prototype、未 confirm prototype 声明 formalize、未 formalize 声明新设计 run)。
-- [x] `formalize_design_system` 前置一次完成的批量 Rule Update 审查(Issue 29):存在待审查反馈时不得直接 formalize。
+- [x] `formalize_design_system` 前置本轮完成的批量 Rule Update 审查(Issue 29)：latest `confirm_prototype` 后必须 reconciliation + Prototype-bound Consolidate；存在待审查反馈，或未授权、缺失、非法、提交前变化的 Design System source 时不得直接 formalize。
 - [x] 支持退回 seed/extraction 的回退声明与事件。
 - [x] Workbench 状态区显示当前相位。
 - [x] 测试覆盖:正常相位链、乱序拒绝、回退路径、formalize 前置审查门槛。

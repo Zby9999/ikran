@@ -18,9 +18,13 @@ import {
   listDeclaredArtifacts,
   isDeclaredArtifact
 } from "../../lib/runtime/source-artifact";
-import { listEvents } from "../../lib/runtime/events";
+import { listEvents, logEvent } from "../../lib/runtime/events";
 import { initializeProjectDb } from "../../lib/runtime/db";
 import { getProjectDbPath } from "../../lib/runtime/paths";
+import {
+  confirmRuleUpdate,
+  proposeRuleUpdate
+} from "../../lib/runtime/rule-update-proposal";
 import {
   subscribeRecordEvents,
   resetRecordBusForTests,
@@ -783,6 +787,324 @@ test.describe("recordSourceArtifact (record path)", () => {
           })
         })
       ]);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rule Update authorization: current cycle + exact artifact path.
+// ---------------------------------------------------------------------------
+
+test("a Design System write after Prototype confirmation requires a current reviewed proposal for the same artifact", () => {
+  withTempProject((dir) => {
+    insertAnsweredCard(dir, "card-1");
+    writeProjectFile(dir, "design-system/token.json", VALID_TOKEN_JSON);
+    expect(
+      recordSourceArtifact(
+        dir,
+        minimalDeclaration({ relatedRecordIds: ["card-1"] })
+      ).ok
+    ).toBe(true);
+
+    const oldProposal = proposeRuleUpdate(dir, {
+      kind: "new",
+      classification: "reusable_candidate",
+      title: "Old color proposal",
+      changeDescription: "Add a color before the current Prototype confirmation.",
+      reason: "This belongs to an earlier Rule Update cycle.",
+      affectedItems: ["Color tokens"],
+      evidenceRecordIds: ["card-1"],
+      sourceArtifactPath: "design-system/token.json"
+    });
+    expect(oldProposal.ok).toBe(true);
+    if (!oldProposal.ok) return;
+    expect(
+      confirmRuleUpdate(dir, {
+        proposalId: oldProposal.proposal.proposal_id
+      }).ok
+    ).toBe(true);
+
+    const db = new DatabaseSync(getProjectDbPath(dir));
+    try {
+      db.prepare(
+        `UPDATE project_phase SET phase = ?, updated_at = ? WHERE singleton = 1`
+      ).run("design_system_formal", "2026-08-10T00:00:00.000Z");
+    } finally {
+      db.close();
+    }
+
+    const prototypeConfirmation = logEvent(dir, "project_phase_confirmed", {
+      from_phase: "prototype_validation",
+      phase: "design_system_formal",
+      command: "confirm_prototype"
+    });
+    logEvent(dir, "conversation_reconciliation_completed", {
+      reconciliation_id: "current-rule-review"
+    });
+    logEvent(dir, "consolidate_review_started", {
+      reconciliation_id: "current-rule-review",
+      prototype_confirmation_event_id: prototypeConfirmation.event_id
+    });
+
+    writeProjectFile(
+      dir,
+      "design-system/token.json",
+      JSON.stringify({
+        primitive: {
+          "color.agent-added": {
+            kind: "token",
+            domain: "color",
+            value: "#ff0000",
+            status: "candidate",
+            links: ["card-1"]
+          }
+        },
+        semantic: {},
+        component: {}
+      })
+    );
+
+    expect(
+      recordSourceArtifact(
+        dir,
+        minimalDeclaration({ relatedRecordIds: ["card-1"] })
+      )
+    ).toMatchObject({
+      ok: false,
+      reason: "rule_update_proposal_required"
+    });
+
+    expect(
+      recordSourceArtifact(dir, {
+        ...minimalDeclaration({ relatedRecordIds: ["card-1"] }),
+        proposalId: oldProposal.proposal.proposal_id
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "proposal_not_current_rule_update_cycle"
+    });
+
+    const wrongArtifactProposal = proposeRuleUpdate(dir, {
+      kind: "new",
+      classification: "reusable_candidate",
+      title: "Layout proposal",
+      changeDescription: "Add a layout rule, not a token.",
+      reason: "The current review found a layout rule.",
+      affectedItems: ["Layout rules"],
+      evidenceRecordIds: ["card-1"],
+      sourceArtifactPath: "design-system/layout-rules.json"
+    });
+    expect(wrongArtifactProposal.ok).toBe(true);
+    if (!wrongArtifactProposal.ok) return;
+    expect(
+      confirmRuleUpdate(dir, {
+        proposalId: wrongArtifactProposal.proposal.proposal_id
+      }).ok
+    ).toBe(true);
+    expect(
+      recordSourceArtifact(dir, {
+        ...minimalDeclaration({ relatedRecordIds: ["card-1"] }),
+        proposalId: wrongArtifactProposal.proposal.proposal_id
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "proposal_artifact_path_mismatch"
+    });
+
+    const proposal = proposeRuleUpdate(dir, {
+      kind: "new",
+      classification: "reusable_candidate",
+      title: "Agent-added color",
+      changeDescription: "Add the reusable red color token.",
+      reason: "The completed Rule Update review identified it as reusable.",
+      affectedItems: ["Color tokens"],
+      evidenceRecordIds: ["card-1"],
+      sourceArtifactPath: "design-system/token.json"
+    });
+    expect(proposal.ok).toBe(true);
+    if (!proposal.ok) return;
+    expect(
+      confirmRuleUpdate(dir, { proposalId: proposal.proposal.proposal_id }).ok
+    ).toBe(true);
+
+    expect(
+      recordSourceArtifact(dir, {
+        ...minimalDeclaration({ relatedRecordIds: ["card-1"] }),
+        proposalId: proposal.proposal.proposal_id
+      })
+    ).toMatchObject({ ok: true });
+
+    expect(
+      recordSourceArtifact(dir, {
+        ...minimalDeclaration({ relatedRecordIds: ["card-1"] }),
+        proposalId: proposal.proposal.proposal_id
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "proposal_already_consumed"
+    });
+  });
+});
+
+test("a Consolidate claim bound to another Prototype confirmation cannot authorize a proposal", () => {
+  withTempProject((dir) => {
+    insertAnsweredCard(dir, "card-1");
+    writeProjectFile(dir, "design-system/token.json", VALID_TOKEN_JSON);
+    expect(
+      recordSourceArtifact(
+        dir,
+        minimalDeclaration({ relatedRecordIds: ["card-1"] })
+      ).ok
+    ).toBe(true);
+
+    const db = new DatabaseSync(getProjectDbPath(dir));
+    try {
+      db.prepare(
+        `UPDATE project_phase SET phase = ?, updated_at = ? WHERE singleton = 1`
+      ).run("design_system_formal", "2026-08-10T00:00:00.000Z");
+    } finally {
+      db.close();
+    }
+    logEvent(dir, "project_phase_confirmed", {
+      from_phase: "prototype_validation",
+      phase: "design_system_formal",
+      command: "confirm_prototype"
+    });
+    logEvent(dir, "conversation_reconciliation_completed", {
+      reconciliation_id: "mismatched-rule-review"
+    });
+    logEvent(dir, "consolidate_review_started", {
+      reconciliation_id: "mismatched-rule-review",
+      prototype_confirmation_event_id: "another-confirmation-event"
+    });
+
+    const proposal = proposeRuleUpdate(dir, {
+      kind: "update",
+      classification: "proposed_update",
+      title: "Token update",
+      changeDescription: "Update the token.",
+      reason: "This proposal follows a mismatched review claim.",
+      affectedItems: ["Color tokens"],
+      evidenceRecordIds: ["card-1"],
+      sourceArtifactPath: "design-system/token.json"
+    });
+    expect(proposal.ok).toBe(true);
+    if (!proposal.ok) return;
+    expect(
+      confirmRuleUpdate(dir, { proposalId: proposal.proposal.proposal_id }).ok
+    ).toBe(true);
+
+    writeProjectFile(
+      dir,
+      "design-system/token.json",
+      JSON.stringify({
+        primitive: {
+          "color.current": {
+            kind: "token",
+            domain: "color",
+            value: "#ff0000",
+            status: "candidate",
+            links: ["card-1"]
+          }
+        },
+        semantic: {},
+        component: {}
+      })
+    );
+    expect(
+      recordSourceArtifact(dir, {
+        ...minimalDeclaration({ relatedRecordIds: ["card-1"] }),
+        proposalId: proposal.proposal.proposal_id
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "proposal_not_current_rule_update_cycle"
+    });
+  });
+});
+
+test.each([
+  {
+    phase: "prototype_validation",
+    boundaryType: "project_phase_confirmed" as const,
+    boundaryPayload: {
+      from_phase: "draft_design_system",
+      phase: "prototype_validation",
+      command: "confirm_draft_design_system"
+    }
+  },
+  {
+    phase: "ready_for_new_design",
+    boundaryType: "design_system_formalized" as const,
+    boundaryPayload: {
+      from_phase: "design_system_formal",
+      phase: "ready_for_new_design",
+      command: "formalize_design_system"
+    }
+  }
+])("$phase rejects a confirmed proposal from an earlier phase cycle", (fixture) => {
+  withTempProject((dir) => {
+    insertAnsweredCard(dir, "card-1");
+    writeProjectFile(dir, "design-system/token.json", VALID_TOKEN_JSON);
+    expect(
+      recordSourceArtifact(
+        dir,
+        minimalDeclaration({ relatedRecordIds: ["card-1"] })
+      ).ok
+    ).toBe(true);
+
+    const oldProposal = proposeRuleUpdate(dir, {
+      kind: "update",
+      classification: "proposed_update",
+      title: "Earlier token update",
+      changeDescription: "Update a token in an earlier phase cycle.",
+      reason: "This proposal predates the current protected phase.",
+      affectedItems: ["Color tokens"],
+      evidenceRecordIds: ["card-1"],
+      sourceArtifactPath: "design-system/token.json"
+    });
+    expect(oldProposal.ok).toBe(true);
+    if (!oldProposal.ok) return;
+    expect(
+      confirmRuleUpdate(dir, { proposalId: oldProposal.proposal.proposal_id }).ok
+    ).toBe(true);
+
+    logEvent(dir, fixture.boundaryType, fixture.boundaryPayload);
+    const db = new DatabaseSync(getProjectDbPath(dir));
+    try {
+      db.prepare(
+        `UPDATE project_phase SET phase = ?, updated_at = ? WHERE singleton = 1`
+      ).run(fixture.phase, "2026-08-10T00:00:00.000Z");
+    } finally {
+      db.close();
+    }
+
+    writeProjectFile(
+      dir,
+      "design-system/token.json",
+      JSON.stringify({
+        primitive: {
+          "color.current": {
+            kind: "token",
+            domain: "color",
+            value: "#ff0000",
+            status: "candidate",
+            links: ["card-1"]
+          }
+        },
+        semantic: {},
+        component: {}
+      })
+    );
+
+    expect(
+      recordSourceArtifact(dir, {
+        ...minimalDeclaration({ relatedRecordIds: ["card-1"] }),
+        proposalId: oldProposal.proposal.proposal_id
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "proposal_not_current_rule_update_cycle"
     });
   });
 });

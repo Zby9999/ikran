@@ -3,9 +3,11 @@
 // A proposal is proposal-first and durable: `proposeRuleUpdate` persists a
 // `rule_update_proposals` row plus a `rule_update_proposal_created` event and
 // never touches a source artifact. Only `confirmRuleUpdate` authorizes a
-// later write, and `record_artifact_written` may be linked to that confirmed
-// proposal id (see source-artifact.ts). `cancelRuleUpdate` closes a proposal
-// without consuming evidence or changing any artifact.
+// later write. In Rule-Update-protected phases `record_artifact_written`
+// additionally requires the proposal to belong to the current review cycle
+// and target the declared artifact path (see source-artifact.ts).
+// `cancelRuleUpdate` closes a proposal without consuming evidence or changing
+// any artifact.
 
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
@@ -50,7 +52,10 @@ export interface ProposeRuleUpdateInput {
   reason: string;
   affectedItems: string[];
   evidenceRecordIds: string[];
-  /** Required for kind=move; optional context for new/update. */
+  /**
+   * Required for kind=move. New/update callers must also provide it when the
+   * proposal will authorize a Design System write in a protected phase.
+   */
   sourceArtifactPath?: string;
   entryId?: string;
   proposedTargetPath?: string;

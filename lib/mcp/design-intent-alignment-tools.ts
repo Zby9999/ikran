@@ -32,14 +32,18 @@ export function registerDesignIntentAlignmentTools(
   };
 
   mcp.registerTool("wait_for_agent_command", {
-    description: "Wait for the next durable Ikran Agent command. Returns immediately when a pending command exists; otherwise keeps an adaptive three-minute lease while the visible, focused Workbench reports real designer interaction, unsubmitted edits, or submitted semantic activity. Background connection/heartbeat alone does not renew. Cancellation or idle ends only this wait and never advances workflow or consumes a later command. No arguments."
+    description: "Wait for the next durable Ikran Agent command. A pending command always returns immediately, including after the designer handoff window. With no pending command, Runtime starts the adaptive three-minute lease only during Seed Reference registration or Alignment preparation/answering with at least one Seed Reference. Outside that window it immediately returns not_applicable; unreadable workflow state fails closed with state_unavailable. While eligible, visible and focused Workbench interaction, unsubmitted edits, or submitted semantic activity can renew the lease; background connection/heartbeat cannot. Cancellation or idle never advances workflow or consumes a later command. No arguments."
   }, async (extra) => {
     const ctx = await active("wait_for_agent_command");
     if (!ctx.ok) return ctx.result;
     const result = await waitForAgentCommand(ctx.projectPath, {
       signal: extra.signal
     });
-    return successResult(ctx.rt, result);
+    return result.ok
+      ? successResult(ctx.rt, result)
+      : failureResult("wait_for_agent_command", result.reason, ctx.rt, {
+          command: null
+        });
   });
 
   mcp.registerTool("claim_alignment_preparation", {

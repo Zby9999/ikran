@@ -490,9 +490,9 @@ function assignEntryToView(
 export function getDesignSystemView(
   projectPath: string
 ): DesignSystemViewResult {
-  // Converge file→DB first: undeclared Agent edits are re-ingested here so
-  // the Browser never serves silently-stale rows. Failures downgrade to
-  // warnings; the view below keeps serving last-good data regardless.
+  // Converge file→DB first during Initial extraction / Draft review. Once
+  // Prototype validation begins, undeclared Agent edits remain unabsorbed and
+  // surface as Rule Update warnings. The view always serves last-good rows.
   const sync = syncDesignSystemSources(projectPath);
   return buildDesignSystemViewFromDb(projectPath, sync);
 }

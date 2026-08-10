@@ -34,13 +34,30 @@ const formalizeInputSchema = z.object({
 
 function phaseFailure(
   toolName: string,
-  result: { ok: false; reason: string; phase?: string; unreviewed_feedback_count?: number },
+  result: {
+    ok: false;
+    reason: string;
+    phase?: string;
+    unreviewed_feedback_count?: number;
+    changed_artifact_paths?: string[];
+    source_warnings?: unknown[];
+    source_issues?: unknown[];
+  },
   rt: Awaited<ReturnType<RegisterIkranToolsDeps["ensureRuntime"]>>
 ) {
   return failureResult(toolName, result.reason, rt, {
     ...(result.phase !== undefined ? { phase: result.phase } : {}),
     ...(result.unreviewed_feedback_count !== undefined
       ? { unreviewed_feedback_count: result.unreviewed_feedback_count }
+      : {}),
+    ...(result.changed_artifact_paths !== undefined
+      ? { changed_artifact_paths: result.changed_artifact_paths }
+      : {}),
+    ...(result.source_warnings !== undefined
+      ? { source_warnings: result.source_warnings }
+      : {}),
+    ...(result.source_issues !== undefined
+      ? { source_issues: result.source_issues }
       : {})
   });
 }
@@ -86,6 +103,7 @@ export function registerProjectPhaseTools(
       return result.ok
         ? successResult(rt, {
             ...result,
+            next_action: { tool: "reconcile_designer_conversation" },
             next: "Continue autonomously: freeze the completed host transcript → reconcile_designer_conversation → claim_consolidate_review(reconciliationId) → outcome every feedback → backfill_component_code_links → formalize_design_system."
           })
         : phaseFailure("confirm_prototype", result, rt);
@@ -124,7 +142,7 @@ export function registerProjectPhaseTools(
     "formalize_design_system",
     {
       description:
-        "Formalize the Design System and advance design_system_formal to ready_for_new_design. Requires every designer_feedback row to be marked consumed in designer_feedback_review_consumption (written when Issue 29 confirms a proposal that references that feedback); otherwise rejects with unreviewed_feedback_count. Requires modificationReview: your one-sentence attestation that this phase's prototype modifications were inspected for reusable-rule candidates — the review itself is mandatory even when its outcome is 'no reusable rules'. Pass promoteEntryIds to adjudicate Candidates chosen during the chat review: those entries flip candidate → formalized in the same transaction, and their source files are rewritten with the formalized status so file and DB stay in step; unlisted candidates stay candidate. The result carries code_backfill_hints: promoted component specs whose codeLinks are still empty while sourceCaptures remain their only provenance — an advisory gap list for backfill_component_code_links, never a rejection. Rejected out of order.",
+        "Formalize the Design System and advance design_system_formal to ready_for_new_design. A completed Rule Update round is mandatory for every Prototype confirmation, even when it concludes that no rules should change: reconcile_designer_conversation and claim_consolidate_review must both occur after the latest confirm_prototype, or this rejects with rule_update_review_required. Every designer_feedback row must then be consumed by a confirmed proposal or explicitly dismissed; otherwise this rejects with unreviewed_feedback_count. Any undeclared Design System source drift rejects with rule_update_proposal_required and the changed paths; a missing, invalid, or otherwise unready declared source rejects with design_system_source_not_ready and source_warnings. Source digests are checked again immediately before the final transaction; concurrent drift rejects with design_system_source_changed_during_formalize. Requires modificationReview: your one-sentence attestation that this phase's prototype modifications were inspected for reusable-rule candidates — the review itself is mandatory even when its outcome is 'no reusable rules'. Pass promoteEntryIds to adjudicate Candidates chosen during the chat review: those entries flip candidate → formalized in the same transaction, and their source files are rewritten with the formalized status so file and DB stay in step; unlisted candidates stay candidate. The result carries code_backfill_hints: promoted component specs whose codeLinks are still empty while sourceCaptures remain their only provenance — an advisory gap list for backfill_component_code_links, never a rejection. Rejected out of order.",
       inputSchema: formalizeInputSchema
     },
     async (args) => {

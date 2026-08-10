@@ -16,7 +16,7 @@ import { DatabaseSync } from "node:sqlite";
 import { expect, test } from "vitest";
 
 import { initializeProjectDb } from "../../lib/runtime/db";
-import { listEvents } from "../../lib/runtime/events";
+import { listEvents, logEvent } from "../../lib/runtime/events";
 import { getProjectDbPath } from "../../lib/runtime/paths";
 import { recordDesignerFeedback } from "../../lib/runtime/designer-feedback";
 import { reconcileDesignerConversation } from "../../lib/runtime/conversation-reconciliation";
@@ -30,6 +30,8 @@ import {
   proposeRuleUpdate
 } from "../../lib/runtime/rule-update-proposal";
 import {
+  confirmDraftDesignSystem,
+  confirmPrototype,
   countUnreviewedDesignerFeedbackOnDb,
   formalizeDesignSystem,
   listUnreviewedDesignerFeedbackOnDb
@@ -58,18 +60,22 @@ function recordFeedback(projectPath: string, summary: string): string {
   return result.feedback.id;
 }
 
-function completedReconciliation(projectPath: string): string {
-  const id = "legacy-feedback-review";
+function completedReconciliation(
+  projectPath: string,
+  id = "legacy-feedback-review",
+  runId = "run-1"
+): string {
+  const messageId = `${id}-message`;
   const result = reconcileDesignerConversation(projectPath, {
     reviewId: id,
-    conversationId: "legacy-feedback-conversation",
-    runId: "run-1",
+    conversationId: `${id}-conversation`,
+    runId,
     sessionId: "session-1",
-    startMessageId: "legacy-review-message",
-    endMessageId: "legacy-review-message",
+    startMessageId: messageId,
+    endMessageId: messageId,
     messages: [
       {
-        id: "legacy-review-message",
+        id: messageId,
         role: "designer",
         content: "开始审查兼容期 feedback。"
       }
@@ -215,6 +221,100 @@ test("claim_consolidate_review returns selected reconciliation plus legacy feedb
         })
       })
     ]);
+  });
+});
+
+test("design_system_formal only claims a reconciliation completed after the latest Prototype confirmation", () => {
+  withProject((projectPath) => {
+    const staleReconciliationId = completedReconciliation(
+      projectPath,
+      "before-prototype-confirmation"
+    );
+    setPhase(projectPath, "prototype_validation");
+    const confirmed = confirmPrototype(projectPath);
+    expect(confirmed).toMatchObject({
+      ok: true,
+      phase: "design_system_formal"
+    });
+    if (!confirmed.ok) return;
+
+    expect(
+      claimConsolidateReview(projectPath, staleReconciliationId)
+    ).toEqual({
+      ok: false,
+      reason: "conversation_reconciliation_before_prototype_confirmation"
+    });
+
+    const currentReconciliationId = completedReconciliation(
+      projectPath,
+      "after-prototype-confirmation"
+    );
+    const claim = claimConsolidateReview(
+      projectPath,
+      currentReconciliationId
+    );
+    expect(claim).toMatchObject({
+      ok: true,
+      reconciliation_id: currentReconciliationId,
+      prototype_confirmation_event_id: confirmed.event_id
+    });
+    if (!claim.ok) return;
+
+    expect(listEvents(projectPath, "consolidate_review_started")).toEqual([
+      expect.objectContaining({
+        event_id: claim.event_id,
+        payload: expect.objectContaining({
+          reconciliation_id: currentReconciliationId,
+          prototype_confirmation_event_id: confirmed.event_id
+        })
+      })
+    ]);
+  });
+});
+
+test("design_system_formal rejects a reconciliation from a different Prototype run", () => {
+  withProject((projectPath) => {
+    setPhase(projectPath, "draft_design_system");
+    expect(confirmDraftDesignSystem(projectPath)).toMatchObject({
+      ok: true,
+      phase: "prototype_validation"
+    });
+    logEvent(projectPath, "prototype_preview_declared", {
+      run_id: "prototype-run-current",
+      prototype_run_id: "prototype-record-current"
+    });
+    const confirmed = confirmPrototype(projectPath);
+    expect(confirmed).toMatchObject({
+      ok: true,
+      phase: "design_system_formal"
+    });
+
+    const unrelatedReconciliationId = completedReconciliation(
+      projectPath,
+      "unrelated-run-review",
+      "prototype-run-unrelated"
+    );
+    expect(
+      claimConsolidateReview(projectPath, unrelatedReconciliationId)
+    ).toEqual({
+      ok: false,
+      reason: "conversation_reconciliation_prototype_run_mismatch"
+    });
+
+    const currentReconciliationId = completedReconciliation(
+      projectPath,
+      "current-run-review",
+      "prototype-run-current"
+    );
+    expect(
+      claimConsolidateReview(projectPath, currentReconciliationId)
+    ).toMatchObject({
+      ok: true,
+      reconciliation_id: currentReconciliationId,
+      prototype_confirmation_event_id: confirmed.ok
+        ? confirmed.event_id
+        : undefined
+    });
   });
 });
 
@@ -596,9 +696,20 @@ test("dismiss_designer_feedback records an explicit disposition and clears unrev
 
 test("formalize stays gated until every feedback record is confirmed or dismissed", () => {
   withProject((projectPath) => {
-    setPhase(projectPath, "design_system_formal");
+    setPhase(projectPath, "prototype_validation");
     const consumedId = recordFeedback(projectPath, "Promote sticky opacity.");
     const dismissedId = recordFeedback(projectPath, "One-off page tweak.");
+
+    expect(confirmPrototype(projectPath)).toMatchObject({
+      ok: true,
+      phase: "design_system_formal"
+    });
+    expect(
+      claimConsolidateReview(
+        projectPath,
+        completedReconciliation(projectPath)
+      ).ok
+    ).toBe(true);
 
     expect(formalizeDesignSystem(projectPath, [], "reviewed")).toEqual({
       ok: false,

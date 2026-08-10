@@ -13,7 +13,10 @@
 import { withProjectTransaction } from "./db";
 import { buildLoggedEvent, insertEvent } from "./events";
 import { decodeOpaqueJson } from "./json-columns";
-import { listUnreviewedDesignerFeedbackOnDb } from "./project-phase";
+import {
+  listUnreviewedDesignerFeedbackOnDb,
+  readProjectPhaseOnDb
+} from "./project-phase";
 
 export type DesignerFeedbackReviewState =
   | "unreviewed"
@@ -52,6 +55,7 @@ export type ClaimConsolidateReviewResult =
       unreviewed_feedback_ids: string[];
       unreviewed_feedback_count: number;
       reconciliation_id: string | null;
+      prototype_confirmation_event_id: string | null;
       event_id: string;
     }
   | { ok: false; reason: string };
@@ -108,16 +112,79 @@ export function claimConsolidateReview(
   try {
     return withProjectTransaction(projectPath, (db) => {
       const boundedReconciliationId = reconciliationId.trim();
+      const reconciliation = db
+        .prepare(
+          "SELECT run_id FROM conversation_reconciliations WHERE id = ?"
+        )
+        .get(boundedReconciliationId) as { run_id: string } | undefined;
       if (
         boundedReconciliationId.length === 0 ||
-        !db
-          .prepare("SELECT 1 FROM conversation_reconciliations WHERE id = ?")
-          .get(boundedReconciliationId)
+        reconciliation === undefined
       ) {
         return {
           ok: false as const,
           reason: "conversation_reconciliation_not_found"
         };
+      }
+
+      // A formal Design System pass is a new review cycle. Bind the claim to
+      // the latest Prototype confirmation by durable event order so an older
+      // reconciliation cannot accidentally authorize the current cycle.
+      let prototypeConfirmationEventId: string | null = null;
+      if (readProjectPhaseOnDb(db) === "design_system_formal") {
+        const confirmation = db
+          .prepare(
+            `SELECT id, event_id,
+                    json_extract(payload, '$.run_id') AS run_id
+             FROM events
+             WHERE type = 'project_phase_confirmed'
+               AND json_extract(payload, '$.command') = 'confirm_prototype'
+             ORDER BY id DESC
+             LIMIT 1`
+          )
+          .get() as
+          | { id: number; event_id: string; run_id: unknown }
+          | undefined;
+        if (!confirmation) {
+          return {
+            ok: false as const,
+            reason: "prototype_confirmation_not_found"
+          };
+        }
+
+        const reconciliationCompleted = db
+          .prepare(
+            `SELECT id
+             FROM events
+             WHERE type = 'conversation_reconciliation_completed'
+               AND json_extract(payload, '$.reconciliation_id') = ?
+             ORDER BY id DESC
+             LIMIT 1`
+          )
+          .get(boundedReconciliationId) as { id: number } | undefined;
+        if (!reconciliationCompleted) {
+          return {
+            ok: false as const,
+            reason: "conversation_reconciliation_completion_not_found"
+          };
+        }
+        if (reconciliationCompleted.id <= confirmation.id) {
+          return {
+            ok: false as const,
+            reason: "conversation_reconciliation_before_prototype_confirmation"
+          };
+        }
+        if (
+          typeof confirmation.run_id === "string" &&
+          confirmation.run_id.length > 0 &&
+          reconciliation.run_id !== confirmation.run_id
+        ) {
+          return {
+            ok: false as const,
+            reason: "conversation_reconciliation_prototype_run_mismatch"
+          };
+        }
+        prototypeConfirmationEventId = confirmation.event_id;
       }
 
       const rows = db
@@ -170,6 +237,7 @@ export function claimConsolidateReview(
         .map((item) => item.id);
       const event = buildLoggedEvent("consolidate_review_started", {
         reconciliation_id: boundedReconciliationId,
+        prototype_confirmation_event_id: prototypeConfirmationEventId,
         feedback_count: feedback.length,
         unreviewed_feedback_count: unreviewedIds.length,
         unreviewed_feedback_ids: unreviewedIds
@@ -183,6 +251,7 @@ export function claimConsolidateReview(
         unreviewed_feedback_ids: unreviewedIds,
         unreviewed_feedback_count: unreviewedIds.length,
         reconciliation_id: boundedReconciliationId,
+        prototype_confirmation_event_id: prototypeConfirmationEventId,
         event_id: event.event_id
       };
     });

@@ -203,7 +203,7 @@ export const recordArtifactWrittenInputShape = {
     .string()
     .optional()
     .describe(
-      "Confirmed rule_update_proposals id this write realizes. Required for rule-update writes; Runtime rejects an unconfirmed or unknown id."
+      "Confirmed rule_update_proposals id this write realizes. Required for every Agent-authored Design System write from Prototype validation onward; it must belong to the current phase/review cycle and authorize this exact source path. Runtime rejects omission, stale-cycle/path-mismatched, unconfirmed, or unknown ids."
     ),
   usedCandidateIds: z
     .array(z.string())
@@ -292,7 +292,12 @@ export const proposeRuleUpdateInputShape = {
   reason: z.string(),
   affectedItems: z.array(z.string()),
   evidenceRecordIds: z.array(z.string()),
-  sourceArtifactPath: z.string().optional(),
+  sourceArtifactPath: z
+    .string()
+    .optional()
+    .describe(
+      "Artifact path this proposal may authorize. Required for move; also supply it for new/update proposals that will write a Design System source in a Rule-Update-protected phase."
+    ),
   entryId: z.string().optional(),
   proposedTargetPath: z.string().optional()
 } as const;

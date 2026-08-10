@@ -46,6 +46,7 @@ export type EventType =
   | "design_system_entry_approved"
   | "design_system_entry_reverted"
   | "design_system_entry_edited"
+  | "design_system_source_metadata_reconciled"
   | "design_system_code_links_backfilled"
   | "design_system_code_capture_recorded"
   | "design_system_live_heroes_declared"

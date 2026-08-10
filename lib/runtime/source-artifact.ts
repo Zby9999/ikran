@@ -26,6 +26,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import type { DatabaseSync as DatabaseType } from "node:sqlite";
 import { openProjectDb, closeProjectDb, withProjectTransaction } from "./db";
 import { emitRecordEvent } from "./record-bus";
 import { validateUsedCandidateIdsOnDb } from "./new-design-run";
@@ -34,6 +35,10 @@ import {
   recordSourceContentDigest,
   sourceContentDigestOf
 } from "./source-artifact-digest";
+import {
+  authorizeRuleUpdateProposalPathOnDb,
+  projectRequiresRuleUpdateProposalOnDb
+} from "./rule-update-policy";
 import {
   assertArtifactPathInProject,
   resolveProjectArtifactPath
@@ -221,8 +226,9 @@ export interface NormalizedSourceArtifactDeclaration {
   readiness?: string;
   /**
    * Confirmed rule-update proposal this artifact realizes (Issue 29). Optional
-   * — only rule-update writes carry it — but when present Runtime requires the
-   * proposal to exist and be confirmed.
+   * during Initial extraction / Draft review and for non-Design-System writes.
+   * From Prototype validation onward, Design System declarations require it;
+   * whenever present Runtime requires the proposal to exist and be confirmed.
    */
   proposalId?: string;
   /** Candidate entry ids this write depended on (Issue 13). */
@@ -364,6 +370,10 @@ export type SourceArtifactRecordReason =
   | "db_error"
   | "proposal_not_found"
   | "proposal_not_confirmed"
+  | "proposal_already_consumed"
+  | "proposal_not_current_rule_update_cycle"
+  | "proposal_artifact_path_mismatch"
+  | "rule_update_proposal_required"
   | "candidate_entry_not_found"
   | "candidate_entry_not_candidate"
   | string;
@@ -525,16 +535,23 @@ export function recordSourceArtifact(
       // declared against a proposal the designer already confirmed. Runtime
       // cannot stop the host from editing files, but it refuses to
       // acknowledge a write that claims an unconfirmed authorization.
+      const requiresRuleUpdateProposal =
+        spec.validationClass === "design-system" &&
+        projectRequiresRuleUpdateProposalOnDb(db);
+      if (requiresRuleUpdateProposal && declaration.proposalId === undefined) {
+        return {
+          ok: false as const,
+          reason: "rule_update_proposal_required" as const
+        };
+      }
       if (declaration.proposalId !== undefined) {
-        const proposal = db
-          .prepare(`SELECT status FROM rule_update_proposals WHERE id = ?`)
-          .get(declaration.proposalId) as { status: string } | undefined;
-        if (!proposal) {
-          return { ok: false as const, reason: "proposal_not_found" };
-        }
-        if (proposal.status !== "confirmed") {
-          return { ok: false as const, reason: "proposal_not_confirmed" };
-        }
+        const authorization = authorizeRuleUpdateProposalPathOnDb(
+          db,
+          declaration.proposalId,
+          relativePath,
+          requiresRuleUpdateProposal
+        );
+        if (!authorization.ok) return authorization;
       }
 
       let usedCandidateIds: string[] = [];

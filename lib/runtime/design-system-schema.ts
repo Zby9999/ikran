@@ -87,6 +87,7 @@ export type DesignSystemSchemaReason =
   | "gap_must_not_link"
   | "invalid_entry_kind"
   | "entry_kind_file_mismatch"
+  | "unknown_field"
   | "legacy_rule_body_requires_prose"
   | "domain_rule_domain_required"
   | "invalid_token_domain"
@@ -126,6 +127,16 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function rejectUnknownFields(
+  value: Record<string, unknown>,
+  allowedFields: readonly string[],
+  ctx: Record<string, unknown> = {}
+): DesignSystemSchemaError | null {
+  const allowed = new Set(allowedFields);
+  const field = Object.keys(value).find((candidate) => !allowed.has(candidate));
+  return field === undefined ? null : fail("unknown_field", { ...ctx, field });
 }
 
 function validateRuleBody(
@@ -196,11 +207,28 @@ function checkEntry(
     allowedKinds?: readonly DesignSystemEntryKind[];
     domainRuleRequiresDomain?: boolean;
     meaningPolicy?: "required" | "optional";
+    extraEnvelopeFields?: readonly string[];
   }
 ): DesignSystemSchemaError | null {
   if (!isPlainObject(raw)) {
     return fail("invalid_field_type", { ...ctx, expected: "object" });
   }
+  const unknownField = rejectUnknownFields(
+    raw,
+    [
+      ...(options.withId ? ["id"] : []),
+      "kind",
+      "domain",
+      "value",
+      "sourceCaptures",
+      "meaning",
+      "status",
+      "links",
+      ...(options.extraEnvelopeFields ?? [])
+    ],
+    ctx
+  );
+  if (unknownField) return unknownField;
   if (options.withId) {
     const idFailure = requireString(raw, "id", ctx);
     if (idFailure) return idFailure;
@@ -625,6 +653,12 @@ function validateTokenJson(json: Record<string, unknown>): DesignSystemSchemaRes
 function validateDesignSystemMeta(
   json: Record<string, unknown>
 ): DesignSystemSchemaResult {
+  const unknownField = rejectUnknownFields(json, [
+    "name",
+    "visualLanguage",
+    "principles"
+  ]);
+  if (unknownField) return unknownField;
   const nameFailure = requireString(json, "name", {});
   if (nameFailure) return nameFailure;
 
@@ -653,6 +687,8 @@ function validateDesignSystemMeta(
 function validateComponentList(
   json: Record<string, unknown>
 ): DesignSystemSchemaResult {
+  const unknownField = rejectUnknownFields(json, ["components"]);
+  if (unknownField) return unknownField;
   return (
     checkEntryArray(json.components, "components", (value, ctx) => {
       if (!isPlainObject(value)) {
@@ -679,6 +715,7 @@ function validateComponentSpec(
     withId: true,
     allowedKinds: entryKindsAllowedIn("component-spec"),
     meaningPolicy: "optional",
+    extraEnvelopeFields: ["name"],
     checkValue: (value, ctx) => {
       if (!isPlainObject(value)) {
         return fail("invalid_field_type", { ...ctx, field: "value", expected: "object" });
@@ -841,6 +878,8 @@ function validateRulesFile(
   json: Record<string, unknown>,
   fileKind: "layout-rules.json" | "interaction-rules.json"
 ): DesignSystemSchemaResult {
+  const unknownField = rejectUnknownFields(json, ["rules"]);
+  if (unknownField) return unknownField;
   return (
     checkEntryArray(json.rules, "rules", (value, ctx) => {
       return validateRuleBody(value, ctx);

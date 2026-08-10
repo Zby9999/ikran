@@ -18,6 +18,8 @@ import {
   recordNewDesignRun
 } from "../../lib/runtime/new-design-run";
 import { recordDesignerFeedback } from "../../lib/runtime/designer-feedback";
+import { claimConsolidateReview } from "../../lib/runtime/consolidate-review";
+import { reconcileDesignerConversation } from "../../lib/runtime/conversation-reconciliation";
 import {
   confirmDraftDesignSystem,
   confirmPrototype,
@@ -310,6 +312,38 @@ function insertSeedReference(projectPath: string): void {
   }
 }
 
+function completeRuleUpdateReview(
+  projectPath: string,
+  reviewId: string
+): void {
+  const messageId = `${reviewId}-message`;
+  expect(
+    reconcileDesignerConversation(projectPath, {
+      reviewId,
+      conversationId: `${reviewId}-conversation`,
+      runId: `${reviewId}-run`,
+      sessionId: `${reviewId}-session`,
+      startMessageId: messageId,
+      endMessageId: messageId,
+      messages: [
+        {
+          id: messageId,
+          role: "designer",
+          content: "Prototype confirmed; start the Rule Update review."
+        }
+      ],
+      decisions: []
+    })
+  ).toMatchObject({
+    ok: true,
+    reconciliation: { id: reviewId }
+  });
+  expect(claimConsolidateReview(projectPath, reviewId)).toMatchObject({
+    ok: true,
+    reconciliation_id: reviewId
+  });
+}
+
 test("the real command chain reaches eligibility without forged events", () => {
   withProject((projectPath) => {
     // Seed reconstruction prerequisite: a new design run requires a Seed.
@@ -318,6 +352,7 @@ test("the real command chain reaches eligibility without forged events", () => {
     setPhase(projectPath, "draft_design_system");
     expect(confirmDraftDesignSystem(projectPath)).toMatchObject({ ok: true });
     expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeRuleUpdateReview(projectPath, "export-review-v1");
     expect(formalizeDesignSystem(projectPath, [], "reviewed")).toMatchObject({
       ok: true
     });
@@ -346,6 +381,7 @@ test("the real command chain reaches eligibility without forged events", () => {
       ok: true,
       from_phase: "ready_for_new_design"
     });
+    completeRuleUpdateReview(projectPath, "export-review-v2");
     expect(formalizeDesignSystem(projectPath, [], "reviewed")).toMatchObject({
       ok: true
     });

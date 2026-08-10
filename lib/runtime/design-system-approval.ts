@@ -52,6 +52,9 @@ import {
   recordDesignSystemDigestIfConsistent
 } from "./design-system-sync";
 import { designSystemEntryContentDigest } from "./design-system-entry-provenance";
+import { sourceContentDigestOf } from "./source-artifact-digest";
+import { collectDesignSystemEntryRows } from "./design-system-ingest";
+import { hasPendingAuthorizedRuleUpdateProposalForPathOnDb } from "./rule-update-policy";
 import {
   parseTokenEntryRef,
   validateDesignSystemJson,
@@ -103,6 +106,11 @@ export interface ApproveDesignSystemEntryInput {
 }
 
 export interface ApproveDesignSystemEntryHooks {
+  /**
+   * Command preflight CAS: protected-phase approval must still read the exact
+   * source bytes that passed metadata reconciliation.
+   */
+  expectedSourceDigest?: string;
   /**
    * Test seam: runs after the source-file write and before the DB commit so
    * tests can simulate a concurrent writer landing in between. Never used by
@@ -175,9 +183,58 @@ export function locateEntryObject(
 type EntryRow = {
   id: string;
   file_kind: string;
+  section: string;
+  name: string | null;
+  kind: string | null;
+  domain: string | null;
+  value_json: string;
+  source_captures_json: string;
+  meaning: string;
   status: string;
   links_json: string;
+  position: number;
 };
+
+function dbEntrySemanticFingerprint(row: Omit<EntryRow, "id" | "file_kind" | "status" | "links_json">): string {
+  return stableJsonStringify({
+    section: row.section,
+    name: row.name,
+    kind: row.kind,
+    domain: row.domain,
+    value: JSON.parse(row.value_json),
+    source_captures: JSON.parse(row.source_captures_json),
+    meaning: row.meaning,
+    position: row.position
+  });
+}
+
+function sourceEntrySemanticsMatchDbRow(
+  fileKind: DesignSystemFileKind,
+  parsed: Record<string, unknown>,
+  entryId: string,
+  row: EntryRow
+): boolean {
+  try {
+    const sourceRow = collectDesignSystemEntryRows(fileKind, parsed).find(
+      (entry) => entry.entry_id === entryId
+    );
+    if (sourceRow === undefined) return false;
+    return (
+      stableJsonStringify({
+        section: sourceRow.section,
+        name: sourceRow.name,
+        kind: sourceRow.kind,
+        domain: sourceRow.domain,
+        value: sourceRow.value,
+        source_captures: sourceRow.source_captures,
+        meaning: sourceRow.meaning,
+        position: sourceRow.position
+      }) === dbEntrySemanticFingerprint(row)
+    );
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Apply a designer-selected candidate/formalized status to DB + source,
@@ -210,7 +267,8 @@ export function approveDesignSystemEntry(
     try {
       const found = db
         .prepare(
-          `SELECT id, file_kind, status, links_json
+          `SELECT id, file_kind, section, name, kind, domain, value_json,
+                  source_captures_json, meaning, status, links_json, position
            FROM design_system_entries
            WHERE source_artifact_path = ? AND entry_id = ?`
         )
@@ -249,6 +307,12 @@ export function approveDesignSystemEntry(
     // Missing or unreadable source file (DB/file drift).
     return { ok: false, reason: "artifact_file_missing" };
   }
+  if (
+    hooks.expectedSourceDigest !== undefined &&
+    sourceContentDigestOf(originalContent) !== hooks.expectedSourceDigest
+  ) {
+    return { ok: false, reason: "concurrent_source_changed" };
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(originalContent);
@@ -262,6 +326,13 @@ export function approveDesignSystemEntry(
   const entryObject = locateEntryObject(fileKind, parsed, input.entryId);
   if (entryObject === null) {
     return { ok: false, reason: "entry_not_in_source_file" };
+  }
+  if (!sourceEntrySemanticsMatchDbRow(fileKind, parsed, input.entryId, row)) {
+    return {
+      ok: false,
+      reason: "source_db_drift",
+      details: { source_artifact_path: relativePath, entry_id: input.entryId }
+    };
   }
   const sourceStatusCompatible =
     entryObject.status === row.status || entryObject.status === input.targetStatus;
@@ -329,6 +400,11 @@ export function approveDesignSystemEntry(
         writeFileSync(absolutePath, originalContent, "utf-8");
         return;
       }
+      // A protected command is bound to the preflight source digest. Any
+      // different bytes are a superseding Rule Update writer, even when that
+      // writer happens to use the same target status and links. Never merge a
+      // rollback into bytes Runtime did not write.
+      if (hooks.expectedSourceDigest !== undefined) return;
       const currentParsed = JSON.parse(currentContent) as unknown;
       if (!isPlainObject(currentParsed)) return;
       const currentEntry = locateEntryObject(
@@ -391,15 +467,37 @@ export function approveDesignSystemEntry(
   let txn: TxnResult;
   try {
     txn = withProjectTransaction(projectPath, (db): TxnResult => {
+      if (
+        hooks.expectedSourceDigest !== undefined &&
+        hasPendingAuthorizedRuleUpdateProposalForPathOnDb(db, relativePath)
+      ) {
+        return {
+          ok: false,
+          reason: "source_db_drift",
+          details: {
+            source_artifact_path: relativePath,
+            entry_id: input.entryId,
+            conflict: "pending_rule_update_write"
+          }
+        };
+      }
       const current = db
         .prepare(
-          `SELECT status, links_json FROM design_system_entries
+          `SELECT section, name, kind, domain, value_json,
+                  source_captures_json, meaning, status, links_json, position
+           FROM design_system_entries
            WHERE source_artifact_path = ? AND entry_id = ?`
         )
         .get(relativePath, input.entryId) as
-        | { status: string; links_json: string }
+        | Omit<EntryRow, "id" | "file_kind">
         | undefined;
       if (!current) return { ok: false, reason: "not_found" };
+      if (
+        dbEntrySemanticFingerprint(current) !==
+        dbEntrySemanticFingerprint(row)
+      ) {
+        return { ok: false, reason: "concurrent_edit_superseded" };
+      }
       if (current.status === input.targetStatus) {
         if (
           input.targetStatus === "formalized" &&
