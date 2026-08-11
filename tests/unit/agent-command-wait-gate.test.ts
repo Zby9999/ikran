@@ -36,6 +36,7 @@ import {
   openProjectDb
 } from "../../lib/runtime/db";
 import { registerSeedReference } from "../../lib/runtime/seed-reference";
+import { activateRuleUpdateReviewWait } from "../../lib/runtime/agent-command";
 
 type ToolHandler = (...args: any[]) => Promise<{
   content: Array<{ type: string; text: string }>;
@@ -142,6 +143,23 @@ test("post-Alignment project response and direct wait both fail closed without a
     stage: "initial-design-system-preparing",
     not_applicable_reason: "outside_designer_handoff"
   });
+});
+
+test("post-Alignment project response re-arms for an active Rule Update Review", async () => {
+  const projectPath = createProjectAtStage("initial-design-system-preparing");
+  expect(activateRuleUpdateReviewWait(projectPath, "review-wait-gate").ok).toBe(
+    true
+  );
+  const handler = registeredHandlers().get("create_or_open_project");
+  if (!handler) throw new Error("create_or_open_project not registered");
+
+  const response = await handler({});
+  expect(response.structuredContent.next_action).toEqual({
+    tool: "wait_for_agent_command"
+  });
+  expect(response.content[0].text).toContain(
+    "Call `wait_for_agent_command` now"
+  );
 });
 
 test("direct wait reports state_unavailable instead of starting a lease", async () => {

@@ -9,11 +9,13 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 31;
+export const CURRENT_SCHEMA_VERSION = 32;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
   version: number;
+  /** SQLite table replacement that must preserve inbound foreign keys. */
+  foreignKeysOff?: boolean;
   up: (db: DatabaseType) => void;
 };
 
@@ -1425,6 +1427,97 @@ CREATE INDEX IF NOT EXISTS idx_reconciliation_feedback_reconciliation
   ON conversation_reconciliation_feedback(reconciliation_id, position);
       `);
     }
+  },
+  {
+    version: 32,
+    foreignKeysOff: true,
+    up(db) {
+      // Issue 35: Agent commands share one durable queue while carrying an
+      // explicit owner scope. Keep alignment_attempt_id as a compatibility
+      // projection for the established Alignment claim/recovery code; Rule
+      // Update Review commands use the same identity, ordering, idempotency,
+      // and status columns without inventing a fake Alignment attempt.
+      //
+      // Two extraction tables reference agent_commands. The migration runner
+      // follows SQLite's parent-table replacement procedure: foreign-key
+      // enforcement is disabled only around this migration, then every
+      // reference is checked inside the transaction before commit.
+      const commandColumns = db
+        .prepare("PRAGMA table_info(agent_commands)")
+        .all() as Array<{ name: string }>;
+      if (!commandColumns.some((column) => column.name === "scope_kind")) {
+        db.exec(`
+CREATE TABLE agent_commands_v32 (
+  id TEXT PRIMARY KEY,
+  command_type TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN (
+    'pending', 'claimed', 'completed', 'cancelled', 'failed'
+  )),
+  scope_kind TEXT NOT NULL CHECK (scope_kind IN (
+    'alignment_attempt', 'rule_update_review'
+  )),
+  scope_id TEXT NOT NULL,
+  alignment_attempt_id TEXT
+    REFERENCES alignment_attempts(id) ON DELETE RESTRICT,
+  payload_json TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  claimed_at TEXT,
+  completed_at TEXT,
+  cancelled_at TEXT,
+  CHECK (
+    (scope_kind = 'alignment_attempt'
+      AND alignment_attempt_id IS NOT NULL
+      AND scope_id = alignment_attempt_id)
+    OR
+    (scope_kind = 'rule_update_review'
+      AND alignment_attempt_id IS NULL)
+  )
+);
+
+INSERT INTO agent_commands_v32
+  (id, command_type, status, scope_kind, scope_id,
+   alignment_attempt_id, payload_json, idempotency_key,
+   created_at, updated_at, claimed_at, completed_at, cancelled_at)
+SELECT id, command_type, status, 'alignment_attempt', alignment_attempt_id,
+       alignment_attempt_id, payload_json, idempotency_key,
+       created_at, updated_at, claimed_at, completed_at, cancelled_at
+FROM agent_commands;
+
+DROP TABLE agent_commands;
+ALTER TABLE agent_commands_v32 RENAME TO agent_commands;
+
+CREATE INDEX idx_agent_commands_status_created_at
+  ON agent_commands(status, created_at, id);
+CREATE INDEX idx_agent_commands_scope
+  ON agent_commands(scope_kind, scope_id, created_at, id);
+CREATE INDEX idx_agent_commands_alignment_attempt_id
+  ON agent_commands(alignment_attempt_id);
+        `);
+      }
+
+      // Rule Update Review lifecycle is added by Issue 36. This small durable
+      // seam only records whether that explicit review currently authorizes a
+      // wait lease. A project may expose at most one active review wait.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS agent_command_wait_scopes (
+  scope_kind TEXT NOT NULL CHECK (scope_kind = 'rule_update_review'),
+  scope_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'closed')),
+  active_slot INTEGER CHECK (
+    (status = 'active' AND active_slot = 1)
+    OR (status = 'closed' AND active_slot IS NULL)
+  ),
+  opened_at TEXT NOT NULL,
+  closed_at TEXT,
+  PRIMARY KEY (scope_kind, scope_id),
+  UNIQUE (active_slot)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_command_wait_scopes_status
+  ON agent_command_wait_scopes(status, opened_at, scope_id);
+      `);
+    }
   }
 ];
 
@@ -1445,9 +1538,24 @@ export function applyPendingMigrations(
 ): void {
   for (const migration of migrations) {
     if (migration.version <= fromVersion) continue;
-    db.exec("BEGIN IMMEDIATE");
+    const foreignKeysWereEnabled = migration.foreignKeysOff
+      ? (db.prepare("PRAGMA foreign_keys").get() as { foreign_keys: number })
+          .foreign_keys === 1
+      : false;
+    if (migration.foreignKeysOff) {
+      db.exec("PRAGMA foreign_keys = OFF");
+    }
     try {
+      db.exec("BEGIN IMMEDIATE");
       migration.up(db);
+      if (migration.foreignKeysOff) {
+        const violations = db.prepare("PRAGMA foreign_key_check").all();
+        if (violations.length > 0) {
+          throw new Error(
+            `Migration to version ${migration.version} would violate foreign keys: ${JSON.stringify(violations)}`
+          );
+        }
+      }
       setUserVersion(db, migration.version);
       db.exec("COMMIT");
     } catch (migrationError) {
@@ -1460,6 +1568,10 @@ export function applyPendingMigrations(
         );
       }
       throw migrationError;
+    } finally {
+      if (migration.foreignKeysOff && foreignKeysWereEnabled) {
+        db.exec("PRAGMA foreign_keys = ON");
+      }
     }
   }
 }

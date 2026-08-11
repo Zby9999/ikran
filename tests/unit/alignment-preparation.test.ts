@@ -67,6 +67,10 @@ describe("Alignment preparation Runtime command", () => {
       expect(prepared.command).toMatchObject({
         command_type: "prepare_design_intent_alignment",
         status: "pending",
+        scope: {
+          kind: "alignment_attempt",
+          id: prepared.attempt.id
+        },
         alignment_attempt_id: prepared.attempt.id
       });
       expect(prepared.input_snapshot.data).toEqual({

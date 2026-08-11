@@ -93,6 +93,14 @@ extend the wait, but it never substitutes for the designer action that advances
 the workflow.
 _Avoid_: infinite wait, idle-triggered progression, Agent host activation
 
+**Rule Update Review**:
+An explicitly published review identity that groups a complete set of pending
+Rule Update proposals for designer decisions. Only an active Rule Update Review
+wait scope may extend Adaptive Agent wait beyond Alignment; a post-Alignment
+project phase alone never authorizes that wait. A later designer decision is
+carried as a scoped durable Agent command and does not imply host activation.
+_Avoid_: global post-Alignment wait, transient decision event, Agent wake-up
+
 **Figma Connection**:
 The designer-authorized, read-only connection that lets Runtime capture Figma
 source evidence without requiring an active Agent. It is a Runtime ingestion

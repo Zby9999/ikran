@@ -63,7 +63,7 @@ export function successResult(
 // semantics live on each tool's description. Never restate contract content
 // here; the byte budget (~2KB) is enforced by mcp-instructions.test.ts.
 export const IKRAN_MCP_INSTRUCTIONS =
-  "Ikran local research workbench; open_workbench returns a localhost URL. OPEN-AND-WAIT: while a response re-arms it, keep calling wait_for_agent_command and claim each durable command so Next/Complete continues the turn. All source-of-truth changes go through Ikran tools.\n\n" +
+  "Ikran local research workbench; open_workbench returns a localhost URL. OPEN-AND-WAIT: while a response re-arms it for Alignment or an active Rule Update Review, keep calling wait_for_agent_command and claim each scoped durable command. All source-of-truth changes go through Ikran tools.\n\n" +
   "GLOBAL DISCIPLINES:\n" +
   "- Read phase + seed count via get_project_readiness; record_new_design_run requires an existing Seed Reference — with none, only seed reconstruction.\n" +
   "- Runtime capture is the sole Active ingestion path for Figma evidence; without Figma Connection, paste and Agent seed add fail closed.\n" +

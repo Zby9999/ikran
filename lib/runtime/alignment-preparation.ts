@@ -7,6 +7,7 @@ import {
   openProjectDb,
   withProjectTransaction
 } from "./db";
+import { publishAgentCommandOnDb } from "./agent-command";
 import { logEventOnDb } from "./events";
 import { emitRecordEvent } from "./record-bus";
 
@@ -55,6 +56,7 @@ export type AgentCommandRecord = {
     | "prepare_design_intent_alignment"
     | "prepare_initial_design_system";
   status: "pending" | "claimed" | "completed" | "cancelled" | "failed";
+  scope: { kind: "alignment_attempt"; id: string };
   alignment_attempt_id: string;
   payload: Record<string, unknown>;
   idempotency_key: string;
@@ -121,6 +123,10 @@ function mapCommand(row: Record<string, unknown>): AgentCommandRecord {
     id: String(row.id),
     command_type: String(row.command_type) as AgentCommandRecord["command_type"],
     status: String(row.status) as AgentCommandRecord["status"],
+    scope: {
+      kind: "alignment_attempt",
+      id: String(row.scope_id ?? row.alignment_attempt_id)
+    },
     alignment_attempt_id: String(row.alignment_attempt_id),
     payload: JSON.parse(String(row.payload_json)) as Record<string, unknown>,
     idempotency_key: String(row.idempotency_key),
@@ -331,22 +337,23 @@ export function prepareDesignIntentAlignment(
            (id, input_snapshot_id, status, created_at, updated_at, completed_at, abandoned_at)
          VALUES (?, ?, 'preparing', ?, ?, NULL, NULL)`
       ).run(attemptId, snapshotId, now, now);
-      db.prepare(
-        `INSERT INTO agent_commands
-           (id, command_type, status, alignment_attempt_id, payload_json,
-            idempotency_key, created_at, updated_at, claimed_at, completed_at, cancelled_at)
-         VALUES (?, 'prepare_design_intent_alignment', 'pending', ?, ?, ?, ?, ?, NULL, NULL, NULL)`
-      ).run(
-        commandId,
-        attemptId,
-        JSON.stringify({
-          alignment_attempt_id: attemptId,
-          input_snapshot_id: snapshotId
-        }),
-        idempotencyKey,
-        now,
+      const published = publishAgentCommandOnDb(
+        db,
+        {
+          id: commandId,
+          commandType: "prepare_design_intent_alignment",
+          scope: { kind: "alignment_attempt", id: attemptId },
+          payload: {
+            alignment_attempt_id: attemptId,
+            input_snapshot_id: snapshotId
+          },
+          idempotencyKey
+        },
         now
       );
+      if (!published.ok) {
+        throw new Error(`agent_command_publish_failed:${published.reason}`);
+      }
       db.prepare(
         `UPDATE project_workflow
          SET stage = 'alignment-preparing',

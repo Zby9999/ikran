@@ -30,7 +30,8 @@ const readEligibleWait = () =>
     ok: true,
     eligible: true,
     stage: "alignment-answering",
-    seed_reference_count: 1
+    seed_reference_count: 1,
+    wait_scope: { kind: "alignment_handoff" }
   }) as const;
 
 describe("adaptive Agent wait lease", () => {
@@ -326,6 +327,7 @@ describe("adaptive Agent wait lease", () => {
           return {
             id: "recovered-command",
             command_type: "prepare_design_intent_alignment",
+            scope: { kind: "alignment_attempt", id: "attempt-1" },
             alignment_attempt_id: "attempt-1",
             payload: {},
             created_at: "2026-07-22T00:00:00.000Z"
