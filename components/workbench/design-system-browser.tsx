@@ -32,6 +32,7 @@ import {
   ColorsIcon,
   Edit02Icon,
   GridViewIcon,
+  HistoryIcon,
   Home01Icon,
   InformationCircleIcon,
   Layers01Icon,
@@ -779,6 +780,7 @@ type RowListProps = {
    * sequentially so same-file writes never race each other. */
   onApproveRows?: (rows: DsRow[]) => void;
   renderRuleUpdateAfter?: (entryId: string) => ReactNode;
+  hasRuleUpdateForEntry?: (entryId: string) => boolean;
   onEditEntry?: (
     row: DsRow,
     field: "meaning" | "value" | "value.description",
@@ -1122,59 +1124,67 @@ function RuleLedgerCardShell({
   evidenceAriaLabel: string;
 }) {
   const editor = useRuleInlineEditor(rule.row, rows, rule.body);
+  const pendingRuleUpdate = rows.hasRuleUpdateForEntry?.(rule.row.entryId) ?? false;
   return (
     <>
-    <li
-      className="dsb-interaction-rule"
-      data-testid={testId}
-      data-editing={editor.editing || undefined}
-      data-approve-error={approval.kind === "error" || undefined}
-    >
-      <div className="dsb-interaction-ledger-row">
-        <div className="dsb-interaction-ledger-meta">
-          <span className="dsb-interaction-ledger-tags">
-            <span className="dsb-interaction-anchor" aria-hidden>
-              {rule.anchor}
+      <li
+        className="dsb-interaction-rule"
+        data-testid={testId}
+        data-editing={editor.editing || undefined}
+        data-approve-error={approval.kind === "error" || undefined}
+        data-rule-update-pending={pendingRuleUpdate || undefined}
+      >
+        <div className="dsb-interaction-ledger-row">
+          <div className="dsb-interaction-ledger-meta">
+            <span className="dsb-interaction-ledger-tags">
+              <span className="dsb-interaction-anchor" aria-hidden>
+                {rule.anchor}
+              </span>
+              <EntryStatusChip
+                row={rule.row}
+                approval={approval}
+                onApprove={
+                  rows.onApprove
+                    ? () => rows.onApprove?.(rule.row)
+                    : undefined
+                }
+                testId="ds-interaction-status"
+              />
             </span>
-            <EntryStatusChip
-              row={rule.row}
-              approval={approval}
-              onApprove={rows.onApprove ? () => rows.onApprove?.(rule.row) : undefined}
-              testId="ds-interaction-status"
-            />
-          </span>
-          <span className="dsb-rule-row-actions">
-            <RuleInlineActions row={rule.row} editor={editor} />
-            <InfoPopover
-              entry={rule.row.entry}
-              infoOpen={rows.infoKey === rule.key}
-              popoverInstant={rows.popoverInstant(rule.key)}
-              portalContainer={rows.portalContainer}
-              ariaLabel={evidenceAriaLabel}
-              onInfoOpenChange={(open) => rows.onInfoKey(open ? rule.key : null)}
-              onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.key)}
-              onInfoHoverClose={rows.onInfoHoverClose}
-              interactive={false}
-            />
-          </span>
+            <span className="dsb-rule-row-actions">
+              <RuleInlineActions row={rule.row} editor={editor} />
+              <InfoPopover
+                entry={rule.row.entry}
+                infoOpen={rows.infoKey === rule.key}
+                popoverInstant={rows.popoverInstant(rule.key)}
+                portalContainer={rows.portalContainer}
+                ariaLabel={evidenceAriaLabel}
+                onInfoOpenChange={(open) =>
+                  rows.onInfoKey(open ? rule.key : null)
+                }
+                onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.key)}
+                onInfoHoverClose={rows.onInfoHoverClose}
+                interactive={false}
+              />
+            </span>
+          </div>
+          <div className="dsb-interaction-ledger-main">
+            <RuleInlineTitle editor={editor} />
+            <RuleInlineBody editor={editor} />
+          </div>
         </div>
-        <div className="dsb-interaction-ledger-main">
-          <RuleInlineTitle editor={editor} />
-          <RuleInlineBody editor={editor} />
-        </div>
-      </div>
-      <RuleInlineError editor={editor} />
-      {approval.kind === "error" ? (
-        <span className="dsb-row-error" role="alert">
-          {approval.message}
-        </span>
-      ) : null}
-    </li>
-    {rows.renderRuleUpdateAfter?.(rule.row.entryId) ? (
-      <li className="dsb-ru-ledger-slot">
-        {rows.renderRuleUpdateAfter(rule.row.entryId)}
+        <RuleInlineError editor={editor} />
+        {approval.kind === "error" ? (
+          <span className="dsb-row-error" role="alert">
+            {approval.message}
+          </span>
+        ) : null}
       </li>
-    ) : null}
+      {pendingRuleUpdate ? (
+        <li className="dsb-ru-ledger-slot">
+          {rows.renderRuleUpdateAfter?.(rule.row.entryId)}
+        </li>
+      ) : null}
     </>
   );
 }
@@ -2514,6 +2524,30 @@ export function DesignSystemBrowser({
           })();
         },
     onEditEntry: readOnly ? undefined : editEntry,
+    hasRuleUpdateForEntry: ruleUpdateProjection
+      ? (entryId) => {
+          const category: RuleUpdateCategory =
+            route.kind === "section"
+              ? route.section === "foundations"
+                ? "foundations.home"
+                : (`component:${componentLeafId(
+                    model?.components.landingLeaf ?? "component:"
+                  )}` as RuleUpdateCategory)
+              : route.section === "foundations"
+                ? (`foundations.${route.leaf}` as RuleUpdateCategory)
+                : (`component:${componentLeafId(
+                    route.leaf
+                  )}` as RuleUpdateCategory);
+          return ruleUpdateProjection.reviews.some((review) =>
+            review.proposals.some((proposal) =>
+                proposal.kind === "update" &&
+                proposal.target.category === category &&
+                proposal.target.entryId === entryId &&
+                !["applied", "rejected"].includes(proposal.status)
+            )
+          );
+        }
+      : undefined,
     renderRuleUpdateAfter: ruleUpdateProjection
       ? (entryId) => (
           <RuleUpdateUpdatesForEntry
@@ -2887,12 +2921,12 @@ export function DesignSystemBrowser({
               onClick={() => setShowRuleUpdateHistory(true)}
             >
               <HugeiconsIcon
-                icon={Route01Icon}
+                icon={HistoryIcon}
                 size={14}
                 color="currentColor"
                 strokeWidth={2}
               />
-              <span>All interactions</span>
+              <span>Records</span>
             </button>
           </aside>
           <main className="dsb-main">
@@ -2913,7 +2947,7 @@ export function DesignSystemBrowser({
             <div className="dsb-main-top">
               <nav aria-label="Breadcrumb" className="dsb-breadcrumb">
                 {showRuleUpdateHistory ? (
-                  <span className="dsb-breadcrumb-current">All interactions</span>
+                  <span className="dsb-breadcrumb-current">Records</span>
                 ) : model
                   ? breadcrumbFor(route, model).map(
                       (segment, index, segments) => (

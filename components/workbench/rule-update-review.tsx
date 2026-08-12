@@ -1,19 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight01Icon,
   Edit02Icon,
-  InformationCircleIcon
+  InformationCircleIcon,
+  MultiplicationSignIcon,
+  SaveIcon
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { subscribeRuntimeEvents } from "@/components/runtime/runtime-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger
+} from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  ruleUpdateCategories,
   ruleUpdateCategoryArtifact,
   ruleUpdateCategoryLabel,
   type RuleUpdateCategory
@@ -120,7 +126,7 @@ function proposalStatusLabel(status: RuleUpdateProposalView["status"]): string {
   if (status === "waiting_agent") return "Waiting for Agent";
   if (status === "needs_revision") return "Needs revision";
   if (status === "failed") return "Apply failed";
-  return "Pending review";
+  return "Pending Review";
 }
 
 async function postReviewAction(
@@ -150,27 +156,28 @@ function ProposalCard({
   proposal,
   transcript,
   session,
-  categories,
-  onChanged
-  ,focused
+  onChanged,
+  focused,
+  embedded = false,
+  number
 }: {
   proposal: RuleUpdateProposalView;
   transcript: RuleUpdateReviewView["transcript"];
   session: string;
-  categories: RuleUpdateCategory[];
   onChanged: () => Promise<unknown>;
   focused: boolean;
+  embedded?: boolean;
+  number?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [exchangesOpen, setExchangesOpen] = useState(false);
   const [title, setTitle] = useState(proposal.title);
   const [body, setBody] = useState(proposal.full_rule_body);
-  const [category, setCategory] = useState<RuleUpdateCategory>(proposal.target.category);
   const [busy, setBusy] = useState(false);
   const [exiting, setExiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cardRef = useRef<HTMLElement>(null);
+  const dirty = title !== proposal.title || body !== proposal.full_rule_body;
   useEffect(() => {
     if (!focused) return;
     setOpen(true);
@@ -204,7 +211,7 @@ function ProposalCard({
       setError("Title and proposed rule are required.");
       return;
     }
-    const targetPath = ruleUpdateCategoryArtifact(category);
+    const targetPath = ruleUpdateCategoryArtifact(proposal.target.category);
     setBusy(true);
     setError(null);
     const result = await postReviewAction(session, "revise", {
@@ -212,9 +219,12 @@ function ProposalCard({
       title: trimmedTitle,
       fullRuleBody: trimmedBody,
       target: {
-        category,
+        category: proposal.target.category,
         sourceCategory: proposal.target.sourceCategory ?? undefined,
-        sourceArtifactPath: proposal.kind === "move" ? proposal.target.sourceArtifactPath : targetPath,
+        sourceArtifactPath:
+          proposal.kind === "move"
+            ? proposal.target.sourceArtifactPath
+            : targetPath,
         entryId: proposal.target.entryId ?? undefined,
         proposedTargetPath: proposal.kind === "move" ? targetPath : undefined
       }
@@ -228,80 +238,234 @@ function ProposalCard({
     await onChanged();
   };
 
+  const cancelEditing = () => {
+    setTitle(proposal.title);
+    setBody(proposal.full_rule_body);
+    setError(null);
+    setEditing(false);
+  };
+
   return (
     <div className="dsb-ru-slot" data-exiting={exiting || undefined}>
-      <article ref={cardRef} className="dsb-ru-card" data-open={open || undefined} data-status={proposal.status} data-flash={focused || undefined}>
-        <button
-          type="button"
-          className="dsb-ru-head"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          <span className="dsb-ru-title">{proposal.title}</span>
-          <span className="dsb-ru-status" data-status={proposal.status}>
-            {proposalStatusLabel(proposal.status)}
-          </span>
-          <HugeiconsIcon icon={ArrowRight01Icon} size={14} className="dsb-ru-chevron" color="currentColor" strokeWidth={2} />
-        </button>
+      <article
+        ref={cardRef}
+        className="dsb-ru-card"
+        data-embedded={embedded || undefined}
+        data-open={open || undefined}
+        data-status={proposal.status}
+        data-flash={focused || undefined}
+      >
+        {!embedded ? (
+          <div className="dsb-ru-meta">
+            <span className="dsb-ru-number" aria-hidden>
+              {number ?? 1}
+            </span>
+            <span className="dsb-ru-status" data-status={proposal.status}>
+              {proposalStatusLabel(proposal.status)}
+            </span>
+          </div>
+        ) : null}
+        <div className="dsb-ru-head">
+          <div className="dsb-ru-title-row">
+            {editing ? (
+              <Input
+                className="dsb-ru-title dsb-ru-inline-title"
+                aria-label="Rule Update title"
+                value={title}
+                disabled={busy}
+                autoFocus
+                onChange={(event) => setTitle(event.target.value)}
+              />
+            ) : (
+              <span className="dsb-ru-title">{proposal.title}</span>
+            )}
+            {embedded && !editing ? (
+              <span
+                className="dsb-ru-pending-dot"
+                aria-label="Pending Rule Update"
+              />
+            ) : null}
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="dsb-ru-toggle"
+            aria-label={`${open ? "Collapse" : "Expand"} ${proposal.title}`}
+            aria-expanded={open}
+            onClick={() => setOpen((value) => !value)}
+          >
+            <HugeiconsIcon
+              icon={ArrowRight01Icon}
+              size={14}
+              className="dsb-ru-chevron"
+              color="currentColor"
+              strokeWidth={2}
+            />
+          </Button>
+        </div>
         <div className="dsb-ru-body">
           <div className="dsb-ru-body-inner">
-            {editing ? (
-              <div className="dsb-ru-editor">
-                <label>Title<Input value={title} onChange={(event) => setTitle(event.target.value)} /></label>
-                <label>Proposed<Textarea value={body} onChange={(event) => setBody(event.target.value)} rows={4} /></label>
-                <label>Category
-                  <select value={category} onChange={(event) => setCategory(event.target.value as RuleUpdateCategory)}>
-                    {categories.map((item) => <option key={item} value={item}>{categoryLabel(item)}</option>)}
-                  </select>
-                </label>
-                <div className="dsb-ru-actions">
-                  <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setEditing(false)}>Cancel</Button>
-                  <Button type="button" size="sm" disabled={busy} onClick={() => void save()}>Save revision</Button>
-                </div>
+            <div className="dsb-ru-detail">
+              <div>
+                <span className="dsb-ru-label">Proposed</span>
+                {editing ? (
+                  <Textarea
+                    className="dsb-ru-inline-body"
+                    aria-label="Proposed rule"
+                    value={body}
+                    disabled={busy}
+                    rows={1}
+                    onChange={(event) => setBody(event.target.value)}
+                  />
+                ) : (
+                  <p>{proposal.full_rule_body}</p>
+                )}
               </div>
-            ) : (
-              <div className="dsb-ru-detail">
-                <div><span className="dsb-ru-label">Proposed</span><p>{proposal.full_rule_body}</p></div>
-                {proposal.kind === "update" && proposal.current_rule_body ? (
-                  <div><span className="dsb-ru-label">Current</span><p>{proposal.current_rule_body}</p></div>
-                ) : null}
-                <div><span className="dsb-ru-label">Reason</span><p>{proposal.reason}</p></div>
-                {proposal.affected_items.length > 0 ? (
-                  <div><span className="dsb-ru-label">Affected</span><p>{proposal.affected_items.join(" · ")}</p></div>
-                ) : null}
-                <div className="dsb-ru-exchanges" data-open={exchangesOpen || undefined}>
-                  <button type="button" onClick={() => setExchangesOpen((value) => !value)}>
-                    Exchanges <HugeiconsIcon icon={ArrowRight01Icon} size={13} color="currentColor" strokeWidth={2} />
-                  </button>
-                  <div>{transcript.map((message) => (
-                    <p key={message.id}><strong>{message.role === "designer" ? "Designer" : "Agent"}</strong>{message.content}</p>
-                  ))}</div>
+              <div>
+                <span className="dsb-ru-label">Reason</span>
+                <p>{proposal.reason}</p>
+              </div>
+              {editing ? (
+                <div className="dsb-ru-actions">
+                  {dirty ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      className="dsb-rule-save-icon active:scale-[0.96] active:translate-y-0"
+                      aria-label={`Save Rule Update ${proposal.title}`}
+                      disabled={busy || !title.trim() || !body.trim()}
+                      onClick={() => void save()}
+                    >
+                      <HugeiconsIcon
+                        icon={SaveIcon}
+                        size={12}
+                        strokeWidth={1.5}
+                        color="currentColor"
+                        aria-hidden
+                      />
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="dsb-rule-edit-icon active:scale-[0.96] active:translate-y-0"
+                    aria-label={`Cancel editing Rule Update ${proposal.title}`}
+                    aria-pressed="true"
+                    disabled={busy}
+                    onClick={cancelEditing}
+                  >
+                    <HugeiconsIcon
+                      icon={MultiplicationSignIcon}
+                      size={12}
+                      strokeWidth={1.5}
+                      color="currentColor"
+                      aria-hidden
+                    />
+                  </Button>
+                  {proposal.status === "pending_review" ? (
+                    <>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="dsb-ru-accept"
+                        disabled={busy || dirty}
+                        onClick={() => void decide("accepted")}
+                      >
+                        Accept
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="dsb-ru-reject"
+                        disabled={busy || dirty}
+                        onClick={() => void decide("rejected")}
+                      >
+                        Reject
+                      </Button>
+                      <RuleUpdateTranscriptPopover
+                        proposalTitle={proposal.title}
+                        transcript={transcript}
+                      />
+                    </>
+                  ) : null}
                 </div>
-                <p className="dsb-ru-caption">
-                  {proposalStatusLabel(proposal.status)} · {proposal.kind[0]!.toUpperCase() + proposal.kind.slice(1)} · revision {proposal.revision}
-                  {proposal.revision_author === "designer" ? " · edited by designer" : ""}
-                </p>
-                {proposal.status === "waiting_agent" ? (
-                  <p className="dsb-ru-wait-copy">Decision sent. The Agent will apply this exact revision.</p>
+              ) : proposal.status === "waiting_agent" ? (
+                  <p className="dsb-ru-wait-copy">
+                    Decision sent. The Agent will apply this exact revision.
+                  </p>
                 ) : proposal.status === "failed" ? (
-                  <p className="dsb-ru-wait-copy">Application failed. The Agent can retry the same command.</p>
+                  <p className="dsb-ru-wait-copy">
+                    Application failed. The Agent can retry the same command.
+                  </p>
                 ) : proposal.status === "needs_revision" ? (
                   <div className="dsb-ru-actions">
-                    <Button type="button" size="sm" disabled={busy} onClick={() => setEditing(true)}>
-                      <HugeiconsIcon icon={Edit02Icon} size={13} color="currentColor" strokeWidth={2} /> Modify
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      className="dsb-rule-edit-icon active:scale-[0.96] active:translate-y-0"
+                      aria-label={`Edit ${proposal.title}`}
+                      disabled={busy}
+                      onClick={() => setEditing(true)}
+                    >
+                      <HugeiconsIcon
+                        icon={Edit02Icon}
+                        size={12}
+                        color="currentColor"
+                        strokeWidth={1.5}
+                        aria-hidden
+                      />
                     </Button>
                   </div>
                 ) : (
                   <div className="dsb-ru-actions">
-                    <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setEditing(true)}>
-                      <HugeiconsIcon icon={Edit02Icon} size={13} color="currentColor" strokeWidth={2} /> Modify
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      className="dsb-rule-edit-icon active:scale-[0.96] active:translate-y-0"
+                      aria-label={`Edit ${proposal.title}`}
+                      disabled={busy}
+                      onClick={() => setEditing(true)}
+                    >
+                      <HugeiconsIcon
+                        icon={Edit02Icon}
+                        size={12}
+                        color="currentColor"
+                        strokeWidth={1.5}
+                        aria-hidden
+                      />
                     </Button>
-                    <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void decide("rejected")}>Reject</Button>
-                    <Button type="button" size="sm" disabled={busy} onClick={() => void decide("accepted")}>Accept</Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="dsb-ru-accept"
+                      disabled={busy}
+                      onClick={() => void decide("accepted")}
+                    >
+                      Accept
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="dsb-ru-reject"
+                      disabled={busy}
+                      onClick={() => void decide("rejected")}
+                    >
+                      Reject
+                    </Button>
+                    <RuleUpdateTranscriptPopover
+                      proposalTitle={proposal.title}
+                      transcript={transcript}
+                    />
                   </div>
                 )}
-              </div>
-            )}
+            </div>
             {error ? <p className="dsb-ru-error" role="alert">{error}</p> : null}
           </div>
         </div>
@@ -316,8 +480,8 @@ export function RuleUpdateCategoryStream({
   session,
   componentCategories,
   onChanged,
-  onNavigate
-  ,focusProposalId
+  onNavigate,
+  focusProposalId
 }: {
   category: RuleUpdateCategory;
   projection: RuleUpdateProjection;
@@ -327,31 +491,53 @@ export function RuleUpdateCategoryStream({
   onNavigate: (category: RuleUpdateCategory, proposalId: string) => void;
   focusProposalId: string | null;
 }) {
-  const categories = useMemo(
-    () => ruleUpdateCategories(componentCategories),
-    [componentCategories]
-  );
   const active = projection.reviews.flatMap((review) =>
     review.proposals
-      .filter((proposal) =>
-        proposal.target.category === category &&
-        !["applied", "rejected"].includes(proposal.status) &&
-        (proposal.kind !== "update" || proposal.target.entryId === null)
+      .filter(
+        (proposal) =>
+          proposal.target.category === category &&
+          !["applied", "rejected"].includes(proposal.status) &&
+          (proposal.kind !== "update" || proposal.target.entryId === null)
       )
-      .map((proposal) => ({ proposal, review }))
+      .map((proposal) => ({ proposal, transcript: review.transcript }))
   );
-  const traces = projection.reviews.flatMap((review) => review.proposals)
-    .filter((proposal) => proposal.kind === "move" && proposal.target.sourceCategory === category && proposal.target.category !== category && proposal.status !== "rejected");
+  const traces = projection.reviews
+    .flatMap((review) => review.proposals)
+    .filter(
+      (proposal) =>
+        proposal.kind === "move" &&
+        proposal.target.sourceCategory === category &&
+        proposal.target.category !== category &&
+        proposal.status !== "rejected"
+    );
   if (active.length === 0 && traces.length === 0) return null;
   return (
     <section className="dsb-ru-stream" aria-label="Rule Update proposals">
-      {active.map(({ proposal, review }) => (
-        <ProposalCard key={proposal.id} proposal={proposal} transcript={review.transcript} session={session} categories={categories} onChanged={onChanged} focused={focusProposalId === proposal.id} />
+      {active.map(({ proposal, transcript }, index) => (
+        <ProposalCard
+          key={proposal.id}
+          proposal={proposal}
+          transcript={transcript}
+          session={session}
+          onChanged={onChanged}
+          focused={focusProposalId === proposal.id}
+          number={index + 1}
+        />
       ))}
       {traces.map((proposal) => (
-        <button key={`trace:${proposal.id}`} type="button" className="dsb-ru-trace" onClick={() => onNavigate(proposal.target.category, proposal.id)}>
+        <button
+          key={`trace:${proposal.id}`}
+          type="button"
+          className="dsb-ru-trace"
+          onClick={() => onNavigate(proposal.target.category, proposal.id)}
+        >
           {proposal.title} moved to {categoryLabel(proposal.target.category)}
-          <HugeiconsIcon icon={ArrowRight01Icon} size={13} color="currentColor" strokeWidth={2} />
+          <HugeiconsIcon
+            icon={ArrowRight01Icon}
+            size={13}
+            color="currentColor"
+            strokeWidth={2}
+          />
         </button>
       ))}
     </section>
@@ -375,35 +561,116 @@ export function RuleUpdateUpdatesForEntry({
   onChanged: () => Promise<unknown>;
   focusProposalId: string | null;
 }) {
-  const categories = useMemo(
-    () => ruleUpdateCategories(componentCategories),
-    [componentCategories]
-  );
   const active = projection.reviews.flatMap((review) =>
     review.proposals
-      .filter((proposal) =>
-        proposal.kind === "update" &&
-        proposal.target.category === category &&
-        proposal.target.entryId === entryId &&
-        !["applied", "rejected"].includes(proposal.status)
+      .filter(
+        (proposal) =>
+          proposal.kind === "update" &&
+          proposal.target.category === category &&
+          proposal.target.entryId === entryId &&
+          !["applied", "rejected"].includes(proposal.status)
       )
-      .map((proposal) => ({ proposal, review }))
+      .map((proposal) => ({ proposal, transcript: review.transcript }))
   );
   if (active.length === 0) return null;
   return (
     <>
-      {active.map(({ proposal, review }) => (
+      {active.map(({ proposal, transcript }) => (
         <ProposalCard
           key={proposal.id}
           proposal={proposal}
-          transcript={review.transcript}
+          transcript={transcript}
           session={session}
-          categories={categories}
           onChanged={onChanged}
           focused={focusProposalId === proposal.id}
+          embedded
         />
       ))}
     </>
+  );
+}
+
+function RuleUpdateTranscriptPopover({
+  proposalTitle,
+  transcript
+}: {
+  proposalTitle: string;
+  transcript: RuleUpdateReviewView["transcript"];
+}) {
+  const [open, setOpen] = useState(false);
+  const closeTimer = useRef<number | null>(null);
+
+  const openPopover = () => {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+    setOpen(true);
+  };
+  const scheduleClose = () => {
+    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => {
+      closeTimer.current = null;
+      setOpen(false);
+    }, 90);
+  };
+
+  useEffect(
+    () => () => {
+      if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
+    },
+    []
+  );
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="dsb-ru-action-icon dsb-ru-info-trigger"
+          aria-label={`Interaction record for ${proposalTitle}`}
+          onMouseEnter={openPopover}
+          onMouseLeave={scheduleClose}
+          onFocus={openPopover}
+          onBlur={scheduleClose}
+        >
+          <HugeiconsIcon
+            icon={InformationCircleIcon}
+            size={12}
+            color="currentColor"
+            strokeWidth={2}
+          />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="dsb-popover dsb-ru-interaction-popover"
+        side="top"
+        align="end"
+        collisionPadding={16}
+        onMouseEnter={openPopover}
+        onMouseLeave={scheduleClose}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        <p className="dsb-popover-title">Interaction record</p>
+        {transcript.length > 0 ? (
+          <div className="dsb-ru-popover-messages">
+            {transcript.map((message) => (
+              <section key={message.id} className="dsb-evidence-section">
+                <p className="dsb-evidence-label">
+                  {message.role === "designer" ? "Designer" : "Agent"}
+                </p>
+                <p className="dsb-evidence-item">{message.content}</p>
+              </section>
+            ))}
+          </div>
+        ) : (
+          <p className="dsb-evidence-empty">No frozen interaction record.</p>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -414,41 +681,81 @@ export function RuleUpdateInteractionsPage({
   projection: RuleUpdateProjection;
   onNavigate: (category: RuleUpdateCategory, proposalId: string) => void;
 }) {
-  const [openTranscript, setOpenTranscript] = useState<string | null>(null);
   return (
-    <div className="dsb-ru-history" data-testid="rule-update-all-interactions">
-      <header><h1>All interactions</h1><p>Only decisions and transcripts frozen by the Agent at review time appear here.</p></header>
+    <div className="dsb-ru-history" data-testid="rule-update-interaction-records">
       {projection.reviews.map((review) => (
         <section key={review.id} className="dsb-ru-history-group">
-          <div className="dsb-ru-history-group-head">
-            <div>
-              <h2>{review.context}</h2>
-              <small>
-                {review.published_at ?? review.created_at}
-                {review.run_id ? ` · run ${review.run_id}` : ""}
-                {review.session_id ? ` · session ${review.session_id}` : ""}
-              </small>
-            </div>
-            <span>{review.status}</span>
-          </div>
-          {review.interactions.map((fact) => (
-            <article key={fact.id} className="dsb-ru-record">
+          <h1>{review.context}</h1>
+          {(review.proposals.length > 0 ? review.proposals : [null]).map(
+            (proposal, index) => (
+            <article
+              key={proposal?.id ?? `${review.id}:record`}
+              className="dsb-ru-record"
+            >
               <div className="dsb-ru-record-head">
-                <span className="dsb-ru-record-kind" data-kind={fact.kind}>{fact.kind[0]!.toUpperCase() + fact.kind.slice(1)}</span>
-                <strong>{fact.title}</strong>
-                <span>{fact.description}</span>
-                {fact.terminal ? <span className="dsb-ru-terminal">{fact.target_category}</span> : (
-                  <button type="button" className="dsb-ru-category" onClick={() => onNavigate(fact.target_category, fact.proposal_id)}>{categoryLabel(fact.target_category)}</button>
-                )}
-                <button type="button" className="dsb-ru-info" aria-label="Show frozen transcript" aria-expanded={openTranscript === fact.id} onClick={() => setOpenTranscript((value) => value === fact.id ? null : fact.id)}>
-                  <HugeiconsIcon icon={InformationCircleIcon} size={14} color="currentColor" strokeWidth={2} />
-                </button>
+                <span className="dsb-ru-record-number" aria-hidden>
+                  {index + 1}
+                </span>
+                {proposal ? (
+                  <span className="dsb-ru-record-kind">Proposal</span>
+                ) : null}
+                {proposal ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="dsb-ru-check"
+                    onClick={() =>
+                      onNavigate(proposal.target.category, proposal.id)
+                    }
+                  >
+                    Check
+                  </Button>
+                ) : null}
               </div>
-              {openTranscript === fact.id ? <div className="dsb-ru-transcript">{review.transcript.map((message) => <p key={message.id}><strong>{message.role === "designer" ? "Designer" : "Agent"}</strong>{message.content}</p>)}</div> : null}
+              <time
+                dateTime={
+                  proposal?.created_at ??
+                  review.published_at ??
+                  review.created_at
+                }
+              >
+                {formatInteractionRecordTime(
+                  proposal?.created_at ??
+                    review.published_at ??
+                    review.created_at
+                )}
+              </time>
+              <div className="dsb-ru-transcript">
+                {review.transcript.length > 0 ? (
+                  review.transcript.map((message) => (
+                    <div key={message.id} className="dsb-ru-message">
+                      <strong>
+                        {message.role === "designer" ? "Designer" : "Agent"}
+                      </strong>
+                      <p>{message.content}</p>
+                    </div>
+                  ))
+                ) : proposal ? (
+                  <p className="dsb-ru-record-summary">
+                    {proposal.full_rule_body}
+                  </p>
+                ) : null}
+              </div>
             </article>
-          ))}
+            )
+          )}
         </section>
       ))}
     </div>
   );
+}
+
+function formatInteractionRecordTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate()
+  )} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }

@@ -19,7 +19,7 @@ afterEach(() => {
   for (const projectPath of cleanup.splice(0)) rmSync(projectPath, { recursive: true, force: true });
 });
 
-test("All interactions projects the frozen transcript, revisions and decisions without invented message times", () => {
+test("Interaction records project the frozen transcript, revisions and decisions without invented message times", () => {
   const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-rule-history-"));
   cleanup.push(projectPath);
   initializeProjectDb(projectPath);
@@ -100,4 +100,56 @@ test("All interactions projects the frozen transcript, revisions and decisions w
     }]
   });
   expect(JSON.stringify(projection)).not.toContain("message_timestamp");
+});
+
+test("Interaction records keep a transcript even when no Rule Update was proposed", () => {
+  const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-interaction-record-only-"));
+  cleanup.push(projectPath);
+  initializeProjectDb(projectPath);
+  const reconciliationId = "reconciliation-record-only";
+  const db = openProjectDb(projectPath);
+  try {
+    db.prepare(
+      `INSERT INTO conversation_reconciliations
+         (id, conversation_id, run_id, session_id, start_message_id,
+          end_message_id, transcript_json, transcript_sha256, payload_sha256,
+          message_count, decision_count, completed_at)
+       VALUES (?, 'conversation-record-only', 'run-record-only', 'session-record-only',
+               'm1', 'm2', ?, 'transcript-digest', 'payload-digest', 2, 0,
+               '2026-08-12T00:00:00.000Z')`
+    ).run(reconciliationId, JSON.stringify([
+      { id: "m1", role: "designer", content: "Keep this exchange as context only." },
+      { id: "m2", role: "agent", content: "Recorded without proposing a new rule." }
+    ]));
+  } finally {
+    closeProjectDb(db);
+  }
+  logEvent(projectPath, "consolidate_review_started", {
+    reconciliation_id: reconciliationId,
+    prototype_confirmation_event_id: null
+  });
+  const review = createRuleUpdateReview(projectPath, {
+    context: "Recorded conversation without a proposal",
+    reconciliationId
+  });
+  if (!review.ok) throw new Error(review.reason);
+  expect(publishRuleUpdateReview(projectPath, review.review.id)).toMatchObject({
+    ok: true,
+    proposal_count: 0,
+    review: { status: "completed" }
+  });
+
+  expect(getRuleUpdateReviewProjection(projectPath)).toMatchObject({
+    ok: true,
+    reviews: [{
+      id: review.review.id,
+      status: "completed",
+      transcript: [
+        { id: "m1", role: "designer", content: "Keep this exchange as context only." },
+        { id: "m2", role: "agent", content: "Recorded without proposing a new rule." }
+      ],
+      interactions: [],
+      proposals: []
+    }]
+  });
 });

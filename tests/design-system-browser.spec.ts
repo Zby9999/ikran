@@ -607,17 +607,114 @@ test("09A design system browser: declare → render → approve write-back", asy
     const newProposalCard = page.locator(".dsb-ru-card").filter({ hasText: "Purposeful progressive disclosure" });
     await expect(newProposalCard).toBeVisible();
     await expect(newProposalCard).not.toHaveAttribute("data-open", "true");
+    await expect(newProposalCard.getByText("Pending Review", { exact: true })).toBeVisible();
+    await expect(newProposalCard.locator(".dsb-ru-body")).toHaveCSS("opacity", "0");
     const interactionRule = page.getByTestId("ds-interaction-rule-1");
     const updateProposalSlot = interactionRule.locator("xpath=following-sibling::li[1]");
+    await expect(interactionRule.getByTestId("ds-interaction-status")).toHaveText("Candidate");
+    await expect(interactionRule.getByTestId("ds-interaction-status")).not.toHaveText("Pending Review");
     await expect(updateProposalSlot).toContainText("Calm feedback stays immediate");
-    await updateProposalSlot.getByRole("button", { name: /Calm feedback stays immediate/ }).click();
-    await expect(updateProposalSlot).toContainText("Feedback remains quiet and immediate.");
+    const pendingRuleUpdateDot = updateProposalSlot.getByLabel("Pending Rule Update");
+    await expect(pendingRuleUpdateDot).toBeVisible();
+    await expect(pendingRuleUpdateDot).toHaveCSS("width", "5px");
+    await expect(pendingRuleUpdateDot).toHaveCSS("height", "5px");
+    await updateProposalSlot.getByRole("button", { name: "Expand Calm feedback stays immediate" }).click();
+    await expect(updateProposalSlot).toContainText(
+      "Feedback stays immediate without demanding attention."
+    );
+    await expect(updateProposalSlot.getByText("Proposed", { exact: true })).toBeVisible();
+    await expect(updateProposalSlot.getByText("Reason", { exact: true })).toBeVisible();
+    await expect(updateProposalSlot.getByText("Affected", { exact: true })).toHaveCount(0);
+    await expect(updateProposalSlot.getByText("Current", { exact: true })).toHaveCount(0);
+    await expect(updateProposalSlot.getByText("Exchanges", { exact: true })).toHaveCount(0);
+    const acceptRuleUpdate = updateProposalSlot.getByRole("button", {
+      name: "Accept",
+      exact: true
+    });
+    const rejectRuleUpdate = updateProposalSlot.getByRole("button", {
+      name: "Reject",
+      exact: true
+    });
+    const [acceptBox, rejectBox] = await Promise.all([
+      acceptRuleUpdate.boundingBox(),
+      rejectRuleUpdate.boundingBox()
+    ]);
+    expect(acceptBox?.width).toBe(rejectBox?.width);
+    const updateEdit = updateProposalSlot.getByRole("button", {
+      name: "Edit Calm feedback stays immediate"
+    });
+    const originalEdit = interactionRule.getByRole("button", {
+      name: /Edit rule/
+    });
+    const [updateEditBox, originalEditBox] = await Promise.all([
+      updateEdit.boundingBox(),
+      originalEdit.boundingBox()
+    ]);
+    expect(updateEditBox?.width).toBe(originalEditBox?.width);
+    expect(updateEditBox?.height).toBe(originalEditBox?.height);
+    await updateEdit.click();
+    const inlineTitle = updateProposalSlot.getByRole("textbox", {
+      name: "Rule Update title"
+    });
+    const inlineBody = updateProposalSlot.getByRole("textbox", {
+      name: "Proposed rule"
+    });
+    await expect(inlineTitle).toBeVisible();
+    await expect(inlineBody).toBeVisible();
+    await expect(updateProposalSlot.getByRole("combobox")).toHaveCount(0);
+    await expect(inlineTitle).toHaveCSS("border-top-width", "0px");
+    await expect(inlineBody).toHaveCSS("border-top-width", "0px");
+    await expect(acceptRuleUpdate).toBeVisible();
+    await expect(rejectRuleUpdate).toBeVisible();
+    await expect(
+      updateProposalSlot.getByRole("button", {
+        name: "Interaction record for Calm feedback stays immediate"
+      })
+    ).toBeVisible();
+    await expect(acceptRuleUpdate).toBeEnabled();
+    await expect(rejectRuleUpdate).toBeEnabled();
+    await inlineTitle.fill("Calm feedback stays immediate — revised");
+    await expect(acceptRuleUpdate).toBeDisabled();
+    await expect(rejectRuleUpdate).toBeDisabled();
+    await expect(
+      updateProposalSlot.getByRole("button", {
+        name: "Save Rule Update Calm feedback stays immediate"
+      })
+    ).toBeVisible();
+    await updateProposalSlot
+      .getByRole("button", {
+        name: "Cancel editing Rule Update Calm feedback stays immediate"
+      })
+      .click();
+    const interactionInfo = updateProposalSlot.getByRole("button", {
+      name: "Interaction record for Calm feedback stays immediate"
+    });
+    await interactionInfo.hover();
+    await expect(page.locator(".dsb-ru-interaction-popover")).toBeVisible();
+    await expect(page.locator(".dsb-ru-interaction-popover")).toContainText(
+      "Interaction record"
+    );
+    await page.mouse.move(0, 0);
+
+    await page
+      .getByRole("button", { name: /^(Records|Interaction records)$/ })
+      .click();
+    const interactionRecords = page.getByTestId("rule-update-interaction-records");
+    await expect(interactionRecords).toBeVisible();
+    await expect(page.locator(".dsb-breadcrumb-current")).toHaveText(
+      /^(Records|Interaction Records)$/
+    );
+    await expect(interactionRecords.locator(".dsb-ru-record")).toHaveCount(2);
+    await expect(interactionRecords.getByRole("button", { name: "Check", exact: true })).toHaveCount(2);
+    await interactionNav.click();
+
+    await updateProposalSlot.getByRole("button", { name: "Expand Calm feedback stays immediate" }).click();
     await updateProposalSlot.getByRole("button", { name: "Reject", exact: true }).click();
     await expect(
       page.locator(".dsb-ru-card").filter({ hasText: "Calm feedback stays immediate" })
     ).toHaveCount(0);
 
-    await newProposalCard.getByRole("button", { name: /Purposeful progressive disclosure/ }).click();
+    await newProposalCard.getByRole("button", { name: "Expand Purposeful progressive disclosure" }).click();
     await newProposalCard.getByRole("button", { name: "Accept", exact: true }).click();
     await expect(newProposalCard).toContainText("Waiting for Agent");
 

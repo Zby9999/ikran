@@ -1,0 +1,1033 @@
+/* Rule Update Review prototype (Issue 34) — isolated exploration surface.
+   Tokens copied from components/workbench/design-system-browser.css so the
+   prototype has zero production dependencies. Motion: transform/opacity +
+   grid-rows for expand/collapse, ease-out, sub-300ms, reduced-motion aware. */
+
+.rur {
+  --dsc-canvas: #dcdcdc;
+  --dsc-surface: #f1f1f1;
+  --dsc-card: #ffffff;
+  --dsc-ink: #3d3d3d;
+  --dsc-ink-2: #636363;
+  --dsc-ink-3: #949494;
+  --dsc-accent: #3a93ff;
+  --dsc-green: #11c514;
+  --dsc-green-ink: #0f8f11;
+  --dsc-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --dsc-drawer-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  color: var(--dsc-ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.rur,
+.rur * {
+  box-sizing: border-box;
+}
+
+.rur button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* --------------------------------- backdrop -------------------------------- */
+
+.rur-page {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--dsc-canvas);
+}
+
+.rur-canvas {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  gap: 48px;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 8vh;
+}
+
+.rur-surface {
+  width: 420px;
+  height: 300px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 8%),
+    0 12px 32px rgb(0 0 0 / 10%);
+}
+
+.rur-surface-chrome {
+  height: 28px;
+  border-bottom: 1px solid rgb(0 0 0 / 6%);
+}
+
+.rur-surface-shot {
+  margin: 16px;
+  height: 120px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ececec, #e2e2e2);
+}
+
+/* ---------------------------------- sheet ---------------------------------- */
+
+.rur-sheet {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 94vh;
+  border-radius: 24px 24px 0 0;
+  background: #fafafa;
+  box-shadow:
+    0 -24px 64px rgb(0 0 0 / 18%),
+    0 -2px 8px rgb(0 0 0 / 8%),
+    0 0 0 1px rgb(0 0 0 / 10%);
+  overflow: hidden;
+  display: flex;
+  animation: rur-sheet-in 350ms var(--dsc-drawer-ease);
+}
+
+@keyframes rur-sheet-in {
+  from {
+    transform: translateY(28px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.rur-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+/* --------------------------------- sidebar --------------------------------- */
+
+.rur-sidebar {
+  display: flex;
+  width: 228px;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 16px;
+  align-self: stretch;
+  margin: 10px;
+  overflow-y: auto;
+  border: 1px solid #fff;
+  border-radius: 14px;
+  background: var(--dsc-surface);
+  padding: 6px;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 15%),
+    0 2px 8px rgb(0 0 0 / 10%);
+}
+
+.rur-sidebar-title {
+  padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--dsc-ink);
+}
+
+.rur-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rur-navrow {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0 8px;
+  color: var(--dsc-ink-2);
+  font-size: 13px;
+  text-align: left;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+
+.rur-navrow[data-active] {
+  border-color: rgb(0 0 0 / 20%);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--dsc-ink);
+  font-weight: 500;
+}
+
+.rur-navrow[data-pending] {
+  padding-right: 22px;
+}
+
+.rur-nav-dot {
+  position: absolute;
+  right: 11px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--dsc-green);
+  transform: translateY(-50%);
+}
+
+/* ----------------------------------- main ---------------------------------- */
+
+.rur-main {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rur-main-top {
+  flex-shrink: 0;
+  padding: 28px 56px 0 36px;
+}
+
+.rur-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--dsc-ink-3);
+}
+
+.rur-breadcrumb-current {
+  color: var(--dsc-ink);
+}
+
+.rur-page-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.rur-content {
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+  padding: 24px 36px 64px;
+  max-width: 860px;
+}
+
+.rur-h1 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 16px;
+  color: #000;
+}
+
+.rur-review-context {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dsc-ink-3);
+}
+
+.rur-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rur-group-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 16px;
+  color: var(--dsc-ink-2);
+}
+
+.rur-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ------------------------------- rule card --------------------------------- */
+
+.rur-rule {
+  border-radius: 10px;
+  background: #fff;
+  padding: 16px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
+}
+
+.rur-rule-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rur-rule-title {
+  min-width: 0;
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.rur-rule-body {
+  margin: 4px 0 0;
+  color: var(--dsc-ink-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.rur-rule-caption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 10.5px;
+  color: var(--dsc-ink-3);
+}
+
+.rur-origin-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  border-radius: 5px;
+  background: rgb(0 0 0 / 5%);
+  padding: 0 7px;
+  font-size: 10.5px;
+  color: var(--dsc-ink-3);
+}
+
+/* Move-source trace row (Issue 36): informational, deep-links to target. */
+.rur-trace {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 10px;
+  border: 1px dashed rgb(0 0 0 / 14%);
+  background: transparent;
+  padding: 10px 14px;
+  color: var(--dsc-ink-3);
+  font-size: 12px;
+  text-align: left;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+
+.rur-trace:hover {
+  background: rgb(0 0 0 / 3%);
+  color: var(--dsc-ink-2);
+}
+
+/* ------------------------------ proposal card ------------------------------ */
+
+/* Exit slot: collapsing a rejected card is grid-rows + opacity, no layout jank. */
+.rur-slot {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 240ms var(--dsc-ease),
+    opacity 180ms ease-out;
+}
+
+.rur-slot[data-exiting] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.rur-slot > .rur-card {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rur-card {
+  position: relative;
+  border-radius: 10px;
+  background: var(--dsc-card);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
+  transition:
+    background-color 200ms ease-out,
+    box-shadow 200ms ease-out;
+}
+
+.rur-card-head {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 12px 16px;
+  text-align: left;
+  color: var(--dsc-ink);
+  border-radius: 10px;
+}
+
+.rur-card-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.rur-chevron {
+  flex-shrink: 0;
+  color: var(--dsc-ink-3);
+  transition:
+    opacity 150ms ease-out,
+    transform 180ms var(--dsc-ease);
+}
+
+/* Card-head chevron follows the Browser's hover-reveal language (as on
+   .dsb-card-chevron): hidden until hover/focus, always visible when open. */
+.rur-card-head > .rur-chevron {
+  opacity: 0;
+}
+
+.rur-card-head:hover > .rur-chevron,
+.rur-card-head:focus-visible > .rur-chevron,
+.rur-card[data-open="true"] .rur-card-head > .rur-chevron {
+  opacity: 1;
+}
+
+.rur-card[data-open="true"] .rur-chevron {
+  transform: rotate(90deg);
+}
+
+.rur-exchanges-toggle .rur-chevron {
+  transition: transform 180ms var(--dsc-ease);
+}
+
+.rur-exchanges[data-open="true"] .rur-chevron,
+.rur-exchanges-toggle[aria-expanded="true"] .rur-chevron {
+  transform: rotate(90deg);
+}
+
+.rur-card-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 220ms var(--dsc-ease),
+    opacity 160ms ease-out;
+}
+
+.rur-card[data-open="true"] .rur-card-body {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.rur-card-body-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rur-card-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 16px 14px;
+}
+
+/* Chips — shared Browser status treatment: 24px, 6px radius, 12px. */
+.rur-chip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 5%);
+  padding: 0 10px;
+  color: var(--dsc-ink-3);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.rur-chip[data-status="pending"] {
+  background: rgb(17 197 20 / 9%);
+  color: var(--dsc-green-ink);
+}
+
+.rur-chip[data-status="accepted"] {
+  background: rgb(0 0 0 / 5%);
+  color: var(--dsc-ink-3);
+}
+
+.rur-chip[data-status="formalized"] {
+  background: rgb(17 197 20 / 9%);
+  color: var(--dsc-green-ink);
+}
+
+/* Proposal body blocks */
+.rur-block-label {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--dsc-ink-3);
+}
+
+.rur-proposed-body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--dsc-ink);
+  white-space: pre-wrap;
+}
+
+.rur-current-body {
+  margin: 0;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 3.5%);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsc-ink-3);
+  white-space: pre-wrap;
+}
+
+.rur-reason {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsc-ink-2);
+}
+
+.rur-move-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--dsc-ink-3);
+}
+
+/* Frozen exchanges — independently collapsible inside the card. */
+.rur-exchanges-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 6px 8px;
+  margin-left: -8px;
+  color: var(--dsc-ink-2);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  transition: background-color 150ms ease-out;
+}
+
+.rur-exchanges-toggle:hover {
+  background: rgb(0 0 0 / 4%);
+}
+
+.rur-exchanges {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 200ms var(--dsc-ease),
+    opacity 150ms ease-out;
+}
+
+.rur-exchanges[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.rur-exchanges-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rur-exchange {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.rur-exchange + .rur-exchange {
+  border-top: 1px solid rgb(0 0 0 / 5%);
+}
+
+.rur-exchange-author {
+  flex-shrink: 0;
+  width: 44px;
+  color: var(--dsc-ink-3);
+  font-size: 11px;
+  line-height: 1.9;
+}
+
+.rur-exchange-text {
+  margin: 0;
+  color: var(--dsc-ink-2);
+}
+
+.rur-revision-caption {
+  font-size: 10.5px;
+  color: var(--dsc-ink-3);
+}
+
+/* Actions */
+.rur-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.rur-actions-spacer {
+  flex: 1;
+}
+
+.rur-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 5%);
+  padding: 0 12px;
+  color: var(--dsc-ink-2);
+  font-size: 12px;
+  line-height: 1;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    transform 160ms ease-out;
+}
+
+.rur-action:hover {
+  background: rgb(0 0 0 / 8%);
+}
+
+.rur-action:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.rur-action:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.rur-action[data-kind="accept"] {
+  background: rgb(17 197 20 / 9%);
+  color: var(--dsc-green-ink);
+}
+
+.rur-action[data-kind="accept"]:hover {
+  background: rgb(17 197 20 / 15%);
+}
+
+.rur-action[data-kind="reject"]:hover {
+  background: rgb(180 35 24 / 8%);
+  color: #b42318;
+}
+
+.rur-action[data-kind="save"] {
+  background: rgb(58 147 255 / 12%);
+  color: #2473cc;
+}
+
+.rur-action[data-kind="save"]:hover {
+  background: rgb(58 147 255 / 18%);
+}
+
+.rur-accepted-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 3.5%);
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--dsc-ink-3);
+}
+
+/* Editor (in-card direct revision, Issue 37) */
+.rur-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rur-editor-title {
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 4%);
+  padding: 6px 8px;
+  color: var(--dsc-ink);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  caret-color: var(--dsc-accent);
+}
+
+.rur-editor-body {
+  width: 100%;
+  field-sizing: content;
+  min-height: 3em;
+  border: 0;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 4%);
+  padding: 8px;
+  resize: none;
+  color: var(--dsc-ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  caret-color: var(--dsc-accent);
+}
+
+.rur-editor-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--dsc-ink-2);
+}
+
+.rur-editor-select {
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 5%);
+  padding: 0 8px;
+  color: var(--dsc-ink);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.rur-editor-title:focus-visible,
+.rur-editor-body:focus-visible,
+.rur-editor-select:focus-visible {
+  outline: 2px solid var(--dsc-accent);
+  outline-offset: 1px;
+}
+
+.rur-editor-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--dsc-ink-3);
+}
+
+/* --------------------- variant: dot (Sidebar 绿点语言) --------------------- */
+
+.rur-dot {
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  transition: background-color 200ms ease-out;
+}
+
+.rur-dot[data-state="pending"] {
+  background: var(--dsc-green);
+}
+
+.rur-dot[data-state="accepted"] {
+  background: #c8c8c8;
+}
+
+/* ---------------------- variant: inline (纯排版信号) ----------------------- */
+
+.rur-status-text {
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1;
+  transition: color 200ms ease-out;
+}
+
+.rur-status-text[data-state="pending"] {
+  color: var(--dsc-green-ink);
+}
+
+.rur-status-text[data-state="accepted"] {
+  color: var(--dsc-ink-3);
+}
+
+/* --------------------------- deep-link flash ------------------------------- */
+
+.rur-card[data-flash] {
+  animation: rur-flash 1200ms ease-out;
+}
+
+@keyframes rur-flash {
+  0% {
+    box-shadow: 0 0 0 2px var(--dsc-accent);
+  }
+  100% {
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
+  }
+}
+
+/* ------------------------- sidebar footer entry ---------------------------- */
+
+.rur-sidebar-footer {
+  margin-top: auto;
+  border-top: 1px solid rgb(0 0 0 / 6%);
+  padding-top: 6px;
+}
+
+.rur-navrow-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  opacity: 0.7;
+}
+
+/* ---------------------------- All interactions ----------------------------- */
+
+.rur-record {
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 14px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 6%);
+}
+
+.rur-record-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rur-record-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.rur-record-fact {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--dsc-ink-3);
+}
+
+.rur-tag {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: rgb(58 147 255 / 10%);
+  padding: 0 10px;
+  color: #2473cc;
+  font-size: 12px;
+  line-height: 1;
+  transition:
+    background-color 150ms ease-out,
+    transform 160ms ease-out;
+}
+
+.rur-tag:hover {
+  background: rgb(58 147 255 / 16%);
+}
+
+.rur-tag:active {
+  transform: scale(0.97);
+}
+
+.rur-info-btn {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsc-ink-3);
+  font-size: 13px;
+  opacity: 0.55;
+  transition:
+    background-color 150ms ease-out,
+    opacity 150ms ease-out,
+    transform 160ms ease-out;
+}
+
+.rur-info-btn:hover {
+  background: rgb(0 0 0 / 5%);
+  opacity: 1;
+}
+
+.rur-info-btn[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.rur-info-btn:active {
+  transform: scale(0.97);
+}
+
+/* Record kind chips. */
+.rur-chip[data-record="accepted"] {
+  background: rgb(17 197 20 / 9%);
+  color: var(--dsc-green-ink);
+}
+
+.rur-chip[data-record="revision"] {
+  background: rgb(58 147 255 / 10%);
+  color: #2473cc;
+}
+
+/* ------------------------------ reduced motion ----------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .rur-sheet,
+  .rur-card[data-flash] {
+    animation: none;
+  }
+  .rur-slot,
+  .rur-card,
+  .rur-card-body,
+  .rur-exchanges,
+  .rur-chevron,
+  .rur-dot,
+  .rur-status-text,
+  .rur-action,
+  .rur-navrow,
+  .rur-trace,
+  .rur-tag,
+  .rur-info-btn {
+    transition: none;
+  }
+}
+
+/* --------------------------------- picker ---------------------------------- */
+/* PICKER.md spec — verbatim. Harness chrome, not part of the design. */
+
+.proto-picker {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(10, 10, 10, 0.82);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 8px 24px rgba(0, 0, 0, 0.24),
+    0 2px 6px rgba(0, 0, 0, 0.12);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.proto-picker-highlight {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  will-change: transform;
+}
+
+.proto-picker[data-ready] .proto-picker-highlight {
+  transition:
+    transform 250ms cubic-bezier(0.23, 1, 0.32, 1),
+    width 250ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proto-picker[data-ready] .proto-picker-highlight { transition: none; }
+}
+
+.proto-picker-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font: inherit;
+  cursor: pointer;
+  transition: color 150ms ease-out;
+}
+
+.proto-picker-item:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.proto-picker-item:active {
+  transform: scale(0.97);
+}
+
+.proto-picker-item:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 2px;
+}
+
+.proto-picker-item[data-active] {
+  color: #fff;
+}
+
+.proto-picker-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.proto-picker-replay {
+  padding: 0 10px;
+  font-size: 14px;
+}
+
+.proto-picker[data-position="top"] {
+  bottom: auto;
+  top: 24px;
+}
