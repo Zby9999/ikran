@@ -32,6 +32,7 @@ import {
   ColorsIcon,
   Edit02Icon,
   GridViewIcon,
+  HistoryIcon,
   Home01Icon,
   InformationCircleIcon,
   Layers01Icon,
@@ -72,6 +73,14 @@ import {
   type LayoutRuleProjection
 } from "./design-system-layout-projection";
 import { artifactScreenshotUrl } from "./projection/seed-projection";
+import { createDesignSystemViewClient } from "./design-system-view-client";
+import {
+  RuleUpdateCategoryStream,
+  RuleUpdateInteractionsPage,
+  RuleUpdateUpdatesForEntry,
+  useRuleUpdateReviewView,
+  type RuleUpdateCategory
+} from "./rule-update-review";
 import {
   DS_HERO_LIVE_TIMEOUT_MS,
   DS_HERO_PRESENTATION_VIEWPORT_WIDTH,
@@ -770,6 +779,8 @@ type RowListProps = {
   /** Batch approval for composite rows (Typography atlas): applied
    * sequentially so same-file writes never race each other. */
   onApproveRows?: (rows: DsRow[]) => void;
+  renderRuleUpdateAfter?: (entryId: string) => ReactNode;
+  hasRuleUpdateForEntry?: (entryId: string) => boolean;
   onEditEntry?: (
     row: DsRow,
     field: "meaning" | "value" | "value.description",
@@ -978,19 +989,21 @@ function RowList({ rows, numbered = false, ...rest }: RowListProps) {
   return (
     <div className="dsb-rows">
       {rows.map((row, index) => (
-        <SpecRowView
-          key={row.key}
-          row={row}
-          anchor={numbered ? index + 1 : undefined}
-          approval={rest.approvals[row.key] ?? { kind: "idle" }}
-          infoOpen={rest.infoKey === row.key}
-          popoverInstant={rest.popoverInstant(row.key)}
-          portalContainer={rest.portalContainer}
-          onInfoOpenChange={(open) => rest.onInfoKey(open ? row.key : null)}
-          onInfoHoverOpen={() => rest.onInfoHoverOpen(row.key)}
-          onInfoHoverClose={rest.onInfoHoverClose}
-          onApprove={rest.onApprove ? () => rest.onApprove?.(row) : undefined}
-        />
+        <div key={row.key} className="dsb-rule-update-anchor">
+          <SpecRowView
+            row={row}
+            anchor={numbered ? index + 1 : undefined}
+            approval={rest.approvals[row.key] ?? { kind: "idle" }}
+            infoOpen={rest.infoKey === row.key}
+            popoverInstant={rest.popoverInstant(row.key)}
+            portalContainer={rest.portalContainer}
+            onInfoOpenChange={(open) => rest.onInfoKey(open ? row.key : null)}
+            onInfoHoverOpen={() => rest.onInfoHoverOpen(row.key)}
+            onInfoHoverClose={rest.onInfoHoverClose}
+            onApprove={rest.onApprove ? () => rest.onApprove?.(row) : undefined}
+          />
+          {rest.renderRuleUpdateAfter?.(row.entryId)}
+        </div>
       ))}
     </div>
   );
@@ -1111,53 +1124,68 @@ function RuleLedgerCardShell({
   evidenceAriaLabel: string;
 }) {
   const editor = useRuleInlineEditor(rule.row, rows, rule.body);
+  const pendingRuleUpdate = rows.hasRuleUpdateForEntry?.(rule.row.entryId) ?? false;
   return (
-    <li
-      className="dsb-interaction-rule"
-      data-testid={testId}
-      data-editing={editor.editing || undefined}
-      data-approve-error={approval.kind === "error" || undefined}
-    >
-      <div className="dsb-interaction-ledger-row">
-        <div className="dsb-interaction-ledger-meta">
-          <span className="dsb-interaction-ledger-tags">
-            <span className="dsb-interaction-anchor" aria-hidden>
-              {rule.anchor}
+    <>
+      <li
+        className="dsb-interaction-rule"
+        data-testid={testId}
+        data-editing={editor.editing || undefined}
+        data-approve-error={approval.kind === "error" || undefined}
+        data-rule-update-pending={pendingRuleUpdate || undefined}
+      >
+        <div className="dsb-interaction-ledger-row">
+          <div className="dsb-interaction-ledger-meta">
+            <span className="dsb-interaction-ledger-tags">
+              <span className="dsb-interaction-anchor" aria-hidden>
+                {rule.anchor}
+              </span>
+              <EntryStatusChip
+                row={rule.row}
+                approval={approval}
+                onApprove={
+                  rows.onApprove
+                    ? () => rows.onApprove?.(rule.row)
+                    : undefined
+                }
+                testId="ds-interaction-status"
+              />
             </span>
-            <EntryStatusChip
-              row={rule.row}
-              approval={approval}
-              onApprove={rows.onApprove ? () => rows.onApprove?.(rule.row) : undefined}
-              testId="ds-interaction-status"
-            />
-          </span>
-          <span className="dsb-rule-row-actions">
-            <RuleInlineActions row={rule.row} editor={editor} />
-            <InfoPopover
-              entry={rule.row.entry}
-              infoOpen={rows.infoKey === rule.key}
-              popoverInstant={rows.popoverInstant(rule.key)}
-              portalContainer={rows.portalContainer}
-              ariaLabel={evidenceAriaLabel}
-              onInfoOpenChange={(open) => rows.onInfoKey(open ? rule.key : null)}
-              onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.key)}
-              onInfoHoverClose={rows.onInfoHoverClose}
-              interactive={false}
-            />
-          </span>
+            <span className="dsb-rule-row-actions">
+              <RuleInlineActions row={rule.row} editor={editor} />
+              <InfoPopover
+                entry={rule.row.entry}
+                infoOpen={rows.infoKey === rule.key}
+                popoverInstant={rows.popoverInstant(rule.key)}
+                portalContainer={rows.portalContainer}
+                ariaLabel={evidenceAriaLabel}
+                onInfoOpenChange={(open) =>
+                  rows.onInfoKey(open ? rule.key : null)
+                }
+                onInfoHoverOpen={() => rows.onInfoHoverOpen(rule.key)}
+                onInfoHoverClose={rows.onInfoHoverClose}
+                interactive={false}
+              />
+            </span>
+          </div>
+          <div className="dsb-interaction-ledger-main">
+            <RuleInlineTitle editor={editor} />
+            <RuleInlineBody editor={editor} />
+          </div>
         </div>
-        <div className="dsb-interaction-ledger-main">
-          <RuleInlineTitle editor={editor} />
-          <RuleInlineBody editor={editor} />
-        </div>
-      </div>
-      <RuleInlineError editor={editor} />
-      {approval.kind === "error" ? (
-        <span className="dsb-row-error" role="alert">
-          {approval.message}
-        </span>
+        <RuleInlineError editor={editor} />
+        {approval.kind === "error" ? (
+          <span className="dsb-row-error" role="alert">
+            {approval.message}
+          </span>
+        ) : null}
+      </li>
+      {pendingRuleUpdate ? (
+        <li className="dsb-ru-ledger-slot">
+          {rows.renderRuleUpdateAfter?.(rule.row.entryId)}
+        </li>
       ) : null}
-    </li>
+    </>
   );
 }
 
@@ -1837,6 +1865,7 @@ function LayoutPlacardBlock({
   const orientation = capture ? captureOrientation(capture) : null;
   const mark = capture ? captureNodeMark(capture) : null;
   return (
+    <>
     <article
       className="dsb-placard dsb-placard-enter"
       style={{ "--i": index } as CSSProperties}
@@ -1947,6 +1976,8 @@ function LayoutPlacardBlock({
         ) : null}
       </div>
     </article>
+    {rows.renderRuleUpdateAfter?.(rule.row.entryId)}
+    </>
   );
 }
 
@@ -1989,32 +2020,51 @@ export function LayoutLeafPage({
 function useDesignSystemView(session: string, open: boolean) {
   const [view, setView] = useState<DesignSystemView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const clientRef = useRef<
+    ReturnType<typeof createDesignSystemViewClient> | null
+  >(null);
 
-  const load = useCallback(async () => {
-    try {
-      const response = await fetch("/api/design-system", {
-        cache: "no-store",
-        headers: { "x-ikran-session": session }
-      });
-      const data = (await response.json().catch(() => ({}))) as {
-        ok?: boolean;
-        view?: DesignSystemView;
-        error?: string;
-      };
-      if (response.ok && data.ok === true && data.view) {
-        setView(data.view);
+  useEffect(() => {
+    const client = createDesignSystemViewClient(session, {
+      onView: (nextView) => {
+        setView(nextView);
         setError(null);
-      } else {
-        setError(data.error ?? "load_failed");
-      }
-    } catch {
-      setError("network");
-    }
+      },
+      onError: setError
+    });
+    clientRef.current = client;
+    return () => {
+      client.dispose();
+      if (clientRef.current === client) clientRef.current = null;
+    };
   }, [session]);
+
+  const load = useCallback(
+    () =>
+      clientRef.current?.load() ??
+      Promise.resolve({ ok: false as const, disposed: true as const }),
+    []
+  );
+  const updateView = useCallback(
+    (update: React.SetStateAction<DesignSystemView | null>) => {
+      // An optimistic mutation is newer than every GET already in flight.
+      clientRef.current?.invalidate();
+      setView(update);
+    },
+    []
+  );
+  const beginMutation = useCallback(
+    () =>
+      clientRef.current?.beginMutation() ?? {
+        ready: Promise.resolve(),
+        finish() {}
+      },
+    []
+  );
 
   useEffect(() => {
     if (open) void load();
-  }, [open, load]);
+  }, [open, load, session]);
 
   // Authoritative refresh on the design-system record-bus kind (ingest,
   // approval commit) — same SSE channel the rest of the workbench uses.
@@ -2028,7 +2078,7 @@ function useDesignSystemView(session: string, open: boolean) {
     [session, load]
   );
 
-  return { view, setView, error, reload: load };
+  return { view, setView: updateView, error, reload: load, beginMutation };
 }
 
 /** Mount/unmount timing so the close transition can run before unmount. */
@@ -2084,7 +2134,9 @@ export function DesignSystemBrowser({
   readOnly?: boolean;
   onClose: (source: SheetCloseSource) => void;
 }) {
-  const { view, setView, error, reload } = useDesignSystemView(session, open);
+  const { view, setView, error, reload, beginMutation } =
+    useDesignSystemView(session, open);
+  const ruleUpdates = useRuleUpdateReviewView(session, open);
   const prefersReducedMotion = usePrefersReducedMotion();
   const { mounted, shown } = useSheetPresence(
     open,
@@ -2095,6 +2147,8 @@ export function DesignSystemBrowser({
     kind: "section",
     section: "foundations"
   });
+  const [showRuleUpdateHistory, setShowRuleUpdateHistory] = useState(false);
+  const [focusedRuleUpdateProposal, setFocusedRuleUpdateProposal] = useState<string | null>(null);
   const [infoKey, setInfoKey] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<Record<string, ApprovalState>>(
     {}
@@ -2133,6 +2187,8 @@ export function DesignSystemBrowser({
     if (!open) return;
     setSection("foundations");
     setRoute({ kind: "section", section: "foundations" });
+    setShowRuleUpdateHistory(false);
+    setFocusedRuleUpdateProposal(null);
     setInfoKey(null);
   }, [open]);
 
@@ -2150,6 +2206,7 @@ export function DesignSystemBrowser({
           type: "start"
         })
       }));
+      const mutation = beginMutation();
       // Optimistic switch; SSE refetch confirms, failure reverts below.
       setView((prev) =>
         prev
@@ -2163,6 +2220,7 @@ export function DesignSystemBrowser({
       );
       let reason: string | null = null;
       let details: unknown;
+      await mutation.ready;
       try {
         const response = await fetch("/api/design-system", {
           method: "POST",
@@ -2201,6 +2259,7 @@ export function DesignSystemBrowser({
       } catch {
         reason = "network";
       }
+      mutation.finish();
 
       if (reason === null) {
         setApprovals((prev) => ({
@@ -2232,7 +2291,7 @@ export function DesignSystemBrowser({
           : prev
       );
     },
-    [session, reload, setView]
+    [beginMutation, session, reload, setView]
   );
 
   const editEntry = useCallback(
@@ -2396,6 +2455,7 @@ export function DesignSystemBrowser({
   const switchTab = useCallback(
     (id: DsSectionId) => {
       setSection(id);
+      setShowRuleUpdateHistory(false);
       // 09C-D03: no Components Home — the tab lands on the first component.
       const landing = id === "components" ? model?.components.landingLeaf : null;
       setRoute(
@@ -2408,11 +2468,41 @@ export function DesignSystemBrowser({
   );
   const openLeaf = useCallback((sectionId: DsSectionId, leaf: DsLeafId) => {
     setSection(sectionId);
+    setShowRuleUpdateHistory(false);
     setRoute({ kind: "leaf", section: sectionId, leaf });
   }, []);
 
+  const navigateRuleUpdateCategory = useCallback(
+    (category: RuleUpdateCategory, proposalId: string) => {
+      setShowRuleUpdateHistory(false);
+      setFocusedRuleUpdateProposal(proposalId);
+      window.setTimeout(
+        () => setFocusedRuleUpdateProposal((current) => current === proposalId ? null : current),
+        1_200
+      );
+      if (category.startsWith("component:")) {
+        const entryId = category.slice("component:".length);
+        const component = model?.components.list.find((item) => item.entryId === entryId);
+        if (component) {
+          setSection("components");
+          setRoute({ kind: "leaf", section: "components", leaf: component.leafId });
+        }
+        return;
+      }
+      setSection("foundations");
+      const leaf = category.slice("foundations.".length);
+      setRoute(
+        leaf === "home"
+          ? { kind: "section", section: "foundations" }
+          : { kind: "leaf", section: "foundations", leaf: leaf as DsLeafId }
+      );
+    },
+    [model]
+  );
+
   if (!mounted) return null;
 
+  const ruleUpdateProjection = ruleUpdates.projection;
   const rowListProps: Omit<RowListProps, "rows"> = {
     approvals,
     infoKey,
@@ -2433,10 +2523,69 @@ export function DesignSystemBrowser({
             }
           })();
         },
-    onEditEntry: readOnly ? undefined : editEntry
+    onEditEntry: readOnly ? undefined : editEntry,
+    hasRuleUpdateForEntry: ruleUpdateProjection
+      ? (entryId) => {
+          const category: RuleUpdateCategory =
+            route.kind === "section"
+              ? route.section === "foundations"
+                ? "foundations.home"
+                : (`component:${componentLeafId(
+                    model?.components.landingLeaf ?? "component:"
+                  )}` as RuleUpdateCategory)
+              : route.section === "foundations"
+                ? (`foundations.${route.leaf}` as RuleUpdateCategory)
+                : (`component:${componentLeafId(
+                    route.leaf
+                  )}` as RuleUpdateCategory);
+          return ruleUpdateProjection.reviews.some((review) =>
+            review.proposals.some((proposal) =>
+                proposal.kind === "update" &&
+                proposal.target.category === category &&
+                proposal.target.entryId === entryId &&
+                !["applied", "rejected"].includes(proposal.status)
+            )
+          );
+        }
+      : undefined,
+    renderRuleUpdateAfter: ruleUpdateProjection
+      ? (entryId) => (
+          <RuleUpdateUpdatesForEntry
+            category={
+              route.kind === "section"
+                ? route.section === "foundations"
+                  ? "foundations.home"
+                  : (`component:${componentLeafId(
+                      model?.components.landingLeaf ?? "component:"
+                    )}` as RuleUpdateCategory)
+                : route.section === "foundations"
+                  ? (`foundations.${route.leaf}` as RuleUpdateCategory)
+                  : (`component:${componentLeafId(route.leaf)}` as RuleUpdateCategory)
+            }
+            entryId={entryId}
+            projection={ruleUpdateProjection}
+            session={session}
+            componentCategories={
+              model?.components.list.map(
+                (item) => `component:${item.entryId}` as RuleUpdateCategory
+              ) ?? []
+            }
+            onChanged={ruleUpdates.reload}
+            focusProposalId={focusedRuleUpdateProposal}
+          />
+        )
+      : undefined
   };
 
   const renderMain = (): ReactNode => {
+    if (showRuleUpdateHistory && ruleUpdates.projection) {
+      return (
+        <RuleUpdateInteractionsPage
+          projection={ruleUpdates.projection}
+          onNavigate={navigateRuleUpdateCategory}
+        />
+      );
+    }
     if (error && !model) {
       return (
         <div className="dsb-empty">
@@ -2565,6 +2714,26 @@ export function DesignSystemBrowser({
   const sidebarLeaves: { id: DsLeafId; name: string; icon: IconSvgElement }[] =
     section === "foundations" ? FOUNDATIONS_LEAVES : [];
   const componentSidebarGroups = model?.components.groups ?? [];
+  const currentRuleUpdateCategory: RuleUpdateCategory =
+    route.kind === "section"
+      ? route.section === "foundations"
+        ? "foundations.home"
+        : `component:${model?.components.list.find(
+            (item) => item.leafId === model.components.landingLeaf
+          )?.entryId ?? ""}`
+      : route.section === "foundations"
+        ? (`foundations.${route.leaf}` as RuleUpdateCategory)
+        : `component:${componentLeafId(route.leaf)}`;
+  const componentRuleUpdateCategories =
+    model?.components.list.map(
+      (item) => `component:${item.entryId}` as RuleUpdateCategory
+    ) ?? [];
+  const hasRuleUpdate = (category: RuleUpdateCategory): boolean =>
+    Boolean(
+      ruleUpdates.projection?.categories_with_unfinished_proposals.includes(
+        category
+      )
+    );
   const homeHasCandidate = Boolean(
     model &&
       [
@@ -2664,6 +2833,9 @@ export function DesignSystemBrowser({
                     {homeHasCandidate ? (
                       <span aria-hidden className="dsb-navrow-candidate-dot" />
                     ) : null}
+                    {hasRuleUpdate("foundations.home") ? (
+                      <span aria-hidden className="dsb-navrow-rule-update-dot" />
+                    ) : null}
                   </button>
                   {sidebarLeaves.map((leaf) => (
                     <button
@@ -2689,6 +2861,11 @@ export function DesignSystemBrowser({
                       <span className="dsb-navrow-label">{leaf.name}</span>
                       {foundationLeafHasCandidate(leaf.id) ? (
                         <span aria-hidden className="dsb-navrow-candidate-dot" />
+                      ) : null}
+                      {hasRuleUpdate(
+                        `foundations.${leaf.id}` as RuleUpdateCategory
+                      ) ? (
+                        <span aria-hidden className="dsb-navrow-rule-update-dot" />
                       ) : null}
                     </button>
                   ))}
@@ -2728,12 +2905,29 @@ export function DesignSystemBrowser({
                         {item.candidate ? (
                           <span aria-hidden className="dsb-navrow-candidate-dot" />
                         ) : null}
+                        {hasRuleUpdate(`component:${componentLeafId(item.leafId)}`) ? (
+                          <span aria-hidden className="dsb-navrow-rule-update-dot" />
+                        ) : null}
                       </button>
                     ))}
                   </div>
                 ))
               )}
             </div>
+            <button
+              type="button"
+              className="dsb-all-interactions"
+              data-active={showRuleUpdateHistory || undefined}
+              onClick={() => setShowRuleUpdateHistory(true)}
+            >
+              <HugeiconsIcon
+                icon={HistoryIcon}
+                size={14}
+                color="currentColor"
+                strokeWidth={2}
+              />
+              <span>Records</span>
+            </button>
           </aside>
           <main className="dsb-main">
             <button
@@ -2752,7 +2946,9 @@ export function DesignSystemBrowser({
             </button>
             <div className="dsb-main-top">
               <nav aria-label="Breadcrumb" className="dsb-breadcrumb">
-                {model
+                {showRuleUpdateHistory ? (
+                  <span className="dsb-breadcrumb-current">Records</span>
+                ) : model
                   ? breadcrumbFor(route, model).map(
                       (segment, index, segments) => (
                         <span key={`${segment}-${index}`}>
@@ -2771,7 +2967,7 @@ export function DesignSystemBrowser({
                     )
                   : null}
               </nav>
-              {routeSyncWarnings.length > 0 ? (
+              {!showRuleUpdateHistory && routeSyncWarnings.length > 0 ? (
                 <p
                   className="dsb-page-note dsb-sync-warning"
                   data-testid="ds-sync-warning"
@@ -2784,9 +2980,25 @@ export function DesignSystemBrowser({
               ) : null}
             </div>
             <div
-              key={`${route.kind}-${route.kind === "leaf" ? route.leaf : route.section}`}
+              key={showRuleUpdateHistory ? "rule-update-history" : `${route.kind}-${route.kind === "leaf" ? route.leaf : route.section}`}
               className="dsb-enter dsb-page"
             >
+              {ruleUpdates.error ? (
+                <p className="dsb-ru-unavailable" role="alert">
+                  Rule Update review unavailable: {ruleUpdates.error}
+                </p>
+              ) : null}
+              {!showRuleUpdateHistory && ruleUpdates.projection ? (
+                <RuleUpdateCategoryStream
+                  category={currentRuleUpdateCategory}
+                  projection={ruleUpdates.projection}
+                  session={session}
+                  componentCategories={componentRuleUpdateCategories}
+                  onChanged={ruleUpdates.reload}
+                  onNavigate={navigateRuleUpdateCategory}
+                  focusProposalId={focusedRuleUpdateProposal}
+                />
+              ) : null}
               {mainContent}
             </div>
           </main>
@@ -3210,6 +3422,8 @@ export function ComponentDetail({
           </div>
         ) : null}
       </section>
+
+      {rows.renderRuleUpdateAfter?.(component.entryId)}
 
       <div className="dsb-reader">
         <header className="dsb-reader-head">

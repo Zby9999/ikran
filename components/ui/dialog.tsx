@@ -18,9 +18,14 @@ function DialogContent({
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay
+        data-slot="dialog-overlay"
         className={cn("fixed inset-0 z-50 bg-transparent", overlayClassName)}
       />
-      <DialogPrimitive.Content className={cn("fixed z-50", className)} {...props} />
+      <DialogPrimitive.Content
+        data-slot="dialog-content"
+        className={cn("fixed z-50", className)}
+        {...props}
+      />
     </DialogPrimitive.Portal>
   );
 }

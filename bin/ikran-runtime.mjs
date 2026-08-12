@@ -2,7 +2,7 @@
 import "tsx";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { chmodSync, existsSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -13,6 +13,7 @@ import {
   readRuntimeEndpoint,
   removeRuntimeEndpoint
 } from "../lib/runtime/runtime-endpoint.mjs";
+import { importTsxModule } from "../lib/runtime/tsx-module-interop.mjs";
 import { assertProdBuildMatchesSource } from "../lib/runtime/version-stamp.mjs";
 
 const argv = process.argv.slice(2);
@@ -25,6 +26,15 @@ const host = option("--host", process.env.IKRAN_HOST || "127.0.0.1");
 const requestedPort = Number(option("--port", process.env.IKRAN_PORT || ""));
 const port = Number.isFinite(requestedPort) && requestedPort > 0 ? requestedPort : undefined;
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const packageVersion = (() => {
+  const manifest = JSON.parse(
+    readFileSync(path.join(appDir, "package.json"), "utf8")
+  );
+  if (typeof manifest.version !== "string" || manifest.version.length === 0) {
+    throw new Error("Ikran package version is missing.");
+  }
+  return manifest.version;
+})();
 const stateDir = process.env.IKRAN_STATE_DIR || path.join(homedir(), ".ikran");
 const socketPath = path.join(stateDir, "runtime-mcp.sock");
 const nextDistDir = process.env.IKRAN_NEXT_DIST_DIR || undefined;
@@ -32,13 +42,13 @@ if (!existsSync(path.join(appDir, "app"))) process.exit(1);
 if (prod) assertProdBuildMatchesSource({ appDir, prod, nextDistDir });
 
 const mcpLibDir = path.join(appDir, "lib/mcp");
-const { registerIkranTools, IKRAN_MCP_INSTRUCTIONS } = await import(
+const { registerIkranTools, IKRAN_MCP_INSTRUCTIONS } = await importTsxModule(
   pathToFileURL(path.join(mcpLibDir, "register-tools.ts")).href
 );
-const { resolveWorkingFolder } = await import(
+const { resolveWorkingFolder } = await importTsxModule(
   pathToFileURL(path.join(mcpLibDir, "discover-working-folder.ts")).href
 );
-const { createRuntimeLifecycle, registerRuntimeControl } = await import(
+const { createRuntimeLifecycle, registerRuntimeControl } = await importTsxModule(
   pathToFileURL(path.join(appDir, "lib/runtime/runtime-lifecycle.ts")).href
 );
 
@@ -56,13 +66,13 @@ async function shutdown(code = 0) {
   // an already-stale row — then kill the Runtime-owned dev servers. The next
   // launch restores the parked surfaces from their persisted run records.
   try {
-    const { killAllPreviewServers } = await import(
+    const { killAllPreviewServers } = await importTsxModule(
       pathToFileURL(path.join(appDir, "lib/runtime/preview-server.ts")).href
     );
-    const { markPrototypeSurfacesStaleForShutdown } = await import(
+    const { markPrototypeSurfacesStaleForShutdown } = await importTsxModule(
       pathToFileURL(path.join(appDir, "lib/runtime/prototype-surface.ts")).href
     );
-    const { getActiveProject } = await import(
+    const { getActiveProject } = await importTsxModule(
       pathToFileURL(path.join(appDir, "lib/runtime/project.ts")).href
     );
     const activeProject = getActiveProject();
@@ -117,7 +127,7 @@ socketServer = createServer((socket) => {
   sockets.add(socket);
   const release = lifecycle.acquire("mcp");
   const mcp = new McpServer(
-    { name: "ikran", version: "0.1.0" },
+    { name: "ikran", version: packageVersion },
     { instructions: IKRAN_MCP_INSTRUCTIONS }
   );
   const registerTool = mcp.registerTool.bind(mcp);

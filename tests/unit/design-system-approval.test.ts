@@ -553,6 +553,73 @@ describe("per-kind write-back location", () => {
     });
   });
 
+  test("a Browser read between token status switches preserves the reverse transition", () => {
+    withTempProject((dir) => {
+      seedEvidenceCards(dir);
+      writeProjectFile(dir, "design-system/token.json", {
+        primitive: {
+          "color.ink": {
+            kind: "token",
+            domain: "color",
+            value: "#101418",
+            status: "candidate",
+            links: ["card-edited"]
+          }
+        },
+        semantic: {
+          "color.text-primary": {
+            kind: "token",
+            domain: "color",
+            value: { alias: "primitive.color.ink", usage: "Default text" },
+            status: "candidate",
+            links: ["card-edited"]
+          },
+          "color.surface-muted": {
+            kind: "token",
+            domain: "color",
+            value: "#f2f2f2",
+            status: "candidate",
+            links: ["card-accepted"]
+          }
+        },
+        component: {}
+      });
+      expect(
+        recordSourceArtifact(dir, {
+          path: "design-system/token.json",
+          artifactType: "token.json",
+          semanticPurpose: "status switch ordering regression",
+          relatedRecordIds: ["card-edited", "card-accepted"]
+        }).ok
+      ).toBe(true);
+
+      expect(
+        approve(dir, "design-system/token.json", "semantic.color.text-primary")
+          .ok
+      ).toBe(true);
+      expect(getDesignSystemView(dir).ok).toBe(true);
+      const reversed = approve(
+        dir,
+        "design-system/token.json",
+        "semantic.color.text-primary",
+        "candidate"
+      );
+      expect(reversed).toMatchObject({ ok: true });
+      expect(
+        entryRow(
+          dir,
+          "design-system/token.json",
+          "semantic.color.text-primary"
+        )?.status
+      ).toBe("candidate");
+      expect(
+        JSON.parse(readProjectFile(dir, "design-system/token.json")).semantic[
+          "color.text-primary"
+        ].status
+      ).toBe("candidate");
+    });
+  });
+
   test("array entries are located by id in the remaining four kinds", () => {
     withTempProject((dir) => {
       seedAndIngest(dir);

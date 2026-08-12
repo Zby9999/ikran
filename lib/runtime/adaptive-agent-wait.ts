@@ -1,6 +1,10 @@
 import path from "node:path";
 
-import { closeProjectDb, openProjectDb } from "./db";
+import {
+  findEarliestPendingAgentCommand as findEarliestDurableAgentCommand,
+  readActiveRuleUpdateReviewWaitScope,
+  type AgentCommandScope
+} from "./agent-command";
 import { subscribeRecordEvents } from "./record-bus";
 import {
   DESIGNER_HANDOFF_STAGES,
@@ -93,10 +97,15 @@ function subscribePresence(projectPath: string, listener: PresenceListener) {
 export type PendingAgentCommand = {
   id: string;
   command_type: string;
-  alignment_attempt_id: string;
+  scope: AgentCommandScope;
+  alignment_attempt_id: string | null;
   payload: Record<string, unknown>;
   created_at: string;
 };
+
+export type AgentCommandWaitScope =
+  | { kind: "alignment_handoff" }
+  | { kind: "rule_update_review"; id: string };
 
 export type AgentCommandWaitEligibility =
   | {
@@ -104,6 +113,7 @@ export type AgentCommandWaitEligibility =
       eligible: true;
       stage: WorkflowStage;
       seed_reference_count: number;
+      wait_scope: AgentCommandWaitScope;
     }
   | {
       ok: true;
@@ -126,6 +136,17 @@ export function readAgentCommandWaitEligibility(
     const stage = getProjectWorkflowStage(projectPath);
     const seedReferenceCount =
       getProjectReadiness(projectPath).seedReferenceCount;
+    const activeRuleUpdateReview =
+      readActiveRuleUpdateReviewWaitScope(projectPath);
+    if (activeRuleUpdateReview) {
+      return {
+        ok: true,
+        eligible: true,
+        stage,
+        seed_reference_count: seedReferenceCount,
+        wait_scope: activeRuleUpdateReview.scope
+      };
+    }
     if (seedReferenceCount === 0) {
       return {
         ok: true,
@@ -148,7 +169,8 @@ export function readAgentCommandWaitEligibility(
       ok: true,
       eligible: true,
       stage,
-      seed_reference_count: seedReferenceCount
+      seed_reference_count: seedReferenceCount,
+      wait_scope: { kind: "alignment_handoff" }
     };
   } catch {
     return { ok: false, reason: "state_unavailable" };
@@ -180,37 +202,17 @@ export type WaitForAgentCommandResult =
 export function findEarliestPendingAgentCommand(
   projectPath: string
 ): PendingAgentCommand | null {
-  const db = openProjectDb(projectPath);
-  try {
-    const row = db
-      .prepare(
-        `SELECT id, command_type, alignment_attempt_id, payload_json, created_at
-         FROM agent_commands
-         WHERE status = 'pending'
-         ORDER BY created_at ASC, id ASC
-         LIMIT 1`
-      )
-      .get() as
-      | {
-          id: string;
-          command_type: string;
-          alignment_attempt_id: string;
-          payload_json: string;
-          created_at: string;
-        }
-      | undefined;
-    return row
-      ? {
-          id: row.id,
-          command_type: row.command_type,
-          alignment_attempt_id: row.alignment_attempt_id,
-          payload: JSON.parse(row.payload_json) as Record<string, unknown>,
-          created_at: row.created_at
-        }
-      : null;
-  } finally {
-    closeProjectDb(db);
-  }
+  const command = findEarliestDurableAgentCommand(projectPath);
+  return command
+    ? {
+        id: command.id,
+        command_type: command.command_type,
+        scope: command.scope,
+        alignment_attempt_id: command.alignment_attempt_id,
+        payload: command.payload,
+        created_at: command.created_at
+      }
+    : null;
 }
 
 export async function waitForAgentCommand(

@@ -1,8 +1,6 @@
 // Issue 05A — Figma Connection Gate UI + fail-closed paste (deterministic doubles).
 
 import { expect, test as base } from "./fixtures";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { rawGet as httpGet, rawPost as httpPost, rawDelete as httpDelete, rawPatch as httpPatch } from "./helpers/http";
 import { connectFigmaForTests } from "./helpers/figma-connection";
@@ -10,15 +8,9 @@ import { listEvents } from "../lib/runtime/events";
 import { listRegionAnnotations } from "../lib/runtime/region-annotation";
 
 const test = base.extend<{ folder: string }>({
-  folder: async ({}, use) => {
-    const folder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-05a-"));
+  folder: async ({ runtime }, use) => {
+    const folder = runtime.createProjectFolder("05a-");
     await use(folder);
-    rmSync(folder, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 50
-    });
   }
 });
 

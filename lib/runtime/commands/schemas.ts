@@ -277,6 +277,7 @@ export const backfillComponentCodeLinksInputSchema = z.object(
 // Strings (not enums) for kind / classification so the domain reasons
 // invalid_proposal_kind / invalid_proposal_classification reach the caller.
 export const proposeRuleUpdateInputShape = {
+  reviewId: z.string().optional(),
   kind: z
     .string()
     .optional()
@@ -289,6 +290,9 @@ export const proposeRuleUpdateInputShape = {
     ),
   title: z.string().optional(),
   changeDescription: z.string().optional(),
+  fullRuleBody: z.string().optional(),
+  targetCategory: z.string().optional(),
+  sourceCategory: z.string().optional(),
   reason: z.string(),
   affectedItems: z.array(z.string()),
   evidenceRecordIds: z.array(z.string()),
@@ -320,6 +324,58 @@ export const cancelRuleUpdateInputShape = {
 
 export const cancelRuleUpdateInputSchema = z.object(
   cancelRuleUpdateInputShape
+);
+
+export const createRuleUpdateReviewInputShape = {
+  context: z.string(),
+  reconciliationId: z.string().optional()
+} as const;
+export const createRuleUpdateReviewInputSchema = z.object(
+  createRuleUpdateReviewInputShape
+);
+
+export const publishRuleUpdateReviewInputShape = { reviewId: z.string() } as const;
+export const publishRuleUpdateReviewInputSchema = z.object(
+  publishRuleUpdateReviewInputShape
+);
+
+export const failRuleUpdateApplyInputShape = {
+  commandId: z.string(),
+  error: z.string()
+} as const;
+export const failRuleUpdateApplyInputSchema = z.object(
+  failRuleUpdateApplyInputShape
+);
+
+export const retryRuleUpdateApplyInputShape = { commandId: z.string() } as const;
+export const retryRuleUpdateApplyInputSchema = z.object(
+  retryRuleUpdateApplyInputShape
+);
+
+const ruleUpdateTargetShape = {
+  category: z.string(),
+  sourceCategory: z.string().optional(),
+  sourceArtifactPath: z.string().optional(),
+  entryId: z.string().optional(),
+  proposedTargetPath: z.string().optional()
+} as const;
+
+export const reviseRuleUpdateProposalInputShape = {
+  proposalId: z.string(),
+  title: z.string(),
+  fullRuleBody: z.string(),
+  target: z.object(ruleUpdateTargetShape)
+} as const;
+export const reviseRuleUpdateProposalInputSchema = z.object(
+  reviseRuleUpdateProposalInputShape
+);
+
+export const decideRuleUpdateProposalInputShape = {
+  proposalId: z.string(),
+  decision: z.enum(["accepted", "rejected"])
+} as const;
+export const decideRuleUpdateProposalInputSchema = z.object(
+  decideRuleUpdateProposalInputShape
 );
 
 export const claimConsolidateReviewInputShape = {

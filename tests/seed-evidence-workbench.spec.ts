@@ -1,10 +1,5 @@
 import { expect, test as base } from "./fixtures";
-import {
-  existsSync,
-  mkdtempSync,
-  rmSync
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   rawDelete as httpDelete,
@@ -13,6 +8,7 @@ import {
   rawPost as httpPost
 } from "./helpers/http";
 import { connectFigmaForTests } from "./helpers/figma-connection";
+import { openIkranDb } from "./helpers/db";
 import {
   claimAlignmentPreparationCommand,
   finalizeAlignmentPreparation
@@ -35,15 +31,9 @@ import {
 // intent write UI.
 
 const test = base.extend<{ folder: string }>({
-  folder: async ({}, use) => {
-    const folder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-04-"));
+  folder: async ({ runtime }, use) => {
+    const folder = runtime.createProjectFolder("04-");
     await use(folder);
-    rmSync(folder, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 50
-    });
   }
 });
 
@@ -162,9 +152,7 @@ async function agentCaptureSeed(
 function readEvents(folder: string): { type: string; payload: Record<string, unknown> }[] {
   const dbPath = path.join(folder, ".ikran", "ikran.db");
   if (!existsSync(dbPath)) return [];
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { DatabaseSync } = require("node:sqlite");
-  const db = new DatabaseSync(dbPath);
+  const db = openIkranDb(dbPath);
   try {
     return (
       db
@@ -187,9 +175,7 @@ function readSeedReferences(folder: string): Array<{
 }> {
   const dbPath = path.join(folder, ".ikran", "ikran.db");
   if (!existsSync(dbPath)) return [];
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { DatabaseSync } = require("node:sqlite");
-  const db = new DatabaseSync(dbPath);
+  const db = openIkranDb(dbPath);
   try {
     return db
       .prepare("SELECT * FROM seed_references ORDER BY created_at ASC")
@@ -256,10 +242,6 @@ async function assertNoWorkbenchSeedWriteUi(
 }
 
 test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed", () => {
-  test.beforeEach(async ({ runtime }) => {
-    rmSync(path.join(runtime.stateDir, "runtime-state.json"), { force: true });
-  });
-
   test("Shutdown expands to the Figma confirmation, dismisses outside, and stops only on Yes", async ({
     page,
     runtime,
@@ -283,7 +265,19 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     await expect(confirmation).toContainText("Are you sure you want to shut down ikran?");
     await expect(confirmation.getByRole("button", { name: "Yes" })).toBeVisible();
 
-    await page.mouse.click(500, 100);
+    const overlay = page.locator('[data-slot="dialog-overlay"]');
+    await expect(overlay).toBeVisible();
+    // Radix deliberately arms pointer-down-outside on the next task so the
+    // click which opened the dialog cannot immediately dismiss it. Wait for
+    // that interactive frame, then click the real overlay rather than a fixed
+    // viewport coordinate which may not be outside at every font/viewport.
+    await confirmation.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        })
+    );
+    await overlay.click({ position: { x: 1, y: 1 } });
     await expect(confirmation).toBeHidden();
     await expect(trigger).toBeVisible();
     expect(stopRequests).toBe(0);
@@ -549,7 +543,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       return claimAlignmentPreparationCommand(folder);
     };
     const create = async (attemptId: string, section: string, index: number) => {
-      const annotation = createAgentAnnotation(folder, {
+      const createAnnotation = () => createAgentAnnotation(folder, {
         alignmentAttemptId: attemptId,
         idempotencyKey: `${attemptId}:${section}:assumption`,
         section,
@@ -558,6 +552,11 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
         body: `The current ${section} choices appear intentional.`,
         anchor
       });
+      let annotation = createAnnotation();
+      for (let retry = 0; !annotation.ok && annotation.reason === "db_error" && retry < 4; retry += 1) {
+        await page.waitForTimeout(25);
+        annotation = createAnnotation();
+      }
       if (!annotation.ok) return annotation;
       for (let retry = 0; retry < 5; retry += 1) {
         const result = createQuestionCard(folder, {
@@ -586,7 +585,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     const firstAttempt = await readAttempt();
     expect((await claim()).ok).toBe(true);
     const oldPreparingCard = await create(firstAttempt, "design-principle", 1);
-    expect(oldPreparingCard.ok).toBe(true);
+    expect(oldPreparingCard, JSON.stringify(oldPreparingCard)).toMatchObject({ ok: true });
     await page.reload();
     await enterWorkbench(page, { port: runtime.port, sessionToken: token });
     await page.getByRole("button", { name: "Back to Seed Reference" }).click();
@@ -677,7 +676,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     };
     const proposedCards: Array<{ id: string; answer: string }> = [];
     for (const section of ALIGNMENT_SECTIONS) {
-      expect(createAgentAnnotation(folder, {
+      const createAnnotation = () => createAgentAnnotation(folder, {
         alignmentAttemptId: attemptId,
         idempotencyKey: `07e:${section}:assumption`,
         section,
@@ -685,7 +684,13 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
         title: "Section Hypothesis",
         body: `The current ${section} choices appear intentional.`,
         anchor
-      }).ok).toBe(true);
+      });
+      let annotation = createAnnotation();
+      for (let retry = 0; !annotation.ok && annotation.reason === "db_error" && retry < 4; retry += 1) {
+        await page.waitForTimeout(25);
+        annotation = createAnnotation();
+      }
+      expect(annotation, JSON.stringify(annotation)).toMatchObject({ ok: true });
       for (let index = 1; index <= 2; index += 1) {
         const proposedAnswer = `Proposal ${index} for ${section}`;
         let created = createQuestionCard(folder, {

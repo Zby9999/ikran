@@ -14,11 +14,10 @@
 // convert against the measured document scroll size. Typical usage is two
 // passes: capture plain, inspect, capture again with crop + annotations.
 //
-// `playwright-core` is imported dynamically inside the capture — the MCP /
-// Runtime process must not hard-require it (it ships via the @playwright/test
-// devDependency). All host effects go through `RuleCaptureDeps` so unit tests
-// exercise the flow without a browser. Never throws: failures resolve quietly
-// with a typed reason.
+// `playwright-core` is a direct Runtime dependency but is imported dynamically
+// so ordinary MCP commands do not eagerly initialize browser control. All host
+// effects go through `RuleCaptureDeps` so unit tests exercise the flow without
+// a browser. Never throws: failures resolve quietly with a typed reason.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";

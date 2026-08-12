@@ -66,6 +66,11 @@ import {
   type DesignSystemQualityDiagnostic
 } from "./design-system-quality";
 import { markPrototypeSurfacesStaleForArtifactOnDb } from "./prototype-surface";
+import {
+  claimedRuleUpdateApplyIdentityOnDb,
+  completeRuleUpdateApplyOnArtifactDeclaration,
+  markRuleUpdateDeclarationConflict
+} from "./rule-update-apply";
 
 // ---------------------------------------------------------------------------
 // Artifact type registry (data-driven; add new types as entries below)
@@ -530,6 +535,7 @@ export function recordSourceArtifact(
       // (design-system-sync) compares against this to detect undeclared
       // source edits. Null for non-design-system artifacts.
       let contentDigest: string | null = null;
+      let ruleUpdateClaim: { commandId: string; revision: number } | null = null;
 
       // Issue 29 proposal-first gate: a rule-update write may only be
       // declared against a proposal the designer already confirmed. Runtime
@@ -552,6 +558,11 @@ export function recordSourceArtifact(
           requiresRuleUpdateProposal
         );
         if (!authorization.ok) return authorization;
+        ruleUpdateClaim = claimedRuleUpdateApplyIdentityOnDb(
+          db,
+          declaration.proposalId,
+          relativePath
+        );
       }
 
       let usedCandidateIds: string[] = [];
@@ -673,7 +684,15 @@ export function recordSourceArtifact(
         declaration_version: record.declaration_version,
         ...(declaration.proposalId === undefined
           ? {}
-          : { proposal_id: declaration.proposalId }),
+          : {
+              proposal_id: declaration.proposalId,
+              ...(ruleUpdateClaim === null
+                ? {}
+                : {
+                    rule_update_command_id: ruleUpdateClaim.commandId,
+                    rule_update_revision: ruleUpdateClaim.revision
+                  })
+            }),
         ...(usedCandidateIds.length === 0
           ? {}
           : { used_candidate_ids: usedCandidateIds })
@@ -695,6 +714,17 @@ export function recordSourceArtifact(
         recordSourceContentDigest(db, record.path, contentDigest!);
       }
 
+      const ruleUpdateApply =
+        declaration.proposalId === undefined
+          ? { applied: false, reviewId: null }
+          : completeRuleUpdateApplyOnArtifactDeclaration(
+              db,
+              declaration.proposalId,
+              record.path,
+              contentDigest,
+              now
+            );
+
       // Issue 30 stale semantics: declared prototype/code changes invalidate
       // any live preview built from that tree. Runtime warns; it never
       // auto-restarts the dev server.
@@ -712,12 +742,27 @@ export function recordSourceArtifact(
           ? designSystemQualityDiagnostics(relativePath, ingestPlan.rows)
           : [],
         action: existing ? ("updated" as const) : ("created" as const),
-        ingested: ingestPlan !== null
+        ingested: ingestPlan !== null,
+        ruleUpdateApply
       };
     });
 
     if (!result.ok) {
       const details = "details" in result ? result.details : undefined;
+      if (
+        result.reason === "proposal_base_digest_conflict" &&
+        declaration.proposalId !== undefined &&
+        details &&
+        typeof details === "object" &&
+        typeof (details as { path?: unknown }).path === "string" &&
+        typeof (details as { observed?: unknown }).observed === "string"
+      ) {
+        markRuleUpdateDeclarationConflict(
+          projectPath,
+          declaration.proposalId,
+          details as { path: string; expected: string | null; observed: string }
+        );
+      }
       logInvalidArtifact(projectPath, result.reason, relativePath, details);
       return { ok: false, reason: result.reason, details };
     }
@@ -762,6 +807,15 @@ export function recordSourceArtifact(
           exportResult.reason
         );
       }
+    }
+
+    if (result.ruleUpdateApply.applied && result.ruleUpdateApply.reviewId) {
+      emitRecordEvent({
+        kind: "rule-update",
+        action: "updated",
+        id: result.ruleUpdateApply.reviewId,
+        projectPath: path.resolve(projectPath)
+      });
     }
 
     return {

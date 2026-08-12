@@ -13,7 +13,7 @@
 // directly, the alignment flow is driven through MCP tools + the alignment
 // HTTP surface, and the Workbench page follows along via the live SSE channel.
 
-import { existsSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -33,6 +33,7 @@ import {
 } from "./helpers/alignment";
 import { enterCanvas } from "./helpers/workbench";
 import { openIkranDb } from "./helpers/db";
+import { writeSyntheticCapture } from "./helpers/synthetic-capture";
 
 async function patchAlignment(
   workbenchUrl: string,
@@ -281,9 +282,8 @@ test("09A design system browser: declare → render → approve write-back", asy
       "utf-8"
     );
     mkdirSync(path.join(designSystemDir, "captures"), { recursive: true });
-    copyFileSync(
-      path.join(process.cwd(), "tests", "fixtures", "layout-capture-grid.png"),
-      path.join(designSystemDir, "captures", "button-source.png")
+    writeSyntheticCapture(
+      path.join(designSystemDir, "captures", "button-source.svg")
     );
     const buttonCodeLinks = ["components/Button.tsx"];
     writeSource("design-system/components/button.json", {
@@ -321,7 +321,7 @@ test("09A design system browser: declare → render → approve write-back", asy
         sourceCaptures: [
           {
             nodeName: "Button",
-            artifactPath: "design-system/captures/button-source.png",
+            artifactPath: "design-system/captures/button-source.svg",
             capturedAt: "2026-08-07T14:00:00.000Z",
             origin: "source"
           }
@@ -391,6 +391,60 @@ test("09A design system browser: declare → render → approve write-back", asy
       "design-system.json",
       [designerEditedCardId]
     ))).toMatchObject({ ok: true, record: { status: "ingested" } });
+    expect(structuredContent(await declare(
+      "design-system/interaction-rules.json",
+      "interaction-rules.json",
+      [designerEditedCardId]
+    ))).toMatchObject({ ok: true, record: { status: "ingested" } });
+
+    // Issues 36-40: the Agent drafts the complete Review privately, then
+    // publishes the full batch. The Browser, not chat text, owns revision and
+    // decision UI; decisions wake the Agent through the durable command queue.
+    const reviewResult = structuredContent(await client.callTool({
+      name: "create_rule_update_review",
+      arguments: { context: "Prototype validation · feedback behavior" }
+    }));
+    expect(reviewResult).toMatchObject({ ok: true, review: { status: "draft" } });
+    const reviewId = String((reviewResult.review as { id: string }).id);
+    const updateProposalResult = structuredContent(await client.callTool({
+      name: "propose_rule_update",
+      arguments: {
+        reviewId,
+        kind: "update",
+        classification: "proposed_update",
+        title: "Calm feedback stays immediate",
+        fullRuleBody: "Feedback stays immediate without demanding attention.",
+        reason: "The validated prototype clarified the existing feedback rule.",
+        affectedItems: ["Feedback"],
+        evidenceRecordIds: [],
+        targetCategory: "foundations.interaction",
+        sourceArtifactPath: "design-system/interaction-rules.json",
+        entryId: "interaction-calm-feedback"
+      }
+    }));
+    expect(updateProposalResult).toMatchObject({ ok: true, proposal: { revision: 1 } });
+    const updateProposalId = String((updateProposalResult.proposal as { id: string }).id);
+    const newProposalResult = structuredContent(await client.callTool({
+      name: "propose_rule_update",
+      arguments: {
+        reviewId,
+        kind: "new",
+        classification: "proposed_update",
+        title: "Purposeful progressive disclosure",
+        fullRuleBody: "Reveal secondary controls only when their context becomes relevant.",
+        reason: "The validated prototype established a reusable disclosure pattern.",
+        affectedItems: ["Secondary controls"],
+        evidenceRecordIds: [],
+        targetCategory: "foundations.interaction",
+        sourceArtifactPath: "design-system/interaction-rules.json"
+      }
+    }));
+    expect(newProposalResult).toMatchObject({ ok: true, proposal: { revision: 1 } });
+    const newProposalId = String((newProposalResult.proposal as { id: string }).id);
+    expect(structuredContent(await client.callTool({
+      name: "publish_rule_update_review",
+      arguments: { reviewId }
+    }))).toMatchObject({ ok: true, proposal_count: 2 });
     expect(structuredContent(await declare(
       "design-system/token.json",
       "token.json",
@@ -515,7 +569,7 @@ test("09A design system browser: declare → render → approve write-back", asy
     await expect(heroOrigin).toHaveAttribute("data-origin", "source-capture");
     await expect(page.locator(".dsb-hero-image")).toHaveAttribute(
       "src",
-      /design-system\/captures\/button-source\.png/
+      /design-system\/captures\/button-source\.svg/
     );
     // Hover provenance: the popover marks the source evidence.
     await heroOrigin.hover();
@@ -547,14 +601,181 @@ test("09A design system browser: declare → render → approve write-back", asy
 
     // ---- Inline rule edit: UI → source + DB + event → SSE refresh. ----
     await page.getByRole("tab", { name: "Foundations" }).click();
-    await page.getByRole("button", { name: "Interaction", exact: true }).click();
+    const interactionNav = page.getByRole("button", { name: "Interaction", exact: true });
+    await expect(interactionNav.locator(".dsb-navrow-rule-update-dot")).toBeVisible();
+    await interactionNav.click();
+    const newProposalCard = page.locator(".dsb-ru-card").filter({ hasText: "Purposeful progressive disclosure" });
+    await expect(newProposalCard).toBeVisible();
+    await expect(newProposalCard).not.toHaveAttribute("data-open", "true");
+    await expect(newProposalCard.getByText("Pending Review", { exact: true })).toBeVisible();
+    await expect(newProposalCard.locator(".dsb-ru-body")).toHaveCSS("opacity", "0");
     const interactionRule = page.getByTestId("ds-interaction-rule-1");
+    const updateProposalSlot = interactionRule.locator("xpath=following-sibling::li[1]");
+    await expect(interactionRule.getByTestId("ds-interaction-status")).toHaveText("Candidate");
+    await expect(interactionRule.getByTestId("ds-interaction-status")).not.toHaveText("Pending Review");
+    await expect(updateProposalSlot).toContainText("Calm feedback stays immediate");
+    const pendingRuleUpdateDot = updateProposalSlot.getByLabel("Pending Rule Update");
+    await expect(pendingRuleUpdateDot).toBeVisible();
+    await expect(pendingRuleUpdateDot).toHaveCSS("width", "5px");
+    await expect(pendingRuleUpdateDot).toHaveCSS("height", "5px");
+    await updateProposalSlot.getByRole("button", { name: "Expand Calm feedback stays immediate" }).click();
+    await expect(updateProposalSlot).toContainText(
+      "Feedback stays immediate without demanding attention."
+    );
+    await expect(updateProposalSlot.getByText("Proposed", { exact: true })).toBeVisible();
+    await expect(updateProposalSlot.getByText("Reason", { exact: true })).toBeVisible();
+    await expect(updateProposalSlot.getByText("Affected", { exact: true })).toHaveCount(0);
+    await expect(updateProposalSlot.getByText("Current", { exact: true })).toHaveCount(0);
+    await expect(updateProposalSlot.getByText("Exchanges", { exact: true })).toHaveCount(0);
+    const acceptRuleUpdate = updateProposalSlot.getByRole("button", {
+      name: "Accept",
+      exact: true
+    });
+    const rejectRuleUpdate = updateProposalSlot.getByRole("button", {
+      name: "Reject",
+      exact: true
+    });
+    const [acceptBox, rejectBox] = await Promise.all([
+      acceptRuleUpdate.boundingBox(),
+      rejectRuleUpdate.boundingBox()
+    ]);
+    expect(acceptBox?.width).toBe(rejectBox?.width);
+    const updateEdit = updateProposalSlot.getByRole("button", {
+      name: "Edit Calm feedback stays immediate"
+    });
+    const originalEdit = interactionRule.getByRole("button", {
+      name: /Edit rule/
+    });
+    const [updateEditBox, originalEditBox] = await Promise.all([
+      updateEdit.boundingBox(),
+      originalEdit.boundingBox()
+    ]);
+    expect(updateEditBox?.width).toBe(originalEditBox?.width);
+    expect(updateEditBox?.height).toBe(originalEditBox?.height);
+    await updateEdit.click();
+    const inlineTitle = updateProposalSlot.getByRole("textbox", {
+      name: "Rule Update title"
+    });
+    const inlineBody = updateProposalSlot.getByRole("textbox", {
+      name: "Proposed rule"
+    });
+    await expect(inlineTitle).toBeVisible();
+    await expect(inlineBody).toBeVisible();
+    await expect(updateProposalSlot.getByRole("combobox")).toHaveCount(0);
+    await expect(inlineTitle).toHaveCSS("border-top-width", "0px");
+    await expect(inlineBody).toHaveCSS("border-top-width", "0px");
+    await expect(acceptRuleUpdate).toBeVisible();
+    await expect(rejectRuleUpdate).toBeVisible();
+    await expect(
+      updateProposalSlot.getByRole("button", {
+        name: "Interaction record for Calm feedback stays immediate"
+      })
+    ).toBeVisible();
+    await expect(acceptRuleUpdate).toBeEnabled();
+    await expect(rejectRuleUpdate).toBeEnabled();
+    await inlineTitle.fill("Calm feedback stays immediate — revised");
+    await expect(acceptRuleUpdate).toBeDisabled();
+    await expect(rejectRuleUpdate).toBeDisabled();
+    await expect(
+      updateProposalSlot.getByRole("button", {
+        name: "Save Rule Update Calm feedback stays immediate"
+      })
+    ).toBeVisible();
+    await updateProposalSlot
+      .getByRole("button", {
+        name: "Cancel editing Rule Update Calm feedback stays immediate"
+      })
+      .click();
+    const interactionInfo = updateProposalSlot.getByRole("button", {
+      name: "Interaction record for Calm feedback stays immediate"
+    });
+    await interactionInfo.hover();
+    await expect(page.locator(".dsb-ru-interaction-popover")).toBeVisible();
+    await expect(page.locator(".dsb-ru-interaction-popover")).toContainText(
+      "Interaction record"
+    );
+    await page.mouse.move(0, 0);
+
+    await page
+      .getByRole("button", { name: /^(Records|Interaction records)$/ })
+      .click();
+    const interactionRecords = page.getByTestId("rule-update-interaction-records");
+    await expect(interactionRecords).toBeVisible();
+    await expect(page.locator(".dsb-breadcrumb-current")).toHaveText(
+      /^(Records|Interaction Records)$/
+    );
+    await expect(interactionRecords.locator(".dsb-ru-record")).toHaveCount(2);
+    await expect(interactionRecords.getByRole("button", { name: "Check", exact: true })).toHaveCount(2);
+    await interactionNav.click();
+
+    await updateProposalSlot.getByRole("button", { name: "Expand Calm feedback stays immediate" }).click();
+    await updateProposalSlot.getByRole("button", { name: "Reject", exact: true }).click();
+    await expect(
+      page.locator(".dsb-ru-card").filter({ hasText: "Calm feedback stays immediate" })
+    ).toHaveCount(0);
+
+    await newProposalCard.getByRole("button", { name: "Expand Purposeful progressive disclosure" }).click();
+    await newProposalCard.getByRole("button", { name: "Accept", exact: true }).click();
+    await expect(newProposalCard).toContainText("Waiting for Agent");
+
+    expect(structuredContent(await client.callTool({
+      name: "claim_rule_update_decision",
+      arguments: {}
+    }))).toMatchObject({
+      ok: true,
+      completed: true,
+      command: { payload: { proposal_id: updateProposalId, decision: "rejected" } }
+    });
+    const acceptedClaim = structuredContent(await client.callTool({
+      name: "claim_rule_update_decision",
+      arguments: {}
+    }));
+    expect(acceptedClaim.ok, JSON.stringify(acceptedClaim)).toBe(true);
+    expect(acceptedClaim).toMatchObject({
+      ok: true,
+      completed: false,
+      command: { status: "claimed", payload: { proposal_id: newProposalId, decision: "accepted" } }
+    });
+    writeSource("design-system/interaction-rules.json", {
+      rules: [
+        {
+          id: "interaction-calm-feedback",
+          value: "Feedback remains quiet and immediate.",
+          meaning: "Calm feedback",
+          status: "candidate",
+          links: [designerEditedCardId]
+        },
+        {
+          id: "interaction-purposeful-disclosure",
+          value: "Reveal secondary controls only when their context becomes relevant.",
+          meaning: "Purposeful progressive disclosure",
+          status: "candidate",
+          links: [designerEditedCardId]
+        }
+      ]
+    });
+    expect(structuredContent(await client.callTool({
+      name: "record_artifact_written",
+      arguments: {
+        path: "design-system/interaction-rules.json",
+        artifactType: "interaction-rules.json",
+        semanticPurpose: "Apply accepted Rule Update revision",
+        relatedRecordIds: [designerEditedCardId],
+        proposalId: newProposalId
+      }
+    }))).toMatchObject({ ok: true, record: { status: "ingested" } });
+    await expect(newProposalCard).toHaveCount(0);
+    await expect(interactionNav.locator(".dsb-navrow-rule-update-dot")).toHaveCount(0);
+    await expect(page.getByText("Purposeful progressive disclosure", { exact: true })).toBeVisible();
     await expect(interactionRule.getByRole("button", { name: "Save" })).toHaveCount(0);
-    const rowBeforeEdit = await interactionRule
-      .locator(".dsb-interaction-ledger-row")
-      .boundingBox();
     const bodyReadOnly = interactionRule.locator(".dsb-card-desc");
-    const bodyBeforeEdit = await bodyReadOnly.boundingBox();
+    const bodyOffsetBefore = await bodyReadOnly.evaluate((element) => {
+      const row = element.closest(".dsb-interaction-ledger-row");
+      if (!row) return null;
+      return (
+        element.getBoundingClientRect().top - row.getBoundingClientRect().top
+      );
+    });
     const typographyBeforeEdit = await bodyReadOnly.evaluate((element) => {
       const style = getComputedStyle(element);
       return {
@@ -570,10 +791,13 @@ test("09A design system browser: declare → render → approve write-back", asy
     await editButton.click();
     await expect(editButton).toHaveAttribute("aria-pressed", "true");
     const bodyInput = interactionRule.getByLabel("Rule body");
-    const rowAfterEdit = await interactionRule
-      .locator(".dsb-interaction-ledger-row")
-      .boundingBox();
-    const bodyAfterEdit = await bodyInput.boundingBox();
+    const bodyOffsetAfter = await bodyInput.evaluate((element) => {
+      const row = element.closest(".dsb-interaction-ledger-row");
+      if (!row) return null;
+      return (
+        element.getBoundingClientRect().top - row.getBoundingClientRect().top
+      );
+    });
     const typographyAfterEdit = await bodyInput.evaluate((element) => {
       const style = getComputedStyle(element);
       return {
@@ -583,15 +807,12 @@ test("09A design system browser: declare → render → approve write-back", asy
         lineHeight: style.lineHeight
       };
     });
-    const bodyOffsetBefore =
-      bodyBeforeEdit && rowBeforeEdit ? bodyBeforeEdit.y - rowBeforeEdit.y : null;
-    const bodyOffsetAfter =
-      bodyAfterEdit && rowAfterEdit ? bodyAfterEdit.y - rowAfterEdit.y : null;
     expect(bodyOffsetBefore).not.toBeNull();
     expect(bodyOffsetAfter).not.toBeNull();
-    // Browser font metrics can differ by a subpixel while the parallel suite
-    // is warming fonts. Two CSS pixels still catches a visible layout jump.
-    expect(Math.abs(bodyOffsetAfter! - bodyOffsetBefore!)).toBeLessThanOrEqual(2);
+    // Read the body and its row in one browser layout snapshot. Separate
+    // boundingBox calls can observe different frames while the sheet settles,
+    // even though the body's position inside the row is unchanged.
+    expect(bodyOffsetAfter).toBeCloseTo(bodyOffsetBefore!, 4);
     expect(typographyAfterEdit).toEqual(typographyBeforeEdit);
     const titleInput = interactionRule.getByLabel("Rule title");
     await titleInput.fill("Measured feedback");

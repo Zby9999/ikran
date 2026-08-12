@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
 import { closeProjectDb, openProjectDb, withProjectTransaction } from "./db";
+import { publishAgentCommandOnDb } from "./agent-command";
 import { logEventOnDb } from "./events";
 import { emitRecordEvent } from "./record-bus";
 import { getAlignmentPreparationOnDb } from "./alignment-preparation";
@@ -1185,21 +1186,20 @@ export function completeDesignIntentAlignment(
           designer_annotations: completedAlignment.designer_annotations
         }
       };
-      db.prepare(
-        `INSERT INTO agent_commands
-         (id, command_type, status, alignment_attempt_id, payload_json,
-          idempotency_key, created_at, updated_at, claimed_at, completed_at,
-          cancelled_at)
-         VALUES (?, 'prepare_initial_design_system', 'pending', ?, ?, ?, ?, ?,
-                 NULL, NULL, NULL)`
-      ).run(
-        commandId,
-        attempt.id,
-        JSON.stringify(commandPayload),
-        `prepare-initial-design-system:${attempt.id}`,
-        now,
+      const published = publishAgentCommandOnDb(
+        db,
+        {
+          id: commandId,
+          commandType: "prepare_initial_design_system",
+          scope: { kind: "alignment_attempt", id: attempt.id },
+          payload: commandPayload,
+          idempotencyKey: `prepare-initial-design-system:${attempt.id}`
+        },
         now
       );
+      if (!published.ok) {
+        throw new Error(`agent_command_publish_failed:${published.reason}`);
+      }
       const event = logEventOnDb(db, "design_intent_alignment_completed", {
         alignment_attempt_id: attempt.id,
         input_snapshot_id: attempt.input_snapshot_id,

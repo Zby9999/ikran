@@ -29,6 +29,8 @@ type RuleUpdateProposalAuthorizationRow = {
   kind: string;
   source_artifact_path: string | null;
   proposed_target_path: string | null;
+  current_revision: number;
+  review_id: string | null;
 };
 
 export type RuleUpdateProposalPathAuthorization =
@@ -38,9 +40,11 @@ export type RuleUpdateProposalPathAuthorization =
       reason:
         | "proposal_not_found"
         | "proposal_not_confirmed"
+        | "proposal_apply_not_claimed"
         | "proposal_already_consumed"
         | "proposal_not_current_rule_update_cycle"
-        | "proposal_artifact_path_mismatch";
+        | "proposal_artifact_path_mismatch"
+        | "proposal_base_digest_conflict";
       details?: unknown;
     };
 
@@ -57,7 +61,8 @@ export function authorizeRuleUpdateProposalPathOnDb(
 ): RuleUpdateProposalPathAuthorization {
   const proposal = db
     .prepare(
-      `SELECT status, kind, source_artifact_path, proposed_target_path
+      `SELECT status, kind, source_artifact_path, proposed_target_path,
+              current_revision, review_id
        FROM rule_update_proposals
        WHERE id = ?`
     )
@@ -67,6 +72,91 @@ export function authorizeRuleUpdateProposalPathOnDb(
     return { ok: false, reason: "proposal_not_confirmed" };
   }
   if (!requireCurrentCycleAndPath) return { ok: true };
+
+  if (proposal.review_id !== null) {
+    const revision = db
+      .prepare(
+        `SELECT base_digest, base_digests_json, source_artifact_path, proposed_target_path
+         FROM rule_update_proposal_revisions
+         WHERE proposal_id = ? AND revision = ?`
+      )
+      .get(proposalId, proposal.current_revision) as
+      | {
+          base_digest: string | null;
+          base_digests_json: string;
+          source_artifact_path: string | null;
+          proposed_target_path: string | null;
+        }
+      | undefined;
+    const decision = db
+      .prepare(
+        `SELECT decision FROM rule_update_designer_decisions
+         WHERE proposal_id = ? AND revision = ?`
+      )
+      .get(proposalId, proposal.current_revision) as
+      | { decision: string }
+      | undefined;
+    if (!revision || decision?.decision !== "accepted") {
+      return { ok: false, reason: "proposal_not_confirmed" };
+    }
+    const attempt = db
+      .prepare(
+        `SELECT status, claimed_base_digests_json
+         FROM rule_update_apply_attempts
+         WHERE proposal_id = ? AND revision = ?
+         ORDER BY created_at DESC LIMIT 1`
+      )
+      .get(proposalId, proposal.current_revision) as
+      | { status: string; claimed_base_digests_json: string | null }
+      | undefined;
+    if (attempt?.status !== "claimed" || !attempt.claimed_base_digests_json) {
+      return { ok: false, reason: "proposal_apply_not_claimed" };
+    }
+    const authorizedPaths = [
+      revision.source_artifact_path,
+      revision.proposed_target_path
+    ];
+    if (!authorizedPaths.includes(artifactPath)) {
+      return {
+        ok: false,
+        reason: "proposal_artifact_path_mismatch",
+        details: { artifactPath, authorizedPaths: authorizedPaths.filter(Boolean) }
+      };
+    }
+    const current = db
+      .prepare("SELECT content_digest FROM source_artifacts WHERE path = ?")
+      .get(artifactPath) as { content_digest: string | null } | undefined;
+    const observed = current ? current.content_digest ?? "missing-digest" : "missing-source";
+    let expected = revision.base_digest;
+    try {
+      const digests = JSON.parse(
+        attempt.claimed_base_digests_json
+      ) as Record<string, string>;
+      expected = digests[artifactPath] ?? expected;
+    } catch {
+      // Legacy row: fall back to the single digest projection.
+    }
+    if (expected !== observed) {
+      const now = new Date().toISOString();
+      db.prepare(
+        `UPDATE rule_update_apply_attempts
+         SET status = 'needs_revision', observed_digest = ?, error = ?, completed_at = ?
+         WHERE proposal_id = ? AND revision = ? AND status IN ('pending', 'claimed')`
+      ).run(
+        observed,
+        "base_digest_conflict",
+        now,
+        proposalId,
+        proposal.current_revision
+      );
+      return {
+        ok: false,
+        reason: "proposal_base_digest_conflict",
+        details: { expected, observed, path: artifactPath }
+      };
+    }
+    return { ok: true };
+  }
 
   const proposalEvents = db
     .prepare(

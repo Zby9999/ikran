@@ -30,6 +30,7 @@ const CONFLICT_REASONS = new Set([
   // against a proposal the designer has not confirmed.
   "proposal_not_awaiting_confirmation",
   "proposal_not_confirmed",
+  "rule_update_review_incomplete",
   "run_already_exists",
   "candidate_entry_not_candidate",
   // Issue 15: research export eligibility gate unmet.

@@ -1,22 +1,14 @@
 // Task 11 — SSE `event: record` after domain commit; active-project filter; no leak.
 
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test as base } from "./fixtures";
 import { rawPost as httpPost } from "./helpers/http";
 import { openRecordSse } from "./helpers/sse";
 
 const test = base.extend<{ folder: string }>({
-  folder: async ({}, use) => {
-    const folder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-record-sse-"));
+  folder: async ({ runtime }, use) => {
+    const folder = runtime.createProjectFolder("record-sse-");
     await use(folder);
-    rmSync(folder, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 50
-    });
   }
 });
 
@@ -57,10 +49,6 @@ async function captureToken(
 }
 
 test.describe("Task 11 — SSE record invalidation", () => {
-  test.beforeEach(async ({ runtime }) => {
-    rmSync(path.join(runtime.stateDir, "runtime-state.json"), { force: true });
-  });
-
   test("POST seed emits event:record for active project; disconnect cleans up", async ({
     page,
     runtime,

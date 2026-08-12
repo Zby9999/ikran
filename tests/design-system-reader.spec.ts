@@ -12,7 +12,7 @@
 //
 // Staging mirrors tests/design-system-browser.spec.ts.
 
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -32,6 +32,7 @@ import {
 } from "./helpers/alignment";
 import { enterCanvas } from "./helpers/workbench";
 import { openIkranDb } from "./helpers/db";
+import { writeSyntheticCapture } from "./helpers/synthetic-capture";
 
 async function patchAlignment(
   workbenchUrl: string,
@@ -137,13 +138,13 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     // ---- Prose-rule sources: composite text styles with an alias chain,
     // candidate + gap statuses, and top-level layout captures. ----
     mkdirSync(path.join(projectDir, "design-system"), { recursive: true });
-    // 09C-D02: a real capture PNG the placard <img> loads via /api/artifacts.
+    // 09C-D02: a real synthetic capture the placard <img> loads via
+    // /api/artifacts without bundling third-party visual material.
     mkdirSync(path.join(projectDir, "design-system", "captures"), {
       recursive: true
     });
-    copyFileSync(
-      path.join(process.cwd(), "tests", "fixtures", "layout-capture-grid.png"),
-      path.join(projectDir, "design-system", "captures", "grid-page.png")
+    writeSyntheticCapture(
+      path.join(projectDir, "design-system", "captures", "grid-page.svg")
     );
     const writeSource = (relative: string, json: unknown) =>
       writeFileSync(
@@ -299,7 +300,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
             {
               nodeId: "11:20",
               nodeName: "Landing / Grid",
-              artifactPath: "design-system/captures/grid-page.png",
+              artifactPath: "design-system/captures/grid-page.svg",
               capturedAt: "2026-07-30T14:05:22Z",
               surfaceId: evidence.record.id,
               nodeRect: { x: 0.1, y: 0.2, width: 0.6, height: 0.4 }
@@ -316,7 +317,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
             {
               nodeId: "11:30",
               nodeName: "Landing / Shell",
-              artifactPath: "design-system/captures/grid-page.png",
+              artifactPath: "design-system/captures/grid-page.svg",
               capturedAt: "2026-07-28T09:12:00Z",
               // No live surface carries this id — the capture must read stale.
               surfaceId: "surf-shell-missing"
@@ -353,7 +354,6 @@ test("09C-A reader projection: atlas and leaf pages", async ({
       rules: [
         {
           id: "quiet-motion",
-          name: "Quiet motion",
           value: "Routine feedback never competes with content. Use short feedback to explain a state change, avoid decorative loops, and preserve the same information when motion is reduced.",
           meaning: "Animation supports comprehension.",
           status: "candidate",
@@ -361,7 +361,6 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         },
         {
           id: "frequent-actions",
-          name: "Frequent actions",
           value: "Repeated actions should never accumulate animation cost. Switch tabs and sibling views without transitional movement, and keep keyboard-initiated actions free of motion.",
           meaning: "Frequency determines whether motion belongs.",
           status: "candidate",
@@ -369,7 +368,6 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         },
         {
           id: "keyboard-parity",
-          name: "Keyboard parity",
           value: "Every pointer action needs an equivalent keyboard path.",
           meaning: "Input method does not limit capability.",
           status: "gap",

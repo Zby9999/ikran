@@ -922,11 +922,13 @@ test.describe("PRAGMA user_version migration runner", () => {
              '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z',
              '2026-08-01T00:00:00.000Z');
           INSERT INTO agent_commands
-            (id, command_type, status, alignment_attempt_id, payload_json,
-             idempotency_key, created_at, updated_at, claimed_at, completed_at)
+            (id, command_type, status, scope_kind, scope_id,
+             alignment_attempt_id, payload_json, idempotency_key, created_at,
+             updated_at, claimed_at, completed_at)
           VALUES
             ('command-v21', 'prepare_initial_design_system', 'completed',
-             'attempt-v21', '{}', 'command-v21-key',
+             'alignment_attempt', 'attempt-v21', 'attempt-v21', '{}',
+             'command-v21-key',
              '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z',
              '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z');
           UPDATE project_workflow
@@ -1176,7 +1178,7 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(31);
+        expect(CURRENT_SCHEMA_VERSION).toBe(35);
         expect(
           db.prepare("PRAGMA table_info(prototype_surfaces)").all()
         ).toEqual(
@@ -1204,6 +1206,7 @@ test.describe("PRAGMA user_version migration runner", () => {
             "alignment_input_snapshots",
             "alignment_attempts",
             "agent_commands",
+            "agent_command_wait_scopes",
             "project_workflow",
             "source_artifacts",
             "design_system_entries",
@@ -1227,6 +1230,13 @@ test.describe("PRAGMA user_version migration runner", () => {
         expect(designSystemColumns.map((column) => column.name)).toEqual(
           expect.arrayContaining(["domain", "kind"])
         );
+        expect(
+          (
+            db.prepare("PRAGMA table_info(agent_commands)").all() as Array<{
+              name: string;
+            }>
+          ).map((column) => column.name)
+        ).toEqual(expect.arrayContaining(["scope_kind", "scope_id"]));
         const meta = db
           .prepare(
             `SELECT design_language_description AS d FROM project_meta WHERE singleton = 1`
@@ -1321,6 +1331,100 @@ test.describe("PRAGMA user_version migration runner", () => {
       }
       expect(existsSync(getProjectDbBackupPath(dir, 0))).toBe(false);
     });
+  });
+
+  test("v34 repairs a v33 Rule Update revision table opened before per-path digests", () => {
+    const db = new DatabaseSync(":memory:");
+    try {
+      db.exec(`
+        CREATE TABLE rule_update_proposal_revisions (
+          proposal_id TEXT NOT NULL,
+          revision INTEGER NOT NULL,
+          base_digest TEXT,
+          PRIMARY KEY (proposal_id, revision)
+        );
+        PRAGMA user_version = 33;
+      `);
+      applyPendingMigrations(db, 33);
+      expect(userVersion(db)).toBe(35);
+      expect(db.prepare("PRAGMA table_info(rule_update_proposal_revisions)").all()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "base_digests_json",
+            notnull: 1,
+            dflt_value: "'{}'"
+          })
+        ])
+      );
+    } finally {
+      db.close();
+    }
+  });
+
+  test("v31→v32 scopes existing Alignment commands without breaking child references", () => {
+    const db = new DatabaseSync(":memory:");
+    try {
+      db.exec(`
+        PRAGMA foreign_keys = ON;
+        CREATE TABLE alignment_attempts (id TEXT PRIMARY KEY);
+        CREATE TABLE agent_commands (
+          id TEXT PRIMARY KEY,
+          command_type TEXT NOT NULL,
+          status TEXT NOT NULL,
+          alignment_attempt_id TEXT NOT NULL
+            REFERENCES alignment_attempts(id) ON DELETE RESTRICT,
+          payload_json TEXT NOT NULL,
+          idempotency_key TEXT NOT NULL UNIQUE,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          claimed_at TEXT,
+          completed_at TEXT,
+          cancelled_at TEXT
+        );
+        CREATE TABLE command_child_fixture (
+          id TEXT PRIMARY KEY,
+          agent_command_id TEXT NOT NULL
+            REFERENCES agent_commands(id) ON DELETE RESTRICT
+        );
+        INSERT INTO alignment_attempts VALUES ('attempt-v31');
+        INSERT INTO agent_commands
+          (id, command_type, status, alignment_attempt_id, payload_json,
+           idempotency_key, created_at, updated_at)
+        VALUES
+          ('command-v31', 'prepare_design_intent_alignment', 'pending',
+           'attempt-v31', '{}', 'command-v31-key',
+           '2026-08-11T00:00:00.000Z', '2026-08-11T00:00:00.000Z');
+        INSERT INTO command_child_fixture VALUES ('child-v31', 'command-v31');
+        PRAGMA user_version = 31;
+      `);
+
+      applyPendingMigrations(db, 31);
+
+      expect(userVersion(db)).toBe(35);
+      expect(
+        db.prepare(
+          `SELECT scope_kind, scope_id, alignment_attempt_id
+           FROM agent_commands WHERE id = 'command-v31'`
+        ).get()
+      ).toEqual({
+        scope_kind: "alignment_attempt",
+        scope_id: "attempt-v31",
+        alignment_attempt_id: "attempt-v31"
+      });
+      expect(
+        db.prepare(
+          `SELECT c.agent_command_id
+           FROM command_child_fixture c
+           JOIN agent_commands a ON a.id = c.agent_command_id`
+        ).get()
+      ).toEqual({ agent_command_id: "command-v31" });
+      expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+      expect(db.prepare("PRAGMA foreign_keys").get()).toEqual({
+        foreign_keys: 1
+      });
+    } finally {
+      db.close();
+    }
   });
 
   test("v0→v1→v2→v3→v4: migrates user_version, drops tasks, backfills identity, creates v0 backup", () => {

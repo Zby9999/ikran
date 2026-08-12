@@ -679,6 +679,108 @@ describe("Workbench Runtime consistency", () => {
     client.dispose();
   });
 
+  test("project bootstrap retries a transient authoritative read and recovers the active project", async () => {
+    const sleeps: number[] = [];
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: false, error: "transient_500" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            project: { path: "/tmp/project", name: "project" },
+            cwd_candidate: {
+              path: "/tmp/project",
+              kind: "resume"
+            },
+            cwd_matches_active: true
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          }
+        )
+      );
+    const { loadProjectBootstrap, LOAD_BACKOFF_MS } = await import(
+      "../../components/runtime/runtime-client"
+    );
+
+    const result = await loadProjectBootstrap("session-token", {
+      fetcher,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      }
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      snapshot: {
+        project: { path: "/tmp/project", name: "project" },
+        cwdCandidate: { path: "/tmp/project", kind: "resume" },
+        cwdMatchesActive: true
+      }
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "/api/project",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({
+          "x-ikran-session": "session-token"
+        })
+      })
+    );
+    expect(sleeps).toEqual([LOAD_BACKOFF_MS[0]]);
+  });
+
+  test("project bootstrap fails explicitly after its bounded retry budget", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: false, error: "project_read_failed" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      })
+    );
+    const { loadProjectBootstrap, LOAD_MAX_ATTEMPTS } = await import(
+      "../../components/runtime/runtime-client"
+    );
+
+    await expect(
+      loadProjectBootstrap("session-token", {
+        fetcher,
+        sleep: async () => {}
+      })
+    ).resolves.toEqual({ ok: false, error: "project_read_failed" });
+    expect(fetcher).toHaveBeenCalledTimes(LOAD_MAX_ATTEMPTS);
+  });
+
+  test("project bootstrap does not retry a permanent authorization failure", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: false, error: "invalid_session" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" }
+      })
+    );
+    const { loadProjectBootstrap } = await import(
+      "../../components/runtime/runtime-client"
+    );
+
+    await expect(
+      loadProjectBootstrap("invalid", {
+        fetcher,
+        sleep: async () => {
+          throw new Error("permanent failures must not sleep");
+        }
+      })
+    ).resolves.toEqual({ ok: false, error: "invalid_session" });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
   test("layout failure falls back without blocking semantic records", async () => {
     const snapshots: Array<{
       seeds: Array<{ id: string }>;

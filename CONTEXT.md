@@ -15,6 +15,39 @@ canonical events, prototype preview lifecycle, and schema validation. It is the
 only writer of source-of-truth records. One process, two surfaces.
 _Avoid_: server, backend, service
 
+**Ikran Test Release**:
+A versioned, allowlisted GitHub Release for external testing. It preserves
+Runtime, Workbench, and MCP capability while excluding repository research
+archives, local installation state, credentials, generated caches, and real
+project data. The repository remains the complete development record; a Test
+Release is the supported lightweight distribution boundary.
+_Avoid_: source archive, repository snapshot, npm package
+
+**Product Test Kit**:
+The Test Release asset for a product tester: Runtime, Workbench, MCP, locked
+dependency metadata, and setup and launch guidance. The Release Gate exercises
+its minimal artifact smoke after clean extraction. It starts without project
+state and does not contain the full contributor test corpus. Its first
+supported platform is macOS on Apple silicon.
+_Avoid_: demo data bundle, preinstalled checkout
+
+**Contributor Verification Kit**:
+The Test Release asset for a developer tester. It contains the Product Test Kit
+capabilities plus the complete automated verification surface and deterministic
+synthetic fixtures or local substitutes. It never relies on a real Figma
+credential, real research data, or a contributor's existing machine state.
+_Avoid_: development archive, full repository clone
+
+**Release Gate**:
+The acceptance boundary for an Ikran Test Release: type checking, unit tests,
+end-to-end tests, and clean extraction followed by dependency installation,
+build, Runtime/Workbench/MCP smoke verification, and cleanup must all pass on
+the declared platform. An Agent host is described as **verified** only after a
+host-native smoke test for that exact release; configuration without such a
+test is experimental.
+_Avoid_: CI succeeded (when only one part of the gate ran), historical host
+validation
+
 **Workbench URL**:
 The localhost URL returned by the Agent after Runtime starts the HTTP Web UI,
 for example `http://127.0.0.1:{port}/?session={token}`. The designer may open it
@@ -59,6 +92,33 @@ Workbench presence indicates that the designer is still engaged. Presence may
 extend the wait, but it never substitutes for the designer action that advances
 the workflow.
 _Avoid_: infinite wait, idle-triggered progression, Agent host activation
+
+**Rule Update Review**:
+An explicitly published review identity that groups a complete set of pending
+Rule Update proposals for designer decisions. Only an active Rule Update Review
+wait scope may extend Adaptive Agent wait beyond Alignment; a post-Alignment
+project phase alone never authorizes that wait. A later designer decision is
+carried as a scoped durable Agent command and does not imply host activation.
+The Review is drafted privately and then published as one complete batch; an
+empty published batch is a terminal no-change review. Formalization cannot pass
+while a managed Review from the current Consolidate cycle is incomplete.
+_Avoid_: global post-Alignment wait, transient decision event, Agent wake-up
+
+**Rule Update Proposal Revision**:
+An immutable, directly reviewable version of one proposed Rule: complete title
+and body, typed semantic category, exact authorized artifact paths, evidence
+linkage, author, and the content digest frozen for every affected source. A
+designer edit appends a revision without writing a Design System source or
+publishing an Agent command. A decision always names one exact revision.
+_Avoid_: mutable draft fields, live Rule edit, UI-only category string
+
+**Rule Update Designer Decision**:
+The direct Workbench or chat-compatibility Accept/Reject command for one exact
+proposal revision. It atomically records the durable decision and publishes a
+Rule Update-scoped Agent command. Accepted means waiting for Agent application;
+only a validated artifact declaration means applied. Rejected is a terminal
+no-write disposition retained in All interactions.
+_Avoid_: confirmation dialog, Agent re-confirmation, accepted-as-applied
 
 **Figma Connection**:
 The designer-authorized, read-only connection that lets Runtime capture Figma

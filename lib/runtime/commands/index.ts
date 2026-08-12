@@ -58,8 +58,19 @@ export {
 export {
   proposeRuleUpdateCommand,
   confirmRuleUpdateCommand,
-  cancelRuleUpdateCommand
+  cancelRuleUpdateCommand,
+  createRuleUpdateReviewCommand,
+  publishRuleUpdateReviewCommand,
+  claimRuleUpdateDecisionCommand,
+  failRuleUpdateApplyCommand,
+  retryRuleUpdateApplyCommand
 } from "./rule-update-proposal";
+
+export {
+  getRuleUpdateReviewProjectionCommand,
+  reviseRuleUpdateProposalCommand,
+  decideRuleUpdateProposalCommand
+} from "./rule-update-review";
 
 export { recordDesignerFeedbackCommand } from "./designer-feedback";
 
@@ -166,6 +177,18 @@ export {
   confirmRuleUpdateInputShape,
   cancelRuleUpdateInputSchema,
   cancelRuleUpdateInputShape,
+  createRuleUpdateReviewInputSchema,
+  createRuleUpdateReviewInputShape,
+  publishRuleUpdateReviewInputSchema,
+  publishRuleUpdateReviewInputShape,
+  failRuleUpdateApplyInputSchema,
+  failRuleUpdateApplyInputShape,
+  retryRuleUpdateApplyInputSchema,
+  retryRuleUpdateApplyInputShape,
+  reviseRuleUpdateProposalInputSchema,
+  reviseRuleUpdateProposalInputShape,
+  decideRuleUpdateProposalInputSchema,
+  decideRuleUpdateProposalInputShape,
   claimConsolidateReviewInputSchema,
   claimConsolidateReviewInputShape,
   dismissDesignerFeedbackInputSchema,

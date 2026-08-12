@@ -30,6 +30,18 @@ export interface RuntimeHandle {
   port: number;
   /** Per-worker temp dir holding the isolated runtime-state.json. */
   stateDir: string;
+  /**
+   * Clears this worker's active-project pointer before a test that requires
+   * the unbound setup state. Call only before the test starts using Runtime.
+   */
+  resetActiveProjectForTest(): void;
+  /**
+   * Creates a project folder owned by this worker. It is removed only after
+   * the worker Runtime process group has stopped, so live SSE/API work cannot
+   * recreate SQLite files while Playwright is tearing the fixture down.
+   * Call it once per test, before binding the returned folder.
+   */
+  createProjectFolder(prefix: string): string;
 }
 
 function pickFreePort(): Promise<number> {
@@ -91,6 +103,9 @@ export const test = base.extend<{}, { runtime: RuntimeHandle }>({
     async ({}, use) => {
       const port = await pickFreePort();
       const stateDir = mkdtempSync(path.join(tmpdir(), "ikran-e2e-w-"));
+      const projectRoot = mkdtempSync(
+        path.join(tmpdir(), "ikran-e2e-projects-w-")
+      );
       const nextBin = path.join(process.cwd(), "node_modules", ".bin", "next");
 
       const child = spawn(
@@ -126,7 +141,26 @@ export const test = base.extend<{}, { runtime: RuntimeHandle }>({
 
       try {
         await waitForRuntime(port);
-        await use({ baseURL: `http://localhost:${port}`, port, stateDir });
+        const resetActiveProjectForTest = () => {
+          rmSync(path.join(stateDir, "runtime-state.json"), { force: true });
+        };
+        await use({
+          baseURL: `http://localhost:${port}`,
+          port,
+          stateDir,
+          resetActiveProjectForTest,
+          createProjectFolder(prefix) {
+            if (!/^[a-z0-9][a-z0-9-]*-$/i.test(prefix)) {
+              throw new Error(`invalid e2e project folder prefix: ${prefix}`);
+            }
+            // A worker Runtime deliberately refuses to switch away from an
+            // active project. Each test project therefore starts by clearing
+            // the worker-local pointer; project data itself remains owned by
+            // this fixture until the Runtime process group has stopped.
+            resetActiveProjectForTest();
+            return mkdtempSync(path.join(projectRoot, prefix));
+          }
+        });
       } finally {
         // Kill the whole process group (the next CLI + any server worker it
         // forked). Negative pid = signal the group.
@@ -142,7 +176,23 @@ export const test = base.extend<{}, { runtime: RuntimeHandle }>({
           new Promise<void>((r) => setTimeout(() => r(), 3000))
         ]);
         killGroup("SIGKILL");
-        rmSync(stateDir, { recursive: true, force: true });
+        // Project databases belong to the Runtime lifecycle, not to an
+        // individual page fixture. On macOS, deleting an active project while
+        // the worker still serves SSE/API requests can race a WAL/lock file
+        // creation and surface as ENOTEMPTY. Remove worker-owned projects only
+        // after the whole Runtime process group has been terminated.
+        rmSync(projectRoot, {
+          recursive: true,
+          force: true,
+          maxRetries: 20,
+          retryDelay: 50
+        });
+        rmSync(stateDir, {
+          recursive: true,
+          force: true,
+          maxRetries: 20,
+          retryDelay: 50
+        });
         if (stderrBuf && process.env.IKRAN_E2E_DEBUG) {
           // eslint-disable-next-line no-console
           console.error(

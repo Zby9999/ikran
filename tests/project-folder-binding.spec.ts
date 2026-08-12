@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { expect, test as base } from "./fixtures";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,6 +9,13 @@ let port = 3000;
 let baseURL = "http://localhost:3000";
 let testFolder = "";
 let otherFolder = "";
+
+const test = base.extend<{ folder: string }>({
+  folder: async ({ runtime }, use) => {
+    const folder = runtime.createProjectFolder("02-bind-");
+    await use(folder);
+  }
+});
 
 function rawPost(
   route: string,
@@ -23,17 +30,14 @@ function rawGet(route: string, headers: Record<string, string>) {
 }
 
 test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", () => {
-  test.beforeEach(async ({ runtime }) => {
+  test.beforeEach(async ({ runtime, folder }) => {
     port = runtime.port;
     baseURL = runtime.baseURL;
-    testFolder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-"));
+    testFolder = folder;
   });
 
   test.afterEach(() => {
-    if (testFolder) {
-      rmSync(testFolder, { recursive: true, force: true });
-      testFolder = "";
-    }
+    testFolder = "";
     if (otherFolder) {
       rmSync(otherFolder, { recursive: true, force: true });
       otherFolder = "";
@@ -205,6 +209,52 @@ test.describe("Ikran Issue 02 — project folder binding and .ikran metadata", (
     );
     await expect(page.getByTestId("project-path")).toHaveText(boundPath);
     await expect(page.getByRole("button", { name: "Start Building" })).toBeEnabled();
+  });
+
+  test("refresh recovers the bound project after one transient project read failure", async ({
+    page
+  }) => {
+    let sessionToken: string | null = null;
+    await page.route("**/api/**", async (route) => {
+      const token = route.request().headers()["x-ikran-session"];
+      if (token) sessionToken = token;
+      await route.continue();
+    });
+    await page.goto(baseURL + "/");
+    await expect(page.getByTestId("runtime-label")).toContainText(
+      "Runtime connected"
+    );
+    await page.unroute("**/api/**");
+    if (!sessionToken) throw new Error("Runtime session token was not captured");
+
+    const bindResult = await rawPost(
+      "/api/project/bind",
+      { path: testFolder },
+      { host: `localhost:${port}`, "x-ikran-session": sessionToken }
+    );
+    expect(bindResult.status).toBe(200);
+
+    let projectReads = 0;
+    await page.route("**/api/project", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.continue();
+        return;
+      }
+      projectReads += 1;
+      if (projectReads === 1) {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: '{"ok":false,"error":"transient_500"}'
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto(`${baseURL}/?view=workbench`);
+    await expect(page.getByTestId("seed-workbench")).toBeVisible();
+    expect(projectReads).toBe(2);
   });
 
   test("rejects invalid project folders", async ({ page }) => {

@@ -1,26 +1,19 @@
 import { expect, test as base } from "./fixtures";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   rawGet as httpGet,
   rawPost as httpPost
 } from "./helpers/http";
+import { openIkranDb } from "./helpers/db";
 
 // Issue 06 — Region Annotation Workbench projection + Annotate toggle.
 // Agent-written annotations arrive via SSE; designer annotations exercise the
 // real tldraw pointer/keyboard → injected Runtime client mutation chain.
 
 const test = base.extend<{ folder: string }>({
-  folder: async ({}, use) => {
-    const folder = mkdtempSync(path.join(tmpdir(), "ikran-e2e-06-ann-"));
+  folder: async ({ runtime }, use) => {
+    const folder = runtime.createProjectFolder("06-ann-");
     await use(folder);
-    rmSync(folder, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 50
-    });
   }
 });
 
@@ -214,10 +207,6 @@ async function mediaBox(
 }
 
 test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
-  test.beforeEach(async ({ runtime }) => {
-    rmSync(path.join(runtime.stateDir, "runtime-state.json"), { force: true });
-  });
-
   // Regression: Agent tools return workbench_url; opening/reloading that URL must
   // NOT bounce the designer back to Project Setup (ephemeral showSeedWorkbench).
   test("reloading Workbench URL after Start Building stays on seed canvas", async ({
@@ -352,9 +341,7 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     await expect(marker).toHaveAttribute("data-author", "agent");
 
     // Audit event present in canonical SQLite events.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { DatabaseSync } = require("node:sqlite");
-    const db = new DatabaseSync(path.join(folder, ".ikran", "ikran.db"));
+    const db = openIkranDb(path.join(folder, ".ikran", "ikran.db"));
     try {
       const types = (
         db.prepare("SELECT type FROM events ORDER BY id ASC").all() as Array<{
@@ -452,9 +439,7 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     await expect(card).toContainText("Move this toolbar 8px up");
 
     // Direct DB proof complements the API assertion above.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { DatabaseSync } = require("node:sqlite");
-    const db = new DatabaseSync(path.join(folder, ".ikran", "ikran.db"));
+    const db = openIkranDb(path.join(folder, ".ikran", "ikran.db"));
     try {
       const stored = db
         .prepare(
@@ -754,9 +739,7 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     await expect(card).toHaveAttribute("data-editing", "false");
     await expect(card).toContainText("Second pass — tightened spacing");
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { DatabaseSync } = require("node:sqlite");
-    const db = new DatabaseSync(path.join(folder, ".ikran", "ikran.db"));
+    const db = openIkranDb(path.join(folder, ".ikran", "ikran.db"));
     try {
       const stored = db
         .prepare("SELECT body FROM region_annotations WHERE id = ?")

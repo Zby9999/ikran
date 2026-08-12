@@ -9,11 +9,13 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 31;
+export const CURRENT_SCHEMA_VERSION = 35;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
   version: number;
+  /** SQLite table replacement that must preserve inbound foreign keys. */
+  foreignKeysOff?: boolean;
   up: (db: DatabaseType) => void;
 };
 
@@ -1425,6 +1427,323 @@ CREATE INDEX IF NOT EXISTS idx_reconciliation_feedback_reconciliation
   ON conversation_reconciliation_feedback(reconciliation_id, position);
       `);
     }
+  },
+  {
+    version: 32,
+    foreignKeysOff: true,
+    up(db) {
+      // Issue 35: Agent commands share one durable queue while carrying an
+      // explicit owner scope. Keep alignment_attempt_id as a compatibility
+      // projection for the established Alignment claim/recovery code; Rule
+      // Update Review commands use the same identity, ordering, idempotency,
+      // and status columns without inventing a fake Alignment attempt.
+      //
+      // Two extraction tables reference agent_commands. The migration runner
+      // follows SQLite's parent-table replacement procedure: foreign-key
+      // enforcement is disabled only around this migration, then every
+      // reference is checked inside the transaction before commit.
+      const commandColumns = db
+        .prepare("PRAGMA table_info(agent_commands)")
+        .all() as Array<{ name: string }>;
+      if (!commandColumns.some((column) => column.name === "scope_kind")) {
+        db.exec(`
+CREATE TABLE agent_commands_v32 (
+  id TEXT PRIMARY KEY,
+  command_type TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN (
+    'pending', 'claimed', 'completed', 'cancelled', 'failed'
+  )),
+  scope_kind TEXT NOT NULL CHECK (scope_kind IN (
+    'alignment_attempt', 'rule_update_review'
+  )),
+  scope_id TEXT NOT NULL,
+  alignment_attempt_id TEXT
+    REFERENCES alignment_attempts(id) ON DELETE RESTRICT,
+  payload_json TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  claimed_at TEXT,
+  completed_at TEXT,
+  cancelled_at TEXT,
+  CHECK (
+    (scope_kind = 'alignment_attempt'
+      AND alignment_attempt_id IS NOT NULL
+      AND scope_id = alignment_attempt_id)
+    OR
+    (scope_kind = 'rule_update_review'
+      AND alignment_attempt_id IS NULL)
+  )
+);
+
+INSERT INTO agent_commands_v32
+  (id, command_type, status, scope_kind, scope_id,
+   alignment_attempt_id, payload_json, idempotency_key,
+   created_at, updated_at, claimed_at, completed_at, cancelled_at)
+SELECT id, command_type, status, 'alignment_attempt', alignment_attempt_id,
+       alignment_attempt_id, payload_json, idempotency_key,
+       created_at, updated_at, claimed_at, completed_at, cancelled_at
+FROM agent_commands;
+
+DROP TABLE agent_commands;
+ALTER TABLE agent_commands_v32 RENAME TO agent_commands;
+
+CREATE INDEX idx_agent_commands_status_created_at
+  ON agent_commands(status, created_at, id);
+CREATE INDEX idx_agent_commands_scope
+  ON agent_commands(scope_kind, scope_id, created_at, id);
+CREATE INDEX idx_agent_commands_alignment_attempt_id
+  ON agent_commands(alignment_attempt_id);
+        `);
+      }
+
+      // Rule Update Review lifecycle is added by Issue 36. This small durable
+      // seam only records whether that explicit review currently authorizes a
+      // wait lease. A project may expose at most one active review wait.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS agent_command_wait_scopes (
+  scope_kind TEXT NOT NULL CHECK (scope_kind = 'rule_update_review'),
+  scope_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'closed')),
+  active_slot INTEGER CHECK (
+    (status = 'active' AND active_slot = 1)
+    OR (status = 'closed' AND active_slot IS NULL)
+  ),
+  opened_at TEXT NOT NULL,
+  closed_at TEXT,
+  PRIMARY KEY (scope_kind, scope_id),
+  UNIQUE (active_slot)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_command_wait_scopes_status
+  ON agent_command_wait_scopes(status, opened_at, scope_id);
+      `);
+    }
+  },
+  {
+    version: 33,
+    up(db) {
+      // Issues 36-40: Review is the aggregate root; proposals keep their
+      // established ids while immutable revisions, designer decisions and
+      // Agent apply attempts become first-class facts.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS rule_update_proposals (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('new', 'update', 'move')),
+  classification TEXT NOT NULL,
+  title TEXT NOT NULL,
+  change_description TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  affected_items_json TEXT NOT NULL,
+  evidence_record_ids_json TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN (
+    'awaiting_confirmation', 'confirmed', 'canceled'
+  )),
+  source_artifact_path TEXT,
+  entry_id TEXT,
+  proposed_target_path TEXT,
+  created_at TEXT NOT NULL,
+  decided_at TEXT
+);
+CREATE TABLE IF NOT EXISTS rule_update_reviews (
+  id TEXT PRIMARY KEY,
+  reconciliation_id TEXT,
+  status TEXT NOT NULL CHECK (status IN ('draft', 'published', 'completed')),
+  context TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  published_at TEXT,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_rule_update_reviews_status
+  ON rule_update_reviews(status, created_at, id);
+      `);
+      const proposalColumns = db
+        .prepare("PRAGMA table_info(rule_update_proposals)")
+        .all() as Array<{ name: string }>;
+      if (!proposalColumns.some((column) => column.name === "review_id")) {
+        db.exec(
+          `ALTER TABLE rule_update_proposals ADD COLUMN review_id TEXT
+             REFERENCES rule_update_reviews(id) ON DELETE RESTRICT`
+        );
+      }
+      if (!proposalColumns.some((column) => column.name === "current_revision")) {
+        db.exec(
+          `ALTER TABLE rule_update_proposals ADD COLUMN current_revision INTEGER NOT NULL DEFAULT 1`
+        );
+      }
+      db.exec(`
+CREATE TABLE IF NOT EXISTS rule_update_proposal_revisions (
+  proposal_id TEXT NOT NULL
+    REFERENCES rule_update_proposals(id) ON DELETE RESTRICT,
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  title TEXT NOT NULL,
+  full_rule_body TEXT NOT NULL,
+  target_category TEXT NOT NULL,
+  source_artifact_path TEXT,
+  entry_id TEXT,
+  proposed_target_path TEXT,
+  base_digest TEXT,
+  base_digests_json TEXT NOT NULL DEFAULT '{}',
+  author TEXT NOT NULL CHECK (author IN ('agent', 'designer')),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (proposal_id, revision)
+);
+CREATE INDEX IF NOT EXISTS idx_rule_update_revisions_target
+  ON rule_update_proposal_revisions(target_category, created_at, proposal_id);
+
+CREATE TABLE IF NOT EXISTS rule_update_designer_decisions (
+  id TEXT PRIMARY KEY,
+  review_id TEXT NOT NULL
+    REFERENCES rule_update_reviews(id) ON DELETE RESTRICT,
+  proposal_id TEXT NOT NULL
+    REFERENCES rule_update_proposals(id) ON DELETE RESTRICT,
+  revision INTEGER NOT NULL,
+  decision TEXT NOT NULL CHECK (decision IN ('accepted', 'rejected')),
+  decided_at TEXT NOT NULL,
+  FOREIGN KEY (proposal_id, revision)
+    REFERENCES rule_update_proposal_revisions(proposal_id, revision)
+      ON DELETE RESTRICT,
+  UNIQUE (proposal_id, revision)
+);
+CREATE INDEX IF NOT EXISTS idx_rule_update_decisions_review
+  ON rule_update_designer_decisions(review_id, decided_at, id);
+
+CREATE TABLE IF NOT EXISTS rule_update_apply_attempts (
+  id TEXT PRIMARY KEY,
+  command_id TEXT NOT NULL UNIQUE
+    REFERENCES agent_commands(id) ON DELETE RESTRICT,
+  review_id TEXT NOT NULL
+    REFERENCES rule_update_reviews(id) ON DELETE RESTRICT,
+  proposal_id TEXT NOT NULL
+    REFERENCES rule_update_proposals(id) ON DELETE RESTRICT,
+  revision INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN (
+    'pending', 'claimed', 'applied', 'failed', 'needs_revision'
+  )),
+  expected_base_digest TEXT,
+  observed_digest TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL,
+  claimed_at TEXT,
+  completed_at TEXT,
+  FOREIGN KEY (proposal_id, revision)
+    REFERENCES rule_update_proposal_revisions(proposal_id, revision)
+      ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS idx_rule_update_apply_proposal
+  ON rule_update_apply_attempts(proposal_id, created_at, id);
+      `);
+
+      // Explicit compatibility projection for pre-Review proposals. They stay
+      // auditable and usable by the established chat path, but never masquerade
+      // as an active Review wait.
+      const legacy = db.prepare(
+        `SELECT id, kind, title, change_description, source_artifact_path,
+                entry_id, proposed_target_path, created_at, decided_at, status
+         FROM rule_update_proposals WHERE review_id IS NULL`
+      ).all() as unknown as Array<{
+        id: string;
+        kind: string;
+        title: string;
+        change_description: string;
+        source_artifact_path: string | null;
+        entry_id: string | null;
+        proposed_target_path: string | null;
+        created_at: string;
+        decided_at: string | null;
+        status: string;
+      }>;
+      const insertReview = db.prepare(
+        `INSERT INTO rule_update_reviews
+           (id, reconciliation_id, status, context, created_at,
+            published_at, completed_at)
+         VALUES (?, NULL, ?, 'Legacy Rule Update', ?, ?, ?)`
+      );
+      const attach = db.prepare(
+        `UPDATE rule_update_proposals SET review_id = ?, current_revision = 1
+         WHERE id = ?`
+      );
+      const insertRevision = db.prepare(
+        `INSERT INTO rule_update_proposal_revisions
+           (proposal_id, revision, title, full_rule_body, target_category,
+            source_artifact_path, entry_id, proposed_target_path, base_digest,
+            base_digests_json,
+            author, created_at)
+         VALUES (?, 1, ?, ?, 'legacy', ?, ?, ?, NULL, '{}', 'agent', ?)`
+      );
+      for (const proposal of legacy) {
+        const reviewId = `legacy:${proposal.id}`;
+        const completed = proposal.status !== 'awaiting_confirmation';
+        insertReview.run(
+          reviewId,
+          completed ? 'completed' : 'published',
+          proposal.created_at,
+          proposal.created_at,
+          completed ? proposal.decided_at ?? proposal.created_at : null
+        );
+        attach.run(reviewId, proposal.id);
+        insertRevision.run(
+          proposal.id,
+          proposal.title,
+          proposal.change_description,
+          proposal.source_artifact_path,
+          proposal.entry_id,
+          proposal.proposed_target_path,
+          proposal.created_at
+        );
+      }
+    }
+  },
+  {
+    version: 34,
+    up(db) {
+      // v33 was exercised during development before per-path digests were
+      // introduced for move proposals. Keep the follow-up explicit so any
+      // database that already reports v33 receives the required column.
+      const columns = db
+        .prepare("PRAGMA table_info(rule_update_proposal_revisions)")
+        .all() as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === "base_digests_json")) {
+        db.exec(
+          `ALTER TABLE rule_update_proposal_revisions
+           ADD COLUMN base_digests_json TEXT NOT NULL DEFAULT '{}'`
+        );
+      }
+    }
+  },
+  {
+    version: 35,
+    up(db) {
+      // Claims freeze the observed digest set separately from the immutable
+      // proposal revision. This permits an earlier accepted command in the
+      // same Review to advance a shared source while still detecting edits
+      // that occur after the next command is claimed.
+      const attemptColumns = db
+        .prepare("PRAGMA table_info(rule_update_apply_attempts)")
+        .all() as Array<{ name: string }>;
+      if (
+        attemptColumns.length > 0 &&
+        !attemptColumns.some(
+          (column) => column.name === "claimed_base_digests_json"
+        )
+      ) {
+        db.exec(
+          `ALTER TABLE rule_update_apply_attempts
+           ADD COLUMN claimed_base_digests_json TEXT`
+        );
+      }
+      const revisionColumns = db
+        .prepare("PRAGMA table_info(rule_update_proposal_revisions)")
+        .all() as Array<{ name: string }>;
+      if (
+        revisionColumns.length > 0 &&
+        !revisionColumns.some((column) => column.name === "source_category")
+      ) {
+        db.exec(
+          `ALTER TABLE rule_update_proposal_revisions
+           ADD COLUMN source_category TEXT`
+        );
+      }
+    }
   }
 ];
 
@@ -1445,9 +1764,24 @@ export function applyPendingMigrations(
 ): void {
   for (const migration of migrations) {
     if (migration.version <= fromVersion) continue;
-    db.exec("BEGIN IMMEDIATE");
+    const foreignKeysWereEnabled = migration.foreignKeysOff
+      ? (db.prepare("PRAGMA foreign_keys").get() as { foreign_keys: number })
+          .foreign_keys === 1
+      : false;
+    if (migration.foreignKeysOff) {
+      db.exec("PRAGMA foreign_keys = OFF");
+    }
     try {
+      db.exec("BEGIN IMMEDIATE");
       migration.up(db);
+      if (migration.foreignKeysOff) {
+        const violations = db.prepare("PRAGMA foreign_key_check").all();
+        if (violations.length > 0) {
+          throw new Error(
+            `Migration to version ${migration.version} would violate foreign keys: ${JSON.stringify(violations)}`
+          );
+        }
+      }
       setUserVersion(db, migration.version);
       db.exec("COMMIT");
     } catch (migrationError) {
@@ -1460,6 +1794,10 @@ export function applyPendingMigrations(
         );
       }
       throw migrationError;
+    } finally {
+      if (migration.foreignKeysOff && foreignKeysWereEnabled) {
+        db.exec("PRAGMA foreign_keys = ON");
+      }
     }
   }
 }
