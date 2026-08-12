@@ -72,6 +72,11 @@ export type FormalizeFailure =
     }
   | {
       ok: false;
+      reason: "rule_update_review_incomplete";
+      phase: ProjectPhase;
+    }
+  | {
+      ok: false;
       reason: "rule_update_proposal_required";
       phase: ProjectPhase;
       changed_artifact_paths: string[];
@@ -256,6 +261,30 @@ export function hasCurrentRuleUpdateReviewOnDb(db: DatabaseType): boolean {
       confirmation.id
     ) as { ok: number } | undefined;
   return review !== undefined;
+}
+
+/** Compatibility: projects without the Issue 36 aggregate keep the legacy
+ * Consolidate gate. Once a managed Review exists for that reconciliation, it
+ * must be terminal before formalization can advance. */
+export function currentManagedRuleUpdateReviewCompleteOnDb(
+  db: DatabaseType
+): boolean {
+  const current = db
+    .prepare(
+      `SELECT json_extract(payload, '$.reconciliation_id') AS reconciliation_id
+       FROM events WHERE type = 'consolidate_review_started'
+       ORDER BY id DESC LIMIT 1`
+    )
+    .get() as { reconciliation_id: string | null } | undefined;
+  if (!current?.reconciliation_id) return true;
+  const review = db
+    .prepare(
+      `SELECT status FROM rule_update_reviews
+       WHERE reconciliation_id = ? AND context <> 'Legacy Rule Update'
+       ORDER BY created_at DESC LIMIT 1`
+    )
+    .get(current.reconciliation_id) as { status: string } | undefined;
+  return review === undefined || review.status === "completed";
 }
 
 /**
@@ -526,6 +555,13 @@ export function formalizeDesignSystem(
           phase: current
         };
       }
+      if (!currentManagedRuleUpdateReviewCompleteOnDb(db)) {
+        return {
+          ok: false,
+          reason: "rule_update_review_incomplete",
+          phase: current
+        };
+      }
       const unreviewed = countUnreviewedDesignerFeedbackOnDb(db);
       if (unreviewed > 0) {
         return {
@@ -785,6 +821,13 @@ export function formalizeDesignSystem(
         return {
           ok: false as const,
           reason: "rule_update_review_required" as const,
+          phase: current
+        };
+      }
+      if (!currentManagedRuleUpdateReviewCompleteOnDb(db)) {
+        return {
+          ok: false as const,
+          reason: "rule_update_review_incomplete" as const,
           phase: current
         };
       }

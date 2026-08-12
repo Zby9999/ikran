@@ -71,7 +71,7 @@ export const IKRAN_MCP_INSTRUCTIONS =
   "- Never silently drop confirmed input: map to a stable record/entry or record conflict/omitted/gap. Never invent semantics or use one designer-edited card to formalize unrelated claims.\n" +
   "- Follow rule taxonomy; route misplaced rules through rule-update proposal, never move silently. Design gen uses design-system source only, never feedback. At explicit completion/Rule Update freeze the full transcript; call reconcile_designer_conversation.\n" +
   "- Runtime owns prototype dev servers: declare code, then record_preview; never run one.\n" +
-  "- Pass the completed reconciliation to claim_consolidate_review; narrate only global-rule proposals. Never write a rule-update artifact before confirm_rule_update.\n" +
+  "- Pass the completed reconciliation to claim_consolidate_review; draft the complete Rule Update Review, publish it once, then claim designer decisions. Never write before an accepted decision is claimed.\n" +
   "- Rule updates to layout/components.spec attach a fresh capture via capture_rule_screenshot (or Figma MCP, or omit); never reuse existing capture files.\n" +
   "- export_research only after complete success recursion (DS v1→new design→confirm→DS v2).\n\n" +
   "FLOW CONTRACTS on demand: claim_alignment_preparation → Alignment section_contract; claim_initial_design_system_preparation → extraction source_contract. confirm_draft_design_system → get_prototype_rebuild_context → rebuild seed, then record_preview. confirm_prototype → reconcile_designer_conversation → claim_consolidate_review → backfill_component_code_links → declare_component_live_heroes → formalize_design_system(modificationReview).";

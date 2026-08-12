@@ -285,53 +285,9 @@ export function activateRuleUpdateReviewWait(
     return { ok: false, reason: "review_id_required" };
   }
   try {
-    const result = withProjectTransaction(projectPath, (db) => {
-      const active = db
-        .prepare(
-          `SELECT scope_id, opened_at
-           FROM agent_command_wait_scopes
-           WHERE scope_kind = 'rule_update_review' AND status = 'active'
-           LIMIT 1`
-        )
-        .get() as { scope_id: string; opened_at: string } | undefined;
-      if (active?.scope_id === reviewId) {
-        return {
-          ok: true as const,
-          reused: true,
-          wait_scope: {
-            scope: { kind: "rule_update_review" as const, id: reviewId },
-            status: "active" as const,
-            opened_at: active.opened_at,
-            closed_at: null
-          }
-        };
-      }
-      if (active) {
-        return {
-          ok: false as const,
-          reason: "another_review_wait_active" as const
-        };
-      }
-      const now = new Date().toISOString();
-      db.prepare(
-        `INSERT INTO agent_command_wait_scopes
-           (scope_kind, scope_id, status, active_slot, opened_at, closed_at)
-         VALUES ('rule_update_review', ?, 'active', 1, ?, NULL)
-         ON CONFLICT(scope_kind, scope_id) DO UPDATE SET
-           status = 'active', active_slot = 1, opened_at = excluded.opened_at,
-           closed_at = NULL`
-      ).run(reviewId, now);
-      return {
-        ok: true as const,
-        reused: false,
-        wait_scope: {
-          scope: { kind: "rule_update_review" as const, id: reviewId },
-          status: "active" as const,
-          opened_at: now,
-          closed_at: null
-        }
-      };
-    });
+    const result = withProjectTransaction(projectPath, (db) =>
+      activateRuleUpdateReviewWaitOnDb(db, reviewId)
+    );
     if (result.ok && !result.reused) {
       emitRecordEvent({
         kind: "agent-command",
@@ -344,6 +300,60 @@ export function activateRuleUpdateReviewWait(
   } catch {
     return { ok: false, reason: "db_error" };
   }
+}
+
+/** Transaction-sharing variant used when Review publication/re-wait must be atomic. */
+export function activateRuleUpdateReviewWaitOnDb(
+  db: DatabaseType,
+  reviewId: string,
+  now = new Date().toISOString()
+):
+  | { ok: true; reused: boolean; wait_scope: RuleUpdateReviewWaitScope }
+  | { ok: false; reason: "review_id_required" | "another_review_wait_active" } {
+  if (!nonEmpty(reviewId)) {
+    return { ok: false, reason: "review_id_required" };
+  }
+  const active = db
+    .prepare(
+      `SELECT scope_id, opened_at
+       FROM agent_command_wait_scopes
+       WHERE scope_kind = 'rule_update_review' AND status = 'active'
+       LIMIT 1`
+    )
+    .get() as { scope_id: string; opened_at: string } | undefined;
+  if (active?.scope_id === reviewId) {
+    return {
+      ok: true,
+      reused: true,
+      wait_scope: {
+        scope: { kind: "rule_update_review", id: reviewId },
+        status: "active",
+        opened_at: active.opened_at,
+        closed_at: null
+      }
+    };
+  }
+  if (active) {
+    return { ok: false, reason: "another_review_wait_active" };
+  }
+  db.prepare(
+    `INSERT INTO agent_command_wait_scopes
+       (scope_kind, scope_id, status, active_slot, opened_at, closed_at)
+     VALUES ('rule_update_review', ?, 'active', 1, ?, NULL)
+     ON CONFLICT(scope_kind, scope_id) DO UPDATE SET
+       status = 'active', active_slot = 1, opened_at = excluded.opened_at,
+       closed_at = NULL`
+  ).run(reviewId, now);
+  return {
+    ok: true,
+    reused: false,
+    wait_scope: {
+      scope: { kind: "rule_update_review", id: reviewId },
+      status: "active",
+      opened_at: now,
+      closed_at: null
+    }
+  };
 }
 
 export function closeRuleUpdateReviewWait(

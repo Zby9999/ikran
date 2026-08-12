@@ -1178,7 +1178,7 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(32);
+        expect(CURRENT_SCHEMA_VERSION).toBe(35);
         expect(
           db.prepare("PRAGMA table_info(prototype_surfaces)").all()
         ).toEqual(
@@ -1333,6 +1333,34 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
+  test("v34 repairs a v33 Rule Update revision table opened before per-path digests", () => {
+    const db = new DatabaseSync(":memory:");
+    try {
+      db.exec(`
+        CREATE TABLE rule_update_proposal_revisions (
+          proposal_id TEXT NOT NULL,
+          revision INTEGER NOT NULL,
+          base_digest TEXT,
+          PRIMARY KEY (proposal_id, revision)
+        );
+        PRAGMA user_version = 33;
+      `);
+      applyPendingMigrations(db, 33);
+      expect(userVersion(db)).toBe(35);
+      expect(db.prepare("PRAGMA table_info(rule_update_proposal_revisions)").all()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "base_digests_json",
+            notnull: 1,
+            dflt_value: "'{}'"
+          })
+        ])
+      );
+    } finally {
+      db.close();
+    }
+  });
+
   test("v31→v32 scopes existing Alignment commands without breaking child references", () => {
     const db = new DatabaseSync(":memory:");
     try {
@@ -1372,7 +1400,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       applyPendingMigrations(db, 31);
 
-      expect(userVersion(db)).toBe(32);
+      expect(userVersion(db)).toBe(35);
       expect(
         db.prepare(
           `SELECT scope_kind, scope_id, alignment_attempt_id

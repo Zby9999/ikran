@@ -7,6 +7,15 @@ import {
   confirmRuleUpdateInputSchema,
   proposeRuleUpdateCommand,
   proposeRuleUpdateInputSchema,
+  createRuleUpdateReviewCommand,
+  createRuleUpdateReviewInputSchema,
+  publishRuleUpdateReviewCommand,
+  publishRuleUpdateReviewInputSchema,
+  claimRuleUpdateDecisionCommand,
+  failRuleUpdateApplyCommand,
+  failRuleUpdateApplyInputSchema,
+  retryRuleUpdateApplyCommand,
+  retryRuleUpdateApplyInputSchema,
   requireActiveProjectCommand
 } from "../runtime/commands";
 import {
@@ -20,10 +29,41 @@ export function registerRuleUpdateTools(
   { ensureRuntime }: RegisterIkranToolsDeps
 ): void {
   mcp.registerTool(
+    "create_rule_update_review",
+    {
+      description:
+        "Create the one draft Rule Update Review for a completed Consolidate review. Draft proposals are private until publish_rule_update_review publishes the complete batch. Supply the reconciliation id when the Review comes from a frozen Agent-host transcript.",
+      inputSchema: createRuleUpdateReviewInputSchema
+    },
+    async (args) => {
+      const rt = await ensureRuntime();
+      const active = requireActiveProjectCommand();
+      if (!active.ok) return failureResult("create_rule_update_review", active.reason, rt);
+      const result = createRuleUpdateReviewCommand(active.project.path, args);
+      return result.ok ? successResult(rt, result) : failureResult("create_rule_update_review", result.reason, rt);
+    }
+  );
+
+  mcp.registerTool(
+    "publish_rule_update_review",
+    {
+      description:
+        "Publish every proposal in a draft Review as one visible batch and activate the Rule Update-specific designer wait. An empty batch completes immediately as an explicit no-change Review; an already completed Review is rejected.",
+      inputSchema: publishRuleUpdateReviewInputSchema
+    },
+    async (args) => {
+      const rt = await ensureRuntime();
+      const active = requireActiveProjectCommand();
+      if (!active.ok) return failureResult("publish_rule_update_review", active.reason, rt);
+      const result = publishRuleUpdateReviewCommand(active.project.path, args.reviewId);
+      return result.ok ? successResult(rt, result) : failureResult("publish_rule_update_review", result.reason, rt);
+    }
+  );
+  mcp.registerTool(
     "propose_rule_update",
     {
       description:
-        "Draft one rule-update proposal and persist it as awaiting_confirmation. Use kind=move for a rule misplaced under the extraction source_contract taxonomy (requires sourceArtifactPath, entryId, proposedTargetPath); use kind=new or kind=update for a rule the Consolidate review concluded should be added or changed (requires title and changeDescription, and supply sourceArtifactPath when it will authorize a protected Design System write). classification is the six-part disposition taxonomy: local_exception, reusable_candidate, rule_conflict, open_gap, proposed_update, no_finding. evidenceRecordIds must reference existing Runtime records (alignment question cards, agent annotations, region annotations, evidence surfaces, seed references, designer feedback); forged ids are rejected. Narrate in chat ONLY the proposals that would become global rules (reusable_candidate / proposed_update); the other classifications stay recorded as dispositions the designer can query on demand. This tool never edits any source artifact: wait for confirm_rule_update, then write only the proposal-authorized path and declare it with record_artifact_written carrying that proposalId. In design_system_formal, the proposal must be created after the current Prototype-bound Consolidate review; stale-cycle proposals are rejected.",
+        "Draft one full Rule Update proposal. For the Review flow pass reviewId, fullRuleBody, and targetCategory (foundations.home/color/typography/materials/layout/interaction or component:<entryId>); move proposals also pass their typed sourceCategory. The draft stays private until publish_rule_update_review. Legacy callers without reviewId keep the chat-only awaiting_confirmation path. This tool never edits source artifacts.",
       inputSchema: proposeRuleUpdateInputSchema
     },
     async (args) => {
@@ -40,10 +80,65 @@ export function registerRuleUpdateTools(
   );
 
   mcp.registerTool(
+    "claim_rule_update_decision",
+    {
+      description:
+        "Claim the earliest durable designer decision across published Rule Update Reviews. The payload freezes the exact proposal revision, semantic target, and base digest. Rejected decisions complete on claim without a source write. Accepted decisions must be applied to the authorized source, declared with record_artifact_written(proposalId), or failed explicitly.",
+      inputSchema: {}
+    },
+    async () => {
+      const rt = await ensureRuntime();
+      const active = requireActiveProjectCommand();
+      if (!active.ok) return failureResult("claim_rule_update_decision", active.reason, rt);
+      const result = claimRuleUpdateDecisionCommand(active.project.path);
+      return result.ok
+        ? successResult(rt, result)
+        : failureResult(
+            "claim_rule_update_decision",
+            result.reason,
+            rt,
+            "details" in result ? result.details : undefined
+          );
+    }
+  );
+
+  mcp.registerTool(
+    "fail_rule_update_apply",
+    {
+      description:
+        "Mark a claimed accepted Rule Update application as recoverably failed. This preserves the same command/proposal/revision identity and reopens the Review wait; use retry_rule_update_apply after correcting the operational failure.",
+      inputSchema: failRuleUpdateApplyInputSchema
+    },
+    async (args) => {
+      const rt = await ensureRuntime();
+      const active = requireActiveProjectCommand();
+      if (!active.ok) return failureResult("fail_rule_update_apply", active.reason, rt);
+      const result = failRuleUpdateApplyCommand(active.project.path, args);
+      return result.ok ? successResult(rt, result) : failureResult("fail_rule_update_apply", result.reason, rt);
+    }
+  );
+
+  mcp.registerTool(
+    "retry_rule_update_apply",
+    {
+      description:
+        "Retry a recoverably failed Rule Update application using the same durable command identity. Base digest validation still runs again at claim time.",
+      inputSchema: retryRuleUpdateApplyInputSchema
+    },
+    async (args) => {
+      const rt = await ensureRuntime();
+      const active = requireActiveProjectCommand();
+      if (!active.ok) return failureResult("retry_rule_update_apply", active.reason, rt);
+      const result = retryRuleUpdateApplyCommand(active.project.path, args.commandId);
+      return result.ok ? successResult(rt, result) : failureResult("retry_rule_update_apply", result.reason, rt);
+    }
+  );
+
+  mcp.registerTool(
     "confirm_rule_update",
     {
       description:
-        "Declare the designer's chat Confirm for one awaiting proposal. Flips it to confirmed, records rule_update_confirmed, and marks every designer_feedback evidence id as reviewed. Only after this may you write the corresponding source artifact and declare it via record_artifact_written with this proposalId. Rejects a proposal that is already confirmed or canceled.",
+        "Compatibility adapter for a designer's chat Confirm. Managed Review proposals use the same accepted designer-decision command as Workbench; legacy awaiting proposals keep the prior confirm flow. The Agent must claim the durable accepted decision before writing, then declare the exact authorized source via record_artifact_written with this proposalId.",
       inputSchema: confirmRuleUpdateInputSchema
     },
     async (args) => {
@@ -63,7 +158,7 @@ export function registerRuleUpdateTools(
     "cancel_rule_update",
     {
       description:
-        "Declare the designer's chat Cancel for one awaiting proposal. Flips it to canceled and records rule_update_canceled. Never modifies a source artifact and never marks feedback as reviewed — canceled evidence stays unreviewed until another proposal consumes it or dismiss_designer_feedback records its disposition.",
+        "Compatibility adapter for a designer's chat Cancel. Managed Review proposals use the same rejected designer-decision command as Workbench; legacy awaiting proposals keep the prior cancel flow. Rejection is terminal, never modifies a source artifact, and remains visible in canonical interaction history.",
       inputSchema: cancelRuleUpdateInputSchema
     },
     async (args) => {

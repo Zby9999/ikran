@@ -99,7 +99,26 @@ Rule Update proposals for designer decisions. Only an active Rule Update Review
 wait scope may extend Adaptive Agent wait beyond Alignment; a post-Alignment
 project phase alone never authorizes that wait. A later designer decision is
 carried as a scoped durable Agent command and does not imply host activation.
+The Review is drafted privately and then published as one complete batch; an
+empty published batch is a terminal no-change review. Formalization cannot pass
+while a managed Review from the current Consolidate cycle is incomplete.
 _Avoid_: global post-Alignment wait, transient decision event, Agent wake-up
+
+**Rule Update Proposal Revision**:
+An immutable, directly reviewable version of one proposed Rule: complete title
+and body, typed semantic category, exact authorized artifact paths, evidence
+linkage, author, and the content digest frozen for every affected source. A
+designer edit appends a revision without writing a Design System source or
+publishing an Agent command. A decision always names one exact revision.
+_Avoid_: mutable draft fields, live Rule edit, UI-only category string
+
+**Rule Update Designer Decision**:
+The direct Workbench or chat-compatibility Accept/Reject command for one exact
+proposal revision. It atomically records the durable decision and publishes a
+Rule Update-scoped Agent command. Accepted means waiting for Agent application;
+only a validated artifact declaration means applied. Rejected is a terminal
+no-write disposition retained in All interactions.
+_Avoid_: confirmation dialog, Agent re-confirmation, accepted-as-applied
 
 **Figma Connection**:
 The designer-authorized, read-only connection that lets Runtime capture Figma

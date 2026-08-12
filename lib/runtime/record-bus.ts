@@ -15,7 +15,8 @@ export type RecordBusKind =
   | "design-system"
   | "phase"
   | "prototype"
-  | "agent-command";
+  | "agent-command"
+  | "rule-update";
 export type RecordBusAction = "created" | "updated" | "deleted";
 
 export type RecordBusEvent = {

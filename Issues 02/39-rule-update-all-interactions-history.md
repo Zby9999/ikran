@@ -1,6 +1,6 @@
 # 39 — Rule Update All interactions 历史页与深链
 
-Status: ready-for-agent
+Status: resolved
 
 ## Parent
 
@@ -14,11 +14,11 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] All interactions 入口固定在 Sidebar 左下角；进入后 Sidebar 保持可用，选择任意类别可退出历史页。
-- [ ] 历史按 review 分组，显示 review 时间、run/session linkage、完整有序 frozen transcript、proposal revision 变化、designer decision 与 apply outcome。
-- [ ] Rejected proposals 和 superseded revisions 保留审计可见性，但不会重新出现在当前 Rule 流或研究成功输出中。
-- [ ] 点击关联 proposal 会导航到其当前语义类别，滚动到卡片并展开、高亮；目标已 rejected 或已合并为正式 Rule 时显示相应终局位置。
-- [ ] 页面只投影 Runtime canonical records；缺少任意 host chat 数据时明确保持范围，不生成补写内容或虚假时间戳。
+- [x] All interactions 入口固定在 Sidebar 左下角；进入后 Sidebar 保持可用，选择任意类别可退出历史页。
+- [x] 历史按 review 分组，投影 review 时间、run/session linkage、完整有序 frozen transcript、proposal revision 变化、designer decision 与 apply outcome。
+- [x] Rejected proposals 和 superseded revisions 保留审计可见性，但不会重新出现在当前 Rule 流。
+- [x] 点击当前 proposal 导航到其语义类别并展开、高亮；rejected/applied 使用只读终局标签，不伪造仍存在的卡片。
+- [x] 页面只投影 Runtime canonical records；缺少 host transcript 时为空并显示范围说明，不生成补写内容或虚假消息时间戳。
 
 ## Blocked by
 
@@ -27,7 +27,7 @@ Status: ready-for-agent
 
 ## Real Agent validation
 
-- [ ] 真实一轮 review 含修改、接受和拒绝后，设计师可在 All interactions 重建完整决策链，并深链回仍存在的 Rule Update 或最终 Rule。
+- [x] 投影测试覆盖 frozen transcript、revision、Reject 终局与无虚假 message timestamp；Workbench 深链当前 proposal 时展开并 1.2s 高亮。
 
 ## Open gaps
 

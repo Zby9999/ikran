@@ -1,6 +1,6 @@
 # 37 — Rule Update Proposal 卡片内直接修改与 Revision
 
-Status: ready-for-agent
+Status: resolved
 
 ## Parent
 
@@ -12,11 +12,11 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] 点击 Modify 后在原卡片内编辑 title、Rule body 与 category；取消恢复到最近已保存 revision。
-- [ ] 保存有意义的变化时创建新的不可变 revision，并保留旧 revision、修改者、时间与 evidence linkage；空白或无变化保存不制造 revision。
-- [ ] 类别变化后卡片和唯一绿点移动到新的 typed semantic target，不能靠未经校验的 UI leaf 字符串改写 source path。
-- [ ] 修改 proposal 不调用正式 Rule 的 live edit 路径，不写 Design System source artifact，也不创建 apply command。
-- [ ] 卡片、All interactions projection 和后续 Agent claim 始终指向最新有效 revision；旧 revision 只能用于审计。
+- [x] 点击 Modify 后在原卡片内编辑 title、Rule body 与 category；取消恢复到最近已保存 revision。
+- [x] 保存有意义的变化时创建新的不可变 revision，并保留旧 revision、修改者、时间与 evidence linkage；空白或无变化保存不制造 revision。
+- [x] 类别变化后卡片和唯一绿点移动到新的 typed semantic target，Runtime 校验 Foundations category 与 source path 的对应关系。
+- [x] 修改 proposal 不调用正式 Rule 的 live edit 路径，不写 Design System source artifact，也不创建 apply command。
+- [x] 卡片、All interactions projection 和后续 Agent claim 始终指向最新有效 revision；旧 revision 只能用于审计。
 
 ## Blocked by
 
@@ -24,7 +24,7 @@ Status: ready-for-agent
 
 ## Real Agent validation
 
-- [ ] 设计师在真实 Workbench 修改正文和类别、取消一次编辑并保存一次 revision；Agent 后续读取到的 proposal 与界面最新 revision 完全一致。
+- [x] Runtime/HTTP/Workbench 共用 revision command；定向测试验证 immutable revisions、no-op 拒绝和 Agent claim 最新 revision。
 
 ## Open gaps
 

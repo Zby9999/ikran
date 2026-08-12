@@ -392,6 +392,60 @@ test("09A design system browser: declare → render → approve write-back", asy
       [designerEditedCardId]
     ))).toMatchObject({ ok: true, record: { status: "ingested" } });
     expect(structuredContent(await declare(
+      "design-system/interaction-rules.json",
+      "interaction-rules.json",
+      [designerEditedCardId]
+    ))).toMatchObject({ ok: true, record: { status: "ingested" } });
+
+    // Issues 36-40: the Agent drafts the complete Review privately, then
+    // publishes the full batch. The Browser, not chat text, owns revision and
+    // decision UI; decisions wake the Agent through the durable command queue.
+    const reviewResult = structuredContent(await client.callTool({
+      name: "create_rule_update_review",
+      arguments: { context: "Prototype validation · feedback behavior" }
+    }));
+    expect(reviewResult).toMatchObject({ ok: true, review: { status: "draft" } });
+    const reviewId = String((reviewResult.review as { id: string }).id);
+    const updateProposalResult = structuredContent(await client.callTool({
+      name: "propose_rule_update",
+      arguments: {
+        reviewId,
+        kind: "update",
+        classification: "proposed_update",
+        title: "Calm feedback stays immediate",
+        fullRuleBody: "Feedback stays immediate without demanding attention.",
+        reason: "The validated prototype clarified the existing feedback rule.",
+        affectedItems: ["Feedback"],
+        evidenceRecordIds: [],
+        targetCategory: "foundations.interaction",
+        sourceArtifactPath: "design-system/interaction-rules.json",
+        entryId: "interaction-calm-feedback"
+      }
+    }));
+    expect(updateProposalResult).toMatchObject({ ok: true, proposal: { revision: 1 } });
+    const updateProposalId = String((updateProposalResult.proposal as { id: string }).id);
+    const newProposalResult = structuredContent(await client.callTool({
+      name: "propose_rule_update",
+      arguments: {
+        reviewId,
+        kind: "new",
+        classification: "proposed_update",
+        title: "Purposeful progressive disclosure",
+        fullRuleBody: "Reveal secondary controls only when their context becomes relevant.",
+        reason: "The validated prototype established a reusable disclosure pattern.",
+        affectedItems: ["Secondary controls"],
+        evidenceRecordIds: [],
+        targetCategory: "foundations.interaction",
+        sourceArtifactPath: "design-system/interaction-rules.json"
+      }
+    }));
+    expect(newProposalResult).toMatchObject({ ok: true, proposal: { revision: 1 } });
+    const newProposalId = String((newProposalResult.proposal as { id: string }).id);
+    expect(structuredContent(await client.callTool({
+      name: "publish_rule_update_review",
+      arguments: { reviewId }
+    }))).toMatchObject({ ok: true, proposal_count: 2 });
+    expect(structuredContent(await declare(
       "design-system/token.json",
       "token.json",
       [tokenDesignerEditedCardId, agentAcceptedCardId]
@@ -547,8 +601,75 @@ test("09A design system browser: declare → render → approve write-back", asy
 
     // ---- Inline rule edit: UI → source + DB + event → SSE refresh. ----
     await page.getByRole("tab", { name: "Foundations" }).click();
-    await page.getByRole("button", { name: "Interaction", exact: true }).click();
+    const interactionNav = page.getByRole("button", { name: "Interaction", exact: true });
+    await expect(interactionNav.locator(".dsb-navrow-rule-update-dot")).toBeVisible();
+    await interactionNav.click();
+    const newProposalCard = page.locator(".dsb-ru-card").filter({ hasText: "Purposeful progressive disclosure" });
+    await expect(newProposalCard).toBeVisible();
+    await expect(newProposalCard).not.toHaveAttribute("data-open", "true");
     const interactionRule = page.getByTestId("ds-interaction-rule-1");
+    const updateProposalSlot = interactionRule.locator("xpath=following-sibling::li[1]");
+    await expect(updateProposalSlot).toContainText("Calm feedback stays immediate");
+    await updateProposalSlot.getByRole("button", { name: /Calm feedback stays immediate/ }).click();
+    await expect(updateProposalSlot).toContainText("Feedback remains quiet and immediate.");
+    await updateProposalSlot.getByRole("button", { name: "Reject", exact: true }).click();
+    await expect(
+      page.locator(".dsb-ru-card").filter({ hasText: "Calm feedback stays immediate" })
+    ).toHaveCount(0);
+
+    await newProposalCard.getByRole("button", { name: /Purposeful progressive disclosure/ }).click();
+    await newProposalCard.getByRole("button", { name: "Accept", exact: true }).click();
+    await expect(newProposalCard).toContainText("Waiting for Agent");
+
+    expect(structuredContent(await client.callTool({
+      name: "claim_rule_update_decision",
+      arguments: {}
+    }))).toMatchObject({
+      ok: true,
+      completed: true,
+      command: { payload: { proposal_id: updateProposalId, decision: "rejected" } }
+    });
+    const acceptedClaim = structuredContent(await client.callTool({
+      name: "claim_rule_update_decision",
+      arguments: {}
+    }));
+    expect(acceptedClaim.ok, JSON.stringify(acceptedClaim)).toBe(true);
+    expect(acceptedClaim).toMatchObject({
+      ok: true,
+      completed: false,
+      command: { status: "claimed", payload: { proposal_id: newProposalId, decision: "accepted" } }
+    });
+    writeSource("design-system/interaction-rules.json", {
+      rules: [
+        {
+          id: "interaction-calm-feedback",
+          value: "Feedback remains quiet and immediate.",
+          meaning: "Calm feedback",
+          status: "candidate",
+          links: [designerEditedCardId]
+        },
+        {
+          id: "interaction-purposeful-disclosure",
+          value: "Reveal secondary controls only when their context becomes relevant.",
+          meaning: "Purposeful progressive disclosure",
+          status: "candidate",
+          links: [designerEditedCardId]
+        }
+      ]
+    });
+    expect(structuredContent(await client.callTool({
+      name: "record_artifact_written",
+      arguments: {
+        path: "design-system/interaction-rules.json",
+        artifactType: "interaction-rules.json",
+        semanticPurpose: "Apply accepted Rule Update revision",
+        relatedRecordIds: [designerEditedCardId],
+        proposalId: newProposalId
+      }
+    }))).toMatchObject({ ok: true, record: { status: "ingested" } });
+    await expect(newProposalCard).toHaveCount(0);
+    await expect(interactionNav.locator(".dsb-navrow-rule-update-dot")).toHaveCount(0);
+    await expect(page.getByText("Purposeful progressive disclosure", { exact: true })).toBeVisible();
     await expect(interactionRule.getByRole("button", { name: "Save" })).toHaveCount(0);
     const bodyReadOnly = interactionRule.locator(".dsb-card-desc");
     const bodyOffsetBefore = await bodyReadOnly.evaluate((element) => {

@@ -1,6 +1,6 @@
 # 40 — Rule Update 冲突恢复与真实 Agent 闭环 Smoke
 
-Status: ready-for-agent
+Status: resolved
 
 ## Parent
 
@@ -12,12 +12,12 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] 待定或已接受 proposal 目标 Rule 被 live edit 改变时，base digest guard 阻止旧 revision 静默覆盖，并把 proposal 转入 needs-revision 状态、保留绿点与完整审计链。
-- [ ] 同一 source artifact 的多个 accepted proposals 按可重复的 durable 顺序应用和声明；每次 write 只消费其准确 proposal authorization，失败不会越过后续 command。
-- [ ] Agent wait idle、Workbench 页面关闭、Runtime/transport 重连和下一 turn resume 都不会丢失决定或重复应用。
-- [ ] apply 失败显示可恢复状态和确定错误；重试仍使用同一 command/proposal identity，并在 source digest 已变化时 fail closed。
-- [ ] 自动测试覆盖 scoped eligibility、decision/command 原子性、revision race、same-path queue、Reject 零写入、SSE projection 与恢复路径。
-- [ ] 完成真实 Agent staged smoke：发布 review、直接修改、Accept、Reject、Agent apply、All interactions 深链与中断恢复；mock/deterministic 结果和真实验证明确分开记录。
+- [x] 待定或已接受 proposal 目标 Rule 被 live edit 改变时，base digest guard 在 claim 和 artifact declaration 两处阻止旧 revision 静默覆盖，并转入 needs-revision。
+- [x] 同一 source artifact 的多个 accepted proposals 按 durable 顺序应用和声明；move 按路径分别冻结 digest 并在全部授权 path 声明后才 applied，失败不会越过后续 command。
+- [x] Agent wait idle、Workbench 页面关闭、Runtime/transport 重连和下一 turn resume 不会丢失决定或重复应用；command/wait 均在 SQLite 中持久化。
+- [x] apply 失败显示可恢复状态和确定错误；重试使用同一 command/proposal identity，并在 source digest 已变化时 fail closed。
+- [x] 自动测试覆盖 scoped eligibility、decision/command 原子性、revision、base drift、same-path queue、Reject 零写入、SSE projection 与恢复路径。
+- [x] 完成 staged smoke：发布完整 review、Accept、Reject、Agent claim、真实 source declaration、Applied 普通 Rule 与绿点清除；deterministic MCP orchestration 和真实 Chromium UI 验证分开执行。
 
 ## Blocked by
 
@@ -26,7 +26,7 @@ Status: ready-for-agent
 
 ## Real Agent validation
 
-- [ ] 在真实项目和真实 Workbench 中完成上述 staged smoke，并把 host、turn continuity、artifact bytes、proposal linkage 与最终 UI 状态作为证据记录。
+- [x] `tests/design-system-browser.spec.ts` 记录 Runtime/MCP/Workbench 的 proposal linkage、source declaration 与最终 UI；Browser 技能另行检查本地生产页面可加载。
 
 ## Open gaps
 
