@@ -183,14 +183,14 @@ function declareInitialDesignSystemArtifacts(
       status: "candidate",
       links: [card("visual-language").id]
     },
-    principles: [
+    concepts: [
       {
         id: "principle-restraint",
         kind: "global-rule",
         value: "Use restraint to preserve hierarchy.",
         meaning: "Restrained hierarchy",
         status: "candidate",
-        links: [card("design-principle").id]
+        links: [card("design-concept").id]
       }
     ]
   });
@@ -239,7 +239,7 @@ function declareInitialDesignSystemArtifacts(
     [
       "design-system/design-system.json",
       "design-system.json",
-      [card("design-principle").id, card("visual-language").id]
+      [card("design-concept").id, card("visual-language").id]
     ],
     ["design-system/token.json", "token.json", [card("token").id]],
     [
@@ -286,7 +286,7 @@ function recordCompleteProgressiveExtraction(
       artifactPath: "design-system/design-system.json",
       entryId: "visual-language"
     },
-    "design-principle": {
+    "design-concept": {
       artifactPath: "design-system/design-system.json",
       entryId: "principle-restraint"
     },
@@ -336,7 +336,7 @@ function recordCompleteProgressiveExtraction(
       workUnit: { kind: "global" as const },
       claims: [
         ...claimsFor("visual-language"),
-        ...claimsFor("design-principle")
+        ...claimsFor("design-concept")
       ]
     },
     {
@@ -491,7 +491,7 @@ describe("Initial Design System preparation", () => {
       (card) => card.section === "visual-language"
     )!;
     const principleCard = claimed.question_cards.find(
-      (card) => card.section === "design-principle"
+      (card) => card.section === "design-concept"
     )!;
     const input = {
       alignmentAttemptId: fixture.attemptId,
@@ -538,7 +538,7 @@ describe("Initial Design System preparation", () => {
             claimId: "global-editorial-language",
             targets: [
               { entryId: "visual-language", jsonPointer: "/visualLanguage" },
-              { entryId: "principle-restraint", jsonPointer: "/principles/0" }
+              { entryId: "principle-restraint", jsonPointer: "/concepts/0" }
             ]
           }
         ]
@@ -578,7 +578,7 @@ describe("Initial Design System preparation", () => {
               claimId: "global-editorial-language",
               targets: [
                 { jsonPointer: "/visualLanguage" },
-                { jsonPointer: "/principles/0" }
+                { jsonPointer: "/concepts/0" }
               ]
             }
           ]
@@ -609,11 +609,11 @@ describe("Initial Design System preparation", () => {
           statement: "The global direction combines language and restraint.",
           sourceRecordIds: [
             card("visual-language").id,
-            card("design-principle").id
+            card("design-concept").id
           ],
           sourceExcerpts: [
             card("visual-language").final_answer!,
-            card("design-principle").final_answer!
+            card("design-concept").final_answer!
           ],
           confidence: "confirmed",
           outcome: "mapped",
@@ -658,8 +658,8 @@ describe("Initial Design System preparation", () => {
         {
           claimId: "global-v2",
           statement: "Restraint preserves hierarchy.",
-          sourceRecordIds: [card("design-principle").id],
-          sourceExcerpts: [card("design-principle").final_answer!],
+          sourceRecordIds: [card("design-concept").id],
+          sourceExcerpts: [card("design-concept").final_answer!],
           confidence: "confirmed",
           outcome: "mapped",
           targets: [
@@ -678,7 +678,7 @@ describe("Initial Design System preparation", () => {
       progress: {
         completedWorkUnitKeys: ["tokens", "global"],
         consumedSourceRecordIds: expect.arrayContaining([
-          card("design-principle").id,
+          card("design-concept").id,
           card("token").id
         ]),
         remainingQuestionCardIds: expect.arrayContaining([
@@ -1134,7 +1134,7 @@ describe("Initial Design System preparation", () => {
         definition: { kind: "global" as const },
         idempotencyKey: "audit-global",
         claimId: "audit-global-claim",
-        sources: [card("visual-language"), card("design-principle")],
+        sources: [card("visual-language"), card("design-concept")],
         targets: [
           {
             artifactPath: "design-system/design-system.json",
@@ -1485,7 +1485,7 @@ describe("Initial Design System preparation", () => {
             "capturedAt"
           ]),
           item_optional: expect.arrayContaining(["nodeId", "surfaceId"]),
-          guidance: expect.stringContaining("Figma MCP")
+          guidance: expect.stringContaining("Runtime derives")
         },
         interaction_entry_split: {
           interaction_rules:

@@ -174,7 +174,7 @@ test("design-system token.json declaration links an answered card and ingests", 
       evidenceId: evidence.record.id,
       keyPrefix: "artifact-mcp"
     });
-    const stagedCard = staged.cards["design-principle"][0];
+    const stagedCard = staged.cards["design-concept"][0];
     expect(structuredContent(await client.callTool({
       name: "record_designer_answer",
       arguments: { questionCardId: stagedCard.id, finalAnswer: stagedCard.answer }
@@ -491,7 +491,7 @@ test("formalized entry without a designer-edited link is rejected at ingest", as
       evidenceId: evidence.record.id,
       keyPrefix: "artifact-xval"
     });
-    const stagedCard = staged.cards["design-principle"][0];
+    const stagedCard = staged.cards["design-concept"][0];
     expect(structuredContent(await client.callTool({
       name: "record_designer_answer",
       arguments: { questionCardId: stagedCard.id, finalAnswer: stagedCard.answer }

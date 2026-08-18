@@ -86,12 +86,12 @@ export function SeedEvidenceWorkbench({
     recordDesignerAnswer,
     appendAgentAnnotationInformation,
     completeDesignIntentAlignment,
+    confirmPrototype,
     getFigmaConnection,
     connectFigma,
     captureSeedReference
   } = useWorkbenchRuntime(session);
   const [annotateMode, setAnnotateMode] = useState(false);
-  const [followAgentMode, setFollowAgentMode] = useState(false);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [pageFocusRequestId, setPageFocusRequestId] = useState<string | null>(
     null
@@ -345,6 +345,8 @@ export function SeedEvidenceWorkbench({
           }
           phase={folderPhase}
           seedCount={seedCount}
+          completed={alignment?.alignment.status === "completed"}
+          completeEnabled={alignment?.coverage.can_complete === true}
           onNextPhase={() => {
             if (!designLanguageDescription.trim()) {
               showPhaseError("Add Description first.");
@@ -358,8 +360,18 @@ export function SeedEvidenceWorkbench({
               if (!result.ok) showPhaseError(result.error);
             });
           }}
-          onFollowAgent={() => setFollowAgentMode((v) => !v)}
-          followAgentActive={followAgentMode}
+          onComplete={() => {
+            announceWorkbenchSemanticActivity();
+            void completeDesignIntentAlignment().then((result) => {
+              if (!result.ok) showPhaseError(result.error);
+            });
+          }}
+          onConfirmPrototype={() => {
+            announceWorkbenchSemanticActivity();
+            void confirmPrototype().then((result) => {
+              if (!result.ok) showPhaseError(result.error);
+            });
+          }}
           selectActive={!annotateMode}
           onSelect={() => setAnnotateMode(false)}
           annotateActive={annotateMode}
@@ -377,8 +389,7 @@ export function SeedEvidenceWorkbench({
           }}
           onOpenDesignSystem={() => setDesignSystemBrowserOpen(true)}
         />
-        {(folderPhase === "extraction" || folderPhase === "prototype") &&
-        designSystemEntryVisible ? (
+        {folderPhase === "extraction" && designSystemEntryVisible ? (
           <DesignSystemEntryButton
             onOpen={() => setDesignSystemBrowserOpen(true)}
           />
@@ -405,16 +416,8 @@ export function SeedEvidenceWorkbench({
       {canvasStage === "extraction" && alignment ? (
         <div className="seed-workbench__alignment-stages">
           <AlignmentStagePanel
-            completed={alignment.alignment.status === "completed"}
-            completionEnabled={alignment.coverage.can_complete}
             coverage={alignmentCoverage}
             currentStage={alignmentStage}
-            onComplete={() => {
-              announceWorkbenchSemanticActivity();
-              void completeDesignIntentAlignment().then((result) => {
-                if (!result.ok) showPhaseError(result.error);
-              });
-            }}
             onStageChange={setAlignmentStage}
           />
         </div>

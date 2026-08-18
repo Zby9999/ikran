@@ -97,7 +97,14 @@ describe("Alignment preparation Agent command", () => {
             question_cards_min: 2,
             question_cards_max: 5
           },
-          question_title: { max_characters: 48 }
+          question_title: {
+            max_characters: 48,
+            min_words: 2,
+            max_words: 5,
+            min_han_characters: 2,
+            max_han_characters: 12
+          },
+          output_language: expect.stringContaining("Chinese")
         }
       });
       expect(claimAlignmentPreparationCommand(projectPath)).toMatchObject({
@@ -114,8 +121,8 @@ describe("Alignment preparation Agent command", () => {
       claimAlignmentPreparationCommand(projectPath);
       const input = {
         alignmentAttemptId: prepared.attempt.id,
-        idempotencyKey: "design-principle-1",
-        section: "design-principle",
+        idempotencyKey: "design-concept-1",
+        section: "design-concept",
         observation: "Calm hierarchy",
         question: "Should hierarchy remain calm?",
         proposedAnswer: "Yes, keep contrast deliberate.",
@@ -124,8 +131,8 @@ describe("Alignment preparation Agent command", () => {
       expect(
         createAgentAnnotation(projectPath, {
           alignmentAttemptId: prepared.attempt.id,
-          idempotencyKey: "design-principle-hypothesis",
-          section: "design-principle",
+          idempotencyKey: "design-concept-hypothesis",
+          section: "design-concept",
           inference: "reasonable",
           title: "Calm Hierarchy",
           body: "The hierarchy appears intentionally calm.",
@@ -241,10 +248,10 @@ describe("Alignment preparation Agent command", () => {
       expect(
         createQuestionCard(projectPath, {
           alignmentAttemptId: prepared.attempt.id,
-          idempotencyKey: "design-principle-1",
-          section: "design-principle",
-          observation: "design-principle 1",
-          question: "Question 1 for design-principle?",
+          idempotencyKey: "design-concept-1",
+          section: "design-concept",
+          observation: "design-concept 1",
+          question: "Question 1 for design-concept?",
           proposedAnswer: "Proposed answer 1",
           anchor
         })

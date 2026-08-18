@@ -22,7 +22,7 @@ export function registerRegionTools(
     "create_annotation",
     {
       description:
-        "Create an Annotation anchored to a captured Figma Evidence Surface/version. Pass an explicit target union: {kind:'figma-surface', evidenceVersionId}, {kind:'figma-node', evidenceVersionId, nodeId}, or {kind:'figma-region', surfaceArtifactId and/or surfaceNodeId, rect or point}. Runtime ranks deterministic candidates for regions but never infers primaryNodeId. Type defaults: agent → assumption; designer → designer_annotation. `section` (one of the six alignment sections: design-principle, visual-language, token, layout, component, interaction) is REQUIRED when author=designer, optional for agent. Requires an active project. On validation failure writes no row.",
+        "Create an Annotation anchored to a captured Figma Evidence Surface/version. Pass an explicit target union: {kind:'figma-surface', evidenceVersionId}, {kind:'figma-node', evidenceVersionId, nodeId}, or {kind:'figma-region', surfaceArtifactId and/or surfaceNodeId, rect or point}. Runtime ranks deterministic candidates for regions but never infers primaryNodeId. Type defaults: agent → assumption; designer → designer_annotation. `section` (one of the six alignment sections: design-concept, visual-language, token, layout, component, interaction) is REQUIRED when author=designer, optional for agent. Requires an active project. On validation failure writes no row.",
       inputSchema: createRegionAnnotationInputSchema
     },
     async (args) => {

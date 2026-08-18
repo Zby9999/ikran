@@ -526,6 +526,12 @@ export function useWorkbenchRuntime(session: string) {
     return client.completeDesignIntentAlignment();
   }, []);
 
+  const confirmPrototype = useCallback(async (): Promise<MutationResult> => {
+    const client = clientRef.current;
+    if (!client) return { ok: false, error: "runtime_client_unavailable" };
+    return client.confirmPrototype();
+  }, []);
+
   return {
     seeds,
     surfaces,
@@ -553,6 +559,7 @@ export function useWorkbenchRuntime(session: string) {
     recordDesignerAnswer,
     appendAgentAnnotationInformation,
     completeDesignIntentAlignment,
+    confirmPrototype,
     getFigmaConnection,
     connectFigma,
     captureSeedReference

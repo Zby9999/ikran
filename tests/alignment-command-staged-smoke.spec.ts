@@ -11,7 +11,7 @@ import { killRecordedRuntime, sc, spawnMcpClient } from "./helpers/mcp";
 import { enterCanvas } from "./helpers/workbench";
 
 const SECTIONS = [
-  "design-principle",
+  "design-concept",
   "visual-language",
   "token",
   "layout",
@@ -105,10 +105,10 @@ test("07G staged one-process Agent command handoff survives abandon and restart"
       arguments: {
         alignmentAttemptId: firstAttemptId,
         idempotencyKey: "07g:abandoned:first:assumption",
-        section: "design-principle",
+        section: "design-concept",
         inference: "reasonable",
         title: "Initial Hypothesis",
-        body: "The initial design principle appears intentional.",
+        body: "The initial design concept appears intentional.",
         anchor
       }
     }))).toMatchObject({ ok: true });
@@ -117,9 +117,9 @@ test("07G staged one-process Agent command handoff survives abandon and restart"
       arguments: {
         alignmentAttemptId: firstAttemptId,
         idempotencyKey: "07g:abandoned:first",
-        section: "design-principle",
-        observation: "Initial principle",
-        question: "Which principle should lead the system?",
+        section: "design-concept",
+        observation: "Initial concept",
+        question: "Which concept should lead the system?",
         proposedAnswer: "Clarity before ornament",
         anchor
       }
@@ -227,7 +227,7 @@ test("07G staged one-process Agent command handoff survives abandon and restart"
       await stageButton.click();
       await expect(stageButton).toHaveAttribute("aria-current", "step");
     }
-    await page.getByRole("button", { name: "Design principle", exact: true }).click();
+    await page.getByRole("button", { name: "Design Concept", exact: true }).click();
     await page.getByRole("button", { name: "Open question 2 editor" }).click();
     await page.getByRole("textbox", { name: "Answer question 2" })
       .fill("Designer-edited smoke answer");

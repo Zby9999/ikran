@@ -293,23 +293,23 @@ describe("buildAlignmentProjectionPlan", () => {
 
     expect(focusCard?.type).toBe("alignment-card");
     if (focusCard?.type !== "alignment-card") return;
-    expect(focusCard.props.focusSelection).toEqual({
-      cardId: "question-focus",
-      targets: [
-        {
-          targetId: "question-focus:0",
-          surfaceArtifactId: "surface-1",
-          evidenceVersionId: "version-1",
-          rect: { x: 0.1, y: 0.2, width: 0.3, height: 0.1 }
-        },
-        {
-          targetId: "question-focus:1",
-          surfaceArtifactId: "surface-1",
-          evidenceVersionId: "version-1",
-          rect: { x: 0.5, y: 0.2, width: 0.3, height: 0.1 }
-        }
-      ]
+    const media = input.seedFrames[0]!;
+    const padX = 2 / media.mediaW!;
+    const padY = 2 / media.mediaH!;
+    const selection = focusCard.props.focusSelection;
+    expect(selection?.cardId).toBe("question-focus");
+    expect(selection?.targets).toHaveLength(2);
+    expect(selection?.targets[0]).toMatchObject({
+      targetId: "question-focus:0",
+      surfaceArtifactId: "surface-1",
+      evidenceVersionId: "version-1"
     });
+    expect(selection?.targets[0]!.rect.x).toBeCloseTo(0.1 - padX, 6);
+    expect(selection?.targets[0]!.rect.y).toBeCloseTo(0.2 - padY, 6);
+    expect(selection?.targets[0]!.rect.width).toBeCloseTo(0.3 + padX * 2, 6);
+    expect(selection?.targets[0]!.rect.height).toBeCloseTo(0.1 + padY * 2, 6);
+    expect(selection?.targets[1]!.rect.x).toBeCloseTo(0.5 - padX, 6);
+    expect(selection?.targets[1]!.rect.width).toBeCloseTo(0.3 + padX * 2, 6);
   });
 
   test("does not materialize annotation chrome for a whole-frame question", () => {

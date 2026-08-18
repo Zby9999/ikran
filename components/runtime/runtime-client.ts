@@ -846,6 +846,27 @@ export function createWorkbenchDataClient(
   const completeDesignIntentAlignment = () =>
     patchAlignment({ action: "complete" }, "complete_alignment_failed");
 
+  const confirmPrototype = async (): Promise<RuntimeMutationResult> => {
+    const result = await fetchJson(fetcher, "/api/project/phase", session, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "confirm-prototype" })
+    });
+    if (!result.ok) {
+      return reportMutationError(
+        (typeof result.data.error === "string" && result.data.error) ||
+          "confirm_prototype_failed"
+      );
+    }
+    const reloaded = await loadAll();
+    if (!reloaded.ok) {
+      return reportMutationError(
+        `confirm_prototype_succeeded_reload_failed:${reloaded.error}`
+      );
+    }
+    return { ok: true };
+  };
+
   const prepareDesignIntentAlignment = () =>
     patchAlignment({ action: "prepare" }, "prepare_alignment_failed");
 
@@ -872,6 +893,7 @@ export function createWorkbenchDataClient(
     recordDesignerAnswer,
     appendAgentAnnotationInformation,
     completeDesignIntentAlignment,
+    confirmPrototype,
     getFigmaConnection: async (): Promise<
       | { ok: true; connected: false }
       | {

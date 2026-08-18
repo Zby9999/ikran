@@ -366,7 +366,7 @@ test("05C: Tab drills structural hover to its parent and commits that node", asy
     target_node_id: "7:9:child-frame",
     type: "designer_annotation",
     body: "Child frame intent",
-    section: "design-principle"
+    section: "design-concept"
   });
 });
 

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
@@ -13,7 +14,7 @@ import {
 
 describe("AlignmentStagePanel", () => {
   test("starts extraction from the first Figma stage", () => {
-    expect(DEFAULT_ALIGNMENT_STAGE).toBe("design-principle");
+    expect(DEFAULT_ALIGNMENT_STAGE).toBe("design-concept");
   });
 
   test("derives current-section and overall completed question counts", () => {
@@ -56,7 +57,7 @@ describe("AlignmentStagePanel", () => {
       },
       {
         id: "first-principle",
-        section: "design-principle",
+        section: "design-concept",
         final_answer: "done"
       },
       {
@@ -66,7 +67,7 @@ describe("AlignmentStagePanel", () => {
       },
       {
         id: "blank-principle",
-        section: "design-principle",
+        section: "design-concept",
         final_answer: "   "
       }
     ]);
@@ -89,7 +90,7 @@ describe("AlignmentStagePanel", () => {
 
   test("projects the fixed six-part gate and enables Complete only with full coverage", () => {
     expect(ALIGNMENT_STAGES.map((stage) => stage.label)).toEqual([
-      "Design principle",
+      "Design Concept",
       "Visual language",
       "Token",
       "Layout",
@@ -98,7 +99,7 @@ describe("AlignmentStagePanel", () => {
     ]);
 
     const coverage = getAlignmentCoverage({
-      "design-principle": [true, true],
+      "design-concept": [true, true],
       "visual-language": [true],
       token: [true],
       layout: [true],
@@ -108,27 +109,25 @@ describe("AlignmentStagePanel", () => {
 
     const html = renderToStaticMarkup(
       createElement(AlignmentStagePanel, {
-        currentStage: "design-principle",
+        currentStage: "design-concept",
         coverage,
-        onStageChange: vi.fn(),
-        onComplete: vi.fn()
+        onStageChange: vi.fn()
       })
     );
 
-    expect(coverage["design-principle"]).toBe(true);
+    expect(coverage["design-concept"]).toBe(true);
     expect(coverage.interaction).toBe(false);
     expect(html).toContain('data-stage-count="6"');
-    expect(html).toContain('data-current-stage="design-principle"');
+    expect(html).toContain('data-current-stage="design-concept"');
     expect(html).toContain('data-default-view="current"');
     expect(html).toContain('data-complete="true"');
     expect(html).toContain('data-stage="interaction"');
-    expect(html).toContain("Complete");
-    expect(html).toContain("disabled");
     expect(html).toContain("<svg");
     expect(html).not.toContain(">✓<");
+    expect(html).not.toContain('aria-label="Complete alignment"');
   });
 
-  test("marks every covered stage and exposes an enabled global Complete action", () => {
+  test("does not keep a Complete action in the stage panel", () => {
     const coverage = getAlignmentCoverage(
       Object.fromEntries(ALIGNMENT_STAGES.map(({ id }) => [id, [true]]))
     );
@@ -136,49 +135,13 @@ describe("AlignmentStagePanel", () => {
       createElement(AlignmentStagePanel, {
         currentStage: "interaction",
         coverage,
-        onStageChange: vi.fn(),
-        onComplete: vi.fn()
+        onStageChange: vi.fn()
       })
     );
 
     expect(Object.values(coverage).every(Boolean)).toBe(true);
-    expect(html).toContain('aria-label="Complete alignment"');
-    expect(html).not.toMatch(/aria-label="Complete alignment"[^>]*disabled/);
-  });
-
-  test("keeps Complete disabled while Runtime preparation is read-only", () => {
-    const coverage = getAlignmentCoverage(
-      Object.fromEntries(ALIGNMENT_STAGES.map(({ id }) => [id, [true]]))
-    );
-    const html = renderToStaticMarkup(
-      createElement(AlignmentStagePanel, {
-        currentStage: "interaction",
-        coverage,
-        completionEnabled: false,
-        onStageChange: vi.fn(),
-        onComplete: vi.fn()
-      })
-    );
-
-    expect(html).toMatch(/aria-label="Complete alignment"[^>]*disabled/);
-  });
-
-  test("keeps completed alignment reviewable without allowing Complete twice", () => {
-    const coverage = getAlignmentCoverage(
-      Object.fromEntries(ALIGNMENT_STAGES.map(({ id }) => [id, [true]]))
-    );
-    const html = renderToStaticMarkup(
-      createElement(AlignmentStagePanel, {
-        currentStage: "layout",
-        coverage,
-        completed: true,
-        onStageChange: vi.fn(),
-        onComplete: vi.fn()
-      })
-    );
-
-    expect(html).toContain("Completed");
-    expect(html).toMatch(/aria-label="Complete alignment"[^>]*disabled/);
+    expect(html).not.toContain('aria-label="Complete alignment"');
+    expect(html).not.toContain("Complete");
   });
 
   test("is only the 180x32 current pill until hover or keyboard focus expands chrome", () => {
@@ -195,4 +158,3 @@ describe("AlignmentStagePanel", () => {
     );
   });
 });
-import { readFileSync } from "node:fs";

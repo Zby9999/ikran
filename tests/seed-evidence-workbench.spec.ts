@@ -584,7 +584,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
 
     const firstAttempt = await readAttempt();
     expect((await claim()).ok).toBe(true);
-    const oldPreparingCard = await create(firstAttempt, "design-principle", 1);
+    const oldPreparingCard = await create(firstAttempt, "design-concept", 1);
     expect(oldPreparingCard, JSON.stringify(oldPreparingCard)).toMatchObject({ ok: true });
     await page.reload();
     await enterWorkbench(page, { port: runtime.port, sessionToken: token });
@@ -594,7 +594,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       "seed-reference-registration"
     );
     await expect(page.getByTestId("sign-seed-next-phase")).toBeVisible();
-    await expect(page.getByText("design-principle 1", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("design-concept 1", { exact: true })).toHaveCount(0);
 
     await page.getByTestId("sign-seed-next-phase").click();
     const secondAttempt = await readAttempt();

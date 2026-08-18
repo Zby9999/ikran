@@ -5,51 +5,7 @@ import { describe, expect, test, vi } from "vitest";
 import { FolderChrome } from "../../components/workbench/folder-chrome";
 
 describe("FolderChrome tool group", () => {
-  test("renders per-question Extraction progress bars from segments", () => {
-    const html = renderToStaticMarkup(
-      createElement(FolderChrome, {
-        folderName: "Folder Name",
-        phase: "extraction",
-        extraction: {
-          segments: [
-            {
-              id: "q1",
-              stageId: "design-principle",
-              color: "#e78460",
-              answered: true
-            },
-            {
-              id: "q2",
-              stageId: "design-principle",
-              color: "#e78460",
-              answered: false
-            },
-            {
-              id: "q3",
-              stageId: "interaction",
-              color: "#c1d03c",
-              answered: true
-            }
-          ]
-        },
-        onBack: vi.fn()
-      })
-    );
-
-    expect(html).toContain('data-testid="extraction-progress-track"');
-    expect(html).toContain(
-      'aria-label="Extraction progress: 2 of 3 questions answered"'
-    );
-    expect(html).toContain('seed-workbench__folder-extraction-group');
-    expect(html).toContain('data-answered="true"');
-    expect(html).toContain('data-answered="false"');
-    expect(html).toContain('data-stage="design-principle"');
-    expect(html).toContain('data-stage="interaction"');
-    expect(html).not.toContain("extraction-stage-progress");
-    expect(html).not.toContain("extraction-overall-progress");
-  });
-
-  test("renders the Figma select tool with the shared active-button state", () => {
+  test("renders the Figma select/annotate switch with the shared active state", () => {
     const html = renderToStaticMarkup(
       createElement(FolderChrome, {
         folderName: "Folder Name",
@@ -64,6 +20,8 @@ describe("FolderChrome tool group", () => {
     expect(html).toContain('aria-label="Select (V)"');
     expect(html).toContain('data-active="true"');
     expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('data-testid="annotate-button"');
+    expect(html).not.toContain('data-testid="follow-agent-button"');
   });
 
   test("can retarget the existing Back affordance without adding UI", () => {
@@ -81,29 +39,136 @@ describe("FolderChrome tool group", () => {
   });
 });
 
-// Issue 30 — the panel body follows the Runtime project phase once the draft
-// design system is confirmed (Figma 729:1465 and 735:1555).
+describe("FolderChrome Sign Seed", () => {
+  test("shows Set up squares, Complete, and the paste hint", () => {
+    const html = renderToStaticMarkup(
+      createElement(FolderChrome, {
+        folderName: "Folder Name",
+        phase: "sign-seed",
+        seedCount: 0,
+        onBack: vi.fn()
+      })
+    );
+
+    expect(html).toContain('data-testid="seed-workbench-sign-seed"');
+    expect(html).toContain("Sign Seed Design");
+    expect(html).toContain("Set up");
+    expect(html).toContain(">Complete<");
+    expect(html).toContain('data-testid="sign-seed-next-phase"');
+    expect(html).toMatch(/data-testid="sign-seed-next-phase"[^>]*disabled/);
+    expect(html).toContain("Paste a Figma reference");
+    expect(html).toContain('data-testid="folder-hint"');
+    expect(html).toContain("seed-workbench__folder-hint");
+    expect(html).not.toContain('data-testid="sign-seed-count"');
+    expect(html.match(/data-testid="folder-setup-square"/g)).toHaveLength(3);
+    expect(html).toContain('data-state="current"');
+    expect(html).toContain('data-state="pending"');
+  });
+
+  test("enables Complete once a seed exists", () => {
+    const html = renderToStaticMarkup(
+      createElement(FolderChrome, {
+        folderName: "Folder Name",
+        phase: "sign-seed",
+        seedCount: 1,
+        onBack: vi.fn(),
+        onNextPhase: vi.fn()
+      })
+    );
+
+    expect(html).not.toMatch(/data-testid="sign-seed-next-phase"[^>]*disabled/);
+  });
+});
+
+describe("FolderChrome Extraction", () => {
+  test("shows Extracting while questions are still open and keeps Complete unactive", () => {
+    const html = renderToStaticMarkup(
+      createElement(FolderChrome, {
+        folderName: "Folder Name",
+        phase: "extraction",
+        completeEnabled: false,
+        extraction: {
+          segments: [
+            {
+              id: "q1",
+              stageId: "design-concept",
+              color: "#e78460",
+              answered: true
+            }
+          ]
+        },
+        onBack: vi.fn()
+      })
+    );
+
+    expect(html).toContain('data-testid="seed-workbench-extraction"');
+    expect(html).toContain("Extraction");
+    expect(html).toContain("Extracting");
+    expect(html).toContain('aria-label="Complete alignment"');
+    expect(html).toMatch(/aria-label="Complete alignment"[^>]*disabled/);
+    expect(html).not.toContain('data-testid="extraction-progress-track"');
+    expect(html).toContain('data-state="done"');
+    expect(html).toContain('data-state="current"');
+  });
+
+  test("turns the Extraction square green after Complete and asks the Agent to continue", () => {
+    const html = renderToStaticMarkup(
+      createElement(FolderChrome, {
+        folderName: "Folder Name",
+        phase: "extraction",
+        completed: true,
+        completeEnabled: true,
+        onBack: vi.fn()
+      })
+    );
+
+    expect(html).toContain("Ask the Agent to continue");
+    expect(html).toMatch(/aria-label="Complete alignment"[^>]*disabled/);
+    expect(html.match(/data-state="done"/g)).toHaveLength(2);
+    expect(html).not.toContain("Extracting");
+  });
+
+  test("enables Complete when Runtime coverage allows it", () => {
+    const html = renderToStaticMarkup(
+      createElement(FolderChrome, {
+        folderName: "Folder Name",
+        phase: "extraction",
+        completeEnabled: true,
+        onBack: vi.fn(),
+        onComplete: vi.fn()
+      })
+    );
+
+    expect(html).not.toMatch(/aria-label="Complete alignment"[^>]*disabled/);
+  });
+});
+
 describe("FolderChrome prototype and build phases", () => {
-  test("prototype phase shows the pill and the waiting status", () => {
+  test("prototype phase shows Draft Design System and Complete inside the panel", () => {
     const html = renderToStaticMarkup(
       createElement(FolderChrome, {
         folderName: "Folder Name",
         phase: "prototype",
-        onBack: vi.fn()
+        onBack: vi.fn(),
+        onOpenDesignSystem: vi.fn(),
+        onConfirmPrototype: vi.fn()
       })
     );
 
     expect(html).toContain('data-testid="seed-workbench-prototype"');
     expect(html).toContain("Prototype");
-    expect(html).toContain("waiting for confirmation");
-    // The header tool group stays available through the prototype wait.
-    expect(html).toContain('data-testid="annotate-button"');
-    // Draft Design System stays a sibling below the panel, not inside it.
+    expect(html).toContain("Draft Design System");
+    expect(html).toContain('data-testid="folder-draft-design-system-button"');
+    expect(html).toContain('data-testid="folder-prototype-complete"');
+    expect(html).toContain("Review the draft Design System, then build a prototype");
+    expect(html).not.toContain("waiting for confirmation");
     expect(html).not.toContain('data-testid="folder-design-system-button"');
     expect(html).not.toContain('data-testid="folder-page-list"');
+    expect(html.match(/data-state="done"/g)).toHaveLength(2);
+    expect(html).toContain('data-state="current"');
   });
 
-  test("build phase shows Design System, the page list, and the Build pill", () => {
+  test("build phase shows Design System, the page list, and the Build label", () => {
     const html = renderToStaticMarkup(
       createElement(FolderChrome, {
         folderName: "Folder Name",
@@ -126,12 +191,13 @@ describe("FolderChrome prototype and build phases", () => {
     expect(html).toContain('data-page-kind="figma"');
     expect(html).toContain('data-page-kind="website"');
     expect(html).toContain("Seed Page");
-    // Only the selected row carries the white background.
     expect(
       html.match(/seed-workbench__folder-page--selected/g)
     ).toHaveLength(1);
     expect(html).toContain('aria-current="true"');
     expect(html).toContain(">Build<");
+    expect(html).not.toContain("Set up");
+    expect(html).not.toContain('data-testid="folder-hint"');
     expect(html).not.toContain('data-testid="seed-workbench-prototype"');
   });
 
@@ -147,5 +213,6 @@ describe("FolderChrome prototype and build phases", () => {
     expect(html).toContain('data-testid="folder-design-system-button"');
     expect(html).not.toContain('data-testid="folder-page-list"');
     expect(html).toContain(">Build<");
+    expect(html).not.toContain('data-testid="folder-hint"');
   });
 });

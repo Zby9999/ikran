@@ -57,7 +57,7 @@ function withProject(run: (context: {
   }
 }
 
-function cardInput(context: { attemptId: string; seedId: string; surfaceId: string }, section = "design-principle", index = 1) {
+function cardInput(context: { attemptId: string; seedId: string; surfaceId: string }, section = "design-concept", index = 1) {
   return {
     alignmentAttemptId: context.attemptId,
     idempotencyKey: `${section}-${index}`,
@@ -82,7 +82,7 @@ function createRequiredAnnotation(context: {
   attemptId: string;
   seedId: string;
   surfaceId: string;
-}, section = "design-principle") {
+}, section = "design-concept") {
   return createAgentAnnotation(context.projectPath, {
     alignmentAttemptId: context.attemptId,
     idempotencyKey: `required-assumption-${section}`,
@@ -120,12 +120,12 @@ describe("Alignment attempt abandonment", () => {
         )
       ).toBe(false);
       expect(createQuestionCard(context.projectPath, {
-        ...cardInput(context, "design-principle", 2)
+        ...cardInput(context, "design-concept", 2)
       })).toEqual({ ok: false, reason: "stale_alignment_attempt" });
       expect(createAgentAnnotation(context.projectPath, {
         alignmentAttemptId: context.attemptId,
         idempotencyKey: "stale-assumption",
-        section: "design-principle",
+        section: "design-concept",
         inference: "reasonable",
         title: "Stale assumption",
         body: "This must not attach to a later attempt.",

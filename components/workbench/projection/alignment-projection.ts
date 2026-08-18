@@ -4,7 +4,10 @@
 
 import type { AlignmentStageId } from "../alignment-stage-panel";
 import type { FocusCardSelection } from "../focus-mode";
-import { expandAgentRegionRect } from "@/lib/runtime/region-annotation-display";
+import {
+  expandAgentRegionRect,
+  expandFocusHoleRect
+} from "@/lib/runtime/region-annotation-display";
 
 export type AlignmentTargetRect = {
   x: number;
@@ -180,7 +183,7 @@ function resolveCardCollisionY(
 }
 
 const STAGE_COLORS: Record<AlignmentStageId, string> = {
-  "design-principle": "#c97759",
+  "design-concept": "#c97759",
   "visual-language": "#4178ba",
   token: "#be5fde",
   layout: "#dc3a91",
@@ -230,28 +233,35 @@ function metaFor(
 
 function focusSelectionFor(
   cardId: string,
-  anchor: AlignmentAnchor
+  anchor: AlignmentAnchor,
+  frames: AlignmentSeedFrame[]
 ): FocusCardSelection | null {
   if (anchor.kind !== "focus-target-set") return null;
   return {
     cardId,
     targets: anchor.targets.flatMap((target, index) => {
       const rect = rectForTarget(target);
-      return rect
-        ? [
-            {
-              targetId: `${cardId}:${index}`,
-              surfaceArtifactId: target.evidenceSurfaceId,
-              evidenceVersionId: target.evidenceVersionId,
-              rect: {
-                x: rect.x,
-                y: rect.y,
-                width: rect.w,
-                height: rect.h
-              }
-            }
-          ]
-        : [];
+      if (!rect) return [];
+      const frame = frameForTarget(frames, target);
+      const mediaW = frame?.mediaW ?? frame?.w;
+      const mediaH = frame?.mediaH ?? frame?.h;
+      const displayRect =
+        mediaW && mediaH && mediaW > 0 && mediaH > 0
+          ? expandFocusHoleRect(rect, { w: mediaW, h: mediaH })
+          : rect;
+      return [
+        {
+          targetId: `${cardId}:${index}`,
+          surfaceArtifactId: target.evidenceSurfaceId,
+          evidenceVersionId: target.evidenceVersionId,
+          rect: {
+            x: displayRect.x,
+            y: displayRect.y,
+            width: displayRect.w,
+            height: displayRect.h
+          }
+        }
+      ];
     })
   };
 }
@@ -386,7 +396,11 @@ export function buildAlignmentProjectionPlan(
         expanded: false,
         editing: false,
         readOnly: input.readOnly,
-        focusSelection: focusSelectionFor(item.record.id, item.record.anchor)
+        focusSelection: focusSelectionFor(
+          item.record.id,
+          item.record.anchor,
+          input.seedFrames
+        )
       }
     };
     plan.push(card);

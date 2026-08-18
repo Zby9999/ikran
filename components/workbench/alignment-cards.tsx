@@ -92,7 +92,7 @@ export type AlignmentQuestionCardProps = {
 };
 
 const STAGE_TINTS: Record<AlignmentStageId, string> = {
-  "design-principle": "#fff0ea",
+  "design-concept": "#fff0ea",
   "visual-language": "#e6f1ff",
   token: "#fbeeff",
   layout: "#f8eff3",
@@ -101,7 +101,7 @@ const STAGE_TINTS: Record<AlignmentStageId, string> = {
 };
 
 const STAGE_SUBMIT_COLORS: Record<AlignmentStageId, string> = {
-  "design-principle": "#a88a7e",
+  "design-concept": "#a88a7e",
   "visual-language": "#698db9",
   token: "#ae6fc3",
   layout: "#b2688f",

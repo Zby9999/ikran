@@ -102,7 +102,7 @@ describe("AlignmentQuestionCard", () => {
   });
 
   test.each([
-    ["design-principle", "#c97759", "#fff0ea", "#a88a7e"],
+    ["design-concept", "#c97759", "#fff0ea", "#a88a7e"],
     ["visual-language", "#4178ba", "#e6f1ff", "#698db9"],
     ["token", "#be5fde", "#fbeeff", "#ae6fc3"],
     ["layout", "#dc3a91", "#f8eff3", "#b2688f"],

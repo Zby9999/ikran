@@ -3,7 +3,6 @@
 import {
   ArrowLeft01Icon,
   ArtboardToolIcon,
-  CrosshairIcon,
   Cursor02Icon,
   FigmaIcon,
   GridIcon
@@ -22,9 +21,8 @@ export type FolderChromeExtraction = {
 
 /**
  * Post-gate folder stages.
- *   `sign-seed` / `extraction` — Figma 329:429
- *   `prototype` — Figma 729:1465, waiting for prototype confirmation
- *   `build`     — Figma 735:1555, after the prototype is confirmed
+ *   `sign-seed` / `extraction` / `prototype` — Figma 905:6680 Left Top Main Panel
+ *   `build` — Variant4, Setup end state (no Set up row, no hint)
  */
 export type FolderChromePhase =
   | "sign-seed"
@@ -32,31 +30,39 @@ export type FolderChromePhase =
   | "prototype"
   | "build";
 
+export type FolderSetupSquareState = "pending" | "current" | "done";
+
 export type FolderChromeProps = {
   folderName: string;
   onBack: () => void;
   backLabel?: string;
   /**
    * `null` — compact Default (back + name only).
-   * `sign-seed` — Sign Seed Design + seed count + Next Phase.
-   * `extraction` — Extraction progress stub.
-   * `prototype` — Prototype pill + waiting-for-confirmation status.
-   * `build` — Design System button + page list + Build pill.
+   * `sign-seed` — Set up + Sign Seed Design + Complete.
+   * `extraction` — Set up + Extraction + Complete.
+   * `prototype` — Set up + Draft Design System + Complete.
+   * `build` — Design System button + page list + Build label.
    */
   phase?: FolderChromePhase | null;
-  /** Seed reference count shown in Sign Seed Design (Figma 329:490). */
+  /** Gates Sign Seed Complete (Figma unactive until at least one seed). */
   seedCount?: number;
   extraction?: FolderChromeExtraction | null;
+  /** Extraction Complete: all six sections answered. */
+  completeEnabled?: boolean;
+  /** After Complete, squares turn green and the hint switches. */
+  completed?: boolean;
   /** Build panel page list — Figma seed pages and prototype pages. */
   pages?: readonly FolderPageItem[];
   selectedPageId?: string | null;
   onSelectPage?: (pageId: string) => void;
-  /** Build panel Design System button — opens the existing browser sheet. */
+  /** Prototype "Draft Design System" / Build "Design System" — existing browser. */
   onOpenDesignSystem?: () => void;
+  /** Sign Seed Complete — Runtime prepare (next phase). */
   onNextPhase?: () => void;
-  onFollowAgent?: () => void;
-  /** When true, Follow Agent button shows selected/active state (Figma 325:422). */
-  followAgentActive?: boolean;
+  /** Extraction Complete — Runtime complete alignment. */
+  onComplete?: () => void;
+  /** Prototype Complete — Runtime confirm prototype. */
+  onConfirmPrototype?: () => void;
   onSelect?: () => void;
   /** When true, Select button shows selected/active state (Figma 329:461). */
   selectActive?: boolean;
@@ -65,22 +71,150 @@ export type FolderChromeProps = {
   annotateActive?: boolean;
 };
 
-function groupSegmentsByStage(
-  segments: readonly AlignmentQuestionSegment[]
-): { stageId: AlignmentQuestionSegment["stageId"]; segments: AlignmentQuestionSegment[] }[] {
-  const groups: {
-    stageId: AlignmentQuestionSegment["stageId"];
-    segments: AlignmentQuestionSegment[];
-  }[] = [];
-  for (const segment of segments) {
-    const last = groups[groups.length - 1];
-    if (last && last.stageId === segment.stageId) {
-      last.segments.push(segment);
-    } else {
-      groups.push({ stageId: segment.stageId, segments: [segment] });
-    }
+const SETUP_SQUARE_COUNT = 3;
+
+function setupSquareStates(
+  phase: FolderChromePhase,
+  completed: boolean
+): FolderSetupSquareState[] {
+  if (phase === "sign-seed") {
+    return ["current", "pending", "pending"];
   }
-  return groups;
+  if (phase === "extraction") {
+    return completed
+      ? ["done", "done", "pending"]
+      : ["done", "current", "pending"];
+  }
+  if (phase === "prototype") {
+    return ["done", "done", "current"];
+  }
+  return ["pending", "pending", "pending"];
+}
+
+function folderHint(
+  phase: FolderChromePhase | null,
+  completed: boolean
+): string | null {
+  if (phase === "sign-seed") return "Paste a Figma reference";
+  if (phase === "extraction") {
+    return completed ? "Ask the Agent to continue" : "Extracting";
+  }
+  if (phase === "prototype") {
+    return completed
+      ? "Ask the Agent to continue"
+      : "Review the draft Design System, then build a prototype";
+  }
+  return null;
+}
+
+function stageLabel(phase: FolderChromePhase): string {
+  if (phase === "sign-seed") return "Sign Seed Design";
+  if (phase === "extraction") return "Extraction";
+  if (phase === "prototype") return "Prototype";
+  return "Build";
+}
+
+function FolderToolSwitch({
+  selectActive,
+  annotateActive,
+  onSelect,
+  onAnnotate
+}: {
+  selectActive: boolean;
+  annotateActive: boolean;
+  onSelect?: () => void;
+  onAnnotate?: () => void;
+}) {
+  return (
+    <div className="seed-workbench__folder-tool-switch" role="group" aria-label="Canvas tools">
+      <button
+        type="button"
+        className="seed-workbench__folder-tool"
+        data-testid="select-button"
+        data-active={selectActive ? "true" : undefined}
+        aria-label="Select (V)"
+        aria-pressed={selectActive}
+        onClick={onSelect}
+      >
+        <HugeiconsIcon
+          icon={Cursor02Icon}
+          size={14}
+          color="currentColor"
+          strokeWidth={1.5}
+        />
+      </button>
+      <button
+        type="button"
+        className="seed-workbench__folder-tool"
+        data-testid="annotate-button"
+        data-active={annotateActive ? "true" : undefined}
+        aria-label="Annotate on Figma (F)"
+        aria-pressed={annotateActive}
+        onClick={onAnnotate}
+      >
+        <HugeiconsIcon
+          icon={ArtboardToolIcon}
+          size={14}
+          color="currentColor"
+          strokeWidth={1.5}
+        />
+      </button>
+    </div>
+  );
+}
+
+function FolderSetupRow({
+  phase,
+  completed
+}: {
+  phase: Exclude<FolderChromePhase, "build">;
+  completed: boolean;
+}) {
+  const squares = setupSquareStates(phase, completed);
+  return (
+    <div className="seed-workbench__folder-setup" data-testid="folder-setup-row">
+      <div className="seed-workbench__folder-setup-leading">
+        <span className="seed-workbench__folder-setup-label">Set up</span>
+        <span className="seed-workbench__folder-setup-squares" aria-hidden="true">
+          {Array.from({ length: SETUP_SQUARE_COUNT }, (_, index) => (
+            <span
+              key={index}
+              className="seed-workbench__folder-setup-square"
+              data-state={squares[index]}
+              data-testid="folder-setup-square"
+            />
+          ))}
+        </span>
+      </div>
+      <span className="seed-workbench__folder-stage-label">{stageLabel(phase)}</span>
+    </div>
+  );
+}
+
+function FolderCompleteButton({
+  disabled,
+  testId,
+  ariaLabel,
+  onClick
+}: {
+  disabled: boolean;
+  testId: string;
+  ariaLabel?: string;
+  onClick?: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      className="seed-workbench__folder-next"
+      data-testid={testId}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      Complete
+    </Button>
+  );
 }
 
 export function FolderChrome({
@@ -89,14 +223,15 @@ export function FolderChrome({
   backLabel = "Back to setup",
   phase = null,
   seedCount = 0,
-  extraction = null,
+  completeEnabled = false,
+  completed = false,
   pages = [],
   selectedPageId = null,
   onSelectPage,
   onOpenDesignSystem,
   onNextPhase,
-  onFollowAgent,
-  followAgentActive = false,
+  onComplete,
+  onConfirmPrototype,
   onSelect,
   selectActive = false,
   onAnnotate,
@@ -104,167 +239,107 @@ export function FolderChrome({
 }: FolderChromeProps) {
   const showActions = phase !== null;
   const showSignSeed = phase === "sign-seed";
-  const showExtraction = phase === "extraction" && extraction != null;
+  const showExtraction = phase === "extraction";
   const showPrototype = phase === "prototype";
   const showBuild = phase === "build";
-  const answeredCount = extraction
-    ? extraction.segments.filter((segment) => segment.answered).length
-    : 0;
-  const totalCount = extraction?.segments.length ?? 0;
-  const segmentGroups = extraction
-    ? groupSegmentsByStage(extraction.segments)
-    : [];
+  const showSetup = showSignSeed || showExtraction || showPrototype;
+  const hint = folderHint(phase, completed);
+  const signSeedCompleteEnabled = seedCount >= 1;
+  const extractionCompleteEnabled = completeEnabled && !completed;
 
   return (
-    <SquircleChrome
-      className={cn(
-        "seed-workbench__folder",
-        showActions && "seed-workbench__folder--expanded"
-      )}
-      surfaceClassName={cn(
-        "seed-workbench__folder-body",
-        !showActions && "seed-workbench__folder-body--compact"
-      )}
-      cornerRadius={14}
-    >
-      <div className="seed-workbench__folder-row">
-        <div className="seed-workbench__folder-leading">
-          <SmallIconButton
-            className="seed-workbench__folder-back"
-            icon={ArrowLeft01Icon}
-            label={backLabel}
-            onClick={onBack}
-          />
-          <span className="seed-workbench__folder-name">{folderName || "Folder Name"}</span>
+    <div className="seed-workbench__folder-shell">
+      <SquircleChrome
+        className={cn(
+          "seed-workbench__folder",
+          showActions && "seed-workbench__folder--expanded"
+        )}
+        surfaceClassName={cn(
+          "seed-workbench__folder-body",
+          !showActions && "seed-workbench__folder-body--compact"
+        )}
+        cornerRadius={14}
+      >
+        <div className="seed-workbench__folder-row">
+          <div className="seed-workbench__folder-leading">
+            <SmallIconButton
+              className="seed-workbench__folder-back"
+              icon={ArrowLeft01Icon}
+              label={backLabel}
+              onClick={onBack}
+            />
+            <span className="seed-workbench__folder-name">{folderName || "Folder Name"}</span>
+          </div>
+          {showActions ? (
+            <FolderToolSwitch
+              selectActive={selectActive}
+              annotateActive={annotateActive}
+              onSelect={onSelect}
+              onAnnotate={onAnnotate}
+            />
+          ) : null}
         </div>
-        {showActions ? (
-          <div className="seed-workbench__folder-actions">
-            {/* CrosshairIcon is drawn at cx=11 in a 24 viewBox (1 unit left of
-                center). Nudge via CSS so the glyph sits optically centered. */}
-            <SmallIconButton
-              className="small-icon-button--crosshair"
-              icon={CrosshairIcon}
-              label="Follow Agent view"
-              data-testid="follow-agent-button"
-              data-active={followAgentActive ? "true" : undefined}
-              aria-pressed={followAgentActive}
-              onClick={onFollowAgent}
-            />
-            <SmallIconButton
-              icon={Cursor02Icon}
-              label="Select (V)"
-              data-testid="select-button"
-              data-active={selectActive ? "true" : undefined}
-              aria-pressed={selectActive}
-              onClick={onSelect}
-            />
-            <SmallIconButton
-              icon={ArtboardToolIcon}
-              label="Annotate on Figma (F)"
-              data-testid="annotate-button"
-              data-active={annotateActive ? "true" : undefined}
-              aria-pressed={annotateActive}
-              onClick={onAnnotate}
-            />
-          </div>
-        ) : null}
-      </div>
 
-      {showSignSeed ? (
-        <>
-          <div className="seed-workbench__folder-divider" role="separator" />
-          <div
-            className="seed-workbench__folder-stage"
-            data-testid="seed-workbench-sign-seed"
-          >
-            <div className="seed-workbench__folder-stage-row">
-              <span className="seed-workbench__folder-stage-label">Sign Seed Design</span>
-              <span
-                className="seed-workbench__folder-stage-count"
-                data-testid="sign-seed-count"
+        {showSetup ? (
+          <>
+            <div className="seed-workbench__folder-divider" role="separator" />
+            {showSignSeed ? (
+              <div
+                className="seed-workbench__folder-stage"
+                data-testid="seed-workbench-sign-seed"
               >
-                {seedCount}
-              </span>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              className="seed-workbench__folder-next"
-              data-testid="sign-seed-next-phase"
-              disabled={seedCount < 1}
-              onClick={onNextPhase}
-            >
-              Next Phase
-            </Button>
-          </div>
-        </>
-      ) : null}
+                <FolderSetupRow phase="sign-seed" completed={false} />
+                <FolderCompleteButton
+                  disabled={!signSeedCompleteEnabled}
+                  testId="sign-seed-next-phase"
+                  onClick={onNextPhase}
+                />
+              </div>
+            ) : null}
 
-      {showExtraction ? (
-        <>
-          <div className="seed-workbench__folder-divider" role="separator" />
-          <div
-            className="seed-workbench__folder-extraction"
-            data-testid="seed-workbench-extraction"
-          >
-            <span className="seed-workbench__folder-stage-label">Extraction</span>
-            <div
-              className="seed-workbench__folder-extraction-track"
-              role="img"
-              aria-label={`Extraction progress: ${answeredCount} of ${totalCount} questions answered`}
-              data-testid="extraction-progress-track"
-            >
-              {segmentGroups.map((group) => (
-                <span
-                  key={group.stageId}
-                  className="seed-workbench__folder-extraction-group"
-                  data-stage={group.stageId}
+            {showExtraction ? (
+              <div
+                className="seed-workbench__folder-stage"
+                data-testid="seed-workbench-extraction"
+              >
+                <FolderSetupRow phase="extraction" completed={completed} />
+                <FolderCompleteButton
+                  disabled={!extractionCompleteEnabled}
+                  testId="folder-extraction-complete"
+                  ariaLabel="Complete alignment"
+                  onClick={onComplete}
+                />
+              </div>
+            ) : null}
+
+            {showPrototype ? (
+              <div
+                className="seed-workbench__folder-prototype"
+                data-testid="seed-workbench-prototype"
+              >
+                <FolderSetupRow phase="prototype" completed={completed} />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="seed-workbench__folder-next"
+                  data-testid="folder-draft-design-system-button"
+                  onClick={onOpenDesignSystem}
                 >
-                  {group.segments.map((segment) => (
-                    <span
-                      key={segment.id}
-                      className="seed-workbench__folder-extraction-bar"
-                      data-answered={segment.answered ? "true" : "false"}
-                      data-stage={segment.stageId}
-                      style={
-                        segment.answered
-                          ? { backgroundColor: segment.color }
-                          : undefined
-                      }
-                    />
-                  ))}
-                </span>
-              ))}
-            </div>
-          </div>
-        </>
-      ) : null}
+                  Draft Design System
+                </Button>
+                <div className="seed-workbench__folder-divider" role="separator" />
+                <FolderCompleteButton
+                  disabled={completed}
+                  testId="folder-prototype-complete"
+                  onClick={onConfirmPrototype}
+                />
+              </div>
+            ) : null}
+          </>
+        ) : null}
 
-      {showPrototype ? (
-        <>
-          <div className="seed-workbench__folder-divider" role="separator" />
-          <div
-            className="seed-workbench__folder-prototype"
-            data-testid="seed-workbench-prototype"
-          >
-            <span className="seed-workbench__folder-stage-label">Prototype</span>
-            <span
-              className="seed-workbench__folder-prototype-status"
-              data-testid="prototype-waiting-status"
-            >
-              waiting for confirmation
-            </span>
-          </div>
-        </>
-      ) : null}
-
-      {showBuild ? (
-        <>
-          <div className="seed-workbench__folder-divider" role="separator" />
-          <div
-            className="seed-workbench__folder-build"
-            data-testid="seed-workbench-build"
-          >
+        {showBuild ? (
+          <>
             <Button
               type="button"
               variant="ghost"
@@ -274,50 +349,62 @@ export function FolderChrome({
             >
               Design System
             </Button>
-            {pages.length > 0 ? (
-              <ul
-                className="seed-workbench__folder-pages"
-                data-testid="folder-page-list"
-              >
-                {pages.map((page) => {
-                  const selected = page.id === selectedPageId;
-                  return (
-                    <li key={page.id}>
-                      <button
-                        type="button"
-                        className={cn(
-                          "seed-workbench__folder-page",
-                          selected && "seed-workbench__folder-page--selected"
-                        )}
-                        data-testid="folder-page-item"
-                        data-page-id={page.id}
-                        data-page-kind={page.kind}
-                        data-selected={selected ? "true" : undefined}
-                        aria-current={selected ? "true" : undefined}
-                        onClick={() => onSelectPage?.(page.id)}
-                      >
-                        <HugeiconsIcon
-                          className="seed-workbench__folder-page-icon"
-                          icon={page.kind === "figma" ? FigmaIcon : GridIcon}
-                          size={14}
-                          color="currentColor"
-                          strokeWidth={1.5}
-                        />
-                        <span className="seed-workbench__folder-page-label">
-                          {page.label}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
-            <div className="seed-workbench__folder-build-footer">
-              <span className="seed-workbench__folder-stage-label">Build</span>
+            <div className="seed-workbench__folder-divider" role="separator" />
+            <div
+              className="seed-workbench__folder-build"
+              data-testid="seed-workbench-build"
+            >
+              <div className="seed-workbench__folder-build-heading">
+                <span className="seed-workbench__folder-build-label">Build</span>
+              </div>
+              {pages.length > 0 ? (
+                <ul
+                  className="seed-workbench__folder-pages"
+                  data-testid="folder-page-list"
+                >
+                  {pages.map((page) => {
+                    const selected = page.id === selectedPageId;
+                    return (
+                      <li key={page.id}>
+                        <button
+                          type="button"
+                          className={cn(
+                            "seed-workbench__folder-page",
+                            selected && "seed-workbench__folder-page--selected"
+                          )}
+                          data-testid="folder-page-item"
+                          data-page-id={page.id}
+                          data-page-kind={page.kind}
+                          data-selected={selected ? "true" : undefined}
+                          aria-current={selected ? "true" : undefined}
+                          onClick={() => onSelectPage?.(page.id)}
+                        >
+                          <HugeiconsIcon
+                            className="seed-workbench__folder-page-icon"
+                            icon={page.kind === "figma" ? FigmaIcon : GridIcon}
+                            size={14}
+                            color="currentColor"
+                            strokeWidth={1.5}
+                          />
+                          <span className="seed-workbench__folder-page-label">
+                            {page.label}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
             </div>
-          </div>
-        </>
+          </>
+        ) : null}
+      </SquircleChrome>
+
+      {hint ? (
+        <div className="seed-workbench__folder-hint" data-testid="folder-hint">
+          <span className="seed-workbench__folder-hint-text">{hint}</span>
+        </div>
       ) : null}
-    </SquircleChrome>
+    </div>
   );
 }

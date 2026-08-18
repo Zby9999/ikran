@@ -395,7 +395,7 @@ export class AlignmentCardShapeUtil extends BaseBoxShapeUtil<AlignmentCardShape>
     placement: T.literalEnum("left", "right"),
     cardKind: T.literalEnum("question", "agent-annotation"),
     stage: T.literalEnum(
-      "design-principle",
+      "design-concept",
       "visual-language",
       "token",
       "layout",
@@ -424,7 +424,7 @@ export class AlignmentCardShapeUtil extends BaseBoxShapeUtil<AlignmentCardShape>
       h: 236,
       placement: "right",
       cardKind: "question",
-      stage: "design-principle",
+      stage: "design-concept",
       number: 1,
       observation: "",
       question: "",

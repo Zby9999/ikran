@@ -143,13 +143,13 @@ describe("isAnnotationVisibleInStage", () => {
   test("designer annotation only appears in its own section", () => {
     const record = annotation({ id: "a1", section: "layout" });
     expect(isAnnotationVisibleInStage(record, "layout")).toBe(true);
-    expect(isAnnotationVisibleInStage(record, "design-principle")).toBe(false);
+    expect(isAnnotationVisibleInStage(record, "design-concept")).toBe(false);
   });
 
   test("agent annotations are always visible (no section scoping)", () => {
     const record = annotation({ id: "a2", author: "agent", section: null });
     expect(isAnnotationVisibleInStage(record, "layout")).toBe(true);
-    expect(isAnnotationVisibleInStage(record, "design-principle")).toBe(true);
+    expect(isAnnotationVisibleInStage(record, "design-concept")).toBe(true);
   });
 
   test("legacy designer records without a section stay visible everywhere", () => {
