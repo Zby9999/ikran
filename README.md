@@ -9,12 +9,19 @@ npm 11.6.2 are required.
 
 ## Install
 
-This Git repository is research source. The installable package is the
+This Git repository is the research source. The installable Agent Plugin is the
 **Product Test Kit** on GitHub Releases — a directory with `plugin.json`,
 `mcp.json`, and `skills/`.
 
-If you want to instal ikran Agent Plugin, follow this path
-only:
+### Cloned this repository to install Ikran?
+
+Do not register this checkout as the plugin root. Keep it only if you need the
+research source. Download the newest `ikran-product-test-kit-*.tar.gz` from
+GitHub Releases instead; during the alpha, that may be attached to a
+pre-release. Extract it to a durable directory outside this checkout, then use
+that extracted directory as the plugin root.
+
+To install the Ikran Agent Plugin, follow this path only:
 
 1. Open the latest GitHub Release for this project.
 2. Download `ikran-product-test-kit-*.tar.gz`. That is the plugin. Skip the
