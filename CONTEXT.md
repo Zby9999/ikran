@@ -46,7 +46,7 @@ the declared platform. An Agent host is described as **verified** only after a
 host-native smoke test for that exact release; configuration without such a
 test is experimental.
 _Avoid_: CI succeeded (when only one part of the gate ran), historical host
-validation
+validation, GitHub Intel Playwright (informational; not the product e2e gate)
 
 **Workbench URL**:
 The localhost URL returned by the Agent after Runtime starts the HTTP Web UI,

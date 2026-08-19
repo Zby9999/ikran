@@ -33,7 +33,7 @@ jobs:
       - run: npm test
 
   browser-gate:
-    name: Playwright compatibility on GitHub macOS Intel
+    name: Playwright compatibility on GitHub macOS Intel (informational)
     runs-on: macos-15-intel
     timeout-minutes: 45
     steps:
@@ -48,4 +48,13 @@ jobs:
         run: npm install --global npm@11.6.2
       - run: npm ci
       - run: npx --no-install playwright install chromium
-      - run: npm run test:e2e
+      # Product e2e is Apple Silicon `release:gate`. Public macOS runners are
+      # Intel, so this job stays as a signal only: setup failures still fail
+      # the job; Playwright flakes do not fail Verify or block merge.
+      - name: Run Playwright
+        id: e2e
+        continue-on-error: true
+        run: npm run test:e2e
+      - name: Record informational Playwright failure
+        if: steps.e2e.outcome == 'failure'
+        run: echo "::warning::Intel Playwright failed. Product e2e is Apple Silicon release:gate; this job does not block merge."
