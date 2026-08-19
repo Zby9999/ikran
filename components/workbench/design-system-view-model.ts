@@ -56,7 +56,7 @@ export type DsRoute =
 /**
  * The single authoritative visibility condition for the "Draft Design System"
  * entry button (09A d.9): the six-part Design Intent Alignment is completed.
- * Same signal AlignmentStagePanel's complete tray reports as "Completed".
+ * Same signal FolderChrome uses to switch Extraction to the post-Complete hint.
  */
 export function canOpenDesignSystemBrowser(
   alignment: DesignIntentAlignmentSnapshot | null
@@ -108,7 +108,7 @@ export function formatEntryValue(entry: DesignSystemEntryView): string {
     return String(value);
   }
   if (value === null || value === undefined) return "—";
-  // Narrative payloads (principle statements, visual language descriptions)
+  // Narrative payloads (design-concept statements, visual language descriptions)
   // display their text, not their JSON envelope.
   if (isPlainObject(value) && Object.keys(value).length === 1) {
     const only = Object.values(value)[0];
@@ -616,14 +616,19 @@ export function planComponentHero(
 }
 
 /** The harness URL the live iframe navigates to. `state` is a spec
- * stateMatrix name; null restores the harness default (no query). */
+ * stateMatrix name; null restores the harness default (no query). A spec
+ * state literally named "default" denotes that same resting state, so it
+ * normalizes to the no-query URL — forcing `?state=default` would re-navigate
+ * for nothing and rely on the harness special-casing a query the contract
+ * never sends. */
 export function componentHeroLiveUrl(
   liveHero: DesignSystemLiveHeroView,
   state: string | null
 ): string | null {
   if (liveHero.previewUrl === null) return null;
   const base = `${liveHero.previewUrl}${liveHero.harnessPath}`;
-  return state === null ? base : `${base}?state=${encodeURIComponent(state)}`;
+  if (state === null || state.trim().toLowerCase() === "default") return base;
+  return `${base}?state=${encodeURIComponent(state)}`;
 }
 
 /** One-way sizing message emitted by a standalone component harness. The
@@ -814,6 +819,31 @@ export const DS_HERO_LIVE_TIMEOUT_MS = 5000;
 /** Hover/focus debounce before the iframe re-navigates to `?state=<name>`. */
 export const DS_HERO_STATE_DEBOUNCE_MS = 150;
 
+/** Timeout routing for a live attempt (B3): the DEFAULT document's failure
+ * demotes the whole live tier to the static fallback; a declared state's
+ * failure is per-state — the hero reverts to the default document and marks
+ * only that state, so one broken state never kills a healthy component. */
+export type DsHeroTimeoutDecision =
+  | { kind: "demote" }
+  | { kind: "state-failure"; state: string | null };
+
+export function heroLiveTimeoutDecision(
+  href: string,
+  defaultHref: string | null
+): DsHeroTimeoutDecision {
+  if (defaultHref === null || href === defaultHref) {
+    return { kind: "demote" };
+  }
+  try {
+    return {
+      kind: "state-failure",
+      state: new URL(href).searchParams.get("state")
+    };
+  } catch {
+    return { kind: "state-failure", state: null };
+  }
+}
+
 /** Fallback caption copy — says what happened and what is shown instead;
  * a blank hero is an accident, an explained static capture is a conclusion. */
 export function heroLiveFallbackCopy(reason: DsHeroLiveFallbackReason): string {
@@ -878,8 +908,8 @@ export interface DsBrowserModel {
   empty: boolean;
   foundations: {
     chips: string[];
-    /** Foundations Home: principle rule cards + visual language narrative. */
-    principles: DsRow[];
+    /** Foundations Home: Design Concept rule cards + visual language narrative. */
+    concepts: DsRow[];
     visualLanguage: { description: string; row: DsRow } | null;
     tokenLeaves: DsTokenLeafModel[];
     layout: { rows: DsRow[]; chips: string[] };
@@ -898,7 +928,7 @@ export interface DsBrowserModel {
 export function buildDesignSystemBrowserModel(
   view: DesignSystemView
 ): DsBrowserModel {
-  const principles = view.foundations.principles.map(toRow);
+  const concepts = view.foundations.concepts.map(toRow);
   const visualLanguageEntry = view.foundations.visualLanguage;
   const visualLanguage = visualLanguageEntry
     ? {
@@ -1023,7 +1053,7 @@ export function buildDesignSystemBrowserModel(
   }
 
   const foundationsRows = [
-    ...principles,
+    ...concepts,
     ...(visualLanguage ? [visualLanguage.row] : []),
     ...tokenLeaves.flatMap((leaf) =>
       [...leaf.rules, ...leaf.groups.flatMap((group) => group.rows)]
@@ -1042,7 +1072,7 @@ export function buildDesignSystemBrowserModel(
     empty: foundationsRows.length === 0 && componentRows.length === 0,
     foundations: {
       chips: statusChips(foundationsRows),
-      principles,
+      concepts,
       visualLanguage,
       tokenLeaves,
       layout: { rows: layoutRows, chips: statusChips(layoutRows) },
@@ -1058,6 +1088,79 @@ export function buildDesignSystemBrowserModel(
       landingLeaf: components[0]?.leafId ?? null
     }
   };
+}
+
+/** Rows that can still light a leaf's sidebar blue dot. Color collapses
+ * primitive tokens into swatch provenance, so they are not Color-page
+ * options and do not count. */
+function tokenLeafGovernedRows(leaf: DsTokenLeafModel): DsRow[] {
+  const layerRows =
+    leaf.id === "color"
+      ? leaf.groups
+          .filter((group) => group.layer !== "primitive")
+          .flatMap((group) => group.rows)
+      : leaf.groups.flatMap((group) => group.rows);
+  return [...leaf.rules, ...layerRows];
+}
+
+/** Sidebar candidate dot for a Foundations leaf. Matches the options the
+ * designer can still act on on that page — not hidden provenance tokens. */
+export function foundationLeafHasCandidate(
+  model: DsBrowserModel,
+  leafId: DsLeafId
+): boolean {
+  if (leafId === "layout") {
+    return model.foundations.layout.rows.some(
+      (row) => row.status === "candidate"
+    );
+  }
+  if (leafId === "interaction") {
+    return model.foundations.interaction.rows.some(
+      (row) => row.status === "candidate"
+    );
+  }
+  const leaf = model.foundations.tokenLeaves.find(
+    (candidate) => candidate.id === leafId
+  );
+  return Boolean(
+    leaf && tokenLeafGovernedRows(leaf).some((row) => row.status === "candidate")
+  );
+}
+
+const FOUNDATION_ATTENTION_LEAVES: readonly FoundationsLeafId[] = [
+  "color",
+  "typography",
+  "materials",
+  "layout",
+  "interaction"
+];
+
+/**
+ * True when any Browser sidebar row would still show the candidate blue
+ * dot. The Draft Design System entry reuses this same attention signal.
+ */
+export function designSystemHasActionableCandidate(
+  view: DesignSystemView | null
+): boolean {
+  if (!view) return false;
+  const model = buildDesignSystemBrowserModel(view);
+  const homeRows = [
+    ...model.foundations.concepts,
+    ...(model.foundations.visualLanguage
+      ? [model.foundations.visualLanguage.row]
+      : [])
+  ];
+  if (homeRows.some((row) => row.status === "candidate")) return true;
+  if (
+    FOUNDATION_ATTENTION_LEAVES.some((leafId) =>
+      foundationLeafHasCandidate(model, leafId)
+    )
+  ) {
+    return true;
+  }
+  return model.components.groups.some((group) =>
+    group.items.some((item) => item.candidate)
+  );
 }
 
 export const DS_SECTION_NAMES: Record<DsSectionId, string> = {
@@ -1086,7 +1189,7 @@ export function syncWarningAppliesToRoute(
     ? path.slice("design-system/".length)
     : path;
   if (rel === "design-system.json") {
-    // Foundations Home is the only page rendering principles + visual language.
+    // Foundations Home is the only page rendering concepts + visual language.
     return route.kind === "section" && route.section === "foundations";
   }
   if (rel === "token.json") {
@@ -1283,7 +1386,7 @@ export function withEntryStatus(
       visualLanguage: view.foundations.visualLanguage
         ? patch(view.foundations.visualLanguage)
         : null,
-      principles: patchList(view.foundations.principles)
+      concepts: patchList(view.foundations.concepts)
     },
     tokens: {
       primitive: patchList(view.tokens.primitive),

@@ -42,7 +42,7 @@ export function collectDesignSystemEntryContentDigests(
         (json.visualLanguage as Record<string, unknown>).id as string,
         designSystemEntryContentDigest(json.visualLanguage)
       );
-      addList(json.principles);
+      addList(json.concepts);
       break;
     case "token.json":
       for (const layer of ["primitive", "semantic", "component"] as const) {

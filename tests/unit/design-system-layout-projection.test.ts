@@ -7,6 +7,7 @@ import type {
 import {
   captureNodeMark,
   captureOrientation,
+  locatorCropImageStyle,
   projectLayoutLeaf
 } from "@/components/workbench/design-system-layout-projection";
 import { toRow, type DsRow } from "@/components/workbench/design-system-view-model";
@@ -164,5 +165,18 @@ describe("captureNodeMark", () => {
     expect(
       captureNodeMark(capture({ nodeRect: { x: 0, y: 0, width: 1, height: 0.84 } }))
     ).not.toBeNull();
+  });
+});
+
+describe("locatorCropImageStyle", () => {
+  it("maps a crop window onto the figure box", () => {
+    expect(
+      locatorCropImageStyle({ x: 0.1, y: 0.2, width: 0.5, height: 0.25 })
+    ).toEqual({
+      left: "-20%",
+      top: "-80%",
+      width: "200%",
+      height: "400%"
+    });
   });
 });

@@ -52,7 +52,7 @@ test("post-Alignment phase arms a lease only for an active Rule Update Review", 
   expect(readAgentCommandWaitEligibility(projectPath)).toMatchObject({
     ok: true,
     eligible: false,
-    reason: "seed_reference_required"
+    reason: "outside_designer_handoff"
   });
 
   const activated = activateRuleUpdateReviewWait(projectPath, "review-35");

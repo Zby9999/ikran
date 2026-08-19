@@ -373,7 +373,7 @@ function collectMutableSourceEntries(
       ) {
         add((visualLanguage as MutableJsonObject).id, visualLanguage);
       }
-      addList(json.principles);
+      addList(json.concepts);
       break;
     }
     case "token.json":

@@ -270,7 +270,7 @@ function writeSixFiles(dir: string) {
       status: "formalized",
       links: ["card-edited"]
     },
-    principles: [
+    concepts: [
       {
         id: "p1",
         value: "少即是多。",
@@ -602,15 +602,15 @@ describe("design-system ingest", () => {
       declareSixFiles(dir);
 
       const rows = entryRows(dir);
-      // 3 foundations (visual language + 2 principles) + 2 tokens
+      // 3 foundations (visual language + 2 concepts) + 2 tokens
       // + 1 inventory + 1 spec + 1 layout + 1 interaction
       expect(rows.length).toBe(9);
       const sections = rows.map((r) => r.section).sort();
       expect(sections).toEqual([
         "components.inventory",
         "components.spec",
-        "foundations.principles",
-        "foundations.principles",
+        "foundations.concepts",
+        "foundations.concepts",
         "foundations.visual-language",
         "interaction",
         "layout",
@@ -863,7 +863,7 @@ describe("ingest cross-validation gate", () => {
           status: "candidate",
           links: ["card-accepted"]
         },
-        principles: [
+        concepts: [
           {
             id: "shared-id",
             value: "碰撞。",
@@ -1023,7 +1023,7 @@ describe("design-system-view.json derived export", () => {
     });
   });
 
-  test("prose principle, layout, and interaction bodies survive the full read path", () => {
+  test("prose concept, layout, and interaction bodies survive the full read path", () => {
     withTempProject((dir) => {
       seedEvidenceCards(dir);
       const principleValue =
@@ -1041,7 +1041,7 @@ describe("design-system-view.json derived export", () => {
           status: "candidate",
           links: ["card-accepted"]
         },
-        principles: [
+        concepts: [
           {
             id: "principle-hierarchy",
             value: principleValue,
@@ -1097,7 +1097,7 @@ describe("design-system-view.json derived export", () => {
 
       const view = getDesignSystemViewCommand(dir);
       if (!view.ok) throw new Error(view.reason);
-      expect(view.view.foundations.principles[0].value).toEqual(
+      expect(view.view.foundations.concepts[0].value).toEqual(
         principleValue
       );
       expect(view.view.layout[0].value).toEqual(layoutValue);
@@ -1109,7 +1109,7 @@ describe("design-system-view.json derived export", () => {
           "utf8"
         )
       );
-      expect(exported.foundations.principles[0].value).toEqual(
+      expect(exported.foundations.concepts[0].value).toEqual(
         principleValue
       );
       expect(exported.layout[0].value).toEqual(layoutValue);
@@ -1131,7 +1131,7 @@ describe("design-system-view.json derived export", () => {
       const first = readFileSync(outPath, "utf-8");
       const parsed = JSON.parse(first);
       expect(parsed.name).toBe("Test DS");
-      expect(parsed.foundations.principles.length).toBe(2);
+      expect(parsed.foundations.concepts.length).toBe(2);
       expect(parsed.tokens.semantic[0].alias).toBe(
         "primitive.color.blue.500"
       );
@@ -1312,7 +1312,7 @@ describe("getDesignSystemView evidence join", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.view.name).toBe("");
-      expect(result.view.foundations.principles).toEqual([]);
+      expect(result.view.foundations.concepts).toEqual([]);
       expect(result.view.components.inventory).toEqual([]);
     });
   });
@@ -1525,6 +1525,103 @@ describe("getDesignSystemView layout captures", () => {
     });
   });
 
+  test("layout entries without sourceCaptures still derive a locator from a node anchor", () => {
+    const tinyPng =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    withTempProject((dir) => {
+      const seed = registerSeedReference(dir, {
+        figmaSeedReference: VALID_FIGMA,
+        originalDesignIntent: "ingest fixture"
+      });
+      if (!seed.ok) throw new Error(`seed failed: ${seed.reason}`);
+      const pkg = recordEvidencePackage(dir, {
+        figmaSeedReference: VALID_FIGMA,
+        frame: {
+          nodeId: "1:2",
+          name: "Checkout",
+          bounds: { x: 0, y: 0, width: 1200, height: 800 }
+        },
+        evidenceViews: { rawData: "available", screenshot: "available" },
+        screenshot: { dataUrl: tinyPng }
+      });
+      if (!pkg.ok) throw new Error(`evidence failed: ${pkg.reason}`);
+      const db = new DatabaseSync(getProjectDbPath(dir));
+      try {
+        db.prepare(
+          `UPDATE figma_evidence_surfaces SET positional_nodes_json = ? WHERE id = ?`
+        ).run(
+          JSON.stringify([
+            {
+              id: "1:2",
+              parentId: null,
+              name: "Checkout",
+              type: "FRAME",
+              depth: 0,
+              visible: true,
+              bounds: { x: 0, y: 0, width: 1200, height: 800 }
+            },
+            {
+              id: "10:20",
+              parentId: "1:2",
+              name: "Primary action",
+              type: "FRAME",
+              depth: 1,
+              visible: true,
+              bounds: { x: 150, y: 200, width: 300, height: 100 }
+            }
+          ]),
+          pkg.record.id
+        );
+      } finally {
+        db.close();
+      }
+      insertCard(dir, {
+        id: "card-accepted",
+        finalAnswer: "采纳 Agent 提议",
+        answerSource: "agent-proposed-designer-accepted",
+        anchorJson: JSON.stringify({
+          kind: "single",
+          target: {
+            kind: "node",
+            seedReferenceId: seed.record.id,
+            evidenceSurfaceId: pkg.record.id,
+            evidenceVersionId: pkg.record.id,
+            nodeId: "10:20"
+          }
+        })
+      });
+      writeProjectFile(dir, "design-system/layout-rules.json", {
+        rules: [
+          {
+            id: "grid-page",
+            value: "Use a twelve-column page grid.",
+            meaning: "Page grid",
+            status: "candidate",
+            links: ["card-accepted"]
+          }
+        ]
+      });
+      expect(
+        declareFile(dir, "design-system/layout-rules.json", "layout-rules.json", [
+          "card-accepted"
+        ]).ok
+      ).toBe(true);
+
+      const entry = captureOf(dir);
+      expect(entry.captures).toHaveLength(1);
+      expect(entry.captures![0]).toMatchObject({
+        nodeId: "10:20",
+        nodeName: "Primary action",
+        artifactPath: pkg.record.screenshot_artifact_path,
+        surfaceId: pkg.record.id,
+        origin: "source",
+        stale: false,
+        locatorCrop: { x: 0.125, y: 0.1875, width: 0.25, height: 0.25 },
+        nodeRect: { x: 0, y: 0.25, width: 1, height: 0.5 }
+      });
+    });
+  });
+
   test("non-layout entries are never decorated", () => {
     withTempProject((dir) => {
       seedEvidenceCards(dir);
@@ -1537,7 +1634,7 @@ describe("getDesignSystemView layout captures", () => {
           status: "candidate",
           links: ["card-accepted"]
         },
-        principles: [
+        concepts: [
           {
             id: "principle-1",
             value: "Type leads.",
@@ -1562,7 +1659,7 @@ describe("getDesignSystemView layout captures", () => {
       const result = getDesignSystemView(dir);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.view.foundations.principles[0]!.captures).toBeUndefined();
+      expect(result.view.foundations.concepts[0]!.captures).toBeUndefined();
     });
   });
 

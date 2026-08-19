@@ -45,7 +45,7 @@ import { collectDesignSystemEntryContentDigests } from "./design-system-entry-pr
 
 export const DESIGN_SYSTEM_SECTIONS = [
   "foundations.visual-language",
-  "foundations.principles",
+  "foundations.concepts",
   "token.primitive",
   "token.semantic",
   "token.component",
@@ -72,7 +72,7 @@ export interface DesignSystemBucket {
   /** Key inside a structured group; null for flat array groups. */
   key:
     | "visualLanguage"
-    | "principles"
+    | "concepts"
     | "primitive"
     | "semantic"
     | "component"
@@ -91,9 +91,9 @@ export const DESIGN_SYSTEM_BUCKETS: readonly DesignSystemBucket[] = [
     cardinality: "one"
   },
   {
-    section: "foundations.principles",
+    section: "foundations.concepts",
     group: "foundations",
-    key: "principles",
+    key: "concepts",
     cardinality: "many"
   },
   {
@@ -274,11 +274,11 @@ export function collectDesignSystemEntryRows(
   switch (fileKind) {
     case "design-system.json": {
       const visual = root.visualLanguage as RawEntry;
-      const principles = root.principles as unknown[];
+      const concepts = root.concepts as unknown[];
       return [
         row(visual, "foundations.visual-language", visual.id!, null, 0),
-        ...principles.map((p, i) =>
-          row(p, "foundations.principles", (p as RawEntry).id!, null, i)
+        ...concepts.map((p, i) =>
+          row(p, "foundations.concepts", (p as RawEntry).id!, null, i)
         )
       ];
     }
@@ -376,7 +376,7 @@ export function prepareDesignSystemIngestOnDb(
   const rows = collectDesignSystemEntryRows(args.fileKind, args.json);
 
   // Global entry-id uniqueness inside design-system.json: visualLanguage and
-  // principles share one id space (09A — Task B acceptance deferred nit).
+  // concepts share one id space (09A — Task B acceptance deferred nit).
   if (args.fileKind === "design-system.json") {
     const seen = new Map<string, DesignSystemSection>();
     for (const r of rows) {

@@ -29,7 +29,8 @@ import {
 import {
   DesignSystemBrowser,
   DesignSystemEntryButton,
-  designSystemSheetExitMs
+  designSystemSheetExitMs,
+  useDesignSystemHasCandidate
 } from "./design-system-browser";
 import { canOpenDesignSystemBrowser } from "./design-system-view-model";
 import { buildFolderPageItems } from "./folder-page-list";
@@ -297,6 +298,15 @@ export function SeedEvidenceWorkbench({
     () => buildFolderPageItems({ seeds: records, surfaces, prototypeSurfaces }),
     [records, surfaces, prototypeSurfaces]
   );
+  const designSystemPreparing =
+    workflowStage === "initial-design-system-preparing" &&
+    nextAgentCommandStatus !== "completed";
+  const designSystemHasCandidate = useDesignSystemHasCandidate(
+    session,
+    folderPhase === "extraction" &&
+      designSystemEntryVisible &&
+      !designSystemPreparing
+  );
   // The first page reads as current until the designer picks another; only an
   // explicit pick asks the canvas to move (a standing selection must not yank
   // the camera every time a Runtime record changes).
@@ -345,8 +355,17 @@ export function SeedEvidenceWorkbench({
           }
           phase={folderPhase}
           seedCount={seedCount}
-          completed={alignment?.alignment.status === "completed"}
+          completed={
+            folderPhase === "extraction" &&
+            alignment?.alignment.status === "completed"
+          }
           completeEnabled={alignment?.coverage.can_complete === true}
+          questionsReady={workflowStage === "alignment-answering"}
+          designSystemPreparing={designSystemPreparing}
+          prototypePreparing={
+            folderPhase === "prototype" &&
+            !prototypeSurfaces.some((surface) => surface.readiness === "ready")
+          }
           onNextPhase={() => {
             if (!designLanguageDescription.trim()) {
               showPhaseError("Add Description first.");
@@ -391,6 +410,8 @@ export function SeedEvidenceWorkbench({
         />
         {folderPhase === "extraction" && designSystemEntryVisible ? (
           <DesignSystemEntryButton
+            preparing={designSystemPreparing}
+            hasCandidate={designSystemHasCandidate}
             onOpen={() => setDesignSystemBrowserOpen(true)}
           />
         ) : null}

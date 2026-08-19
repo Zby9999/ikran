@@ -119,7 +119,9 @@ export function setOnlyOpenAlignmentCard(
     })),
     activeId
   );
-  if (updates.length === 0) return;
+  // Cards are independently placed, so a hugging editor can overlap a later
+  // sibling. Opening must raise that dialog even when expand/collapse is a no-op.
+  if (updates.length === 0 && !activeId) return;
   editor.run(
     () => {
       for (const update of updates) {
@@ -134,6 +136,7 @@ export function setOnlyOpenAlignmentCard(
           }
         });
       }
+      if (activeId) editor.bringToFront([activeId as TLShapeId]);
     },
     { ignoreShapeLock: true }
   );

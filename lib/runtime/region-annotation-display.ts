@@ -10,6 +10,12 @@ export const AGENT_REGION_MARGIN = 0.012;
 /** Structure-overlay comfort padding: intentionally tighter than Agent regions. */
 export const STRUCTURE_REGION_MARGIN = 0.006;
 
+/** Focus-mode mask hole inset in screenshot pixels (Figma 177:679). */
+export const FOCUS_HOLE_PADDING_PX = 2;
+
+/** Focus-mode mask hole corner radius in screenshot pixels (Figma 177:679). */
+export const FOCUS_HOLE_RADIUS_PX = 2;
+
 export type RegionAnnotationGeometryVersion = "v1_padded" | "v2_raw";
 
 export type RegionAnnotationDisplayAuthor = "designer" | "agent";
@@ -27,6 +33,33 @@ export interface AgentRegionMediaSize {
   h: number;
 }
 
+function expandRect(
+  rect: RegionAnnotationDisplayRect,
+  mx: number,
+  my: number
+): RegionAnnotationDisplayRect {
+  const left = Math.max(0, rect.x - mx);
+  const top = Math.max(0, rect.y - my);
+  const right = Math.min(1, rect.x + rect.w + mx);
+  const bottom = Math.min(1, rect.y + rect.h + my);
+  return {
+    x: left,
+    y: top,
+    w: Math.max(0, right - left),
+    h: Math.max(0, bottom - top)
+  };
+}
+
+function isotropicInsets(
+  mx: number,
+  mediaSize?: AgentRegionMediaSize
+): { mx: number; my: number } {
+  if (mediaSize && mediaSize.w > 0 && mediaSize.h > 0) {
+    return { mx, my: (mx * mediaSize.w) / mediaSize.h };
+  }
+  return { mx, my: mx };
+}
+
 /**
  * Expand an Agent region rect with page-isotropic comfort padding, then clamp
  * to the unit media box.
@@ -40,21 +73,8 @@ export function expandAgentRegionRect(
   rect: RegionAnnotationDisplayRect,
   mediaSize?: AgentRegionMediaSize
 ): RegionAnnotationDisplayRect {
-  const mx = AGENT_REGION_MARGIN;
-  let my = AGENT_REGION_MARGIN;
-  if (mediaSize && mediaSize.w > 0 && mediaSize.h > 0) {
-    my = (mx * mediaSize.w) / mediaSize.h;
-  }
-  const left = Math.max(0, rect.x - mx);
-  const top = Math.max(0, rect.y - my);
-  const right = Math.min(1, rect.x + rect.w + mx);
-  const bottom = Math.min(1, rect.y + rect.h + my);
-  return {
-    x: left,
-    y: top,
-    w: Math.max(0, right - left),
-    h: Math.max(0, bottom - top)
-  };
+  const { mx, my } = isotropicInsets(AGENT_REGION_MARGIN, mediaSize);
+  return expandRect(rect, mx, my);
 }
 
 /** Expand a structure-selected Designer region with the same isotropic rule. */
@@ -62,20 +82,39 @@ export function expandStructureRegionRect(
   rect: RegionAnnotationDisplayRect,
   mediaSize?: AgentRegionMediaSize
 ): RegionAnnotationDisplayRect {
-  const mx = STRUCTURE_REGION_MARGIN;
-  let my = STRUCTURE_REGION_MARGIN;
-  if (mediaSize && mediaSize.w > 0 && mediaSize.h > 0) {
-    my = (mx * mediaSize.w) / mediaSize.h;
+  const { mx, my } = isotropicInsets(STRUCTURE_REGION_MARGIN, mediaSize);
+  return expandRect(rect, mx, my);
+}
+
+/**
+ * Expand a Focus Mode hole by 2 screenshot pixels per side, then clamp.
+ * Runtime anchor rects stay raw; this is display-only.
+ */
+export function expandFocusHoleRect(
+  rect: RegionAnnotationDisplayRect,
+  mediaSize?: AgentRegionMediaSize
+): RegionAnnotationDisplayRect {
+  if (!mediaSize || mediaSize.w <= 0 || mediaSize.h <= 0) {
+    return { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
   }
-  const left = Math.max(0, rect.x - mx);
-  const top = Math.max(0, rect.y - my);
-  const right = Math.min(1, rect.x + rect.w + mx);
-  const bottom = Math.min(1, rect.y + rect.h + my);
+  return expandRect(
+    rect,
+    FOCUS_HOLE_PADDING_PX / mediaSize.w,
+    FOCUS_HOLE_PADDING_PX / mediaSize.h
+  );
+}
+
+/** Normalized SVG rx/ry so the hole radius stays 2 screenshot pixels. */
+export function focusHoleMaskRadius(mediaSize: AgentRegionMediaSize): {
+  rx: number;
+  ry: number;
+} {
+  if (mediaSize.w <= 0 || mediaSize.h <= 0) {
+    return { rx: 0, ry: 0 };
+  }
   return {
-    x: left,
-    y: top,
-    w: Math.max(0, right - left),
-    h: Math.max(0, bottom - top)
+    rx: FOCUS_HOLE_RADIUS_PX / mediaSize.w,
+    ry: FOCUS_HOLE_RADIUS_PX / mediaSize.h
   };
 }
 

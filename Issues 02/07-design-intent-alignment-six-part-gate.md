@@ -2,7 +2,7 @@
 
 ## What to build
 
-将旧五阶段 seed alignment gate 改为结合 `align-design-intent` Skill 的六部分 Design Intent Alignment。六部分为：Design principle、Visual language、Token、Layout、Component、Interaction。Content style observations 不作为 MVP 必答阶段，也不能阻塞 seed extraction。
+将旧五阶段 seed alignment gate 改为结合 `align-design-intent` Skill 的六部分 Design Intent Alignment。六部分为：Design Concept、Visual language、Token、Layout、Component、Interaction。Content style observations 不作为 MVP 必答阶段，也不能阻塞 seed extraction。
 
 Agent 基于 Figma Evidence Surface 和 Region Annotation 创建两类可视卡片：
 
@@ -29,7 +29,7 @@ Alignment 面向项目当前 Seed Reference collection，而不是唯一 seed pa
 
 ## Acceptance criteria
 
-- [ ] Workbench 渲染六个 Design Intent Alignment 部分：Design principle、Visual language、Token、Layout、Component、Interaction。
+- [ ] Workbench 渲染六个 Design Intent Alignment 部分：Design Concept、Visual language、Token、Layout、Component、Interaction。
 - [ ] Design Language Description 为空时不能进入正式 Alignment；填写一次非空 Description 后整个 Seed Reference collection 可继续，无需逐 Reference 重复填写。
 - [ ] Content 不作为必答 gate；缺少 content 问答不阻塞 seed extraction。
 - [ ] Confirmed from design 与 Reasonable inference 均投影为同一灰色 Agent Annotation 卡；可编辑/附加信息，不进入 Question 必答计数；六部分各自至少一张，否则 create Question 或 finalize 返回 `section_annotation_required`。

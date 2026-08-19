@@ -86,8 +86,10 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
         expect(events.folder_selected).toBeTruthy();
         expect(typeof createSc.session).toBe("string");
         expect(String(createSc.workbench_url)).toMatch(URL_RE);
-        // Fresh project with zero Seed References: the wait is not armed
-        // (no designer handoff can arrive before registration completes).
+        // Fresh project at seed-reference-registration: wait is armed even
+        // with zero Seed References, but next_action is not wait — the Agent
+        // must open the Workbench URL before the blocking wait call.
+        expect(createSc.wait_armed).toBe(true);
         expect(createSc.next_action).toBeUndefined();
         const token = createSc.session as string;
         const workbenchUrl = createSc.workbench_url as string;

@@ -90,7 +90,7 @@ export function registerProjectPhaseTools(
     "confirm_prototype",
     {
       description:
-        "Declare that the designer confirmed Prototype modifications and audit. Advances prototype_validation to design_system_formal; also re-enters design_system_formal from ready_for_new_design after a new-design-run prototype is confirmed. After advancing, keep the turn going autonomously: freeze the complete current host-conversation range and call reconcile_designer_conversation; pass its id to claim_consolidate_review and give every feedback an outcome; then review reusable candidates, backfill code links, and formalize. Do not write semantic feedback during active dialogue. Prototype file edits must go through the Agent; do not edit prototype files directly. Rejected out of order.",
+        "Declare that the designer confirmed Prototype modifications and audit. Advances prototype_validation to design_system_formal; also re-enters design_system_formal from ready_for_new_design after a new-design-run prototype is confirmed. After advancing, keep the turn going autonomously: freeze the complete current host-conversation range and call reconcile_designer_conversation; pass its id to claim_consolidate_review and give every feedback an outcome; then review reusable candidates, backfill code links, declare component live heroes, verify them, and formalize. The code-back chain is backfill_component_code_links → declare_component_live_heroes → verify_component_live_heroes — formalize is the LAST step, never the next one after backfill. Do not write semantic feedback during active dialogue. Prototype file edits must go through the Agent; do not edit prototype files directly. Rejected out of order.",
       inputSchema: emptyInputSchema
     },
     async () => {
@@ -104,7 +104,7 @@ export function registerProjectPhaseTools(
         ? successResult(rt, {
             ...result,
             next_action: { tool: "reconcile_designer_conversation" },
-            next: "Continue autonomously: freeze the completed host transcript → reconcile_designer_conversation → claim_consolidate_review(reconciliationId) → outcome every feedback → backfill_component_code_links → formalize_design_system."
+            next: "Continue autonomously: freeze the completed host transcript → reconcile_designer_conversation → claim_consolidate_review(reconciliationId) → outcome every feedback → backfill_component_code_links → declare_component_live_heroes → verify_component_live_heroes → formalize_design_system."
           })
         : phaseFailure("confirm_prototype", result, rt);
     }
@@ -114,7 +114,7 @@ export function registerProjectPhaseTools(
     "backfill_component_code_links",
     {
       description:
-        "Backfill Prototype code links into Design System component specs. Declare entryId ↔ code-path mappings explicitly — one mapping per component spec entry, one or more code paths per entry; Runtime never auto-matches by name or filename. Every code path must resolve inside the project, exist on disk, and already be declared via record_artifact_written (artifactType code or prototype); a missing file or undeclared path is rejected with the offending path named, and nothing is written. On success value.codeLinks is written back into each entry's source spec JSON (file and DB stay in step, failure restores both) and a design_system_code_links_backfilled event records the exact mapping. Run after the designer confirms the Prototype and before formalize_design_system, so formalized components point at real code instead of only sourceCaptures.",
+        "Backfill Prototype code links into Design System component specs. Declare entryId ↔ code-path mappings explicitly — one mapping per component spec entry, one or more code paths per entry; Runtime never auto-matches by name or filename. Every code path must resolve inside the project, exist on disk, and already be declared via record_artifact_written (artifactType code or prototype); a missing file or undeclared path is rejected with the offending path named, and nothing is written. On success value.codeLinks is written back into each entry's source spec JSON (file and DB stay in step, failure restores both) and a design_system_code_links_backfilled event records the exact mapping. Run after the designer confirms the Prototype. codeLinks alone produce NO visible component hero: the mandatory continuation is declare_component_live_heroes (live harness heroes) → verify_component_live_heroes (Runtime loads every harness and confirms real geometry) → formalize_design_system. Do not skip from backfill straight to formalize.",
       inputSchema: backfillComponentCodeLinksInputSchema
     },
     async (args) => {
@@ -128,7 +128,11 @@ export function registerProjectPhaseTools(
         args.mappings
       );
       return result.ok
-        ? successResult(rt, result)
+        ? successResult(rt, {
+            ...result,
+            next_action: { tool: "declare_component_live_heroes" },
+            next: "codeLinks alone produce no visible hero. Continue autonomously: scaffold_component_harness (Runtime-owned sizing helper) → write harness routes → record_artifact_written for every new file → record_preview ONCE → declare_component_live_heroes → verify_component_live_heroes (fix and re-verify until every entry reports geometry) → formalize_design_system."
+          })
         : failureResult(
             "backfill_component_code_links",
             result.reason,

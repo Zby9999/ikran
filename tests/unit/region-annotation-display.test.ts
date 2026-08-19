@@ -4,7 +4,8 @@ import { expect, test } from "vitest";
 import {
   AGENT_REGION_MARGIN,
   displayRectForRegionAnnotation,
-  expandAgentRegionRect
+  expandAgentRegionRect,
+  expandFocusHoleRect
 } from "../../lib/runtime/region-annotation-display";
 import { normalizedRectToPage } from "../../components/workbench/region-annotation-geometry";
 
@@ -89,5 +90,25 @@ test.describe("displayRectForRegionAnnotation", () => {
     expect(page.h).toBeGreaterThan(rawPage.h);
     expect(page.x).toBeLessThan(rawPage.x);
     expect(page.y).toBeLessThan(rawPage.y);
+  });
+});
+
+test.describe("expandFocusHoleRect", () => {
+  test("expands 2 screenshot pixels per side and clamps to the media box", () => {
+    const media = { w: 695, h: 1851 };
+    const display = expandFocusHoleRect(RAW, media);
+    const padX = 2 / 695;
+    const padY = 2 / 1851;
+
+    expect(display.x).toBeCloseTo(RAW.x - padX, 6);
+    expect(display.y).toBeCloseTo(RAW.y - padY, 6);
+    expect(display.w).toBeCloseTo(RAW.w + padX * 2, 6);
+    expect(display.h).toBeCloseTo(RAW.h + padY * 2, 6);
+
+    const flush = expandFocusHoleRect({ x: 0, y: 0, w: 0.01, h: 0.01 }, media);
+    expect(flush.x).toBe(0);
+    expect(flush.y).toBe(0);
+    expect(flush.w).toBeCloseTo(0.01 + padX, 6);
+    expect(flush.h).toBeCloseTo(0.01 + padY, 6);
   });
 });

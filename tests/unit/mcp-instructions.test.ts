@@ -17,6 +17,7 @@ describe("MCP instructions channel split", () => {
 
   test("keeps the behavioral floor and global disciplines", () => {
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("OPEN-AND-WAIT");
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain("open that URL first");
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("wait_for_agent_command");
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("record_artifact_written");
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("Never silently drop");
@@ -33,6 +34,9 @@ describe("MCP instructions channel split", () => {
     expect(IKRAN_MCP_INSTRUCTIONS).toContain("capture_rule_screenshot");
     expect(IKRAN_MCP_INSTRUCTIONS).toContain(
       "declare_component_live_heroes"
+    );
+    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
+      "verify_component_live_heroes"
     );
     expect(IKRAN_MCP_INSTRUCTIONS).toContain(
       "never reuse existing capture files"
@@ -55,6 +59,8 @@ describe("MCP instructions channel split", () => {
       "TYPOGRAPHY ROLE WRITING STYLE"
     );
     expect(IKRAN_MCP_INSTRUCTIONS).not.toContain("focus-target-set");
+    expect(IKRAN_MCP_INSTRUCTIONS).not.toContain("output_language");
+    expect(IKRAN_MCP_INSTRUCTIONS).not.toContain("2–5 word");
   });
 
   test("serializes structured details into the model-visible failure text", () => {

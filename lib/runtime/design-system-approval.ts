@@ -150,11 +150,11 @@ export function locateEntryObject(
 
   switch (fileKind) {
     case "design-system.json": {
-      // visualLanguage and principles share one id space (ingest enforces
+      // visualLanguage and concepts share one id space (ingest enforces
       // global uniqueness inside this file).
       const visual = json.visualLanguage;
       if (isPlainObject(visual) && visual.id === entryId) return visual;
-      return byId(json.principles);
+      return byId(json.concepts);
     }
     case "token.json": {
       // Layer-qualified identity: "<layer>.<name>" (name may contain dots).

@@ -177,7 +177,7 @@ Ikran 的核心不变量：
 12. 作为设计师，我想让 Agent 也能把重要 Figma node 添加回同一画布，以便 Agent 与画布之间可以双向流转。
 13. 作为设计师，我想显式 Refresh 一个 Seed Reference，以便在同一 lineage 中查看新 Figma 版本并保留历史标注。
 14. 作为设计师，我想看到 Figma Evidence Surface，以便在视觉上下文中理解 Agent 的观察和问题。
-15. 作为设计师，我想让种子对齐按 Design principle、Visual language、Token、Layout、Component 和 Interaction 六部分进行，以便覆盖对设计结果影响最大的意图维度。
+15. 作为设计师，我想让种子对齐按 Design Concept、Visual language、Token、Layout、Component 和 Interaction 六部分进行，以便覆盖对设计结果影响最大的意图维度。
 16. 作为设计师，我想让每个阶段包含二到五张 Question card，以便流程有足够深度但不过载。
 17. 作为设计师，我想让所有 Question card 都必须有非空 final answer，以便 seed extraction 没有遗漏的对齐维度；空问题与空答案被拒绝，可填“同意/对”。
 18. 作为设计师，我想在 Question card 上看到 Agent `proposed_answer` 并输入或接受最终答案，以便研究数据有明确的设计师结论与 answer source。
@@ -391,7 +391,7 @@ Ikran 的核心不变量：
 - 项目级 Design Language Description 只填写一次；每条 Seed Reference 可追加可选 Reference Note。
 - Seed Reference capture 与可视化不等待 Design Language Description；Description 为空时不得进入正式 Design Intent Alignment。
 - Seed extraction / Design Intent Alignment 对当前 Seed Reference collection 执行一次；MVP 不在完成后重新开启一套不同设计语言的 seed extraction。
-- 种子对齐使用六部分 Design Intent Alignment：Design principle、Visual language、Token、Layout、Component、Interaction。
+- 种子对齐使用六部分 Design Intent Alignment：Design Concept、Visual language、Token、Layout、Component、Interaction。
 - Content style observations 不作为 MVP 必答阶段，也不能阻塞 seed extraction。
 - Agent 在第一次 pass 中生成所有阶段的问题。
 - 每个阶段二到五张 Question card。

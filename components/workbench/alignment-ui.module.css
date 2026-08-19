@@ -167,7 +167,7 @@
 }
 
 .answerRegion[data-open="true"] {
-  grid-template-rows: 1fr;
+  grid-template-rows: auto;
   opacity: 1;
   pointer-events: all;
 }
@@ -180,18 +180,19 @@
 .answerEditor {
   display: flex;
   width: 100%;
-  height: 56px;
-  align-items: center;
+  min-height: 70px;
+  align-items: flex-end;
   gap: 8px;
-  padding: 8px 16px 8px 20px;
+  padding: 16px 16px 16px 20px;
   border-top: 1px solid var(--alignment-accent);
   background: #fff;
 }
 
 .answerEditor textarea {
   min-width: 0;
-  height: 38px;
+  min-height: 38px;
   flex: 1;
+  overflow: hidden;
   resize: none;
   border: 0;
   outline: 0;
@@ -209,6 +210,8 @@
   width: 28px !important;
   height: 28px !important;
   min-width: 28px;
+  flex-shrink: 0;
+  align-self: flex-end;
   border: 0 !important;
   border-radius: 50% !important;
   background: var(--alignment-submit) !important;
@@ -273,18 +276,19 @@
 .annotationEditor {
   display: flex;
   width: 100%;
-  height: 56px;
-  align-items: center;
+  min-height: 70px;
+  align-items: flex-end;
   gap: 8px;
-  padding: 8px 16px 8px 20px;
+  padding: 16px 16px 16px 20px;
   border-top: 1px solid #6e6e6e;
   background: #fff;
 }
 
 .annotationEditor textarea {
   min-width: 0;
-  height: 38px;
+  min-height: 38px;
   flex: 1;
+  overflow: hidden;
   resize: none;
   border: 0;
   outline: 0;
@@ -302,6 +306,8 @@
   width: 28px !important;
   height: 28px !important;
   min-width: 28px;
+  flex-shrink: 0;
+  align-self: flex-end;
   border: 0 !important;
   border-radius: 50% !important;
   background: #6e6e6e !important;

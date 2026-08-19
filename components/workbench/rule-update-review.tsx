@@ -395,7 +395,7 @@ function ProposalCard({
                 </div>
               ) : proposal.status === "waiting_agent" ? (
                   <p className="dsb-ru-wait-copy">
-                    Decision sent. The Agent will apply this exact revision.
+                    Ask the Agent to continue.
                   </p>
                 ) : proposal.status === "failed" ? (
                   <p className="dsb-ru-wait-copy">

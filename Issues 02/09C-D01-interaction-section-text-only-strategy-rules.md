@@ -9,7 +9,7 @@ Status: resolved
 ## What to build
 
 Interaction section 放弃一切生成式视觉（rig / 控件模拟 / state gallery），改为与
-foundations/principles 同构的**纯文本规则流**，并在抽取契约层把两类当前混住的
+foundations/concepts 同构的**纯文本规则流**，并在抽取契约层把两类当前混住的
 entry 拆开。
 
 背景：原 09C-B 试图为 Interaction 建立统一 visual grammar，两轮 interaction rig
@@ -35,7 +35,7 @@ interaction-rules.json 混住了两个物种：
 
 **B. Interaction section 纯文本化**
 
-- 页面形态与 foundations/principles 同属纯文本规则语言：meaning、Description、
+- 页面形态与 foundations/concepts 同属纯文本规则语言：meaning、Description、
   Behavior、Accessibility、
   status chip、candidate 审批与 evidence popover 在原路径上保持可用；
 - 退役 `InteractionRigBlock` / `InteractionMiniSpecimen` / `InteractionUnavailable`

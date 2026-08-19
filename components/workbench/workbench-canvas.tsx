@@ -13,6 +13,11 @@
 
 import { useEffect, useMemo, useRef, type PropsWithChildren } from "react";
 import { Tldraw, type TLStateNodeConstructor, type TLUiOverrides } from "tldraw";
+
+// tldraw evaluation key (hosts `*`, expires 2026-11-27). Client-validated;
+// required so production Workbench does not show the unlicensed watermark.
+const TLDRAW_LICENSE_KEY =
+  "tldraw-2026-11-27/WyJ6V0NIZHlKVSIsWyIqIl0sMTYsIjIwMjYtMTEtMjciXQ.JTBTdYOn5myXhzRHkJz+fjbzZMoioJohoic+7iXVso3gnLGjOr+Zhftl5NU41h5DW9ieyQqt0BerwTErxj9AcQ";
 import { SeedReferenceProjectionShapeUtil } from "./seed-reference-projection-shape";
 import { PrototypeSurfaceProjectionShapeUtil } from "./prototype-surface-shape";
 import { RegionAnnotationShapeUtil } from "./region-annotation-shape";
@@ -265,6 +270,7 @@ export function WorkbenchCanvas({
     <WorkbenchSeedActionsProvider value={seedActions}>
     <Tldraw
       hideUi
+      licenseKey={TLDRAW_LICENSE_KEY}
       embeds={WORKBENCH_EMBED_DEFINITIONS}
       shapeUtils={SHAPE_UTILS}
       tools={tools}

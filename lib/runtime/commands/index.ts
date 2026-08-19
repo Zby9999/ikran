@@ -83,6 +83,8 @@ export { captureRuleScreenshotCommand } from "./rule-capture";
 
 export { captureComponentCodeHeroCommand } from "./code-capture";
 export { declareComponentLiveHeroesCommand } from "./code-capture";
+export { scaffoldComponentHarnessCommand } from "./code-capture";
+export { verifyComponentLiveHeroesCommand } from "./code-capture";
 
 export {
   claimConsolidateReviewCommand,
@@ -203,6 +205,10 @@ export {
   captureComponentCodeHeroInputShape,
   declareComponentLiveHeroesInputSchema,
   declareComponentLiveHeroesInputShape,
+  scaffoldComponentHarnessInputSchema,
+  scaffoldComponentHarnessInputShape,
+  verifyComponentLiveHeroesInputSchema,
+  verifyComponentLiveHeroesInputShape,
   recordNewDesignRunInputSchema,
   recordNewDesignRunInputShape,
   createOrOpenProjectInputShape,

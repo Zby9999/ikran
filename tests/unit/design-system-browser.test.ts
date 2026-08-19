@@ -148,11 +148,11 @@ function fixtureView(): DesignSystemView {
     name: "Landing Seed",
     foundations: {
       visualLanguage: null,
-      principles: [
+      concepts: [
         entry({
           entry_id: "p1",
           file_kind: "design-system.json",
-          section: "foundations.principles",
+          section: "foundations.concepts",
           name: null,
           value: "Evidence before inference.",
           meaning: "Rules must trace to seed evidence",
@@ -259,6 +259,34 @@ describe("DesignSystemEntryButton", () => {
     );
     expect(html).toContain("Draft Design System");
     expect(html).toContain('data-testid="open-design-system-browser"');
+    expect(html).not.toContain("data-preparing");
+    expect(html).not.toContain('data-testid="ds-entry-candidate-dot"');
+  });
+
+  test("marks the label as preparing while the Agent is writing", () => {
+    const html = renderToStaticMarkup(
+      createElement(DesignSystemEntryButton, {
+        onOpen: vi.fn(),
+        preparing: true,
+        hasCandidate: true
+      })
+    );
+    expect(html).toContain('data-preparing="true"');
+    expect(html).toContain("aria-busy");
+    expect(html).not.toContain('data-testid="ds-entry-candidate-dot"');
+  });
+
+  test("shows the Browser candidate dot after writing when work remains", () => {
+    const html = renderToStaticMarkup(
+      createElement(DesignSystemEntryButton, {
+        onOpen: vi.fn(),
+        hasCandidate: true
+      })
+    );
+    expect(html).toContain('data-candidate="true"');
+    expect(html).toContain('data-testid="ds-entry-candidate-dot"');
+    expect(html).toContain("dsb-navrow-candidate-dot");
+    expect(html).not.toContain("data-preparing");
   });
 });
 
@@ -439,7 +467,7 @@ describe("EvidenceInfoContent (ⓘ layer)", () => {
 });
 
 describe("FoundationsHomePage", () => {
-  test("renders principles as ledger rules (shared Rules presentation)", () => {
+  test("renders concepts as ledger rules (shared Rules presentation)", () => {
     const model = buildDesignSystemBrowserModel(fixtureView());
     const html = renderToStaticMarkup(
       createElement(FoundationsHomePage, {
@@ -447,17 +475,18 @@ describe("FoundationsHomePage", () => {
         rows: rowSharedProps()
       })
     );
-    expect(html).toContain('data-testid="ds-principle-p1"');
+    expect(html).toContain('data-testid="ds-concept-p1"');
+    expect(html).toContain("Design Concept");
     expect(html).toContain("Evidence before inference");
     expect(html).toContain("Rules must trace to seed evidence");
     expect(html).toContain('data-status="candidate"');
-    expect(html).toContain('aria-label="Evidence for principle p1"');
+    expect(html).toContain('aria-label="Evidence for design concept p1"');
     expect(html).toContain("dsb-interaction-ledger");
     // Ledger items, not spec rows.
     expect(html).not.toContain('data-testid="ds-row-p1"');
   });
 
-  test("offers one inline edit-mode control for global principles", () => {
+  test("offers one inline edit-mode control for global concepts", () => {
     const model = buildDesignSystemBrowserModel(fixtureView());
     const html = renderToStaticMarkup(
       createElement(FoundationsHomePage, {
@@ -809,7 +838,7 @@ describe("ComponentDetail (09C-D03 Placard)", () => {
     expect(html).toContain('data-origin="unavailable"');
     expect(html).toContain("No source capture");
     // Says what is missing and what to ask for — never a blank box.
-    expect(html).toContain("ask the agent to implement this component");
+    expect(html).toContain("No locator screenshot is available yet");
   });
 
   test("a source capture renders the image with a hover provenance origin", () => {
@@ -1469,14 +1498,14 @@ describe("SpecRowView object values (09C-A: no raw JSON in the reading layer)", 
   });
 });
 
-describe("FoundationsHomePage rich principles (09B shapes, 09C-A reading)", () => {
-  test("principles project meaning as title and prose value as body", () => {
+describe("FoundationsHomePage rich concepts (09B shapes, 09C-A reading)", () => {
+  test("concepts project meaning as title and prose value as body", () => {
     const view = fixtureView();
-    view.foundations.principles = [
+    view.foundations.concepts = [
       entry({
         entry_id: "p-rich",
         file_kind: "design-system.json",
-        section: "foundations.principles",
+        section: "foundations.concepts",
         name: null,
         value: "Design with intent. Every choice needs an evidence-backed reason.",
         meaning: "Intent over decoration",
@@ -1485,7 +1514,7 @@ describe("FoundationsHomePage rich principles (09B shapes, 09C-A reading)", () =
       entry({
         entry_id: "p-legacy",
         file_kind: "design-system.json",
-        section: "foundations.principles",
+        section: "foundations.concepts",
         name: null,
         value: "Evidence before inference.",
         meaning: "Rules must trace to seed evidence",
@@ -1499,11 +1528,11 @@ describe("FoundationsHomePage rich principles (09B shapes, 09C-A reading)", () =
         rows: rowSharedProps()
       })
     );
-    expect(html).toContain('data-testid="ds-principle-p-rich"');
+    expect(html).toContain('data-testid="ds-concept-p-rich"');
     expect(html).toContain("Intent over decoration");
     expect(html).toContain("Design with intent.");
     expect(html).toContain("Every choice needs an evidence-backed reason.");
-    expect(html).toContain('data-testid="ds-principle-p-legacy"');
+    expect(html).toContain('data-testid="ds-concept-p-legacy"');
     expect(html).toContain("Evidence before inference");
   });
 });
@@ -1688,6 +1717,24 @@ describe("LayoutLeafPage Source Capture (09C-D02)", () => {
     expect(html).not.toContain("dsb-lightbox");
   });
 
+  test("a derived locator crop positions the full-frame screenshot", () => {
+    const rows = layoutLeafRows();
+    const grid = rows[0]!;
+    const capture = grid.entry.captures![0]!;
+    grid.entry.captures = [
+      {
+        ...capture,
+        locatorCrop: { x: 0.1, y: 0.2, width: 0.5, height: 0.25 }
+      }
+    ];
+    const html = renderLayoutLeaf([grid]);
+    expect(html).toContain("dsb-placard-crop-img");
+    expect(html).toContain("left:-20%");
+    expect(html).toContain("top:-80%");
+    expect(html).toContain("width:200%");
+    expect(html).toContain("height:400%");
+  });
+
   test("a capture without nodeRect renders no mark", () => {
     const html = renderLayoutLeaf();
     // shell-regions' capture has nodeRect null — the figure renders but no
@@ -1719,7 +1766,7 @@ describe("LayoutLeafPage Source Capture (09C-D02)", () => {
     expect(html).toContain('data-testid="ds-layout-unavailable-nav-mobile"');
     expect(html).toContain("No source capture");
     expect(html).toContain(
-      "This rule has no linked Figma node — nothing to show honestly."
+      "No locator screenshot is available for this rule."
     );
     expect(html).toContain('data-origin="unavailable"');
     // section-rhythm and breakpoints have no captures either.

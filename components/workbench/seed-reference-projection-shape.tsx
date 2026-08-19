@@ -705,6 +705,8 @@ function SeedReferenceProjectionFrame({
                 surfaceArtifactId={surfaceRecordId}
                 evidenceVersionId={surfaceRecordId}
                 targets={focusMode.state.targets}
+                mediaWidth={imageBox.width}
+                mediaHeight={imageBox.height}
                 onFadeOutComplete={focusMode.finishExit}
                 style={{
                   inset: "auto",

@@ -61,7 +61,7 @@ Observed evidence:
    questions in each of the six sections. After semantic finalize, Browser Use
    observed `alignment-answering` and `2/2`, `12/12` progress.
 3. Browser Use expanded the existing stage control and selected Visual language,
-   Token, Layout, Component, Interaction and Design principle in arbitrary
+   Token, Layout, Component, Interaction and Design Concept in arbitrary
    order; every selected button became the current step.
 4. Browser Use edited the first answer to “Clarity leads, while expression
    should reinforce comprehension.” The final command payload preserved that

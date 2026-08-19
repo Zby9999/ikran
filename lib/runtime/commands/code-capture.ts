@@ -8,6 +8,16 @@ import {
   type ComponentLiveHeroMapping,
   type DeclareComponentLiveHeroesResult
 } from "../design-system-live-hero";
+import {
+  scaffoldComponentHarness,
+  type ScaffoldComponentHarnessInput,
+  type ScaffoldComponentHarnessResult
+} from "../harness-scaffold";
+import {
+  verifyComponentLiveHeroes,
+  type VerifyComponentLiveHeroesInput,
+  type VerifyComponentLiveHeroesResult
+} from "../live-hero-verify";
 
 /**
  * Agent-triggered code-backed capture (Issue 32): screenshot the component's
@@ -27,4 +37,21 @@ export function declareComponentLiveHeroesCommand(
   input: { mappings: readonly ComponentLiveHeroMapping[] }
 ): DeclareComponentLiveHeroesResult {
   return declareComponentLiveHeroes(projectPath, input.mappings);
+}
+
+/** Runtime-owned sizing helper scaffold; writes the canonical protocol file. */
+export function scaffoldComponentHarnessCommand(
+  projectPath: string,
+  input: ScaffoldComponentHarnessInput
+): ScaffoldComponentHarnessResult {
+  return scaffoldComponentHarness(projectPath, input);
+}
+
+/** Post-declaration acceptance: load every declared harness headlessly and
+ * wait for its v2 geometry report. Observation only — writes nothing. */
+export function verifyComponentLiveHeroesCommand(
+  projectPath: string,
+  input: VerifyComponentLiveHeroesInput
+): Promise<VerifyComponentLiveHeroesResult> {
+  return verifyComponentLiveHeroes(projectPath, input);
 }

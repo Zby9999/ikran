@@ -9,6 +9,7 @@ import {
   AlignmentQuestionCard,
   activateAlignmentQuestionCard,
   endAlignmentCardFocusPreview,
+  hugAlignmentAnswerTextarea,
   previewAlignmentQuestionFocus,
   stopAlignmentCardPointer,
   submitAlignmentQuestionAnswer
@@ -75,6 +76,17 @@ describe("AlignmentQuestionCard", () => {
 
     expect(onExpandedChange).toHaveBeenCalledWith(true);
     expect(onActivate).toHaveBeenCalledOnce();
+  });
+
+  test("grows the answer field to the content height instead of scrolling", () => {
+    const textarea = {
+      scrollHeight: 95,
+      style: { height: "38px" }
+    };
+
+    hugAlignmentAnswerTextarea(textarea);
+
+    expect(textarea.style.height).toBe("95px");
   });
 
   test("hover previews focus mode without opening the answer editor", () => {
@@ -235,13 +247,25 @@ describe("AlignmentQuestionCard", () => {
 
     expect(css).toMatch(/\.questionCard\s*{[^}]*width:\s*320px/s);
     expect(css).toMatch(/\.questionCard\[data-expanded="true"\]\s*{[^}]*width:\s*360px/s);
-    expect(css).toMatch(/\.answerEditor\s*{[^}]*height:\s*56px/s);
+    expect(css).toMatch(/\.answerEditor\s*{[^}]*min-height:\s*70px/s);
+    expect(css).toMatch(/\.answerEditor\s*{[^}]*padding:\s*16px 16px 16px 20px/s);
+    expect(css).toMatch(/\.answerEditor\s*{[^}]*align-items:\s*flex-end/s);
+    expect(css).not.toMatch(/\.answerEditor\s*{[^}]*(?<!min-)height:\s*56px/s);
+    expect(css).toMatch(/\.answerEditor textarea\s*{[^}]*min-height:\s*38px/s);
+    expect(css).toMatch(/\.answerEditor textarea\s*{[^}]*overflow:\s*hidden/s);
+    expect(css).toMatch(/\.answerSubmit\s*{[^}]*align-self:\s*flex-end/s);
     expect(css).toMatch(/\.questionNumber\s*{[^}]*font-weight:\s*400/s);
     expect(css).toMatch(/\.questionObservation\s*{[^}]*font-weight:\s*400/s);
     expect(css).toMatch(/\.annotationHeading\s*{[^}]*font-weight:\s*400/s);
     expect(css).toMatch(/\.annotationCard\s*{[^}]*border:\s*1px solid #6e6e6e/s);
     expect(css).toMatch(/\.annotationCard\[data-editing="true"\]\s*{[^}]*width:\s*360px/s);
-    expect(css).toMatch(/\.annotationEditor\s*{[^}]*height:\s*56px/s);
+    expect(css).toMatch(/\.annotationEditor\s*{[^}]*min-height:\s*70px/s);
+    expect(css).toMatch(/\.annotationEditor\s*{[^}]*padding:\s*16px 16px 16px 20px/s);
+    expect(css).toMatch(/\.annotationEditor\s*{[^}]*align-items:\s*flex-end/s);
+    expect(css).not.toMatch(/\.annotationEditor\s*{[^}]*(?<!min-)height:\s*56px/s);
+    expect(css).toMatch(/\.annotationEditor textarea\s*{[^}]*min-height:\s*38px/s);
+    expect(css).toMatch(/\.annotationEditor textarea\s*{[^}]*overflow:\s*hidden/s);
+    expect(css).toMatch(/\.annotationSubmit\s*{[^}]*align-self:\s*flex-end/s);
   });
 });
 

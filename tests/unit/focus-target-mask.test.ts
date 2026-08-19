@@ -57,6 +57,22 @@ test("mask projection opens only targets linked to the rendered surface and evid
   expect(markup).not.toContain("other-surface");
 });
 
+test("mask holes use a 2px screenshot-space corner radius", () => {
+  const markup = renderToStaticMarkup(
+    createElement(FocusTargetMask, {
+      phase: "active",
+      surfaceArtifactId: "surface-a",
+      evidenceVersionId: "version-2",
+      mediaWidth: 695,
+      mediaHeight: 1851,
+      targets
+    })
+  );
+
+  expect(markup).toContain(`rx="${String(2 / 695)}"`);
+  expect(markup).toContain(`ry="${String(2 / 1851)}"`);
+});
+
 test("a screenshot without a linked target receives no focus mask", () => {
   const markup = renderToStaticMarkup(
     createElement(FocusTargetMask, {

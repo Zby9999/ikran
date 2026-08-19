@@ -551,6 +551,40 @@ export const declareComponentLiveHeroesInputSchema = z.object(
   declareComponentLiveHeroesInputShape
 );
 
+export const scaffoldComponentHarnessInputShape = {
+  helperPath: z
+    .string()
+    .describe(
+      'Project-relative path for the Runtime-owned sizing helper, e.g. "prototype/src/lib/ikran-component-harness.ts". Must live inside the prototype app source tree so harness routes can import it; the file is written byte-identical every time and never overwritten when hand-edited (helper_file_conflict).'
+    )
+} as const;
+
+export const scaffoldComponentHarnessInputSchema = z.object(
+  scaffoldComponentHarnessInputShape
+);
+
+export const verifyComponentLiveHeroesInputShape = {
+  entryIds: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Restrict to these component spec entries (row id or entry_id). Omit to verify every component spec with a declared liveHero."
+    ),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(1000)
+    .max(60000)
+    .optional()
+    .describe(
+      "Per-navigation geometry wait budget in ms (default 10000). Cold dev-server compiles can exceed the Workbench's 5s hero timeout."
+    )
+} as const;
+
+export const verifyComponentLiveHeroesInputSchema = z.object(
+  verifyComponentLiveHeroesInputShape
+);
+
 export const recordNewDesignRunInputShape = {
   runId: z
     .string()
@@ -650,10 +684,19 @@ export const createAlignmentQuestionCardInputSchema = z.object({
   observation: z
     .string()
     .describe(
-      "Concise card title: a 2–5 word noun phrase, at most 48 characters. Do not use a sentence or repeat the question."
+      "Card title. Format bounds and language follow the claimed section_contract question_title and output_language."
     ),
-  question: z.string(),
-  proposedAnswer: z.string().optional(),
+  question: z
+    .string()
+    .describe(
+      "Question shown on the card. Language follows the claimed section_contract.output_language."
+    ),
+  proposedAnswer: z
+    .string()
+    .optional()
+    .describe(
+      "Optional prefilled answer. Language follows the claimed section_contract.output_language."
+    ),
   anchor: alignmentAnchorSchema
 });
 
@@ -738,8 +781,16 @@ export const createAgentAnnotationInputSchema = z.object({
   idempotencyKey: z.string(),
   section: z.string(),
   inference: z.string(),
-  title: z.string(),
-  body: z.string(),
+  title: z
+    .string()
+    .describe(
+      "Short non-empty title. Language follows the claimed section_contract.output_language."
+    ),
+  body: z
+    .string()
+    .describe(
+      "Confirmed observation or reasonable assumption. Language follows the claimed section_contract.output_language."
+    ),
   anchor: alignmentAnchorSchema
 });
 
@@ -757,7 +808,9 @@ export const updateAlignmentQuestionTitleInputSchema = z.object({
   questionCardId: z.string(),
   title: z
     .string()
-    .describe("Replacement 2–5 word noun-phrase title, at most 48 characters.")
+    .describe(
+      "Replacement card title. Format bounds and language follow the claimed section_contract question_title and output_language."
+    )
 });
 
 export const updateAlignmentQuestionAnchorInputSchema = z.object({

@@ -7,8 +7,14 @@ import {
   FigmaIcon,
   GridIcon
 } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from "@/components/ui/tooltip";
 import { SmallIconButton } from "./small-icon-button";
 import { SquircleChrome } from "./squircle-chrome";
 import { cn } from "@/lib/utils";
@@ -49,6 +55,19 @@ export type FolderChromeProps = {
   extraction?: FolderChromeExtraction | null;
   /** Extraction Complete: all six sections answered. */
   completeEnabled?: boolean;
+  /** After Agent finalize: six-part questions are ready for the designer. */
+  questionsReady?: boolean;
+  /**
+   * After Complete, while `prepare_initial_design_system` is still pending or
+   * claimed: the hint tells the designer the Agent is writing the Draft Design
+   * System.
+   */
+  designSystemPreparing?: boolean;
+  /**
+   * Prototype phase, while no preview is `ready` yet: the hint tells the
+   * designer the Agent is building the prototype.
+   */
+  prototypePreparing?: boolean;
   /** After Complete, squares turn green and the hint switches. */
   completed?: boolean;
   /** Build panel page list — Figma seed pages and prototype pages. */
@@ -93,16 +112,30 @@ function setupSquareStates(
 
 function folderHint(
   phase: FolderChromePhase | null,
-  completed: boolean
+  completed: boolean,
+  seedCount = 0,
+  questionsReady = false,
+  designSystemPreparing = false,
+  prototypePreparing = false
 ): string | null {
-  if (phase === "sign-seed") return "Paste a Figma reference";
+  if (phase === "sign-seed") {
+    return seedCount >= 1
+      ? "Add a design language description"
+      : "Paste a Figma reference";
+  }
   if (phase === "extraction") {
-    return completed ? "Ask the Agent to continue" : "Extracting";
+    if (completed) {
+      return designSystemPreparing
+        ? "Creating Draft Design System"
+        : "Iterate with Agent, or go next";
+    }
+    return questionsReady ? "Answer the questions" : "Extracting";
   }
   if (phase === "prototype") {
+    if (prototypePreparing) return "Making a prototype";
     return completed
       ? "Ask the Agent to continue"
-      : "Review the draft Design System, then build a prototype";
+      : "Review and iterate the prototype";
   }
   return null;
 }
@@ -112,6 +145,46 @@ function stageLabel(phase: FolderChromePhase): string {
   if (phase === "extraction") return "Extraction";
   if (phase === "prototype") return "Prototype";
   return "Build";
+}
+
+function FolderToolButton({
+  label,
+  testId,
+  active,
+  icon,
+  onClick
+}: {
+  label: string;
+  testId: string;
+  active: boolean;
+  icon: IconSvgElement;
+  onClick?: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="seed-workbench__folder-tool"
+          data-testid={testId}
+          data-active={active ? "true" : undefined}
+          aria-label={label}
+          aria-pressed={active}
+          onClick={onClick}
+        >
+          <HugeiconsIcon
+            icon={icon}
+            size={14}
+            color="currentColor"
+            strokeWidth={1.5}
+          />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={6}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 function FolderToolSwitch({
@@ -126,40 +199,24 @@ function FolderToolSwitch({
   onAnnotate?: () => void;
 }) {
   return (
-    <div className="seed-workbench__folder-tool-switch" role="group" aria-label="Canvas tools">
-      <button
-        type="button"
-        className="seed-workbench__folder-tool"
-        data-testid="select-button"
-        data-active={selectActive ? "true" : undefined}
-        aria-label="Select (V)"
-        aria-pressed={selectActive}
-        onClick={onSelect}
-      >
-        <HugeiconsIcon
+    <TooltipProvider>
+      <div className="seed-workbench__folder-tool-switch" role="group" aria-label="Canvas tools">
+        <FolderToolButton
+          label="Select (V)"
+          testId="select-button"
+          active={selectActive}
           icon={Cursor02Icon}
-          size={14}
-          color="currentColor"
-          strokeWidth={1.5}
+          onClick={onSelect}
         />
-      </button>
-      <button
-        type="button"
-        className="seed-workbench__folder-tool"
-        data-testid="annotate-button"
-        data-active={annotateActive ? "true" : undefined}
-        aria-label="Annotate on Figma (F)"
-        aria-pressed={annotateActive}
-        onClick={onAnnotate}
-      >
-        <HugeiconsIcon
+        <FolderToolButton
+          label="Annotate on Figma (F)"
+          testId="annotate-button"
+          active={annotateActive}
           icon={ArtboardToolIcon}
-          size={14}
-          color="currentColor"
-          strokeWidth={1.5}
+          onClick={onAnnotate}
         />
-      </button>
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }
 
@@ -195,12 +252,14 @@ function FolderCompleteButton({
   disabled,
   testId,
   ariaLabel,
-  onClick
+  onClick,
+  label = "Complete"
 }: {
   disabled: boolean;
   testId: string;
   ariaLabel?: string;
   onClick?: () => void;
+  label?: string;
 }) {
   return (
     <Button
@@ -212,7 +271,7 @@ function FolderCompleteButton({
       disabled={disabled}
       onClick={onClick}
     >
-      Complete
+      {label}
     </Button>
   );
 }
@@ -224,6 +283,9 @@ export function FolderChrome({
   phase = null,
   seedCount = 0,
   completeEnabled = false,
+  questionsReady = false,
+  designSystemPreparing = false,
+  prototypePreparing = false,
   completed = false,
   pages = [],
   selectedPageId = null,
@@ -243,7 +305,14 @@ export function FolderChrome({
   const showPrototype = phase === "prototype";
   const showBuild = phase === "build";
   const showSetup = showSignSeed || showExtraction || showPrototype;
-  const hint = folderHint(phase, completed);
+  const hint = folderHint(
+    phase,
+    completed,
+    seedCount,
+    questionsReady,
+    designSystemPreparing,
+    prototypePreparing
+  );
   const signSeedCompleteEnabled = seedCount >= 1;
   const extractionCompleteEnabled = completeEnabled && !completed;
 
@@ -306,7 +375,10 @@ export function FolderChrome({
                 <FolderCompleteButton
                   disabled={!extractionCompleteEnabled}
                   testId="folder-extraction-complete"
-                  ariaLabel="Complete alignment"
+                  ariaLabel={
+                    completed ? "Waiting for Agent" : "Complete alignment"
+                  }
+                  label={completed ? "Waiting for Agent" : "Complete"}
                   onClick={onComplete}
                 />
               </div>
@@ -329,7 +401,7 @@ export function FolderChrome({
                 </Button>
                 <div className="seed-workbench__folder-divider" role="separator" />
                 <FolderCompleteButton
-                  disabled={completed}
+                  disabled={completed || prototypePreparing}
                   testId="folder-prototype-complete"
                   onClick={onConfirmPrototype}
                 />
