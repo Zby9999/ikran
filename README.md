@@ -10,6 +10,23 @@ is macOS on Apple Silicon. The Draft Release workflow requires a configured
 GitHub arm64 macOS larger runner; ordinary public-repository PR checks use the
 available Intel macOS runner as a compatibility gate.
 
+## Install
+
+This Git repository is the research source. The installable Agent Plugin is
+the **Product Test Kit** attached to
+[GitHub Releases](https://github.com/Zby9999/ikran/releases), not this checkout.
+
+### Cloned this repository to install Ikran?
+
+Do not register this repository as the plugin root. Instead:
+
+1. Open the GitHub Releases page above.
+2. Download the newest `ikran-product-test-kit-*.tar.gz`. During the alpha,
+   that may be attached to a pre-release.
+3. Extract the archive to a durable directory outside this Git checkout.
+4. Use that extracted directory as the plugin root, then continue with the
+   Product Test Kit setup below.
+
 ## Requirements
 
 - macOS on Apple Silicon. Other operating systems are not yet validated with
@@ -25,8 +42,8 @@ available Intel macOS runner as a compatibility gate.
 
 ## Product Test Kit
 
-When consuming a GitHub Release, use its Product Test Kit archive, or use a clean
-clone at the corresponding tag. From the extracted or cloned directory:
+Download the Product Test Kit archive from GitHub Releases. From the extracted
+directory:
 
 ```bash
 npm run setup:product
