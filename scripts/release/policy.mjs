@@ -9,6 +9,8 @@ const SHARED_FILES = Object.freeze([
   "README.md",
   "package.json",
   "package-lock.json",
+  "plugin.json",
+  "mcp.json",
   "next.config.ts",
   "next-env.d.ts",
   "postcss.config.mjs",
@@ -16,7 +18,14 @@ const SHARED_FILES = Object.freeze([
   "tsconfig.json"
 ]);
 
-const SHARED_TREES = Object.freeze(["app", "bin", "components", "lib", "public"]);
+const SHARED_TREES = Object.freeze([
+  "app",
+  "bin",
+  "components",
+  "lib",
+  "public",
+  "skills"
+]);
 
 const SHARED_EXCLUDED_TREES = Object.freeze([
   // Designer-only route prototypes are tracked for R&D continuity, but are not
@@ -31,7 +40,10 @@ const SHARED_ANCHORS = Object.freeze([
   "bin/ikran-mcp.mjs",
   "bin/ikran-runtime.mjs",
   "lib/mcp/register-tools.ts",
-  "lib/runtime/http-server.mjs"
+  "lib/runtime/http-server.mjs",
+  "plugin.json",
+  "mcp.json",
+  "skills/design-system-governance/SKILL.md"
 ]);
 
 const OPTIONAL_RELEASE_DOCS = Object.freeze([

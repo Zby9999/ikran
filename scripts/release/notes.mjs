@@ -18,7 +18,7 @@ export async function writeDraftReleaseNotes({ outDir, version, outputPath }) {
 
   const notes = `# Ikran v${safeVersion}\n\n` +
     `Alpha evaluation build for macOS on Apple Silicon. Download one Kit:\n\n` +
-    `- **Product Test Kit** — run Ikran with production dependencies and no automated test corpus.\n` +
+    `- **Product Test Kit** — run Ikran with production dependencies and no automated test corpus. The Kit root is an Agent Plugin 1.0 package (\`plugin.json\`, \`mcp.json\`, \`skills/\`). Install the extracted directory, not the GitHub source clone.\n` +
     `- **Contributor Verification Kit** — includes the allowlisted typecheck, Vitest, and Playwright verification surface.\n\n` +
     `Both archives exclude local state, credentials, real Figma data, build caches, and internal research/R&D archives. ` +
     `Read the included README before setup.\n\n` +

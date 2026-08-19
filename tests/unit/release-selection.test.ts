@@ -47,6 +47,9 @@ describe("release selection policy", () => {
     expect(paths).toContain("LICENSE");
     expect(paths).toContain(".node-version");
     expect(paths).toContain(".npmrc");
+    expect(paths).toContain("plugin.json");
+    expect(paths).toContain("mcp.json");
+    expect(paths).toContain("skills/design-system-governance/SKILL.md");
     expect(paths).toContain("app/page.tsx");
     expect(paths).toContain("bin/ikran-runtime.mjs");
     expect(paths).toContain("lib/mcp/register-tools.ts");
@@ -360,6 +363,9 @@ function makeRepositoryFixture() {
     "components.json": "{}\n",
     "playwright.config.ts": "export default {};\n",
     "vitest.config.ts": "export default {};\n",
+    "plugin.json": "{\"name\":\"ikran\"}\n",
+    "mcp.json": "{\"mcpServers\":{}}\n",
+    "skills/design-system-governance/SKILL.md": "# Governance\n",
     "app/layout.tsx": "export default function Layout() { return null; }\n",
     "app/page.tsx": "export default function Page() { return null; }\n",
     "bin/ikran.mjs": "#!/usr/bin/env node\nexport {};\n",
