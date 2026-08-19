@@ -102,7 +102,9 @@ when the host supports it.
 
 `--prod` refuses to start when the build is missing or no longer matches
 Runtime source. Automated tests use mock Figma and credentials; a green suite
-is not a real-host or real-Figma claim.
+is not a real-host or real-Figma claim. Pull-request Verify requires typecheck
+and unit tests; GitHub macOS Intel Playwright is informational and does not
+block merge. Product e2e is `npm run release:gate` on Apple Silicon.
 
 Scripts live in `package.json`. Release archives are allowlisted; they exclude
 `Attempts/`, `.scratch/`, `workflow/`, `Design issue/`, `Issues 02/`, and
