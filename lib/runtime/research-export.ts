@@ -46,6 +46,7 @@ export type ResearchExportFile = (typeof RESEARCH_EXPORT_FILES)[number];
 const RESEARCH_EXCLUDED_EVENT_TYPES = new Set<EventType>([
   "agent_task_failed",
   "preview_failed",
+  "preview_screenshot_failed",
   "invalid_output",
   "invalid_artifact",
   "rule_update_canceled",

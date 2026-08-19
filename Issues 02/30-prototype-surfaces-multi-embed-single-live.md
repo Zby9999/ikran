@@ -18,7 +18,7 @@ Focus Mode 扩展:focus 一个 Prototype Surface 即打开其 live preview;设�
 - 不做 Runtime 侧 DOM inspection:不实现 preview proxy 脚本注入、postMessage 取 DOM candidates、DOM↔canvas 坐标映射。原 Issue 11 的兜底语义("DOM inspection 失败时 annotation 仍有效")直接成为主路径:标注结论携带的 DOM context 一律 opaque,Runtime 不校验、不映射。
 - 不做多个 surface 同时 live。
 
-Stale 语义:preview dev server 退出、prototype code 变更后,surface 标记 stale 并提示设计师(复用 Figma evidence 的 stale warning 语义),不自动重启或删除。
+Stale 语义:preview **dev server 退出或变得不可达**后,surface 标记 stale 并提示设计师(复用 Figma evidence 的 stale warning 语义),不自动重启或删除。普通源码/样式/静态资源修改不再把 surface 标成 `code_changed`:首次 `record_preview` 建立映射后,Runtime 监听 prototype 树、等 HMR settle、串行截取最新版本,Workbench 经既有 SSE `prototype` 事件 + `screenshot_captured_at` cache-bust 自动换图。依赖、环境变量或构建配置导致 dev server 不可达时仍走 stale,本次不引入自动安装或无限重启。
 
 ## User stories covered
 
@@ -34,7 +34,7 @@ Stale 语义:preview dev server 退出、prototype code 变更后,surface 标记
 - [ ] Workbench 在 tldraw 中以自定义 shape 显示 Prototype Surface,画布可共存多个。
 - [ ] 仅 focus 的 surface 渲染 live iframe,其余渲染截图占位;focus 切换时 live/占位互换。
 - [ ] preview started / preview failed 事件被记录。
-- [ ] preview 失效(dev server 退出、code 变更)时 surface 标记 stale 并提示。
+- [ ] preview 失效(dev server 退出或不可达)时 surface 标记 stale 并提示;普通代码变更由 Runtime 自动刷新截图,不要求 Agent 再次 `record_preview`。
 - [ ] 无 created page hover 交互;无 Runtime DOM inspection 相关代码路径。
 - [ ] 测试覆盖:ready、failed、多 surface 共存、focus 切换 live/占位、stale 标记。
 
@@ -88,3 +88,12 @@ Stale 语义:preview dev server 退出、prototype code 变更后,surface 标记
   1133/1270 等宽度之间相互覆盖、导致非 live frame 持续缩放抽搐。二者使用
   同一 source viewport，保证切换 live/截图时响应式断点、max-width 居中边距
   和内容几何一致。
+- 2026-08-19（Runtime 自动刷新 Prototype 截图）:首次 `record_preview` 之后,
+  Runtime 以项目 + prototype root 为键监听源码(忽略 `.git` / `.ikran` /
+  `.next` / `node_modules` / `dist` / `build` / coverage 与临时文件),debounce
+  合并连续写入,按 `source_generation` compare-and-set 串行截 fullPage PNG。
+  失败保留上一张成功图,不写入失败图片;HTTP 5xx 不当作 process 退出、不
+  stale。dev server 退出仍标记 stale 且不自动重启。Workbench 仍走
+  `setPrototypeSurfaceScreenshot → emitRecordEvent(kind:"prototype")` 与
+  `screenshot_captured_at` cache-bust,不新增未经 Figma 确认的 UI。
+  `/api/prototype-surface/screenshot` 只保留缺图/旧 viewport 的手动自愈。

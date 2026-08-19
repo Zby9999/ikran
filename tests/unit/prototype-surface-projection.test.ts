@@ -42,6 +42,8 @@ function surfaceRecord(
     stale_reason: null,
     screenshot_artifact_path: null,
     screenshot_captured_at: null,
+    source_generation: 0,
+    screenshot_generation: 0,
     created_at: "2026-08-06T00:00:00.000Z",
     updated_at: "2026-08-06T00:00:00.000Z",
     ...overrides
@@ -126,6 +128,54 @@ describe("prototype surface projection", () => {
         })
       ])[0].props.screenshotSrc
     ).toBe("");
+  });
+
+  test("a new screenshot timestamp cache-busts the existing canvas image URL", () => {
+    const before = buildPrototypeSurfaceProjectionTargets(
+      [
+        surfaceRecord({
+          screenshot_artifact_path:
+            ".ikran/artifacts/prototype-media/proto-1-1133.png",
+          screenshot_captured_at: "2026-08-06T00:05:00.000Z"
+        })
+      ],
+      "session-token"
+    );
+    const after = buildPrototypeSurfaceProjectionTargets(
+      [
+        surfaceRecord({
+          screenshot_artifact_path:
+            ".ikran/artifacts/prototype-media/proto-1-1133.png",
+          screenshot_captured_at: "2026-08-06T00:06:00.000Z"
+        })
+      ],
+      "session-token"
+    );
+    const ops = planPrototypeSurfaceProjectionOps(
+      after,
+      [
+        {
+          id: "shape:proto-1",
+          x: 0,
+          y: 0,
+          props: {
+            w: PROTOTYPE_SURFACE_PROJECTION_DEFAULT_W,
+            h: PROTOTYPE_SURFACE_PROJECTION_DEFAULT_H,
+            ...before[0].props
+          },
+          meta: before[0].meta
+        }
+      ],
+      shapeIdForKey
+    );
+    expect(ops).toEqual([
+      {
+        type: "update",
+        id: "shape:proto-1",
+        props: after[0].props
+      }
+    ]);
+    expect(after[0].props.screenshotSrc).toContain("2026-08-06T00%3A06%3A00.000Z");
   });
 
   test("a new frame is packed clear of the seed frames already on the page", () => {

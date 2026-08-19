@@ -32,6 +32,7 @@ import {
   designSystemSheetExitMs,
   useDesignSystemHasCandidate
 } from "./design-system-browser";
+import { useDesignSystemHasPendingRuleUpdate } from "./rule-update-review";
 import { canOpenDesignSystemBrowser } from "./design-system-view-model";
 import { buildFolderPageItems } from "./folder-page-list";
 import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
@@ -303,9 +304,14 @@ export function SeedEvidenceWorkbench({
     nextAgentCommandStatus !== "completed";
   const designSystemHasCandidate = useDesignSystemHasCandidate(
     session,
-    folderPhase === "extraction" &&
+    (folderPhase === "extraction" &&
       designSystemEntryVisible &&
-      !designSystemPreparing
+      !designSystemPreparing) ||
+      folderPhase === "build"
+  );
+  const designSystemHasRuleUpdate = useDesignSystemHasPendingRuleUpdate(
+    session,
+    folderPhase === "build"
   );
   // The first page reads as current until the designer picks another; only an
   // explicit pick asks the canvas to move (a standing selection must not yank
@@ -407,6 +413,10 @@ export function SeedEvidenceWorkbench({
             setPageFocusRequestId(pageId);
           }}
           onOpenDesignSystem={() => setDesignSystemBrowserOpen(true)}
+          designSystemHasCandidate={
+            folderPhase === "build" ? designSystemHasCandidate : false
+          }
+          designSystemHasRuleUpdate={designSystemHasRuleUpdate}
         />
         {folderPhase === "extraction" && designSystemEntryVisible ? (
           <DesignSystemEntryButton

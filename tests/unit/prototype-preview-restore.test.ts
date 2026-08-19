@@ -11,7 +11,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vitest";
 
 import { initializeProjectDb } from "../../lib/runtime/db";
 import { listEvents } from "../../lib/runtime/events";
@@ -32,12 +32,27 @@ import {
   type RecordPreviewInput
 } from "../../lib/runtime/prototype-surface";
 import {
+  isPrototypePreviewRefreshActive,
+  setPrototypePreviewRefreshTestHost,
+  stopAllPrototypePreviewRefresh
+} from "../../lib/runtime/prototype-preview-refresh";
+import {
   killAllPreviewServers,
   startPreviewServer,
   type PreviewSupervisorDeps
 } from "../../lib/runtime/preview-server";
 
+beforeEach(() => {
+  setPrototypePreviewRefreshTestHost({
+    watch: () => ({ close() {} }),
+    capture: async () => ({ ok: true, artifact_path: "x.png" }),
+    fetchStatus: async () => ({ ok: true, status: 200 })
+  });
+});
+
 afterEach(() => {
+  stopAllPrototypePreviewRefresh();
+  setPrototypePreviewRefreshTestHost(null);
   resetRecordBusForTests();
   resetPrototypePreviewRestoreForTests();
   killAllPreviewServers();
@@ -77,6 +92,7 @@ function withProject(run: (projectPath: string) => Promise<void> | void) {
       writePrototypeFile(projectPath);
       await run(projectPath);
     } finally {
+      stopAllPrototypePreviewRefresh();
       rmSync(projectPath, { recursive: true, force: true });
     }
   })();
@@ -348,6 +364,9 @@ test("restore adopts the surface when its preview URL still answers", async () =
     });
     // preview_started fires once for the original start and once for the adopt.
     expect(listEvents(projectPath, "preview_started")).toHaveLength(2);
+    expect(
+      isPrototypePreviewRefreshActive(projectPath, PROTOTYPE_RELATIVE)
+    ).toBe(true);
   });
 });
 

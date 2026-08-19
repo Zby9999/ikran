@@ -65,7 +65,10 @@ import {
   designSystemQualityDiagnostics,
   type DesignSystemQualityDiagnostic
 } from "./design-system-quality";
-import { markPrototypeSurfacesStaleForArtifactOnDb } from "./prototype-surface";
+import {
+  applyPrototypeCodeChangeOnDb,
+  queuePrototypeSurfaceRefreshAfterArtifact
+} from "./prototype-surface";
 import {
   claimedRuleUpdateApplyIdentityOnDb,
   completeRuleUpdateApplyOnArtifactDeclaration,
@@ -725,19 +728,20 @@ export function recordSourceArtifact(
               now
             );
 
-      // Issue 30 stale semantics: declared prototype/code changes invalidate
-      // any live preview built from that tree. Runtime warns; it never
-      // auto-restarts the dev server.
-      const staleSurfaceIds =
+      // Issue 30: declared prototype/code changes used to always stale the
+      // live preview. An active Runtime screenshot watcher covering this
+      // path recaptures instead; unreachable previews still go stale.
+      const prototypeChange =
         spec.validationClass === "code"
-          ? markPrototypeSurfacesStaleForArtifactOnDb(db, record.path)
-          : [];
+          ? applyPrototypeCodeChangeOnDb(db, projectPath, record.path)
+          : { staleIds: [] as string[], refreshIds: [] as string[] };
 
       return {
         ok: true as const,
         record,
         event_id: event.event_id,
-        staleSurfaceIds,
+        staleSurfaceIds: prototypeChange.staleIds,
+        refreshSurfaceIds: prototypeChange.refreshIds,
         quality_diagnostics: ingestPlan
           ? designSystemQualityDiagnostics(relativePath, ingestPlan.rows)
           : [],
@@ -782,6 +786,10 @@ export function recordSourceArtifact(
         projectPath: path.resolve(projectPath)
       });
     }
+    queuePrototypeSurfaceRefreshAfterArtifact(
+      projectPath,
+      result.refreshSurfaceIds
+    );
 
     if (result.ingested) {
       // Browser invalidation for the DB-backed design-system view. Identity

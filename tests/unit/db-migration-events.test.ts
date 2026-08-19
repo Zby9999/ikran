@@ -1125,7 +1125,9 @@ test.describe("PRAGMA user_version migration runner", () => {
             "stale",
             "stale_reason",
             "screenshot_artifact_path",
-            "screenshot_captured_at"
+            "screenshot_captured_at",
+            "source_generation",
+            "screenshot_generation"
           ])
         );
         expect(
@@ -1178,7 +1180,7 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(35);
+        expect(CURRENT_SCHEMA_VERSION).toBe(36);
         expect(
           db.prepare("PRAGMA table_info(prototype_surfaces)").all()
         ).toEqual(
@@ -1346,7 +1348,7 @@ test.describe("PRAGMA user_version migration runner", () => {
         PRAGMA user_version = 33;
       `);
       applyPendingMigrations(db, 33);
-      expect(userVersion(db)).toBe(35);
+      expect(userVersion(db)).toBe(36);
       expect(db.prepare("PRAGMA table_info(rule_update_proposal_revisions)").all()).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -1400,7 +1402,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       applyPendingMigrations(db, 31);
 
-      expect(userVersion(db)).toBe(35);
+      expect(userVersion(db)).toBe(36);
       expect(
         db.prepare(
           `SELECT scope_kind, scope_id, alignment_attempt_id

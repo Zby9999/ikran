@@ -84,7 +84,9 @@ describe("AlignmentQuestionCard", () => {
       style: { height: "38px" }
     };
 
-    hugAlignmentAnswerTextarea(textarea);
+    hugAlignmentAnswerTextarea(
+      textarea as Pick<HTMLTextAreaElement, "style" | "scrollHeight">
+    );
 
     expect(textarea.style.height).toBe("95px");
   });

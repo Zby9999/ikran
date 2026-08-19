@@ -266,6 +266,58 @@ describe("FolderChrome prototype and build phases", () => {
     expect(html).not.toContain("Set up");
     expect(html).not.toContain('data-testid="folder-hint"');
     expect(html).not.toContain('data-testid="seed-workbench-prototype"');
+    expect(html).not.toContain('data-testid="folder-ds-candidate-dot"');
+    expect(html).not.toContain('data-testid="folder-ds-rule-update-dot"');
+  });
+
+  test("build Design System shows the candidate blue dot when work remains", () => {
+    const html = renderToStaticMarkup(
+      createElement(FolderChrome, {
+        folderName: "Folder Name",
+        phase: "build",
+        designSystemHasCandidate: true,
+        onOpenDesignSystem: vi.fn(),
+        onBack: vi.fn()
+      })
+    );
+
+    expect(html).toContain('data-candidate="true"');
+    expect(html).toContain('data-testid="folder-ds-candidate-dot"');
+    expect(html).toContain("dsb-navrow-candidate-dot");
+    expect(html).not.toContain('data-testid="folder-ds-rule-update-dot"');
+  });
+
+  test("build Design System shows the Rule Update red dot when review remains", () => {
+    const html = renderToStaticMarkup(
+      createElement(FolderChrome, {
+        folderName: "Folder Name",
+        phase: "build",
+        designSystemHasRuleUpdate: true,
+        onOpenDesignSystem: vi.fn(),
+        onBack: vi.fn()
+      })
+    );
+
+    expect(html).toContain('data-rule-update="true"');
+    expect(html).toContain('data-testid="folder-ds-rule-update-dot"');
+    expect(html).toContain("dsb-navrow-rule-update-dot");
+    expect(html).not.toContain('data-testid="folder-ds-candidate-dot"');
+  });
+
+  test("build Design System can show both attention dots together", () => {
+    const html = renderToStaticMarkup(
+      createElement(FolderChrome, {
+        folderName: "Folder Name",
+        phase: "build",
+        designSystemHasCandidate: true,
+        designSystemHasRuleUpdate: true,
+        onOpenDesignSystem: vi.fn(),
+        onBack: vi.fn()
+      })
+    );
+
+    expect(html).toContain('data-testid="folder-ds-candidate-dot"');
+    expect(html).toContain('data-testid="folder-ds-rule-update-dot"');
   });
 
   test("build phase renders without pages before any page exists", () => {

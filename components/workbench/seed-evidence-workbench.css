@@ -454,6 +454,29 @@
   cursor: not-allowed;
 }
 
+/* Build "Design System" — same right-side attention dots as Draft Design
+   System (candidate blue) and Browser nav rows (Rule Update red). */
+.seed-workbench__folder-ds {
+  position: relative;
+  --dsc-candidate: #2473cc;
+}
+
+.seed-workbench__folder-ds-dots {
+  position: absolute;
+  top: 50%;
+  right: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transform: translateY(-50%);
+}
+
+.seed-workbench__folder-ds-dots .dsb-navrow-candidate-dot,
+.seed-workbench__folder-ds-dots .dsb-navrow-rule-update-dot {
+  position: static;
+  right: auto;
+}
+
 /* Prototype (Figma 905:6763) — Set up, Draft Design System, divider, Complete. */
 .seed-workbench__folder-prototype {
   display: flex;

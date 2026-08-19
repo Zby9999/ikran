@@ -23,7 +23,7 @@ import {
   openProjectDb,
   withProjectTransaction
 } from "./db";
-import { logEventOnDb } from "./events";
+import { logEvent, logEventOnDb } from "./events";
 import { parseJsonStringArray } from "./json-columns";
 import { emitRecordEvent } from "./record-bus";
 import { assertArtifactPathInProject } from "./evidence-package";
@@ -42,6 +42,13 @@ import {
   composePrototypeSurfaceUrl,
   normalizePrototypeRoutePath
 } from "./prototype-route";
+import {
+  isPrototypePreviewRefreshActive,
+  refreshCoveredPrototypeSurfacesAfterArtifact,
+  startPrototypePreviewRefresh,
+  stopPrototypePreviewRefresh,
+  type PrototypePreviewRefreshHost
+} from "./prototype-preview-refresh";
 
 /** Phases where a prototype preview is meaningful (post confirm_draft). */
 export const PREVIEW_ALLOWED_PHASES = [
@@ -86,6 +93,10 @@ export interface PrototypeSurfaceRecord {
   /** Runtime-captured preview bitmap, project-relative; null until captured. */
   screenshot_artifact_path: string | null;
   screenshot_captured_at: string | null;
+  /** Monotonic source revision watched for screenshot refresh. */
+  source_generation: number;
+  /** Last source generation a screenshot was persisted for. */
+  screenshot_generation: number;
   created_at: string;
   updated_at: string;
 }
@@ -244,6 +255,8 @@ function mapSurface(row: Record<string, unknown>): PrototypeSurfaceRecord {
       row.screenshot_captured_at === undefined
         ? null
         : String(row.screenshot_captured_at),
+    source_generation: Number(row.source_generation ?? 0),
+    screenshot_generation: Number(row.screenshot_generation ?? 0),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at)
   };
@@ -350,11 +363,14 @@ export function setPreviewReadiness(
  * Persist the Runtime-captured preview bitmap for one surface. Fired after a
  * successful capture; the artifact path is project-relative (like
  * evidence-media paths) so the Workbench serves it via /api/artifacts.
+ * When `expectedGeneration` is set, the write is a compare-and-set against
+ * `source_generation` so a newer watched revision cannot be overwritten.
  */
 export function setPrototypeSurfaceScreenshot(
   projectPath: string,
   surfaceId: string,
-  artifactPath: string
+  artifactPath: string,
+  options: { expectedGeneration?: number } = {}
 ):
   | {
       ok: true;
@@ -370,14 +386,39 @@ export function setPrototypeSurfaceScreenshot(
       if (!row) {
         return { ok: false as const, reason: "surface_record_not_found" };
       }
-      const previousArtifactPath = mapSurface(row).screenshot_artifact_path;
+      const surface = mapSurface(row);
+      const previousArtifactPath = surface.screenshot_artifact_path;
       const now = new Date().toISOString();
-      db.prepare(
-        `UPDATE prototype_surfaces
-         SET screenshot_artifact_path = ?, screenshot_captured_at = ?,
-             updated_at = ?
-         WHERE id = ?`
-      ).run(artifactPath, now, now, surfaceId);
+      const screenshotGeneration =
+        options.expectedGeneration ?? surface.source_generation;
+      const update =
+        options.expectedGeneration === undefined
+          ? db
+              .prepare(
+                `UPDATE prototype_surfaces
+                 SET screenshot_artifact_path = ?, screenshot_captured_at = ?,
+                     screenshot_generation = ?, updated_at = ?
+                 WHERE id = ?`
+              )
+              .run(artifactPath, now, screenshotGeneration, now, surfaceId)
+          : db
+              .prepare(
+                `UPDATE prototype_surfaces
+                 SET screenshot_artifact_path = ?, screenshot_captured_at = ?,
+                     screenshot_generation = ?, updated_at = ?
+                 WHERE id = ? AND source_generation = ?`
+              )
+              .run(
+                artifactPath,
+                now,
+                screenshotGeneration,
+                now,
+                surfaceId,
+                options.expectedGeneration
+              );
+      if (update.changes === 0) {
+        return { ok: false as const, reason: "generation_mismatch" };
+      }
       return {
         ok: true as const,
         event_id: null,
@@ -639,6 +680,13 @@ export async function restorePrototypePreviews(
     // respawned for a URL that already answers as the preview.
     if (await supervisor.probeUrl(surface.surface_url)) {
       setPreviewReadiness(projectPath, surface.id, "ready", null);
+      registerReadyPreviewRefresh(
+        projectPath,
+        candidate.prototype_root,
+        surface.id,
+        surface.surface_url,
+        supervisor.probeUrl
+      );
       adopted.push(surface.id);
       continue;
     }
@@ -652,14 +700,21 @@ export async function restorePrototypePreviews(
         onReadiness: (readiness, reason) => {
           setPreviewReadiness(projectPath, surface.id, readiness, reason);
           if (readiness === "ready") {
-            void capturePrototypeSurfaceScreenshot(
+            registerReadyPreviewRefresh(
               projectPath,
+              candidate.prototype_root,
               surface.id,
-              surface.surface_url
+              surface.surface_url,
+              supervisor.probeUrl
             );
           }
         },
         onExit: (reason) => {
+          stopPrototypePreviewRefresh({
+            projectPath,
+            prototypeRoot: candidate.prototype_root,
+            surfaceId: surface.id
+          });
           markPrototypeSurfaceStale(projectPath, surface.id, reason);
         }
       },
@@ -695,19 +750,21 @@ export function resetPrototypePreviewRestoreForTests(): void {
 }
 
 /**
- * Prototype code changed: every live surface whose run covers the declared
- * artifact goes stale. Called from the source-artifact declaration
- * transaction so the warning lands with the change that caused it, without a
- * filesystem watcher.
+ * Prototype code changed. When an active preview watcher already covers the
+ * path, keep the surface live and let Runtime recapture; otherwise every live
+ * surface whose run covers the declared artifact goes stale. Called from the
+ * source-artifact declaration transaction so the warning (or refresh queue)
+ * lands with the change that caused it.
  */
-export function markPrototypeSurfacesStaleForArtifactOnDb(
+export function applyPrototypeCodeChangeOnDb(
   db: DatabaseType,
+  projectPath: string,
   relativeArtifactPath: string
-): string[] {
+): { staleIds: string[]; refreshIds: string[] } {
   const rows = db
     .prepare(`${SURFACE_SELECT} WHERE s.stale = 0`)
     .all() as Array<Record<string, unknown>>;
-  if (rows.length === 0) return [];
+  if (rows.length === 0) return { staleIds: [], refreshIds: [] };
 
   const roots = new Map(
     (
@@ -725,8 +782,169 @@ export function markPrototypeSurfacesStaleForArtifactOnDb(
       relativeArtifactPath.startsWith(`${root}/`)
     );
   });
-  if (affected.length === 0) return [];
-  return markSurfacesStaleOnDb(db, affected, "code_changed");
+  if (affected.length === 0) return { staleIds: [], refreshIds: [] };
+
+  const covered = isPrototypePreviewRefreshActive(
+    projectPath,
+    relativeArtifactPath
+  );
+  if (covered) {
+    return { staleIds: [], refreshIds: affected.map((surface) => surface.id) };
+  }
+  return {
+    staleIds: markSurfacesStaleOnDb(db, affected, "code_changed"),
+    refreshIds: []
+  };
+}
+
+/** @deprecated Prefer applyPrototypeCodeChangeOnDb — kept for existing tests. */
+export function markPrototypeSurfacesStaleForArtifactOnDb(
+  db: DatabaseType,
+  relativeArtifactPath: string
+): string[] {
+  return applyPrototypeCodeChangeOnDb(db, "", relativeArtifactPath).staleIds;
+}
+
+export function queuePrototypeSurfaceRefreshAfterArtifact(
+  projectPath: string,
+  surfaceIds: readonly string[]
+): void {
+  refreshCoveredPrototypeSurfacesAfterArtifact(projectPath, surfaceIds);
+}
+
+function surfacesByIdsOnDb(
+  db: DatabaseType,
+  surfaceIds: readonly string[]
+): PrototypeSurfaceRecord[] {
+  if (surfaceIds.length === 0) return [];
+  const placeholders = surfaceIds.map(() => "?").join(", ");
+  return (
+    db
+      .prepare(`${SURFACE_SELECT} WHERE s.id IN (${placeholders})`)
+      .all(...surfaceIds) as Array<Record<string, unknown>>
+  ).map(mapSurface);
+}
+
+function bumpReadySurfacesOnDb(
+  db: DatabaseType,
+  surfaces: readonly PrototypeSurfaceRecord[]
+): Array<{ id: string; surface_url: string; generation: number }> {
+  const now = new Date().toISOString();
+  const bump = db.prepare(
+    `UPDATE prototype_surfaces
+     SET source_generation = source_generation + 1, updated_at = ?
+     WHERE id = ? AND stale = 0 AND readiness = 'ready'`
+  );
+  const targets: Array<{ id: string; surface_url: string; generation: number }> =
+    [];
+  for (const surface of surfaces) {
+    const result = bump.run(now, surface.id);
+    if (result.changes === 0) continue;
+    const row = db
+      .prepare(`${SURFACE_SELECT} WHERE s.id = ?`)
+      .get(surface.id) as Record<string, unknown> | undefined;
+    if (!row) continue;
+    const mapped = mapSurface(row);
+    targets.push({
+      id: mapped.id,
+      surface_url: mapped.surface_url,
+      generation: mapped.source_generation
+    });
+  }
+  return targets;
+}
+
+export function bumpPrototypeSurfaceSourceGeneration(
+  projectPath: string,
+  prototypeRoot: string
+): Array<{ id: string; surface_url: string; generation: number }> {
+  try {
+    return withProjectTransaction(projectPath, (db) => {
+      const rows = db
+        .prepare(
+          `${RESTORE_CANDIDATE_SELECT}
+           WHERE s.stale = 0 AND s.readiness = 'ready' AND r.prototype_root = ?`
+        )
+        .all(prototypeRoot) as Array<Record<string, unknown>>;
+      return bumpReadySurfacesOnDb(db, rows.map(mapSurface));
+    });
+  } catch {
+    return [];
+  }
+}
+
+export function bumpPrototypeSurfaceSourceGenerationForIds(
+  projectPath: string,
+  surfaceIds: readonly string[]
+): Array<{ id: string; surface_url: string; generation: number }> {
+  if (surfaceIds.length === 0) return [];
+  try {
+    return withProjectTransaction(projectPath, (db) => {
+      return bumpReadySurfacesOnDb(db, surfacesByIdsOnDb(db, surfaceIds));
+    });
+  } catch {
+    return [];
+  }
+}
+
+export function listPrototypeSurfaceUrls(
+  projectPath: string,
+  surfaceIds: readonly string[]
+): Array<{ id: string; surface_url: string }> {
+  if (surfaceIds.length === 0) return [];
+  const db = openProjectDb(projectPath);
+  try {
+    return surfacesByIdsOnDb(db, surfaceIds).map((surface) => ({
+      id: surface.id,
+      surface_url: surface.surface_url
+    }));
+  } finally {
+    closeProjectDb(db);
+  }
+}
+
+function previewRefreshHost(
+  probeUrl: PreviewSupervisorDeps["probeUrl"]
+): Partial<PrototypePreviewRefreshHost> {
+  return {
+    probeUrl,
+    bumpGeneration: bumpPrototypeSurfaceSourceGeneration,
+    bumpGenerationForIds: bumpPrototypeSurfaceSourceGenerationForIds,
+    listSurfaceUrls: listPrototypeSurfaceUrls,
+    markStale(nextProjectPath, surfaceId, reason) {
+      markPrototypeSurfaceStale(nextProjectPath, surfaceId, reason);
+    },
+    logFailure(nextProjectPath, surfaceId, previewUrl, reason) {
+      logEvent(nextProjectPath, "preview_screenshot_failed", {
+        prototype_surface_id: surfaceId,
+        preview_url: previewUrl,
+        reason
+      });
+    }
+  };
+}
+
+function registerReadyPreviewRefresh(
+  projectPath: string,
+  prototypeRoot: string,
+  surfaceId: string,
+  surfaceUrl: string,
+  probeUrl: PreviewSupervisorDeps["probeUrl"]
+): void {
+  startPrototypePreviewRefresh({
+    projectPath,
+    prototypeRoot,
+    surfaceId,
+    host: previewRefreshHost(probeUrl)
+  });
+  const surface = getPrototypeSurface(projectPath, surfaceId);
+  void capturePrototypeSurfaceScreenshot(
+    projectPath,
+    surfaceId,
+    surfaceUrl,
+    undefined,
+    { expectedGeneration: surface?.source_generation ?? 0 }
+  );
 }
 
 type UpsertOutcome = {
@@ -954,6 +1172,10 @@ export async function recordPreview(
           existingSurface.screenshot_captured_at === undefined
             ? null
             : String(existingSurface.screenshot_captured_at),
+        source_generation: Number(existingSurface?.source_generation ?? 0),
+        screenshot_generation: Number(
+          existingSurface?.screenshot_generation ?? 0
+        ),
         created_at: existingSurface ? String(existingSurface.created_at) : now,
         updated_at: now
       };
@@ -1058,14 +1280,21 @@ export async function recordPreview(
         // same callback. Fire-and-forget — the tool call must never block on
         // a headless browser, and a failed capture leaves the old bitmap.
         if (readiness === "ready") {
-          void capturePrototypeSurfaceScreenshot(
+          registerReadyPreviewRefresh(
             projectPath,
+            upserted.run.prototype_root,
             upserted.surface.id,
-            surfaceUrl
+            surfaceUrl,
+            supervisor.probeUrl
           );
         }
       },
       onExit: (reason) => {
+        stopPrototypePreviewRefresh({
+          projectPath,
+          prototypeRoot: upserted.run.prototype_root,
+          surfaceId: upserted.surface.id
+        });
         markPrototypeSurfaceStale(projectPath, upserted.surface.id, reason);
       }
     },

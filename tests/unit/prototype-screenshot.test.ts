@@ -22,10 +22,17 @@ const RELATIVE_PATH = `.ikran/artifacts/prototype-media/${FILE_NAME}`;
 type CapturedCalls = {
   viewport: { width: number; height: number } | null;
   goto: { url: string; options: unknown } | null;
+  evaluated: boolean;
   screenshotOptions: unknown;
   closed: boolean;
+  preflightUrl: string | null;
   writes: Array<{ absolutePath: string; bytes: Buffer }>;
-  persists: Array<{ projectPath: string; surfaceId: string; artifactPath: string }>;
+  persists: Array<{
+    projectPath: string;
+    surfaceId: string;
+    artifactPath: string;
+    expectedGeneration?: number;
+  }>;
   removals: string[];
   listedArtifacts: string[];
 };
@@ -41,6 +48,10 @@ function deps(
     goto: vi.fn(async (url: string, options: unknown) => {
       calls.goto = { url, options };
     }),
+    evaluate: vi.fn(async () => {
+      calls.evaluated = true;
+      return undefined;
+    }),
     screenshot: vi.fn(async (options: unknown) => {
       calls.screenshotOptions = options;
       return Buffer.from("png-bytes");
@@ -53,11 +64,20 @@ function deps(
         calls.closed = true;
       }
     }),
+    fetchStatus: async (url) => {
+      calls.preflightUrl = url;
+      return { ok: true as const, status: 200 };
+    },
     writeArtifact: (absolutePath, bytes) => {
       calls.writes.push({ absolutePath, bytes });
     },
-    persist: (projectPath, surfaceId, artifactPath) => {
-      calls.persists.push({ projectPath, surfaceId, artifactPath });
+    persist: (projectPath, surfaceId, artifactPath, expectedGeneration) => {
+      calls.persists.push({
+        projectPath,
+        surfaceId,
+        artifactPath,
+        expectedGeneration
+      });
       return {
         ok: true as const,
         previous_artifact_path:
@@ -78,8 +98,10 @@ function freshCalls(): CapturedCalls {
   return {
     viewport: null,
     goto: null,
+    evaluated: false,
     screenshotOptions: null,
     closed: false,
+    preflightUrl: null,
     writes: [],
     persists: [],
     removals: [],
@@ -102,6 +124,8 @@ test("captures the page and persists the project-relative artifact path", async 
   );
 
   expect(result).toEqual({ ok: true, artifact_path: RELATIVE_PATH });
+  expect(calls.preflightUrl).toBe(PREVIEW_URL);
+  expect(calls.evaluated).toBe(true);
   expect(calls.viewport).toEqual({ width: 1133, height: 900 });
   expect(calls.goto).toEqual({
     url: PREVIEW_URL,
@@ -126,7 +150,8 @@ test("captures the page and persists the project-relative artifact path", async 
     {
       projectPath: PROJECT_PATH,
       surfaceId: SURFACE_ID,
-      artifactPath: RELATIVE_PATH
+      artifactPath: RELATIVE_PATH,
+      expectedGeneration: undefined
     }
   ]);
   expect(calls.removals).toEqual([
@@ -168,6 +193,65 @@ test("allows an explicit viewport override for lower-level capture callers", asy
   );
 });
 
+test("passes expectedGeneration through persist for compare-and-set", async () => {
+  const calls = freshCalls();
+  const result = await capturePrototypeSurfaceScreenshot(
+    PROJECT_PATH,
+    SURFACE_ID,
+    PREVIEW_URL,
+    deps(calls),
+    { expectedGeneration: 4 }
+  );
+  expect(result.ok).toBe(true);
+  expect(calls.persists[0]?.expectedGeneration).toBe(4);
+});
+
+test("a generation mismatch keeps the previous screenshot path in the DB", async () => {
+  const calls = freshCalls();
+  const result = await capturePrototypeSurfaceScreenshot(
+    PROJECT_PATH,
+    SURFACE_ID,
+    PREVIEW_URL,
+    deps(calls, {
+      persist: () => ({ ok: false, reason: "generation_mismatch" })
+    }),
+    { expectedGeneration: 1 }
+  );
+  expect(result).toEqual({ ok: false, reason: "generation_mismatch" });
+  expect(calls.writes).toHaveLength(1);
+});
+
+test("HTTP 5xx skips the browser and does not persist a failed image", async () => {
+  const calls = freshCalls();
+  const result = await capturePrototypeSurfaceScreenshot(
+    PROJECT_PATH,
+    SURFACE_ID,
+    PREVIEW_URL,
+    deps(calls, {
+      fetchStatus: async () => ({ ok: true, status: 500 })
+    })
+  );
+  expect(result).toEqual({ ok: false, reason: "http_500" });
+  expect(calls.writes).toEqual([]);
+  expect(calls.persists).toEqual([]);
+  expect(calls.closed).toBe(false);
+});
+
+test("an unreachable preview skips the browser and keeps the old bitmap", async () => {
+  const calls = freshCalls();
+  const result = await capturePrototypeSurfaceScreenshot(
+    PROJECT_PATH,
+    SURFACE_ID,
+    PREVIEW_URL,
+    deps(calls, {
+      fetchStatus: async () => ({ ok: false })
+    })
+  );
+  expect(result).toEqual({ ok: false, reason: "preview_unreachable" });
+  expect(calls.writes).toEqual([]);
+  expect(calls.persists).toEqual([]);
+});
+
 test("a launch failure resolves quietly and touches nothing", async () => {
   const calls = freshCalls();
 
@@ -196,6 +280,7 @@ test("a navigation failure still closes the browser and keeps the old bitmap", a
         goto: async () => {
           throw new Error("net::ERR_CONNECTION_REFUSED");
         },
+        evaluate: async () => undefined,
         screenshot: async () => Buffer.from("")
       }),
       close: async () => {

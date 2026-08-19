@@ -1,8 +1,8 @@
 // POST /api/prototype-surface/screenshot
-// Refresh a rebuildable Prototype Surface placeholder at the Workbench
-// canonical CSS viewport width. A surface has one effective bitmap globally;
-// using each Workbench tab's width would make multiple tabs continuously
-// overwrite one another and visibly rescale the canvas image.
+// Heal a missing or old-viewport Prototype Surface placeholder. Everyday
+// code-change recapture is owned by Runtime's preview watcher
+// (`prototype-preview-refresh.ts`); this route is only the Workbench self-heal
+// for a ready surface whose bitmap is absent or encoded at a stale viewport.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";

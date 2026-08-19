@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 35;
+export const CURRENT_SCHEMA_VERSION = 36;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1741,6 +1741,32 @@ CREATE INDEX IF NOT EXISTS idx_rule_update_apply_proposal
         db.exec(
           `ALTER TABLE rule_update_proposal_revisions
            ADD COLUMN source_category TEXT`
+        );
+      }
+    }
+  },
+  {
+    version: 36,
+    up(db) {
+      // Runtime-owned screenshot refresh: each watched source revision bumps
+      // source_generation; a capture persists only when that generation is
+      // still current (compare-and-set), so a newer save cannot be overwritten
+      // by an in-flight older screenshot.
+      const columns = db
+        .prepare("PRAGMA table_info(prototype_surfaces)")
+        .all() as Array<{ name: string }>;
+      if (columns.length === 0) return;
+      const names = new Set(columns.map((column) => column.name));
+      if (!names.has("source_generation")) {
+        db.exec(
+          `ALTER TABLE prototype_surfaces
+           ADD COLUMN source_generation INTEGER NOT NULL DEFAULT 0`
+        );
+      }
+      if (!names.has("screenshot_generation")) {
+        db.exec(
+          `ALTER TABLE prototype_surfaces
+           ADD COLUMN screenshot_generation INTEGER NOT NULL DEFAULT 0`
         );
       }
     }

@@ -76,6 +76,16 @@ export type FolderChromeProps = {
   onSelectPage?: (pageId: string) => void;
   /** Prototype "Draft Design System" / Build "Design System" — existing browser. */
   onOpenDesignSystem?: () => void;
+  /**
+   * Build Design System attention: candidate entries still needing a
+   * designer look (same blue dot as Draft Design System).
+   */
+  designSystemHasCandidate?: boolean;
+  /**
+   * Build Design System attention: unpublished Rule Update work the
+   * designer still needs to review (same red dot as Browser nav rows).
+   */
+  designSystemHasRuleUpdate?: boolean;
   /** Sign Seed Complete — Runtime prepare (next phase). */
   onNextPhase?: () => void;
   /** Extraction Complete — Runtime complete alignment. */
@@ -291,6 +301,8 @@ export function FolderChrome({
   selectedPageId = null,
   onSelectPage,
   onOpenDesignSystem,
+  designSystemHasCandidate = false,
+  designSystemHasRuleUpdate = false,
   onNextPhase,
   onComplete,
   onConfirmPrototype,
@@ -415,11 +427,29 @@ export function FolderChrome({
             <Button
               type="button"
               variant="ghost"
-              className="seed-workbench__folder-next"
+              className="seed-workbench__folder-next seed-workbench__folder-ds"
               data-testid="folder-design-system-button"
+              data-candidate={designSystemHasCandidate ? "true" : undefined}
+              data-rule-update={designSystemHasRuleUpdate ? "true" : undefined}
               onClick={onOpenDesignSystem}
             >
               Design System
+              {designSystemHasCandidate || designSystemHasRuleUpdate ? (
+                <span className="seed-workbench__folder-ds-dots" aria-hidden>
+                  {designSystemHasCandidate ? (
+                    <span
+                      className="dsb-navrow-candidate-dot"
+                      data-testid="folder-ds-candidate-dot"
+                    />
+                  ) : null}
+                  {designSystemHasRuleUpdate ? (
+                    <span
+                      className="dsb-navrow-rule-update-dot"
+                      data-testid="folder-ds-rule-update-dot"
+                    />
+                  ) : null}
+                </span>
+              ) : null}
             </Button>
             <div className="seed-workbench__folder-divider" role="separator" />
             <div

@@ -35,8 +35,9 @@ import {
 
 const PROTOTYPE_MEDIA_DIR_NAME = "prototype-media";
 const SCREENSHOT_GOTO_TIMEOUT_MS = 15_000;
-/** Settle time after `load` for client-side rendering to paint. */
-const SCREENSHOT_RENDER_WAIT_MS = 1_500;
+const SCREENSHOT_PREFLIGHT_TIMEOUT_MS = 5_000;
+/** Short settle after fonts and two animation frames — never networkidle. */
+const SCREENSHOT_RENDER_WAIT_MS = 400;
 
 /** Minimal page surface used by the capture — Playwright's Page satisfies it. */
 export interface PrototypeScreenshotPage {
@@ -45,6 +46,7 @@ export interface PrototypeScreenshotPage {
     url: string,
     options: { waitUntil: "load"; timeout: number }
   ): Promise<unknown>;
+  evaluate(pageFunction: () => unknown | Promise<unknown>): Promise<unknown>;
   screenshot(options: { type: "png"; fullPage: true }): Promise<Buffer>;
 }
 
@@ -56,13 +58,18 @@ export interface PrototypeScreenshotBrowser {
 export interface PrototypeScreenshotDeps {
   /** Launch a headless browser; may reject when Playwright is unavailable. */
   launchBrowser(): Promise<PrototypeScreenshotBrowser>;
+  /** Plain HTTP preflight; ok:false means the preview could not be reached. */
+  fetchStatus(
+    url: string
+  ): Promise<{ ok: true; status: number } | { ok: false }>;
   /** Write the PNG bytes at an absolute path, creating directories. */
   writeArtifact(absolutePath: string, bytes: Buffer): void;
   /** Persist the project-relative artifact path on the surface record. */
   persist(
     projectPath: string,
     surfaceId: string,
-    artifactPath: string
+    artifactPath: string,
+    expectedGeneration?: number
   ):
     | { ok: true; previous_artifact_path: string | null }
     | { ok: false; reason: string };
@@ -81,6 +88,11 @@ export type PrototypeScreenshotResult =
 export type PrototypeScreenshotOptions = {
   /** CSS viewport width to match the Workbench browser's responsive layout. */
   viewportWidth?: number;
+  /**
+   * When set, persist is a generation compare-and-set: a newer source
+   * revision must not be overwritten by this capture.
+   */
+  expectedGeneration?: number;
 };
 
 export const defaultPrototypeScreenshotDeps: PrototypeScreenshotDeps = {
@@ -89,6 +101,18 @@ export const defaultPrototypeScreenshotDeps: PrototypeScreenshotDeps = {
     return (await chromium.launch({
       headless: true
     })) as unknown as PrototypeScreenshotBrowser;
+  },
+  async fetchStatus(url) {
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(SCREENSHOT_PREFLIGHT_TIMEOUT_MS),
+        redirect: "follow"
+      });
+      await response.arrayBuffer().catch(() => undefined);
+      return { ok: true, status: response.status };
+    } catch {
+      return { ok: false };
+    }
   },
   writeArtifact(absolutePath, bytes) {
     mkdirSync(path.dirname(absolutePath), { recursive: true });
@@ -105,8 +129,13 @@ export const defaultPrototypeScreenshotDeps: PrototypeScreenshotDeps = {
       throw error;
     }
   },
-  persist(projectPath, surfaceId, artifactPath) {
-    return setPrototypeSurfaceScreenshot(projectPath, surfaceId, artifactPath);
+  persist(projectPath, surfaceId, artifactPath, expectedGeneration) {
+    return setPrototypeSurfaceScreenshot(
+      projectPath,
+      surfaceId,
+      artifactPath,
+      expectedGeneration === undefined ? {} : { expectedGeneration }
+    );
   },
   removeArtifact(absolutePath) {
     try {
@@ -133,8 +162,9 @@ export const defaultPrototypeScreenshotDeps: PrototypeScreenshotDeps = {
 /**
  * Capture one ready preview URL and persist the bitmap on the surface record.
  * Never throws: a failed capture leaves the previous screenshot in place.
- * `waitUntil: "load"` (never networkidle — a Next dev server holds its HMR
- * websocket open forever) plus a fixed settle window for client rendering.
+ * HTTP must succeed first, then `waitUntil: "load"` (never networkidle — a
+ * Next dev server holds its HMR websocket open forever), `document.fonts.ready`,
+ * two animation frames, and a short settle window.
  */
 export async function capturePrototypeSurfaceScreenshot(
   projectPath: string,
@@ -146,6 +176,11 @@ export async function capturePrototypeSurfaceScreenshot(
   const viewportWidth = normalizePrototypeScreenshotViewportWidth(
     options.viewportWidth ?? PROTOTYPE_SCREENSHOT_DEFAULT_VIEWPORT_WIDTH
   );
+
+  const preflight = await deps.fetchStatus(previewUrl);
+  if (!preflight.ok) return { ok: false, reason: "preview_unreachable" };
+  if (preflight.status >= 400) return { ok: false, reason: `http_${preflight.status}` };
+
   let browser: PrototypeScreenshotBrowser;
   try {
     browser = await deps.launchBrowser();
@@ -163,6 +198,17 @@ export async function capturePrototypeSurfaceScreenshot(
     await page.goto(previewUrl, {
       waitUntil: "load",
       timeout: SCREENSHOT_GOTO_TIMEOUT_MS
+    });
+    await page.evaluate(async () => {
+      const fonts = (
+        document as Document & { fonts?: { ready?: Promise<unknown> } }
+      ).fonts;
+      if (fonts?.ready) await fonts.ready;
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => resolve());
+        });
+      });
     });
     await deps.sleep(SCREENSHOT_RENDER_WAIT_MS);
     // Full-page so the canvas placeholder shows the whole document like the
@@ -200,7 +246,12 @@ export async function capturePrototypeSurfaceScreenshot(
     return { ok: false, reason: "write_failed" };
   }
 
-  const persisted = deps.persist(projectPath, surfaceId, relativePath);
+  const persisted = deps.persist(
+    projectPath,
+    surfaceId,
+    relativePath,
+    options.expectedGeneration
+  );
   if (!persisted.ok) return { ok: false, reason: persisted.reason };
   const managedRoot = path.resolve(
     getArtifactsDir(projectPath),
