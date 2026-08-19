@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from "vitest";
 
-import { IKRAN_MCP_INSTRUCTIONS } from "../../lib/mcp/shared";
+import { failureResult, IKRAN_MCP_INSTRUCTIONS } from "../../lib/mcp/shared";
 
 describe("MCP instructions channel split", () => {
   test("stays within the resident budget", () => {
@@ -55,5 +55,42 @@ describe("MCP instructions channel split", () => {
       "TYPOGRAPHY ROLE WRITING STYLE"
     );
     expect(IKRAN_MCP_INSTRUCTIONS).not.toContain("focus-target-set");
+  });
+
+  test("serializes structured details into the model-visible failure text", () => {
+    const details = {
+      entries: [{ entry_id: "visual-language" }],
+      blockers: [
+        {
+          reason: "entry_claim_lineage_mismatch",
+          details: { entries: [{ entry_id: "visual-language" }] }
+        },
+        {
+          reason: "component_spec_fields_missing",
+          details: { specs: [{ entry_id: "component-example-spec" }] }
+        }
+      ]
+    };
+    const result = failureResult(
+      "finalize_initial_design_system_preparation",
+      "entry_claim_lineage_mismatch",
+      undefined,
+      details
+    );
+    expect(result.content[0]?.text).toBe(
+      `finalize_initial_design_system_preparation failed: entry_claim_lineage_mismatch\n${JSON.stringify(details)}`
+    );
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      error: "entry_claim_lineage_mismatch",
+      details
+    });
+  });
+
+  test("keeps reason-only failures as a single line", () => {
+    const result = failureResult("wait_for_agent_command", "state_unavailable");
+    expect(result.content[0]?.text).toBe(
+      "wait_for_agent_command failed: state_unavailable"
+    );
   });
 });

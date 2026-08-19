@@ -21,10 +21,17 @@ import { listEvents } from "../../lib/runtime/events";
 import {
   claimInitialDesignSystemPreparation,
   finalizeInitialDesignSystemPreparation,
+  INITIAL_DESIGN_SYSTEM_FILE_SCAFFOLDS,
   INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT,
+  INITIAL_DESIGN_SYSTEM_WORK_UNIT_EXAMPLES,
   recordDesignSystemExtractionAudit,
   recordDesignSystemExtractionWorkUnit
 } from "../../lib/runtime/initial-design-system-preparation";
+import {
+  RICH_COMPONENT_SPEC_FIELDS,
+  validateDesignSystemJson,
+  type DesignSystemFileKind
+} from "../../lib/runtime/design-system-schema";
 import { getDesignSystemView } from "../../lib/runtime/design-system-view";
 import { approveDesignSystemEntry } from "../../lib/runtime/design-system-approval";
 import { editDesignSystemEntry } from "../../lib/runtime/design-system-edit";
@@ -1375,6 +1382,59 @@ describe("Initial Design System preparation", () => {
     expect(typography.examples.bad.value.usedFor).toBe(
       "Connect call-to-action heading size role."
     );
+
+    expect(contract.omitted_component_spec_fields).toEqual([
+      ...RICH_COMPONENT_SPEC_FIELDS
+    ]);
+    expect(contract.file_scaffolds).toEqual(INITIAL_DESIGN_SYSTEM_FILE_SCAFFOLDS);
+    expect(contract.work_unit_examples).toEqual(
+      INITIAL_DESIGN_SYSTEM_WORK_UNIT_EXAMPLES
+    );
+  });
+
+  test("publishes schema-valid file scaffolds and a codeLinks omitted work-unit example", () => {
+    for (const [fileKind, scaffold] of Object.entries(
+      INITIAL_DESIGN_SYSTEM_FILE_SCAFFOLDS
+    ) as Array<[DesignSystemFileKind, unknown]>) {
+      expect(
+        validateDesignSystemJson(fileKind, scaffold),
+        `${fileKind} scaffold must pass the current schema validator`
+      ).toEqual({ ok: true });
+    }
+
+    const example = INITIAL_DESIGN_SYSTEM_WORK_UNIT_EXAMPLES.component;
+    expect(example.omitted_field_path).toEqual(["value", "codeLinks"]);
+    expect(example.workUnit).toEqual({
+      kind: "component",
+      componentEntryId: "component-example",
+      specArtifactPath: "design-system/components/example.json"
+    });
+    expect(example.claims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          claimId: "component-example-code-gap",
+          outcome: "omitted",
+          targets: [
+            expect.objectContaining({
+              artifactPath: "design-system/components/example.json",
+              entryId: "component-example-spec",
+              fieldPath: ["value", "codeLinks"]
+            })
+          ]
+        })
+      ])
+    );
+
+    const fixture = createCompletedAlignmentFixture();
+    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    expect(claimed).toMatchObject({
+      ok: true,
+      source_contract: {
+        omitted_component_spec_fields: [...RICH_COMPONENT_SPEC_FIELDS],
+        file_scaffolds: INITIAL_DESIGN_SYSTEM_FILE_SCAFFOLDS,
+        work_unit_examples: INITIAL_DESIGN_SYSTEM_WORK_UNIT_EXAMPLES
+      }
+    });
   });
 
   test("claims the durable command idempotently with the complete immutable context", () => {
@@ -1692,6 +1752,161 @@ describe("Initial Design System preparation", () => {
             }
       );
     }
+  });
+
+  test("finalize returns lineage and empty-codeLinks blockers together", () => {
+    const fixture = createCompletedAlignmentFixture();
+    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    if (!claimed.ok) throw new Error(claimed.reason);
+    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
+
+    const componentCard = claimed.question_cards.find(
+      (card) => card.section === "component"
+    )!;
+    const tokenCards = claimed.question_cards.filter(
+      (card) => card.section === "token"
+    );
+    writeJson(fixture.projectPath, "design-system/component-list.json", {
+      components: [
+        {
+          id: "component-example",
+          value: { name: "Example", specPath: "components/example.json" },
+          meaning: "Example component",
+          status: "candidate",
+          links: [componentCard.id]
+        }
+      ]
+    });
+    writeJson(fixture.projectPath, "design-system/components/example.json", {
+      id: "component-example-spec",
+      name: "Example",
+      value: {
+        description: "Example contract",
+        props: [{ name: "label", type: "string" }],
+        variants: [{ axis: "style", name: "default" }],
+        stateMatrix: [{ state: "default", behavior: "Default presentation" }],
+        guidelines: [{ kind: "do", text: "Use for its documented job." }],
+        tokenLinks: ["primitive.fontFamily.instrumentSans"],
+        codeLinks: []
+      },
+      status: "candidate",
+      links: [componentCard.id]
+    });
+    const inventory = recordSourceArtifact(fixture.projectPath, {
+      path: "design-system/component-list.json",
+      artifactType: "component-list.json",
+      semanticPurpose: "Combined blocker inventory",
+      relatedRecordIds: [componentCard.id]
+    });
+    if (!inventory.ok) throw new Error(inventory.reason);
+    const spec = recordSourceArtifact(fixture.projectPath, {
+      path: "design-system/components/example.json",
+      artifactType: "component-spec",
+      semanticPurpose: "Combined blocker spec",
+      relatedRecordIds: [componentCard.id]
+    });
+    if (!spec.ok) throw new Error(spec.reason);
+
+    recordCompleteProgressiveExtraction(fixture, claimed);
+    const componentUnit = recordDesignSystemExtractionWorkUnit(
+      fixture.projectPath,
+      {
+        alignmentAttemptId: fixture.attemptId,
+        idempotencyKey: "combined-blocker-component",
+        workUnit: {
+          kind: "component",
+          componentEntryId: "component-example",
+          specArtifactPath: "design-system/components/example.json"
+        },
+        claims: [
+          {
+            claimId: "component-example-mapped",
+            statement: componentCard.final_answer!,
+            sourceRecordIds: [componentCard.id],
+            sourceExcerpts: [componentCard.final_answer!],
+            confidence: "confirmed",
+            outcome: "mapped",
+            targets: [
+              {
+                artifactPath: "design-system/component-list.json",
+                entryId: "component-example"
+              },
+              {
+                artifactPath: "design-system/components/example.json",
+                entryId: "component-example-spec"
+              }
+            ]
+          }
+        ]
+      }
+    );
+    if (!componentUnit.ok) throw new Error(componentUnit.reason);
+
+    writeJson(fixture.projectPath, "design-system/token.json", {
+      primitive: {
+        "fontFamily.instrumentSans": {
+          kind: "token",
+          domain: "typography",
+          value: "Instrument Sans, sans-serif",
+          status: "candidate",
+          links: [tokenCards[0]!.id, tokenCards[1]!.id]
+        }
+      },
+      semantic: {},
+      component: {}
+    });
+    const redeclared = recordSourceArtifact(fixture.projectPath, {
+      path: "design-system/token.json",
+      artifactType: "token.json",
+      semanticPurpose: "Combined blocker lineage",
+      relatedRecordIds: tokenCards.map((card) => card.id)
+    });
+    if (!redeclared.ok) throw new Error(redeclared.reason);
+
+    recordAuditForCurrentProgress(fixture, "combined-blocker-audit");
+
+    expect(
+      finalizeInitialDesignSystemPreparation(
+        fixture.projectPath,
+        fixture.attemptId
+      )
+    ).toMatchObject({
+      ok: false,
+      reason: "entry_claim_lineage_mismatch",
+      details: {
+        entries: [
+          expect.objectContaining({
+            source_artifact_path: "design-system/token.json",
+            entry_id: "primitive.fontFamily.instrumentSans",
+            unclaimed_link_ids: [tokenCards[1]!.id]
+          })
+        ],
+        blockers: [
+          {
+            reason: "entry_claim_lineage_mismatch",
+            details: {
+              entries: [
+                expect.objectContaining({
+                  entry_id: "primitive.fontFamily.instrumentSans"
+                })
+              ]
+            }
+          },
+          {
+            reason: "component_spec_fields_missing",
+            details: {
+              specs: [
+                expect.objectContaining({
+                  source_artifact_path: "design-system/components/example.json",
+                  entry_id: "component-example-spec",
+                  unexplained_empty_fields: ["codeLinks"]
+                })
+              ]
+            }
+          }
+        ]
+      }
+    });
   });
 
   test("finalize preserves target, kind, and token-domain gates", () => {

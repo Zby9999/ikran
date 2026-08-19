@@ -31,7 +31,10 @@ export function failureResult(
     content: [
       {
         type: "text" as const,
-        text: `${toolName} failed: ${reason}`
+        text:
+          details === undefined
+            ? `${toolName} failed: ${reason}`
+            : `${toolName} failed: ${reason}\n${JSON.stringify(details)}`
       }
     ],
     structuredContent: {
