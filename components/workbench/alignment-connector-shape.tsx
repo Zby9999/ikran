@@ -83,7 +83,7 @@ export class AlignmentConnectorShapeUtil extends BaseBoxShapeUtil<AlignmentConne
     endX: T.number,
     endY: T.number,
     stage: T.literalEnum(
-      "design-principle",
+      "design-concept",
       "visual-language",
       "token",
       "layout",
@@ -100,7 +100,7 @@ export class AlignmentConnectorShapeUtil extends BaseBoxShapeUtil<AlignmentConne
       startY: 0,
       endX: 1,
       endY: 1,
-      stage: "design-principle"
+      stage: "design-concept"
     };
   }
 

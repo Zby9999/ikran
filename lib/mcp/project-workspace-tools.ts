@@ -13,24 +13,25 @@ import { type RegisterIkranToolsDeps } from "./shared";
 import { getProjectPhase } from "../runtime/project-phase";
 import { readAgentCommandWaitEligibility } from "../runtime/adaptive-agent-wait";
 
-const WAIT_FOR_COMMAND_ACTION = {
-  tool: "wait_for_agent_command"
-} as const;
-
 const OPEN_PROJECT_ACTION = {
   tool: "create_or_open_project"
 } as const;
 
 const WAIT_FOR_COMMAND_DIRECTIVE =
-  "Required next Agent action: do not end the turn. Call `wait_for_agent_command` now and keep the current turn available while the designer works in the Workbench. Consume any returned command through its semantic claim tool.";
+  "Required next Agent actions: do not end the turn. First open the Workbench URL above in this Agent host's embedded browser so the designer can see the canvas. Then, before waiting, post that exact URL as a user-visible chat message telling the designer they can open it manually in any local browser if it did not open automatically. Only after that, call `wait_for_agent_command` and keep the current turn available while the designer works in the Workbench. Do not call `wait_for_agent_command` before the URL is posted in chat — that call blocks and prevents opening the Workbench. Consume any returned command through its semantic claim tool.";
 
 const NO_WAIT_DIRECTIVE =
   "No wait needed: there is no active Alignment handoff or Rule Update Review wait scope. Do NOT call `wait_for_agent_command`; end the turn when your work is done. Any command published after this turn remains durable for the next turn; this does not imply reverse activation.";
 
+function waitArmFields(armWait: boolean): { wait_armed?: true } {
+  return armWait ? { wait_armed: true } : {};
+}
+
 /**
- * Arm only for a domain-owned designer handoff: the established Alignment
- * window, or one explicitly active Rule Update Review. Merely reaching a
- * post-Alignment project phase never creates a wait lease.
+ * Arm only for a domain-owned designer handoff: Alignment stages including
+ * first-open seed-reference-registration with zero seeds, or one explicitly
+ * active Rule Update Review. Merely reaching a post-Alignment project phase
+ * never creates a wait lease.
  */
 function shouldArmWaitForCommand(projectPath: string): boolean {
   const eligibility = readAgentCommandWaitEligibility(projectPath);
@@ -63,20 +64,18 @@ export function registerProjectWorkspaceTools(
     "open_workbench",
     {
       description:
-        "Open the Ikran workbench. Starts or reuses the local Runtime HTTP surface on 127.0.0.1 (auto port) and returns a localhost Workbench URL containing a startup-level session token. Open it in any browser; ideal target is this Agent host's embedded browser. Whether the turn continues is decided per response: the result re-arms wait_for_agent_command only for the existing Alignment designer handoff or an explicitly active Rule Update Review wait scope; a post-Alignment phase alone never arms it. When it says no wait is needed, do not call wait_for_agent_command and end the turn. The URL is local-only and is not a public/remote link. Active seed capture is Runtime-owned (ADR 0003): ensure Figma Connection via the Workbench gate, then use add_seed_reference (same command as Workbench paste). Do not orchestrate host Figma screenshots for ingestion."
+        "Start or reuse the local Ikran Runtime HTTP surface and return a localhost Workbench URL. This tool does not open a host browser. After it returns, open that URL in this Agent host's embedded browser (or any local browser), then post that exact URL as a user-visible chat message so the designer can open it manually if it did not open automatically, before calling wait_for_agent_command — wait is a blocking call and cannot open the page. Whether wait is later required is decided per response: the result re-arms wait_for_agent_command for the Alignment designer handoff (including first-open seed-reference-registration with zero seeds) or an explicitly active Rule Update Review wait scope; a post-Alignment phase alone never arms it. When it says no wait is needed, do not call wait_for_agent_command and end the turn. The URL is local-only and is not a public/remote link. Active seed capture is Runtime-owned (ADR 0003): ensure Figma Connection via the Workbench gate, then use add_seed_reference (same command as Workbench paste). Do not orchestrate host Figma screenshots for ingestion."
     },
     async () => {
       const rt = await ensureRuntime();
-      const baseText = `Ikran Workbench URL:\n${rt.url}\n\nLocal-only. Open in any browser (ideal: this Agent host's embedded browser).`;
+      const baseText = `Ikran Workbench URL:\n${rt.url}\n\nLocal-only. This tool did not open a browser. Open the URL in this Agent host's embedded browser, then post that exact URL as a user-visible chat message before waiting so the designer can open it manually if it did not open automatically.`;
       const activeProject = requireActiveProjectCommand();
       const armWait =
         activeProject.ok &&
         shouldArmWaitForCommand(activeProject.project.path);
-      const nextAction = activeProject.ok
-        ? armWait
-          ? WAIT_FOR_COMMAND_ACTION
-          : null
-        : OPEN_PROJECT_ACTION;
+      // Never set next_action to wait_for_agent_command here: that call blocks
+      // the turn, so the Agent cannot open the returned URL.
+      const nextAction = activeProject.ok ? null : OPEN_PROJECT_ACTION;
       const nextDirective = activeProject.ok
         ? armWait
           ? WAIT_FOR_COMMAND_DIRECTIVE
@@ -95,6 +94,7 @@ export function registerProjectWorkspaceTools(
           port: rt.port,
           session: rt.token,
           reused: !rt.spawned,
+          ...waitArmFields(armWait),
           ...(nextAction ? { next_action: nextAction } : {})
         }
       };
@@ -105,7 +105,7 @@ export function registerProjectWorkspaceTools(
     "create_or_open_project",
     {
       description:
-        "Bind or open the Ikran project for a local folder and initialize its `.ikran/` state (SQLite, event log, config). With a `path`: CREATE the project there if no project is bound, OPEN it idempotently if that project is already bound, or FAIL CLOSED with `project_mismatch` if the Runtime is bound to a DIFFERENT project (single-project-single-flow — do not silently switch; to change projects, restart Ikran with the new folder as the working folder). With no `path`: if a project is already bound, return that active project + session + workbench_url (discovered cwd is NOT treated as a bind target); otherwise bind/open the working folder discovered from IKRAN_CWD env, then MCP Roots, then process.cwd(); if none is discoverable and no project is bound, returns `no_working_folder` (then pass { path } explicitly — your shell's `pwd` gives the workspace). Whether the turn continues is decided per response: the result re-arms wait_for_agent_command only for the existing Alignment designer handoff or an explicitly active Rule Update Review wait scope; a post-Alignment phase alone never arms it. When it says no wait is needed, do not call wait_for_agent_command and end the turn. Always returns the active project, the startup session token, the Workbench URL, and the current project phase so the caller can confirm it is operating on the same project/session as the Workbench HTTP API. All research source-of-truth changes go through Ikran tools.",
+        "Bind or open the Ikran project for a local folder and initialize its `.ikran/` state (SQLite, event log, config). With a `path`: CREATE the project there if no project is bound, OPEN it idempotently if that project is already bound, or FAIL CLOSED with `project_mismatch` if the Runtime is bound to a DIFFERENT project (single-project-single-flow — do not silently switch; to change projects, restart Ikran with the new folder as the working folder). With no `path`: if a project is already bound, return that active project + session + workbench_url (discovered cwd is NOT treated as a bind target); otherwise bind/open the working folder discovered from IKRAN_CWD env, then MCP Roots, then process.cwd(); if none is discoverable and no project is bound, returns `no_working_folder` (then pass { path } explicitly — your shell's `pwd` gives the workspace). This tool does not open a host browser. Open the returned Workbench URL in this Agent host's embedded browser before calling wait_for_agent_command — wait is a blocking call and cannot open the page. Whether wait is later required is decided per response: the result re-arms wait_for_agent_command for the Alignment designer handoff (including first-open seed-reference-registration with zero seeds) or an explicitly active Rule Update Review wait scope; a post-Alignment phase alone never arms it. When it says no wait is needed, do not call wait_for_agent_command and end the turn. Always returns the active project, the startup session token, the Workbench URL, and the current project phase so the caller can confirm it is operating on the same project/session as the Workbench HTTP API. All research source-of-truth changes go through Ikran tools.",
       inputSchema: createOrOpenProjectInputShape
     },
     async (args) => {
@@ -138,7 +138,7 @@ export function registerProjectWorkspaceTools(
               project_phase: getProjectPhase(activePath),
               session: rt.token,
               workbench_url: rt.url,
-              ...(armWait ? { next_action: WAIT_FOR_COMMAND_ACTION } : {})
+              ...waitArmFields(armWait)
             }
           };
         }
@@ -200,7 +200,7 @@ export function registerProjectWorkspaceTools(
               project_phase: getProjectPhase(activePath),
               session: rt.token,
               workbench_url: rt.url,
-              ...(armWait ? { next_action: WAIT_FOR_COMMAND_ACTION } : {})
+              ...waitArmFields(armWait)
             }
           };
         }
@@ -286,7 +286,7 @@ export function registerProjectWorkspaceTools(
             project_phase: getProjectPhase(activeAfter),
             session: rt.token,
             workbench_url: rt.url,
-            ...(armWait ? { next_action: WAIT_FOR_COMMAND_ACTION } : {})
+            ...waitArmFields(armWait)
           }
         };
       } catch (err) {

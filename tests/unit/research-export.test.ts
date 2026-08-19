@@ -88,7 +88,7 @@ function insertAnsweredQuestion(
       `INSERT INTO alignment_question_cards
        (id, section, observation, question, proposed_answer, final_answer,
         answer_source, anchor_json, created_at, updated_at, alignment_attempt_id)
-       VALUES (?, 'design-principle', 'obs', 'q?', 'proposed', ?,
+       VALUES (?, 'design-concept', 'obs', 'q?', 'proposed', ?,
                'designer-edited', '{}', ?, ?, ?)`
     ).run(
       id,

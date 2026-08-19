@@ -4,7 +4,7 @@
 
 在六部分 Design Intent Alignment 完成后，Agent 写入 design-system source artifacts，并通过 `record_artifact_written` 声明。Runtime 校验 source artifacts，生成或登记 derived `design-system-view.json`，Workbench 渲染 Foundations 和 Components 的 read-first 浏览器。
 
-此 slice 应覆盖 Design principle、Visual language、Token、Layout、Component、Interaction 六部分如何进入 design-system candidate/source，而不引入 Content 必答门。
+此 slice 应覆盖 Design Concept、Visual language、Token、Layout、Component、Interaction 六部分如何进入 design-system candidate/source，而不引入 Content 必答门。
 
 ### 2026-07-12 Seed Reference collection input
 
@@ -34,7 +34,7 @@ Design-system source 必须链接到完成 Alignment 的 Seed Reference collecti
 
 - Agent 基于 1 个 Runtime-captured Seed Reference（Desktop frame，evidence version d60dd6f9）+ 项目级设计语言描述 + 18 张已答 alignment 卡（含 2 张 designer-edited）+ 6 条 Agent 注解，写入 6 个 JSON 源文件并声明。
 - `GET /api/design-system`（DB 实时 join 证据链）返回完整 view：每条 entry 带 question_cards + evidence_versions + designer_annotations 证据链；derived export `.ikran/artifacts/design-system-view.json` 每次 ingest 自动重生成（`design_system_view_generated` ×7）。
-- Workbench Browser 渲染核对（WebBridge 截图）：Foundations Home（visual language + principles + 状态汇总 3 formalized / 7 candidate / 3 open gaps）、Color / Materials（token 三层投影）、Layout / Interaction（rules）、Components inventory（Button / Project Card / Navigation）+ Button spec 详情（props / Boundaries / stateMatrix）。无独立 Rules 页面。
+- Workbench Browser 渲染核对（WebBridge 截图）：Foundations Home（visual language + concepts + 状态汇总 3 formalized / 7 candidate / 3 open gaps）、Color / Materials（token 三层投影）、Layout / Interaction（rules）、Components inventory（Button / Project Card / Navigation）+ Button spec 详情（props / Boundaries / stateMatrix）。无独立 Rules 页面。
 
 ## Likely difficulties for Agent
 

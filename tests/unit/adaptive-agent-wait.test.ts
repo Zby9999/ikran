@@ -8,11 +8,10 @@ import {
   applyPresenceToLease,
   createWaitLease,
   presenceIsEngaged,
-  waitLeaseDecision
-} from "../../lib/runtime/adaptive-agent-wait";
-import {
+  readAgentCommandWaitEligibility,
   reportWorkbenchPresence,
-  waitForAgentCommand
+  waitForAgentCommand,
+  waitLeaseDecision
 } from "../../lib/runtime/adaptive-agent-wait";
 import {
   closeProjectDb,
@@ -35,20 +34,67 @@ const readEligibleWait = () =>
   }) as const;
 
 describe("adaptive Agent wait lease", () => {
-  test("returns not_applicable before Seed Reference registration", async () => {
+  test("first-open seed-reference-registration arms a wait with zero seeds", async () => {
     const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-wait-no-seed-"));
     try {
       initializeProjectDb(projectPath);
+      expect(readAgentCommandWaitEligibility(projectPath)).toMatchObject({
+        ok: true,
+        eligible: true,
+        stage: "seed-reference-registration",
+        seed_reference_count: 0,
+        wait_scope: { kind: "alignment_handoff" }
+      });
       await expect(
         waitForAgentCommand(projectPath, { windowMs: 0 })
       ).resolves.toEqual({
         ok: true,
-        reason: "not_applicable",
-        command: null,
-        stage: "seed-reference-registration",
-        not_applicable_reason: "seed_reference_required"
+        reason: "idle_no_command",
+        command: null
       });
     } finally {
+      rmSync(projectPath, { recursive: true, force: true });
+    }
+  });
+
+  test("zero-seed Alignment wait stays open until Next Phase publishes a command", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-wait-seed-later-"));
+    try {
+      initializeProjectDb(projectPath);
+      const waiting = waitForAgentCommand(projectPath, { windowMs: 180 });
+      await vi.advanceTimersByTimeAsync(50);
+
+      const seed = registerSeedReference(projectPath, {
+        figmaSeedReference:
+          "https://www.figma.com/design/WaitLater/Mock?node-id=1:2",
+        originalDesignIntent: "Registered during wait"
+      });
+      if (!seed.ok) throw new Error(seed.reason);
+      const evidence = recordEvidencePackage(projectPath, {
+        seedReferenceId: seed.record.id,
+        frame: { nodeId: "1:2", name: "Mock" },
+        evidenceViews: { rawData: "available", screenshot: "missing" }
+      });
+      if (!evidence.ok) throw new Error(evidence.reason);
+      setDesignLanguageDescription(projectPath, "Wait later contract");
+
+      let settled = false;
+      void waiting.then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+
+      const prepared = prepareDesignIntentAlignment(projectPath);
+      expect(prepared.ok).toBe(true);
+      await expect(waiting).resolves.toMatchObject({
+        reason: "command_available",
+        command: { command_type: "prepare_design_intent_alignment" }
+      });
+    } finally {
+      vi.useRealTimers();
       rmSync(projectPath, { recursive: true, force: true });
     }
   });

@@ -13,7 +13,7 @@ import {
 } from "./figma-positional-evidence";
 
 export const ALIGNMENT_SECTIONS = [
-  "design-principle",
+  "design-concept",
   "visual-language",
   "token",
   "layout",
@@ -23,10 +23,15 @@ export const ALIGNMENT_SECTIONS = [
 
 export const ALIGNMENT_QUESTION_TITLE_MAX_LENGTH = 48;
 
-/** Question title word bounds — enforced by questionTitleIsValid and published
- * via ALIGNMENT_SECTION_CONTRACT.question_title. */
+/** Question title word bounds for non-Han titles — enforced by
+ * questionTitleIsValid and published via ALIGNMENT_SECTION_CONTRACT.question_title. */
 export const ALIGNMENT_QUESTION_TITLE_MIN_WORDS = 2;
 export const ALIGNMENT_QUESTION_TITLE_MAX_WORDS = 5;
+
+/** Question title character bounds for titles that contain Han script.
+ * Counts letters and numbers, not spaces or punctuation. */
+export const ALIGNMENT_QUESTION_TITLE_MIN_HAN_CHARACTERS = 2;
+export const ALIGNMENT_QUESTION_TITLE_MAX_HAN_CHARACTERS = 12;
 
 /** Per-section Question card bounds — enforced at coverage checks
  * (finalize + read surface) and published via ALIGNMENT_SECTION_CONTRACT. */
@@ -53,9 +58,17 @@ export const ALIGNMENT_SECTION_CONTRACT = {
     max_characters: ALIGNMENT_QUESTION_TITLE_MAX_LENGTH,
     min_words: ALIGNMENT_QUESTION_TITLE_MIN_WORDS,
     max_words: ALIGNMENT_QUESTION_TITLE_MAX_WORDS,
+    min_han_characters: ALIGNMENT_QUESTION_TITLE_MIN_HAN_CHARACTERS,
+    max_han_characters: ALIGNMENT_QUESTION_TITLE_MAX_HAN_CHARACTERS,
     style:
-      "The observation field is the card title: a concise 2–5 word noun phrase, never a sentence or a repeat of the question."
+      "The observation field is the card title: a concise noun phrase, never a sentence or a repeat of the question. English titles are 2–5 words (e.g. Alternating split rows). Titles that contain Han characters are 2–12 letters/numbers (e.g. 交替分栏).",
+    examples: {
+      en: "Alternating split rows",
+      zh: "交替分栏"
+    }
   },
+  output_language:
+    "Write Question titles, questions, proposed answers, and Agent Annotation titles and bodies in the language of the designer's source text. If the designer writes Chinese in chat, Design Language Description, Reference Notes, or Designer Annotations, write Chinese. Do not follow Figma canvas copy or this contract's English. Proper nouns and node labels may stay in their original script.",
   evidence_target_modes: {
     "node/region":
       "One specific element or component — prefer the exact positional node when available; use a free region only when no exact node represents the target. Rendered with an Annotation and horizontal connector.",
@@ -83,6 +96,16 @@ function questionTitleWordCount(value: string): number {
   ).length;
 }
 
+function titleContainsHan(value: string): boolean {
+  return /\p{Script=Han}/u.test(value);
+}
+
+function questionTitleCharacterCount(value: string): number {
+  return Array.from(value.normalize("NFKC")).filter((character) =>
+    /\p{Letter}|\p{Number}/u.test(character)
+  ).length;
+}
+
 function normalizedQuestionText(value: string): string {
   return value
     .normalize("NFKC")
@@ -91,12 +114,21 @@ function normalizedQuestionText(value: string): string {
 }
 
 function questionTitleIsValid(value: string, question?: string): boolean {
-  const words = questionTitleWordCount(value);
-  if (
-    words < ALIGNMENT_QUESTION_TITLE_MIN_WORDS ||
-    words > ALIGNMENT_QUESTION_TITLE_MAX_WORDS
-  )
-    return false;
+  if (titleContainsHan(value)) {
+    const characters = questionTitleCharacterCount(value);
+    if (
+      characters < ALIGNMENT_QUESTION_TITLE_MIN_HAN_CHARACTERS ||
+      characters > ALIGNMENT_QUESTION_TITLE_MAX_HAN_CHARACTERS
+    )
+      return false;
+  } else {
+    const words = questionTitleWordCount(value);
+    if (
+      words < ALIGNMENT_QUESTION_TITLE_MIN_WORDS ||
+      words > ALIGNMENT_QUESTION_TITLE_MAX_WORDS
+    )
+      return false;
+  }
   if (/[.!?。！？]\s*$/u.test(value)) return false;
   return !question || normalizedQuestionText(value) !== normalizedQuestionText(question);
 }

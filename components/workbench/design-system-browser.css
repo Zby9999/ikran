@@ -54,8 +54,11 @@
 
 .dsb-sheet {
   position: fixed;
-  left: 12px;
-  right: 12px;
+  /* Cap at 1440px and center; keep the 12px inset on narrower viewports.
+     Using left/right (not translateX) so the existing translateY drawer
+     motion does not have to compose a centering transform. */
+  left: max(12px, calc(50% - 720px));
+  right: max(12px, calc(50% - 720px));
   bottom: 0;
   z-index: 61;
   height: 94vh;
@@ -1613,7 +1616,7 @@
     background: #fff;
   }
 
-  /* Only clickable cards (buttons) lift on hover; principle rule cards are
+  /* Only clickable cards (buttons) lift on hover; design-concept rule cards are
      static content. */
   button.dsb-card:hover {
     transform: translateY(-1px);
@@ -1748,6 +1751,14 @@
   object-fit: contain;
 }
 
+.dsb-placard-figure img.dsb-placard-crop-img {
+  position: absolute;
+  width: auto;
+  height: auto;
+  max-width: none;
+  object-fit: fill;
+}
+
 /* Portrait figures cap height instead of stretching the reading column at
  * full width: the 2:3 box centers itself and the image contains inside. */
 .dsb-placard-figure[data-orientation="portrait"] {
@@ -1775,6 +1786,7 @@
 }
 
 .dsb-placard-thumb {
+  position: relative;
   width: 56px;
   height: 40px;
   padding: 0;
@@ -2391,6 +2403,42 @@
   font-size: 9.5px;
   line-height: 14px;
   letter-spacing: 0.01em;
+}
+
+.dsb-placard-thumb img.dsb-placard-crop-img {
+  position: absolute;
+  width: auto;
+  height: auto;
+  max-width: none;
+  object-fit: fill;
+}
+
+.dsb-hero-figure {
+  /* Size from the locator ratio and the 420px cap — never both a definite
+     full-bleed width and a max-height, which drops aspect-ratio and stretches
+     object-fit:fill crops with the Browser sheet. */
+  width: min(100%, calc(420px * 3 / 2));
+  max-width: 100%;
+  height: auto;
+  max-height: 420px;
+  aspect-ratio: 3 / 2;
+  margin-inline: auto;
+}
+
+.dsb-hero-figure[data-orientation="landscape"] {
+  width: min(100%, calc(420px * 3 / 2));
+  aspect-ratio: 3 / 2;
+}
+
+.dsb-hero-figure[data-orientation="portrait"] {
+  width: min(100%, calc(420px * 2 / 3));
+  height: auto;
+  max-height: 420px;
+  aspect-ratio: 2 / 3;
+}
+
+.dsb-hero-figure img.dsb-hero-image {
+  max-height: none;
 }
 
 .dsb-hero-image {

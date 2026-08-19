@@ -15,7 +15,7 @@ Figma reference: `recursive-design-agent` file,node `670:891`(**修订版，以�
 ### 设计决策(2026-07-29 与设计师确认;同日按 Figma 670:891 修订)
 
 1. **取消标题**:卡片无编号标题(不做 "4. Root Layout" 式 title,也不做编号);卡片 = 纯正文。不新增 title 字段。
-2. **Section 绑定 = 归属与可见范围**:设计师标注是对**当前所处 section** 的意见，创建时自动绑定当前六部分阶段(Design Principle / Visual Language / Token / Layout / Component / Interaction)——录入框不提供 section 选择;section 决定归属:在 Design Principle 里写的标注不会出现在其他环节(投影按当前阶段过滤，Agent 标注与无 section 旧记录始终可见)。record 新增 `section` 字段;设计师创建的标注必须带 section,Agent 创建的标注 section 可为空;旧记录以 `section: null` 保持可读。
+2. **Section 绑定 = 归属与可见范围**:设计师标注是对**当前所处 section** 的意见，创建时自动绑定当前六部分阶段(Design Concept / Visual Language / Token / Layout / Component / Interaction)——录入框不提供 section 选择;section 决定归属:在 Design Concept 里写的标注不会出现在其他环节(投影按当前阶段过滤，Agent 标注与无 section 旧记录始终可见)。record 新增 `section` 字段;设计师创建的标注必须带 section,Agent 创建的标注 section 可为空;旧记录以 `section: null` 保持可读。
 3. **绿色是 User Annotation 专属色**:卡片与 connector 固定使用设计师绿(tint `#e9ffea` / border `#19d122`，与画布 marker 同色),**不按 section 着色**、无 anchor 徽章。
 4. **新类型**:新增 annotation 类型 `designer_annotation`,作为设计师自由标注的类型(不复用 question / assumption / observed fact / generalization risk);设计师创建默认使用该类型，旧 `explanatory` 记录保持可读。
 5. **可编辑**:点击已填卡片，出现与录入框相同样式的输入框(预填当前文字),设计师直接编辑;保存更新 body 并记录语义事件。

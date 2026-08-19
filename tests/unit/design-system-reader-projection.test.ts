@@ -8,7 +8,7 @@ import {
   projectDomainRuleLeaf,
   projectObjectFields,
   projectInteractionLeaf,
-  projectPrinciple,
+  projectConcept,
   projectTypographyLeaf,
   pxOf,
   toTechnicalDetail,
@@ -810,7 +810,7 @@ describe("typographyLayersFromView", () => {
     const view: DesignSystemView = {
       generated_at: "2026-07-29T00:00:00.000Z",
       name: "",
-      foundations: { visualLanguage: null, principles: [] },
+      foundations: { visualLanguage: null, concepts: [] },
       tokens: {
         primitive: [
           entry({ entry_id: "p.font", name: "anything", domain: "typography", section: "token.primitive" }),
@@ -870,15 +870,15 @@ describe("projectObjectFields", () => {
   });
 });
 
-/* ----------------------------- prose principle ---------------------------- */
+/* ----------------------------- prose concept ----------------------------- */
 
-describe("projectPrinciple", () => {
+describe("projectConcept", () => {
   it("projects meaning as title and prose value as body", () => {
-    const projection = projectPrinciple(
+    const projection = projectConcept(
       entry({
         entry_id: "principle.1",
         file_kind: "design-system.json",
-        section: "foundations.principles",
+        section: "foundations.concepts",
         meaning: "Intentional choices",
         value: "Design with intent. Every choice needs an evidence-backed reason."
       })
@@ -890,7 +890,7 @@ describe("projectPrinciple", () => {
   });
 
   it("keeps legacy persisted objects generic without semantic field reads", () => {
-    const projection = projectPrinciple(
+    const projection = projectConcept(
       entry({
         entry_id: "principle.2",
         meaning: "Legacy body",
@@ -903,8 +903,8 @@ describe("projectPrinciple", () => {
     expect(projection.body).not.toMatch(/[{}[\]"]/);
   });
 
-  it("keeps alias principles as arrow rows", () => {
-    const projection = projectPrinciple(
+  it("keeps alias concepts as arrow rows", () => {
+    const projection = projectConcept(
       entry({
         entry_id: "p.alias",
         value: { alias: "principle.canonical" },

@@ -10,7 +10,7 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { structuredContent } from "./mcp";
 
 export const ALIGNMENT_SECTIONS = [
-  "design-principle",
+  "design-concept",
   "visual-language",
   "token",
   "layout",

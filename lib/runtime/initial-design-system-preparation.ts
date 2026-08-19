@@ -24,7 +24,8 @@ import {
   DESIGN_SYSTEM_ENTRY_KINDS,
   DESIGN_SYSTEM_ENTRY_KIND_FILE_OWNERSHIP,
   RICH_COMPONENT_SPEC_FIELDS,
-  TOKEN_DOMAINS
+  TOKEN_DOMAINS,
+  type DesignSystemFileKind
 } from "./design-system-schema";
 
 export const INITIAL_DESIGN_SYSTEM_REQUIRED_ARTIFACTS = [
@@ -111,6 +112,147 @@ const TYPOGRAPHY_ROLE_WRITING_STYLE = {
   }
 } as const;
 
+const SCAFFOLD_SOURCE_RECORD_ID = "source-record-id";
+
+export const INITIAL_DESIGN_SYSTEM_FILE_SCAFFOLDS = {
+  "design-system.json": {
+    name: "Project Design System",
+    visualLanguage: {
+      id: "visual-language",
+      kind: "global-rule",
+      value: { description: "Write the evidence-backed visual language here." },
+      meaning: "Project visual language",
+      status: "candidate",
+      links: [SCAFFOLD_SOURCE_RECORD_ID]
+    },
+    concepts: [
+      {
+        id: "principle-example",
+        kind: "global-rule",
+        value: "Write one reusable design principle as prose.",
+        meaning: "Example principle",
+        status: "candidate",
+        links: [SCAFFOLD_SOURCE_RECORD_ID]
+      }
+    ]
+  },
+  "token.json": {
+    primitive: {
+      "fontFamily.example": {
+        kind: "token",
+        domain: "typography",
+        value: "Example Sans, sans-serif",
+        status: "candidate",
+        links: [SCAFFOLD_SOURCE_RECORD_ID]
+      }
+    },
+    semantic: {},
+    component: {}
+  },
+  "component-list.json": {
+    components: [
+      {
+        id: "component-example",
+        value: {
+          name: "Example",
+          specPath: "components/example.json"
+        },
+        meaning: "Example component",
+        status: "candidate",
+        links: [SCAFFOLD_SOURCE_RECORD_ID]
+      }
+    ]
+  },
+  "layout-rules.json": {
+    rules: [
+      {
+        id: "layout-example",
+        kind: "domain-rule",
+        value: "Write one reusable spatial composition rule as prose.",
+        meaning: "Example layout rule",
+        status: "candidate",
+        links: [SCAFFOLD_SOURCE_RECORD_ID]
+      }
+    ]
+  },
+  "interaction-rules.json": {
+    rules: [
+      {
+        id: "interaction-example",
+        kind: "domain-rule",
+        value: "Write one cross-component interaction or motion strategy as prose.",
+        meaning: "Example interaction rule",
+        status: "candidate",
+        links: [SCAFFOLD_SOURCE_RECORD_ID]
+      }
+    ]
+  },
+  "component-spec": {
+    id: "component-example-spec",
+    name: "Example",
+    value: {
+      description: "Write the component contract as prose.",
+      props: [{ name: "label", type: "string" }],
+      variants: [{ axis: "style", name: "default" }],
+      stateMatrix: [{ state: "default", behavior: "Default presentation" }],
+      guidelines: [{ kind: "do", text: "Use this component for its documented job." }],
+      tokenLinks: ["primitive.fontFamily.example"],
+      codeLinks: []
+    },
+    status: "candidate",
+    links: [SCAFFOLD_SOURCE_RECORD_ID]
+  }
+} as const satisfies Record<DesignSystemFileKind, unknown>;
+
+export const INITIAL_DESIGN_SYSTEM_WORK_UNIT_EXAMPLES = {
+  component: {
+    guidance:
+      "Record one component work unit after its inventory entry and spec are declared and ingested. Empty rich fields require an omitted claim whose fieldPath is [\"value\", field]. Initial extraction has no prototype, so codeLinks stays [] and is omitted.",
+    omitted_field_path: ["value", "codeLinks"],
+    workUnit: {
+      kind: "component",
+      componentEntryId: "component-example",
+      specArtifactPath: "design-system/components/example.json"
+    },
+    claims: [
+      {
+        claimId: "component-example-mapped",
+        statement: "The Example component is extracted from Alignment evidence.",
+        sourceRecordIds: [SCAFFOLD_SOURCE_RECORD_ID],
+        sourceExcerpts: ["Replace with the source excerpt."],
+        confidence: "confirmed",
+        outcome: "mapped",
+        targets: [
+          {
+            artifactPath: "design-system/component-list.json",
+            entryId: "component-example"
+          },
+          {
+            artifactPath: "design-system/components/example.json",
+            entryId: "component-example-spec"
+          }
+        ]
+      },
+      {
+        claimId: "component-example-code-gap",
+        statement: "No implementation code link exists yet.",
+        sourceRecordIds: [SCAFFOLD_SOURCE_RECORD_ID],
+        sourceExcerpts: ["Replace with the source excerpt."],
+        confidence: "confirmed",
+        outcome: "omitted",
+        reason: "Initial extraction has no prototype implementation.",
+        targets: [
+          {
+            artifactPath: "design-system/components/example.json",
+            entryId: "component-example-spec",
+            fieldPath: ["value", "codeLinks"]
+          }
+        ]
+      }
+    ]
+  }
+} as const;
+
 export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
   schema_version: 3,
   source_root: "design-system",
@@ -176,12 +318,13 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
     ],
     guidance:
       "Optional per-component captures (09C-D03, same shape and crop " +
-      "contract as layout_rule_capture_field). Two honest origins only: a " +
-      "screenshot of the source design node, or (after the first prototype) " +
-      "a code-backed capture of the real component. One primary capture per " +
-      "component is enough — show the component in context. When neither " +
-      "origin exists, omit the field and let the browser render the honest " +
-      "unavailable block — never fabricate a capture; the agent can be " +
+      "contract as layout_rule_capture_field). Runtime derives a locator " +
+      "from a linked source node and the seed screenshot. Two other honest " +
+      "origins: a declared Figma MCP screenshot when Runtime evidence is " +
+      "missing, or (after the first prototype) a code-backed capture of " +
+      "the real component. One primary capture per component is enough — " +
+      "show the component in context. Omit the field only when there is " +
+      "no source node — never fabricate a capture; the agent can be " +
       "asked to produce a code-backed one later."
   },
   rule_body: {
@@ -197,20 +340,14 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
       LAYOUT_RULE_CAPTURE_NODE_RECT_FIELD
     ],
     guidance:
-      "Optional per-rule Figma node screenshots (09C-D02, locator view v2). " +
-      "Capture the node with the Figma MCP (get_screenshot on the rule's " +
-      "frame/section node), then crop the PNG to a fixed-ratio region that " +
-      "contains the node: 3:2 for landscape nodes, 2:3 for portrait ones. " +
-      "Pick the crop orientation from the node's own shape so they agree — " +
-      "a near-square node (pixel aspect between 2:3 and 3:2) takes 3:2; " +
-      "the browser derives figure orientation from the nodeRect fraction " +
-      "aspect, and a mismatched crop letterboxes the image and drifts the " +
-      "position mark off the node. When the node is larger than the frame " +
-      "region, keep the top part and let the rest truncate — the figure is " +
-      "a locator, not a full view. Export at the exact ratio (the browser " +
-      "renders with object-fit contain). Save the PNG under " +
-      "design-system/captures/<entry>-<node>.png and reference the " +
-      "project-relative path as artifactPath. nodeName and capturedAt are " +
+      "Optional per-rule locator screenshots (09C-D02 v2). Runtime derives " +
+      "them from linked Alignment node anchors plus the seed screenshot " +
+      "(3:2 landscape / 2:3 portrait crop, nodeRect fractions). Link the " +
+      "source node; do not re-screenshot via Figma MCP during Initial " +
+      "extraction. Declare sourceCaptures only for a prototype refresh " +
+      "(capture_rule_screenshot) or when no Runtime evidence screenshot " +
+      "exists — then use the host Figma MCP, crop to the same ratio, and " +
+      "save under design-system/captures/. nodeName and capturedAt are " +
       "required; add nodeId and surfaceId when the provenance is known so " +
       "the browser can mark stale captures. Add nodeRect — the node's " +
       "bounds inside the cropped PNG as fractions {x, y, width, height}, " +
@@ -218,8 +355,8 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
       "can draw a position mark (skipped when the node nearly fills the " +
       "capture). Schema bounds: x and y within [0, 1]; width and height " +
       "within (0, 4] — values above 1 are expected when the crop truncates " +
-      "the node. Rules without captures render an honest unavailable " +
-      "block — never fabricate one."
+      "the node. Omit the field only when there is no Figma node — never " +
+      "fabricate a capture."
   },
   interaction_entry_split: {
     interaction_rules: "Cross-component interaction and motion strategies only.",
@@ -234,6 +371,9 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
       "When writing a rule, inspect existing rules in that file for placement. Propose misplaced-rule moves through the rule-update proposal channel; never move rules silently."
   },
   typography_role_writing_style: TYPOGRAPHY_ROLE_WRITING_STYLE,
+  omitted_component_spec_fields: RICH_COMPONENT_SPEC_FIELDS,
+  file_scaffolds: INITIAL_DESIGN_SYSTEM_FILE_SCAFFOLDS,
+  work_unit_examples: INITIAL_DESIGN_SYSTEM_WORK_UNIT_EXAMPLES,
   rule_body_writing_style: RULE_BODY_WRITING_STYLE
 } as const;
 
@@ -1822,8 +1962,8 @@ function expectedJsonPointer(entry: DesignSystemEntryKeyRow): string {
   if (entry.section === "foundations.visual-language") {
     return "/visualLanguage";
   }
-  if (entry.section === "foundations.principles") {
-    return `/principles/${entry.position}`;
+  if (entry.section === "foundations.concepts") {
+    return `/concepts/${entry.position}`;
   }
   if (entry.section.startsWith("token.")) {
     const layer = entry.section.slice("token.".length);
@@ -1841,6 +1981,11 @@ function expectedJsonPointer(entry: DesignSystemEntryKeyRow): string {
   }
   return "/";
 }
+
+type FinalizeBlocker = {
+  reason: FinalizeInitialDesignSystemFailure["reason"];
+  details?: Record<string, unknown>;
+};
 
 function finalizeFailure(
   db: DatabaseType,
@@ -1862,6 +2007,24 @@ function finalizeFailure(
   return details === undefined
     ? { ok: false, reason }
     : { ok: false, reason, details };
+}
+
+function finalizeFromBlockers(
+  db: DatabaseType,
+  blockers: FinalizeBlocker[],
+  context: { attemptId: string; commandId: string }
+): FinalizeInitialDesignSystemFailure | null {
+  if (blockers.length === 0) return null;
+  const first = blockers[0]!;
+  return finalizeFailure(
+    db,
+    first.reason,
+    {
+      ...(first.details ?? {}),
+      blockers
+    },
+    context
+  );
 }
 
 export function finalizeInitialDesignSystemPreparation(
@@ -2120,6 +2283,7 @@ export function finalizeInitialDesignSystemPreparation(
         );
       }
 
+      const independentBlockers: FinalizeBlocker[] = [];
       const lineageMismatches = entries
         .filter(
           (entry) =>
@@ -2165,12 +2329,10 @@ export function finalizeInitialDesignSystemPreparation(
               ];
         });
       if (lineageMismatches.length > 0) {
-        return finalizeFailure(
-          db,
-          "entry_claim_lineage_mismatch",
-          { entries: lineageMismatches },
-          context
-        );
+        independentBlockers.push({
+          reason: "entry_claim_lineage_mismatch",
+          details: { entries: lineageMismatches }
+        });
       }
 
       const uncoveredEntries = entries
@@ -2186,12 +2348,10 @@ export function finalizeInitialDesignSystemPreparation(
           entry_id: entry.entry_id
         }));
       if (uncoveredEntries.length > 0) {
-        return finalizeFailure(
-          db,
-          "uncovered_design_system_entries",
-          { entries: uncoveredEntries },
-          context
-        );
+        independentBlockers.push({
+          reason: "uncovered_design_system_entries",
+          details: { entries: uncoveredEntries }
+        });
       }
 
       const foundationEntriesWithoutKind = entries
@@ -2208,12 +2368,10 @@ export function finalizeInitialDesignSystemPreparation(
           entry_id: entry.entry_id
         }));
       if (foundationEntriesWithoutKind.length > 0) {
-        return finalizeFailure(
-          db,
-          "entry_kind_missing",
-          { entries: foundationEntriesWithoutKind },
-          context
-        );
+        independentBlockers.push({
+          reason: "entry_kind_missing",
+          details: { entries: foundationEntriesWithoutKind }
+        });
       }
 
       const tokensWithoutDomain = entries
@@ -2226,12 +2384,10 @@ export function finalizeInitialDesignSystemPreparation(
           entry_id: entry.entry_id
         }));
       if (tokensWithoutDomain.length > 0) {
-        return finalizeFailure(
-          db,
-          "token_domain_missing",
-          { entries: tokensWithoutDomain },
-          context
-        );
+        independentBlockers.push({
+          reason: "token_domain_missing",
+          details: { entries: tokensWithoutDomain }
+        });
       }
 
       const specs = entries.filter(
@@ -2239,12 +2395,10 @@ export function finalizeInitialDesignSystemPreparation(
       );
       const missingCaptures = missingComponentCaptures(projectPath, specs);
       if (missingCaptures.length > 0) {
-        return finalizeFailure(
-          db,
-          "component_capture_missing",
-          { captures: missingCaptures },
-          context
-        );
+        independentBlockers.push({
+          reason: "component_capture_missing",
+          details: { captures: missingCaptures }
+        });
       }
       const missingComponentWorkUnits = entries
         .filter((entry) => entry.section === "components.inventory")
@@ -2256,12 +2410,10 @@ export function finalizeInitialDesignSystemPreparation(
         )
         .map((entry) => `component:${entry.entry_id}`);
       if (missingComponentWorkUnits.length > 0) {
-        return finalizeFailure(
-          db,
-          "extraction_work_units_incomplete",
-          { missing_work_unit_keys: missingComponentWorkUnits },
-          context
-        );
+        independentBlockers.push({
+          reason: "extraction_work_units_incomplete",
+          details: { missing_work_unit_keys: missingComponentWorkUnits }
+        });
       }
       const missingComponentSpecs = entries
         .filter(
@@ -2290,12 +2442,10 @@ export function finalizeInitialDesignSystemPreparation(
               ];
         });
       if (missingComponentSpecs.length > 0) {
-        return finalizeFailure(
-          db,
-          "component_specs_missing",
-          { components: missingComponentSpecs },
-          context
-        );
+        independentBlockers.push({
+          reason: "component_specs_missing",
+          details: { components: missingComponentSpecs }
+        });
       }
 
       const incompleteComponentSpecs = specs.flatMap((entry) => {
@@ -2334,12 +2484,10 @@ export function finalizeInitialDesignSystemPreparation(
             ];
       });
       if (incompleteComponentSpecs.length > 0) {
-        return finalizeFailure(
-          db,
-          "component_spec_fields_missing",
-          { specs: incompleteComponentSpecs },
-          context
-        );
+        independentBlockers.push({
+          reason: "component_spec_fields_missing",
+          details: { specs: incompleteComponentSpecs }
+        });
       }
 
       // A formalized entry is an aggregate claim boundary. Every manifest
@@ -2378,13 +2526,17 @@ export function finalizeInitialDesignSystemPreparation(
               ];
         });
       if (insufficientFormalizedEntries.length > 0) {
-        return finalizeFailure(
-          db,
-          "formalized_claim_support_insufficient",
-          { entries: insufficientFormalizedEntries },
-          context
-        );
+        independentBlockers.push({
+          reason: "formalized_claim_support_insufficient",
+          details: { entries: insufficientFormalizedEntries }
+        });
       }
+      const independentFailure = finalizeFromBlockers(
+        db,
+        independentBlockers,
+        context
+      );
+      if (independentFailure) return independentFailure;
 
       const now = new Date().toISOString();
       db.prepare(

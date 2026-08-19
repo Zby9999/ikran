@@ -120,7 +120,7 @@ export type AgentCommandWaitEligibility =
       eligible: false;
       stage: WorkflowStage;
       seed_reference_count: number;
-      reason: "seed_reference_required" | "outside_designer_handoff";
+      reason: "outside_designer_handoff";
     }
   | { ok: false; reason: "state_unavailable" };
 
@@ -128,6 +128,12 @@ export type AgentCommandWaitEligibility =
  * Read the complete lease-eligibility state. A caller may still retrieve an
  * already-pending Agent command outside this window, but it must not start a
  * new Adaptive Agent wait there.
+ *
+ * Alignment handoff wait starts as soon as the project is in a designer
+ * handoff stage, including first-open `seed-reference-registration` with zero
+ * Seed References. Seed count still gates Next Phase / prepare, not this
+ * lease: the designer registers seeds in Workbench, then Next Phase publishes
+ * the durable command that ends the wait.
  */
 export function readAgentCommandWaitEligibility(
   projectPath: string
@@ -145,15 +151,6 @@ export function readAgentCommandWaitEligibility(
         stage,
         seed_reference_count: seedReferenceCount,
         wait_scope: activeRuleUpdateReview.scope
-      };
-    }
-    if (seedReferenceCount === 0) {
-      return {
-        ok: true,
-        eligible: false,
-        stage,
-        seed_reference_count: seedReferenceCount,
-        reason: "seed_reference_required"
       };
     }
     if (!DESIGNER_HANDOFF_STAGES.has(stage)) {
@@ -189,9 +186,7 @@ export type WaitForAgentCommandResult =
       reason: "not_applicable";
       command: null;
       stage: WorkflowStage;
-      not_applicable_reason:
-        | "seed_reference_required"
-        | "outside_designer_handoff";
+      not_applicable_reason: "outside_designer_handoff";
     }
   | {
       ok: false;

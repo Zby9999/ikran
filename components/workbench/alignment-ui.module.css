@@ -80,40 +80,9 @@
   color: #949494;
 }
 
-.stageButton:focus-visible,
-.completeButton:focus-visible {
+.stageButton:focus-visible {
   outline: 2px solid var(--alignment-accent, #4178ba);
   outline-offset: -2px;
-}
-
-.completeTray {
-  display: none;
-  width: 180px;
-  padding: 12px 6px 6px;
-}
-
-.stagePanel:hover .completeTray,
-.stagePanel:focus-within .completeTray {
-  display: block;
-}
-
-.completeButton {
-  width: 168px;
-  height: 28px;
-  border: 1px solid #fff;
-  border-radius: 6px;
-  background: linear-gradient(#ebebeb, #f6f6f6);
-  box-shadow: 0 0 0 1px #a8a8a8;
-  color: #3d3d3d;
-  font: 400 11px/normal Inter, sans-serif;
-  letter-spacing: -0.33px;
-  cursor: pointer;
-}
-
-.completeButton:disabled {
-  color: #949494;
-  cursor: not-allowed;
-  opacity: 0.65;
 }
 
 .questionCard {
@@ -198,7 +167,7 @@
 }
 
 .answerRegion[data-open="true"] {
-  grid-template-rows: 1fr;
+  grid-template-rows: auto;
   opacity: 1;
   pointer-events: all;
 }
@@ -211,18 +180,19 @@
 .answerEditor {
   display: flex;
   width: 100%;
-  height: 56px;
-  align-items: center;
+  min-height: 70px;
+  align-items: flex-end;
   gap: 8px;
-  padding: 8px 16px 8px 20px;
+  padding: 16px 16px 16px 20px;
   border-top: 1px solid var(--alignment-accent);
   background: #fff;
 }
 
 .answerEditor textarea {
   min-width: 0;
-  height: 38px;
+  min-height: 38px;
   flex: 1;
+  overflow: hidden;
   resize: none;
   border: 0;
   outline: 0;
@@ -240,6 +210,8 @@
   width: 28px !important;
   height: 28px !important;
   min-width: 28px;
+  flex-shrink: 0;
+  align-self: flex-end;
   border: 0 !important;
   border-radius: 50% !important;
   background: var(--alignment-submit) !important;
@@ -304,18 +276,19 @@
 .annotationEditor {
   display: flex;
   width: 100%;
-  height: 56px;
-  align-items: center;
+  min-height: 70px;
+  align-items: flex-end;
   gap: 8px;
-  padding: 8px 16px 8px 20px;
+  padding: 16px 16px 16px 20px;
   border-top: 1px solid #6e6e6e;
   background: #fff;
 }
 
 .annotationEditor textarea {
   min-width: 0;
-  height: 38px;
+  min-height: 38px;
   flex: 1;
+  overflow: hidden;
   resize: none;
   border: 0;
   outline: 0;
@@ -333,6 +306,8 @@
   width: 28px !important;
   height: 28px !important;
   min-width: 28px;
+  flex-shrink: 0;
+  align-self: flex-end;
   border: 0 !important;
   border-radius: 50% !important;
   background: #6e6e6e !important;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, type CSSProperties, type TransitionEvent } from "react";
+import { focusHoleMaskRadius } from "@/lib/runtime/region-annotation-display";
 import type { FocusTarget } from "./focus-mode";
 import "./focus-target-mask.css";
 
@@ -9,6 +10,9 @@ export type FocusTargetMaskProps = {
   surfaceArtifactId: string;
   evidenceVersionId: string;
   targets: readonly FocusTarget[];
+  /** Screenshot media box size in page px; drives 2px isotropic hole radius. */
+  mediaWidth?: number;
+  mediaHeight?: number;
   /** Complete the reducer's exiting phase after the short opacity fade. */
   onFadeOutComplete?: () => void;
   style?: CSSProperties;
@@ -35,6 +39,8 @@ export function FocusTargetMask({
   surfaceArtifactId,
   evidenceVersionId,
   targets,
+  mediaWidth,
+  mediaHeight,
   onFadeOutComplete,
   style
 }: FocusTargetMaskProps) {
@@ -45,6 +51,10 @@ export function FocusTargetMask({
     evidenceVersionId
   );
   if (visibleTargets.length === 0) return null;
+  const { rx, ry } = focusHoleMaskRadius({
+    w: mediaWidth ?? 0,
+    h: mediaHeight ?? 0
+  });
 
   const handleTransitionEnd = (event: TransitionEvent<HTMLDivElement>) => {
     if (
@@ -91,6 +101,8 @@ export function FocusTargetMask({
                 y={target.rect.y}
                 width={target.rect.width}
                 height={target.rect.height}
+                rx={rx}
+                ry={ry}
                 fill="black"
               />
             ))}

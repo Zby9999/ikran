@@ -32,7 +32,7 @@ export function registerDesignIntentAlignmentTools(
   };
 
   mcp.registerTool("wait_for_agent_command", {
-    description: "Wait for the next scoped durable Ikran Agent command. A pending command always returns immediately in durable queue order, including in a later Agent turn. With no pending command, Runtime starts the adaptive three-minute lease only during the existing Alignment designer handoff (with at least one Seed Reference) or while one explicit Rule Update Review wait scope is active. A post-Alignment project phase alone is not eligible. Outside those scopes it immediately returns not_applicable; unreadable state fails closed with state_unavailable. While eligible, visible and focused Workbench interaction, unsubmitted edits, or submitted semantic activity can renew the lease; background connection/heartbeat cannot. Cancellation, idle, page close, or transport loss never advances workflow or consumes a later command. This active-turn wait does not provide MCP reverse activation. No arguments."
+    description: "Wait for the next scoped durable Ikran Agent command. Call this only after the Workbench URL is open in the host browser — this call blocks the turn and cannot open the page. A pending command always returns immediately in durable queue order, including in a later Agent turn. With no pending command, Runtime starts the adaptive three-minute lease only during the Alignment designer handoff — including first-open seed-reference-registration with zero Seed References — or while one explicit Rule Update Review wait scope is active. A post-Alignment project phase alone is not eligible. Outside those scopes it immediately returns not_applicable; unreadable state fails closed with state_unavailable. While eligible, visible and focused Workbench interaction, unsubmitted edits, or submitted semantic activity can renew the lease; background connection/heartbeat cannot. Cancellation, idle, page close, or transport loss never advances workflow or consumes a later command. This active-turn wait does not provide MCP reverse activation. No arguments."
   }, async (extra) => {
     const ctx = await active("wait_for_agent_command");
     if (!ctx.ok) return ctx.result;
@@ -47,7 +47,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("claim_alignment_preparation", {
-    description: "Claim the current durable prepare_design_intent_alignment command. Returns the stable command, Alignment attempt, immutable input snapshot, exact Seed Reference notes, captured evidence identities, and the section_contract (card kinds and ordering, title format, evidence target modes) needed to prepare all six sections — follow the returned contract rather than memory. In each section, create its gray Agent Annotation hypotheses first, then its colored Question cards, before moving to the next section. Safe to retry after disconnect; a repeated claim returns the same claimed work. No arguments."
+    description: "Claim the current durable prepare_design_intent_alignment command. Returns the stable command, Alignment attempt, immutable input snapshot, exact Seed Reference notes, captured evidence identities, and the section_contract (card kinds and ordering, title format, output language, evidence target modes) needed to prepare all six sections — follow the returned contract rather than memory. In each section, create its gray Agent Annotation hypotheses first, then its colored Question cards, before moving to the next section. Safe to retry after disconnect; a repeated claim returns the same claimed work. No arguments."
   }, async () => {
     const ctx = await active("claim_alignment_preparation");
     if (!ctx.ok) return ctx.result;
@@ -56,7 +56,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("create_alignment_question_card", {
-    description: "Create one Runtime-owned Design Intent Alignment Question card for the claimed current attempt. Pass the alignmentAttemptId returned by claim_alignment_preparation and a stable idempotencyKey for this semantic question. The evidence anchor must belong to that attempt's immutable snapshot. Section ordering, question title format, per-section question counts, the proposedAnswer requirement, and evidence target modes are defined by that claim's section_contract — follow it; Runtime rejects violations.",
+    description: "Create one Runtime-owned Design Intent Alignment Question card for the claimed current attempt. Pass the alignmentAttemptId returned by claim_alignment_preparation and a stable idempotencyKey for this semantic question. The evidence anchor must belong to that attempt's immutable snapshot. Section ordering, question title format, output language, per-section question counts, the proposedAnswer requirement, and evidence target modes are defined by that claim's section_contract — follow it; Runtime rejects violations.",
     inputSchema: createAlignmentQuestionCardInputSchema
   }, async (args) => {
     const ctx = await active("create_alignment_question_card");
@@ -79,7 +79,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("create_agent_annotation", {
-    description: "Create an attempt-bound, section-bound, idempotent gray Agent Annotation with a short non-empty title and a meaningful confirmed observation or reasonable assumption body. Section ordering and evidence anchor modes follow the claim's section_contract. At least one gray Agent Annotation is mandatory in every section before Alignment preparation can finish.",
+    description: "Create an attempt-bound, section-bound, idempotent gray Agent Annotation with a short non-empty title and a meaningful confirmed observation or reasonable assumption body. Section ordering, output language, and evidence anchor modes follow the claim's section_contract. At least one gray Agent Annotation is mandatory in every section before Alignment preparation can finish.",
     inputSchema: createAgentAnnotationInputSchema
   }, async (args) => {
     const ctx = await active("create_agent_annotation");

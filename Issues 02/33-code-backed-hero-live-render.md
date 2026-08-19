@@ -240,3 +240,60 @@ viewport，只平移 iframe 让 root 的视觉中心落到展台中心；过宽 
 仍无有效消息则走现有 source-capture/unavailable 回退。旧 body-size/v1 harness
 不会被静默当成已居中，必须迁移到 v2。Runtime 仍不跨源读取或改写项目 DOM；
 sandbox、pointer interaction 与 state query 的其余契约不变。
+
+### 2026-08-18 — 真实 Agent 两轮失败后的收口：引导链补环、声明后验证、State 切换防塌缩
+
+两个真实项目暴露出「codebacked 嵌入无法一轮完成」与「State 按钮不可用」，
+本轮修复，两条上文契约被修订（见下）。
+
+**实证一（跳过声明）**：某项目 confirm_prototype 之后事件流是 backfill 成功 →
+直接 formalize，全程无 declare_component_live_heroes。根因是引导渠道不一致：
+MCP instructions 的 FLOW CONTRACTS 有 declare 环节，但 confirm_prototype 的
+`next` 与 description、backfill 的 description 全部漏掉它，formalize 对缺
+liveHero 零门禁。修复：`confirm_prototype` / `backfill_component_code_links` /
+`declare_component_live_heroes` 的 description 与成功返回 `next` 全部对齐为
+backfill → declare → verify → formalize；instructions 流程行同步补
+verify_component_live_heroes（export_research 的确切标准让位给工具 description
+以守住 2150 字节预算）。formalize 是否对缺 liveHero 加硬/软门禁，本轮明确
+**暂缓**（产品决定，留待后续）。
+
+**实证二（盲声明）**：另一项目 Agent 手写的 HarnessFrame 导入路径错一层，
+dev server 500，四个 live hero 全灭，但 declare 成功、Agent 上报「已挂上」。
+declare 是 metadata-only，唯一几何验证在 Workbench 客户端，Runtime 与 Agent
+都拿不到。修复：新增两个 MCP 工具——
+
+1. `scaffold_component_harness`：sizing helper 是 v2 协议胶水而非项目代码，
+   Runtime 按字节写入规范文件（幂等；手改过的文件报 helper_file_conflict，
+   不覆盖），消灭「照 prose 手写 + 相对导入写错」这一整类错误。
+2. `verify_component_live_heroes`：声明后的确定性验收。Runtime 在 headless
+   Chromium 里以 sandboxed iframe 加载每个 `<previewUrl><harnessPath>`
+   （默认文档 + 每条 stateMatrix state；名为 default 的 state 归一为无 query
+   地址，不重复加载），HTTP 预检区分「路由本身报错」（http_error + status，
+   如 Vite 500）与「页面加载但无几何上报」（geometry_timeout → sizing helper
+   缺失/装错）与「bounds 越界」（invalid_geometry，同 Workbench 的 1133/
+   16384 规则）。observation-only，不写库；all_passed 前不 formalize。
+
+**State 切换塌缩修复（修订上文两条契约）**：高组件（约 500–650px）hover
+State 按钮时，iframe 换址 → 旧几何被丢弃 → 舞台塌到 240px 占位 → 按钮行
+（在舞台之下）从指针下方滑走 → mouseleave 立即恢复默认地址 → 振荡，且 5 秒
+超时按 liveKey 粘性把整个组件永久降级为截图。矮组件（<240px）按钮几乎不动，
+所以既有验证未暴露。修复（Workbench 客户端，协议不变）：
+
+- **导航期间保留旧几何**：`?state=` 换址不再清空上一测量值，舞台高度不动，
+  按钮不滑走；iframe 在新文档自报几何前保持隐藏，旧 bounds 不会框新内容。
+  本条**取代**上文「每次 default/state 导航的有效 v2 bounds 到达前 iframe
+  隐藏」中与舞台高度坍缩耦合的部分——隐藏仍然成立，占位塌缩不再发生。
+- **超时降级收窄到 href 级**：默认文档超时才 live_unreachable 降级整档；
+  state 导航超时只记录该 state（`data-unreachable`）并回到默认文档。本条
+  **取代**上文「5 秒仍无有效消息则走现有 source-capture/unavailable 回退」
+  对 state 导航的适用。
+- spec 里名为 `default` 的 state 归一为无 query 休息地址，hover 它不再触发
+  无意义重载；移出状态行的恢复默认改为与进入对称的 150ms 防抖。
+
+已知残留边界：若某 state 的真实高度比默认态高出很多，新几何到达时舞台
+一次性长高仍可能把按钮推离指针（量级远小于塌缩路径，且 B3 保证不再永久
+降级）；结构性解法（states 行位置/浮层）属设计决定，未自行改动。
+
+验证：tsc 干净；vitest 1280（含新增 live-hero-verify 8 例、harness-scaffold
+5 例、componentHeroLiveUrl default 归一与 heroLiveTimeoutDecision 用例）；
+playwright 82 通过。live 真实链路仍待 Real Agent validation 复核。

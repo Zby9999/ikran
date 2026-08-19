@@ -153,7 +153,7 @@ test("09A design system browser: declare → render → approve write-back", asy
     // Two designer-edited answers (HTTP surface = the designer typing their
     // own wording) — one backs the approvable token, one the formalized
     // visual language. Everything else is answered as proposed.
-    const designerEditedCardId = cards["design-principle"][0].id;
+    const designerEditedCardId = cards["design-concept"][0].id;
     const tokenDesignerEditedCardId = cards["token"][0].id;
     const agentAcceptedCardId = cards["token"][1].id;
     for (const cardId of [designerEditedCardId, tokenDesignerEditedCardId]) {
@@ -204,7 +204,7 @@ test("09A design system browser: declare → render → approve write-back", asy
         status: "formalized",
         links: [designerEditedCardId]
       },
-      principles: [
+      concepts: [
         {
           id: "principle-clarity",
           value: "Clarity comes before ornament.",
@@ -480,7 +480,7 @@ test("09A design system browser: declare → render → approve write-back", asy
         .getByRole("button", { name: "Home", exact: true })
         .locator(".dsb-navrow-candidate-dot")
     ).toBeVisible();
-    await expect(page.getByTestId("ds-principle-principle-clarity")).toBeVisible();
+    await expect(page.getByTestId("ds-concept-principle-clarity")).toBeVisible();
     await expect(page.getByTestId("ds-visual-language-visual-language")).toBeVisible();
 
     // Visual Language uses value.description rather than a string value, but

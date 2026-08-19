@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vitest";
 
 import { initializeProjectDb } from "../../lib/runtime/db";
 import { listEvents } from "../../lib/runtime/events";
@@ -23,11 +23,20 @@ import { recordSourceArtifact } from "../../lib/runtime/source-artifact";
 import { resetRecordBusForTests } from "../../lib/runtime/record-bus";
 import {
   PREVIEW_ALLOWED_PHASES,
+  bumpPrototypeSurfaceSourceGenerationForIds,
+  getPrototypeSurface,
   listPrototypeSurfaces,
   markPrototypeSurfaceStale,
   recordPreview,
+  setPrototypeSurfaceScreenshot,
   type RecordPreviewInput
 } from "../../lib/runtime/prototype-surface";
+import {
+  setPrototypePreviewRefreshTestHost,
+  stopAllPrototypePreviewRefresh,
+  stopPrototypePreviewRefresh,
+  waitForPrototypePreviewRefreshIdleForTests
+} from "../../lib/runtime/prototype-preview-refresh";
 import {
   PREVIEW_PORT_BASE,
   allocatePreviewPort,
@@ -37,7 +46,19 @@ import {
   type PreviewSupervisorDeps
 } from "../../lib/runtime/preview-server";
 
-afterEach(() => resetRecordBusForTests());
+beforeEach(() => {
+  setPrototypePreviewRefreshTestHost({
+    watch: () => ({ close() {} }),
+    capture: async () => ({ ok: true, artifact_path: "x.png" }),
+    fetchStatus: async () => ({ ok: true, status: 200 })
+  });
+});
+
+afterEach(() => {
+  stopAllPrototypePreviewRefresh();
+  setPrototypePreviewRefreshTestHost(null);
+  resetRecordBusForTests();
+});
 
 const SEED_ID = "seed-30";
 const SURFACE_ID = "surface-30";
@@ -81,6 +102,7 @@ function withProject(run: (projectPath: string) => Promise<void> | void) {
       writePrototypeFile(projectPath);
       await run(projectPath);
     } finally {
+      stopAllPrototypePreviewRefresh();
       rmSync(projectPath, { recursive: true, force: true });
     }
   })();
@@ -462,7 +484,7 @@ test("a second surface in the same run gets its own stable port", async () => {
   });
 });
 
-test("declaring changed prototype code marks its live surfaces stale", async () => {
+test("declaring changed prototype code with a live watcher refreshes instead of stale", async () => {
   await withProject(async (projectPath) => {
     declarePrototypeArtifact(projectPath);
     enterPrototypeValidation(projectPath);
@@ -472,6 +494,39 @@ test("declaring changed prototype code marks its live surfaces stale", async () 
     });
     expect(preview.ok).toBe(true);
     if (!preview.ok) return;
+
+    writePrototypeFile(projectPath, "export default 2;\n");
+    declarePrototypeArtifact(projectPath);
+    await waitForPrototypePreviewRefreshIdleForTests();
+
+    const surface = getPrototypeSurface(projectPath, preview.surface.id);
+    expect(surface).toMatchObject({
+      id: preview.surface.id,
+      stale: false,
+      stale_reason: null
+    });
+    expect(surface?.source_generation).toBeGreaterThan(0);
+    expect(listEvents(projectPath, "preview_stale")).toEqual([]);
+    expect(listEvents(projectPath, "preview_started")).toHaveLength(1);
+  });
+});
+
+test("declaring changed prototype code marks surfaces stale without a watcher", async () => {
+  await withProject(async (projectPath) => {
+    declarePrototypeArtifact(projectPath);
+    enterPrototypeValidation(projectPath);
+
+    const preview = await recordPreview(projectPath, previewInput(), {
+      supervisor: supervisor()
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+
+    stopPrototypePreviewRefresh({
+      projectPath,
+      prototypeRoot: "prototype",
+      surfaceId: preview.surface.id
+    });
 
     writePrototypeFile(projectPath, "export default 2;\n");
     declarePrototypeArtifact(projectPath);
@@ -487,8 +542,54 @@ test("declaring changed prototype code marks its live surfaces stale", async () 
         })
       })
     ]);
-    // Runtime warns and stops — it never restarts the dev server for you.
     expect(listEvents(projectPath, "preview_started")).toHaveLength(1);
+  });
+});
+
+test("screenshot persist is a generation compare-and-set", async () => {
+  await withProject(async (projectPath) => {
+    declarePrototypeArtifact(projectPath);
+    enterPrototypeValidation(projectPath);
+    const preview = await recordPreview(projectPath, previewInput(), {
+      supervisor: supervisor()
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+
+    const first = setPrototypeSurfaceScreenshot(
+      projectPath,
+      preview.surface.id,
+      ".ikran/artifacts/prototype-media/a.png",
+      { expectedGeneration: 0 }
+    );
+    expect(first.ok).toBe(true);
+
+    bumpPrototypeSurfaceSourceGenerationForIds(projectPath, [
+      preview.surface.id
+    ]);
+    expect(
+      setPrototypeSurfaceScreenshot(
+        projectPath,
+        preview.surface.id,
+        ".ikran/artifacts/prototype-media/old.png",
+        { expectedGeneration: 0 }
+      )
+    ).toEqual({ ok: false, reason: "generation_mismatch" });
+
+    expect(
+      setPrototypeSurfaceScreenshot(
+        projectPath,
+        preview.surface.id,
+        ".ikran/artifacts/prototype-media/b.png",
+        { expectedGeneration: 1 }
+      ).ok
+    ).toBe(true);
+    const surface = getPrototypeSurface(projectPath, preview.surface.id);
+    expect(surface?.screenshot_artifact_path).toBe(
+      ".ikran/artifacts/prototype-media/b.png"
+    );
+    expect(surface?.screenshot_generation).toBe(1);
+    expect(surface?.source_generation).toBe(1);
   });
 });
 

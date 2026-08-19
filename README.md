@@ -45,9 +45,22 @@ matches the Runtime source.
 
 ### Agent host setup
 
-An installed package exposes the designer launcher as `ikran` and the Agent
-host entry as `ikran-mcp`; `ikran-runtime` remains an internal implementation.
-An installed adapter can therefore launch:
+The Product Test Kit root is an [Agent Plugin](https://agent-plugins.org/)
+1.0 package: `plugin.json`, `mcp.json`, and `skills/`. Install **the extracted
+Kit directory**, not this Git repository. A clone of the research repo includes
+internal archives that must not ship inside a plugin.
+
+After `npm run setup:product`, register the extracted Kit as a local plugin in
+a host that supports Agent Plugins (Cursor, Codex, and other 1.0 clients). The
+host discovers `skills/design-system-governance` and starts `ikran-mcp --prod`
+from `mcp.json`. Leave `IKRAN_CWD` unset so the host workspace Roots can bind
+the designer's project; Runtime state stays under the plugin data directory
+until `setup_workspace` pins a project-local `.ikran/`.
+
+Hosts that only speak MCP still launch the same stdio entry. An installed
+package exposes the designer launcher as `ikran` and the Agent host entry as
+`ikran-mcp`; `ikran-runtime` remains an internal implementation. An installed
+adapter can therefore launch:
 
 ```text
 ikran-mcp --prod
@@ -174,7 +187,7 @@ still excluding `Attempts/`, `.scratch/`, `workflow/`, `Design issue/`,
 Release maintainers build the two deterministic archives with:
 
 ```bash
-npm run release:build -- --version v0.1.0-alpha.1
+npm run release:build -- --version v0.1.0-alpha.2
 ```
 
 Before a Draft Release is created, the full gate rebuilds both archives,
@@ -182,7 +195,7 @@ verifies their checksum and embedded manifest, extracts them with traversal and
 symlink defenses, then exercises each clean-download profile:
 
 ```bash
-npm run release:gate -- --version v0.1.0-alpha.1
+npm run release:gate -- --version v0.1.0-alpha.2
 ```
 
 The Product gate performs an omitted-dev install and drives the extracted MCP

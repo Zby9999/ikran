@@ -44,6 +44,19 @@ export function captureNodeMark(
   return rect.width * rect.height < NODE_MARK_FILL_THRESHOLD ? rect : null;
 }
 
+/** CSS box that maps a full-frame screenshot onto a locator figure. */
+export function locatorCropImageStyle(
+  crop: LayoutCaptureNodeRect
+): { left: string; top: string; width: string; height: string } | null {
+  if (!(crop.width > 0) || !(crop.height > 0)) return null;
+  return {
+    left: `${(-crop.x / crop.width) * 100}%`,
+    top: `${(-crop.y / crop.height) * 100}%`,
+    width: `${(1 / crop.width) * 100}%`,
+    height: `${(1 / crop.height) * 100}%`
+  };
+}
+
 /* --------------------------------- model --------------------------------- */
 
 export interface LayoutRuleProjection {

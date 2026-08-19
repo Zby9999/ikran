@@ -10,7 +10,7 @@
 
 1. **全 JSON 源层,无 Markdown 岛**:design-system source artifacts 全部是 JSON 文件;长文叙述(如 visual language 描述)作为 JSON 字符串字段承载,不保留独立 `.md` 源文件。旧 Skill 时代的 `design-reference-list.md` 取消,不迁移。
 2. **DB 为运行时真源**:链路为 文件 → 08 声明 → schema 校验 → ingest 入 DB → Browser 读 API。证据链(规则 ↔ answered card / annotation / evidence version)由 Runtime 在读取时实时 join,不预先烘焙进视图文件。`design-system-view.json` 降级为 `.ikran/artifacts/` 下的 derived export(供研究导出与外部消费),Browser **不读它**。
-3. **文件按职责分**:源文件放项目根 `design-system/`——`design-system.json`(元信息 + principles + visual language 叙述)、`token.json`(单文件三层:primitive → semantic → component,跨域 alias 网不拆到多文件)、`component-list.json`、`components/<name>.json`(每个组件一个文件)、`layout-rules.json`、`interaction-rules.json`。
+3. **文件按职责分**:源文件放项目根 `design-system/`——`design-system.json`(元信息 + concepts + visual language 叙述)、`token.json`(单文件三层:primitive → semantic → component,跨域 alias 网不拆到多文件)、`component-list.json`、`components/<name>.json`(每个组件一个文件)、`layout-rules.json`、`interaction-rules.json`。
 4. **状态三档 = 声明 + 交叉校验**:`formalized` / `candidate` / `gap` 不由 Agent 自报生效,Runtime ingest 时交叉校验——formalized 必须 link 到 `answer_source=designer-edited` 的已答卡;candidate 需 link 已答卡或 `inference=reasonable` 的 Agent annotation;gap 免 link(标注缺口本身就是语义)。注意:07 Complete 门要求所有卡有 final answer,因此 gap 只能由 Agent 显式声明,不能从"未答卡"推导——不存在未答卡。
 5. **v1 编辑只开放状态审批**:Browser 内唯一写操作是 candidate → formalized 审批,同时写 DB 并回写对应 JSON 源文件。其余编辑(改值、改叙述)不在 v1。
 6. **行内只展示 DS 信息本体**:每行显示值 / 含义 / 状态 chip;全部证据与溯源链(answered card、annotation、evidence version、designer annotations)收进 ⓘ hover 浮层,不在行内展开。
@@ -20,7 +20,7 @@
 
 ### 六部分抽取 → Browser 映射
 
-- Design principle → Foundations Home 的规则卡(principles 放全局 Home,不独占叶子)。
+- Design Concept → Foundations Home 的规则卡(concepts 放全局 Home,不独占叶子)。
 - Visual language → Foundations Home 叙述区 + token 行的 meaning 字段。
 - Token → Color / Typography / Materials 三个叶子(token.json 三层投影)。
 - Layout → Layout 叶子规则行。
@@ -31,7 +31,7 @@
 ### 导航结构(Section Tabs,prototype v3)
 
 - 顶部两个 tab:**Foundations** / **Components**,各自有 Home page。
-- Foundations:Home(principles 规则卡 + visual language 叙述)、Color、Typography、Materials、Layout、Interaction。
+- Foundations:Home(concepts 规则卡 + visual language 叙述)、Color、Typography、Materials、Layout、Interaction。
 - Components:Home(inventory 总览)、各 component 详情(含 Boundaries 与状态矩阵)。
 
 ## User stories covered
@@ -49,7 +49,7 @@
 - [x] candidate → formalized 审批同时写 DB 与回写 JSON 源文件,并记录语义事件。
 - [x] 写回冲突按 LWW 处理并留 event log。
 - [x] 六步完成后左侧面板底部出现 "Draft Design System" 按钮;Browser 以底部 sheet 升起,scrim/Esc/关闭钮可关闭。
-- [x] 六部分映射全部落地:principles 在 Foundations Home,组件详情含 Boundaries,无独立 Rules 页面。
+- [x] 六部分映射全部落地:concepts 在 Foundations Home,组件详情含 Boundaries,无独立 Rules 页面。
 - [x] 测试覆盖:JSON schema 校验、状态交叉校验、审批写回(DB + 文件一致)、导出物生成、sheet 入口出现时机。
 
 ## Real Agent validation

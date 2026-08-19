@@ -200,7 +200,7 @@ function designSystemJsonFixture() {
       status: "candidate",
       links: [...BASE_DESIGN_SYSTEM_LINKS]
     },
-    principles: [
+    concepts: [
       {
         id: "principle.minimalRestraint",
         value: "Project imagery supplies the color.",
@@ -307,7 +307,7 @@ function seedProtectedDesignSystem(dir: string): {
   source.visualLanguage.links.push(...editEventIds);
   // A stale source status must not silently demote the designer-approved DB
   // row when the project is already Rule Update protected.
-  source.principles[0].status = "candidate";
+  source.concepts[0].status = "candidate";
   writeProjectFile(dir, sourcePath, source);
   setProjectPhase(dir, "ready_for_new_design");
   return { sourcePath, editEventIds };
@@ -651,7 +651,7 @@ describe("design-system-sync (lazy file→DB re-ingest)", () => {
         ...BASE_DESIGN_SYSTEM_LINKS,
         ...editEventIds
       ]);
-      expect(beforeRead.principles[0].status).toBe("candidate");
+      expect(beforeRead.concepts[0].status).toBe("candidate");
       const beforeDb = new DatabaseSync(getProjectDbPath(dir));
       try {
         expect(
@@ -692,7 +692,7 @@ describe("design-system-sync (lazy file→DB re-ingest)", () => {
         ...BASE_DESIGN_SYSTEM_LINKS,
         ...editEventIds
       ]);
-      expect(afterRead.principles[0].status).toBe("formalized");
+      expect(afterRead.concepts[0].status).toBe("formalized");
 
       const db = new DatabaseSync(getProjectDbPath(dir));
       try {
@@ -743,7 +743,7 @@ describe("design-system-sync (lazy file→DB re-ingest)", () => {
             db_links: [...BASE_DESIGN_SYSTEM_LINKS],
             resolved_links: [...BASE_DESIGN_SYSTEM_LINKS],
             resolved_content_digest: designSystemEntryContentDigest(
-              afterRead.principles[0]
+              afterRead.concepts[0]
             )
           }),
           expect.objectContaining({
@@ -832,7 +832,7 @@ describe("design-system-sync (lazy file→DB re-ingest)", () => {
         converged.view.foundations.visualLanguage?.status
       ).toBe("candidate");
       expect(
-        converged.view.foundations.principles.find(
+        converged.view.foundations.concepts.find(
           (entry) => entry.entry_id === "principle.minimalRestraint"
         )?.status
       ).toBe("formalized");
@@ -898,7 +898,7 @@ describe("design-system-sync (lazy file→DB re-ingest)", () => {
       ) as ReturnType<typeof designSystemJsonFixture>;
       // Draft status authoring remains source-led. Remove the protected-only
       // stale status from this fixture so the retry is strictly link metadata.
-      source.principles[0].status = "formalized";
+      source.concepts[0].status = "formalized";
       writeProjectFile(dir, sourcePath, source);
       setProjectPhase(dir, "draft_design_system");
 
@@ -1071,7 +1071,7 @@ describe("design-system-sync (lazy file→DB re-ingest)", () => {
       const source = JSON.parse(
         readFileSync(path.join(dir, sourcePath), "utf8")
       ) as ReturnType<typeof designSystemJsonFixture>;
-      source.principles[0].meaning = "An undeclared semantic rewrite.";
+      source.concepts[0].meaning = "An undeclared semantic rewrite.";
       writeProjectFile(dir, sourcePath, source);
       const bytesBefore = readFileSync(path.join(dir, sourcePath), "utf8");
 

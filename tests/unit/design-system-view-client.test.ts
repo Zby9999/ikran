@@ -19,7 +19,7 @@ function designSystemView(name: string): DesignSystemView {
   return {
     generated_at: "2026-08-10T00:00:00.000Z",
     name,
-    foundations: { visualLanguage: null, principles: [] },
+    foundations: { visualLanguage: null, concepts: [] },
     tokens: { primitive: [], semantic: [], component: [] },
     layout: [],
     interaction: [],

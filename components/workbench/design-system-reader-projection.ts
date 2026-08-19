@@ -717,14 +717,14 @@ export function typographyAtlasItems(
   });
 }
 
-/* ----------------------------- prose principle --------------------------- */
+/* ----------------------------- prose concept ----------------------------- */
 
-export interface PrincipleProjection {
+export interface ConceptProjection {
   title: string;
   body: string;
 }
 
-export function projectPrinciple(entry: DesignSystemEntryView): PrincipleProjection {
+export function projectConcept(entry: DesignSystemEntryView): ConceptProjection {
   return {
     title: entry.meaning || entryDisplayName(entry),
     body: formatRuleBody(entry.value)

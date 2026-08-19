@@ -19,6 +19,8 @@ import { createServer } from "node:net";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
+import { stopAllPrototypePreviewRefresh } from "./prototype-preview-refresh";
+
 export type PreviewReadiness =
   | "installing"
   | "starting"
@@ -98,6 +100,7 @@ const intentionallyStoppedPreviewHandles = new WeakSet<PreviewProcessHandle>();
  * launch restores them from their persisted run records.
  */
 export function killAllPreviewServers(): void {
+  stopAllPrototypePreviewRefresh();
   for (const handle of livePreviewHandles) {
     try {
       intentionallyStoppedPreviewHandles.add(handle);

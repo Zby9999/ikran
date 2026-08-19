@@ -99,7 +99,7 @@ Issue 01–05 与 Issue 06 的既有代码/历史材料已存在；阅读时先�
 
 新的 seed alignment gate 结合 `workflow/self-improve-design/align-design-intent/SKILL.md`，但 MVP 必答门只保留六部分：
 
-1. Design principle
+1. Design Concept
 2. Visual language
 3. Token
 4. Layout

@@ -233,7 +233,7 @@ describe("Design Intent Alignment Runtime contract", () => {
 
       const inputs = [
         {
-          section: "design-principle",
+          section: "design-concept",
           idempotencyKey: "annotation-node",
           anchor: singleTarget(link)
         },
@@ -285,7 +285,7 @@ describe("Design Intent Alignment Runtime contract", () => {
           anchorKind: annotation.anchor.kind
         }))
       ).toEqual([
-        { section: "design-principle", anchorKind: "single" },
+        { section: "design-concept", anchorKind: "single" },
         { section: "visual-language", anchorKind: "single" },
         { section: "component", anchorKind: "focus-target-set" }
       ]);
@@ -373,7 +373,7 @@ describe("Design Intent Alignment Runtime contract", () => {
 
   test("exposes exactly the six gate sections; Content is rejected", () => {
     expect(ALIGNMENT_SECTIONS).toEqual([
-      "design-principle",
+      "design-concept",
       "visual-language",
       "token",
       "layout",
@@ -491,7 +491,7 @@ describe("Design Intent Alignment Runtime contract", () => {
     withProject((projectPath, link) => {
       setDesignLanguageDescription(projectPath, "A calm, precise product language");
       const result = createQuestionCard(projectPath, {
-        section: "design-principle",
+        section: "design-concept",
         observation:
           "The portfolio and guideline reference both foreground authored visual identity over dense utility.",
         question: "Should editorial expression guide the system?",
@@ -500,27 +500,78 @@ describe("Design Intent Alignment Runtime contract", () => {
 
       expect(result).toEqual({ ok: false, reason: "question_title_too_long" });
       expect(createQuestionCard(projectPath, {
-        section: "design-principle",
+        section: "design-concept",
         observation: "Hierarchy",
         question: "Should hierarchy guide the system?",
         anchor: singleTarget(link)
       })).toEqual({ ok: false, reason: "invalid_question_title" });
       expect(createQuestionCard(projectPath, {
-        section: "design-principle",
+        section: "design-concept",
         observation: "Should hierarchy guide system?",
         question: "Should hierarchy guide the system?",
         anchor: singleTarget(link)
       })).toEqual({ ok: false, reason: "invalid_question_title" });
       expect(createQuestionCard(projectPath, {
-        section: "design-principle",
+        section: "design-concept",
         observation: "Hierarchy guides the system",
         question: "Hierarchy guides the system?",
         anchor: singleTarget(link)
       })).toEqual({ ok: false, reason: "invalid_question_title" });
       expect(createQuestionCard(projectPath, {
-        section: "design-principle",
+        section: "design-concept",
         observation: "Calm editorial hierarchy across all surfaces",
         question: "Should hierarchy guide the system?",
+        anchor: singleTarget(link)
+      })).toEqual({ ok: false, reason: "invalid_question_title" });
+    });
+  });
+
+  test("accepts concise Han titles and rejects one-character or sentence-like Han titles", () => {
+    withProject((projectPath, link) => {
+      setDesignLanguageDescription(projectPath, "冷静、克制的产品语言");
+      expect(createQuestionCard(projectPath, {
+        section: "layout",
+        observation: "交替分栏",
+        question: "项目行是否保持交替分栏（先文后图，再图后文）？",
+        proposedAnswer: "保持奇数项文左图右、偶数项图左文右，两列等宽。",
+        anchor: singleTarget(link)
+      }).ok).toBe(true);
+      expect(createQuestionCard(projectPath, {
+        section: "layout",
+        observation: "全宽电影感裁切",
+        question: "后续项目是否改为全宽裁切，标签放在图下一行？",
+        proposedAnswer: "保留一个后期项目为全宽电影感裁切。",
+        anchor: singleTarget(link)
+      }).ok).toBe(true);
+      expect(createQuestionCard(projectPath, {
+        section: "layout",
+        observation: "先分割再电影感裁切",
+        question: "页首是否先留空再做电影感裁切？",
+        proposedAnswer: "页首保持高空场，名称居中。",
+        anchor: singleTarget(link)
+      }).ok).toBe(true);
+      expect(createQuestionCard(projectPath, {
+        section: "layout",
+        observation: "栏",
+        question: "是否只用单栏？",
+        anchor: singleTarget(link)
+      })).toEqual({ ok: false, reason: "invalid_question_title" });
+      expect(createQuestionCard(projectPath, {
+        section: "layout",
+        observation: "项目行是否应保持交替分栏布局结构",
+        question: "项目行是否保持交替分栏？",
+        anchor: singleTarget(link)
+      })).toEqual({ ok: false, reason: "invalid_question_title" });
+      expect(createQuestionCard(projectPath, {
+        section: "layout",
+        observation: "交替分栏。",
+        question: "项目行是否保持交替分栏？",
+        anchor: singleTarget(link)
+      })).toEqual({ ok: false, reason: "invalid_question_title" });
+      expect(createQuestionCard(projectPath, {
+        section: "layout",
+        observation: "交替分栏",
+        question: "交替分栏？",
         anchor: singleTarget(link)
       })).toEqual({ ok: false, reason: "invalid_question_title" });
     });
@@ -733,7 +784,7 @@ describe("Design Intent Alignment Runtime contract", () => {
     withProject((projectPath, link) => {
       setDesignLanguageDescription(projectPath, "A calm, precise product language");
       const card = createQuestionCard(projectPath, {
-        section: "design-principle",
+        section: "design-concept",
         observation: "Editorial identity",
         question: "Should expression guide systems?",
         anchor: singleTarget(link)

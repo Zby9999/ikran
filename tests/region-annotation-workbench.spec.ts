@@ -35,7 +35,7 @@ type AnnotationRecord = {
 
 // Issue 08A — pointer-up opens the entry form; the POST fires only after the
 // designer submits the body. Section is implicit: the stage currently in view
-// (default design-principle), never chosen in the form (Figma 670:891).
+// (default design-concept), never chosen in the form (Figma 670:891).
 async function submitAnnotationEntry(
   page: import("@playwright/test").Page,
   body: string
@@ -404,7 +404,7 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     expect(requestBody.author).toBe("designer");
     expect(requestBody.body).toBe("Move this toolbar 8px up");
     // Section = the stage currently in view (default), never form-chosen.
-    expect(requestBody.section).toBe("design-principle");
+    expect(requestBody.section).toBe("design-concept");
     expect(requestBody.target.kind).toBe("figma-region");
     expect(requestBody.target.surfaceArtifactId).toBe(surfaceId);
 
@@ -420,7 +420,7 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     expect(record!.author).toBe("designer");
     expect(record!.type).toBe("designer_annotation");
     expect(record!.body).toBe("Move this toolbar 8px up");
-    expect(record!.section).toBe("design-principle");
+    expect(record!.section).toBe("design-concept");
     expect(record!.rect_x).toBeGreaterThanOrEqual(0);
     expect(record!.rect_y).toBeGreaterThanOrEqual(0);
     expect(record!.rect_w).toBeGreaterThan(0);
@@ -435,7 +435,7 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
     // Filled designer annotations project a green side card (08A).
     const card = page.getByTestId("designer-annotation-card");
     await expect(card).toHaveAttribute("data-runtime-record-id", record!.id);
-    await expect(card).toHaveAttribute("data-section", "design-principle");
+    await expect(card).toHaveAttribute("data-section", "design-concept");
     await expect(card).toContainText("Move this toolbar 8px up");
 
     // Direct DB proof complements the API assertion above.
@@ -459,7 +459,7 @@ test.describe("Ikran Issue 06 — Region Annotation Workbench", () => {
         author: "designer",
         surface_id: surfaceId,
         type: "designer_annotation",
-        section: "design-principle"
+        section: "design-concept"
       });
     } finally {
       db.close();

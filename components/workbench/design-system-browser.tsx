@@ -69,6 +69,7 @@ import {
 import {
   captureNodeMark,
   captureOrientation,
+  locatorCropImageStyle,
   projectLayoutLeaf,
   type LayoutRuleProjection
 } from "./design-system-layout-projection";
@@ -91,11 +92,14 @@ import {
   breadcrumbFor,
   buildColorLeafModel,
   buildDesignSystemBrowserModel,
+  designSystemHasActionableCandidate,
+  foundationLeafHasCandidate,
   componentHeroFrameLayout,
   componentHeroLiveUrl,
   componentLeafId,
   formatEntryValue,
   heroLiveFallbackCopy,
+  heroLiveTimeoutDecision,
   heroLiveVerdictReducer,
   parseComponentHeroSizeMessage,
   planComponentHero,
@@ -1034,10 +1038,10 @@ export function FoundationsHomePage({
   model: DsBrowserModel;
   rows: RowSharedProps;
 }) {
-  const { visualLanguage, principles } = model.foundations;
-  const principleRules = useMemo(
-    () => projectDomainRuleLeaf(principles),
-    [principles]
+  const { visualLanguage, concepts } = model.foundations;
+  const conceptRules = useMemo(
+    () => projectDomainRuleLeaf(concepts),
+    [concepts]
   );
   const visualLanguageRule = useMemo(() => {
     if (!visualLanguage) return null;
@@ -1070,26 +1074,26 @@ export function FoundationsHomePage({
           </ol>
         </section>
       ) : null}
-      {principleRules.length > 0 ? (
-        <section className="dsb-section" data-testid="ds-principles-zone">
-          <GroupLabel>Principles</GroupLabel>
+      {conceptRules.length > 0 ? (
+        <section className="dsb-section" data-testid="ds-concepts-zone">
+          <GroupLabel>Design Concept</GroupLabel>
           <ol className="dsb-interaction-ledger">
-            {principleRules.map((rule) => (
+            {conceptRules.map((rule) => (
               <RuleLedgerCardShell
                 key={rule.key}
                 rule={rule}
                 approval={rows.approvals[rule.key] ?? { kind: "idle" }}
                 rows={rows}
-                testId={`ds-principle-${rule.row.entryId}`}
-                evidenceAriaLabel={`Evidence for principle ${rule.row.entryId}`}
+                testId={`ds-concept-${rule.row.entryId}`}
+                evidenceAriaLabel={`Evidence for design concept ${rule.row.entryId}`}
               />
             ))}
           </ol>
         </section>
       ) : null}
-      {!visualLanguageRule && principleRules.length === 0 ? (
+      {!visualLanguageRule && conceptRules.length === 0 ? (
         <p className="dsb-empty-body dsb-page-note">
-          No principles or visual language declared yet — open a leaf on the
+          No design concept or visual language declared yet — open a leaf on the
           left.
         </p>
       ) : null}
@@ -1242,7 +1246,7 @@ function DomainRulesZone({
 }
 
 /** Interaction leaf: cross-component strategies in the same text-card
- * language as Foundations principles. */
+ * language as Foundations concepts. */
 export function RulesLeafPage({
   leaf,
   rows
@@ -1830,18 +1834,44 @@ export function TypographyLeafPage({
  * "View in frame" lightbox is retired; `surfaceId` stays purely for the
  * stale verdict.
  *
- * Captures are declared by the agent in layout-rules.json `sourceCaptures`
- * (screenshot taken via Figma MCP, framed to the ratio region containing
- * the node, stored under design-system/captures/) and decorated onto the
- * entry by the Runtime view. The Blueprint schematic drawing (09C-B) is
- * retired — a composition of parsed values could never show what the
- * layout actually looks like; a capture can.
+ * Captures come from declared `sourceCaptures` or, when those are absent,
+ * Runtime-derived locator windows on the seed screenshot using Alignment
+ * node anchors. The Blueprint schematic drawing (09C-B) is retired — a
+ * composition of parsed values could never show what the layout actually
+ * looks like; a capture can.
  */
 
 /** "2026-07-31T14:05:22Z" → "2026-07-31 14:05"; anything else passes through. */
 function formatCapturedAt(iso: string): string {
   const match = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(iso.trim());
   return match ? `${match[1]} ${match[2]}` : iso;
+}
+
+function SourceCaptureImage({
+  capture,
+  session,
+  alt,
+  className
+}: {
+  capture: DesignSystemLayoutCapture;
+  session: string;
+  alt: string;
+  className?: string;
+}) {
+  const crop = capture.locatorCrop
+    ? locatorCropImageStyle(capture.locatorCrop)
+    : null;
+  const classes = [crop ? "dsb-placard-crop-img" : undefined, className]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <img
+      className={classes || undefined}
+      src={artifactScreenshotUrl(capture.artifactPath, session)}
+      alt={alt}
+      style={crop ?? undefined}
+    />
+  );
 }
 
 function LayoutPlacardBlock({
@@ -1877,8 +1907,9 @@ function LayoutPlacardBlock({
           data-orientation={orientation}
           data-testid={`ds-layout-figure-${rule.row.entryId}`}
         >
-          <img
-            src={artifactScreenshotUrl(capture.artifactPath, session)}
+          <SourceCaptureImage
+            capture={capture}
+            session={session}
             alt={`Source capture of ${capture.nodeName}`}
           />
           {mark ? (
@@ -1898,12 +1929,12 @@ function LayoutPlacardBlock({
         <div
           className="dsb-placard-unavailable"
           role="img"
-          aria-label={`No source capture for ${rule.headline}: this rule has no linked Figma node`}
+          aria-label={`No source capture for ${rule.headline}`}
           data-testid={`ds-layout-unavailable-${rule.row.entryId}`}
         >
           <span className="dsb-placard-unavailable-title">No source capture</span>
           <span className="dsb-placard-unavailable-note">
-            This rule has no linked Figma node — nothing to show honestly.
+            No locator screenshot is available for this rule.
           </span>
         </div>
       )}
@@ -1919,7 +1950,7 @@ function LayoutPlacardBlock({
               aria-pressed={item === capture}
               onClick={() => setActiveCapture(itemIndex)}
             >
-              <img src={artifactScreenshotUrl(item.artifactPath, session)} alt="" />
+              <SourceCaptureImage capture={item} session={session} alt="" />
             </button>
           ))}
         </span>
@@ -2110,15 +2141,73 @@ function useSheetPresence(
 
 /* --------------------------------- browser --------------------------------- */
 
-export function DesignSystemEntryButton({ onOpen }: { onOpen: () => void }) {
+export function useDesignSystemHasCandidate(
+  session: string,
+  enabled: boolean
+): boolean {
+  const [hasCandidate, setHasCandidate] = useState(false);
+
+  useEffect(() => {
+    if (!enabled) {
+      setHasCandidate(false);
+      return;
+    }
+    const client = createDesignSystemViewClient(session, {
+      onView: (view) => {
+        setHasCandidate(designSystemHasActionableCandidate(view));
+      },
+      onError: () => {
+        setHasCandidate(false);
+      }
+    });
+    void client.load();
+    const unsubscribe = subscribeRuntimeEvents(session, {
+      onRecord: (event) => {
+        if (event.kind === "design-system") void client.load();
+      }
+    });
+    return () => {
+      unsubscribe();
+      client.dispose();
+    };
+  }, [session, enabled]);
+
+  return hasCandidate;
+}
+
+export function DesignSystemEntryButton({
+  onOpen,
+  preparing = false,
+  hasCandidate = false
+}: {
+  onOpen: () => void;
+  preparing?: boolean;
+  hasCandidate?: boolean;
+}) {
+  const showCandidateDot = hasCandidate && !preparing;
   return (
     <button
       type="button"
       className="seed-workbench__ds-entry"
       data-testid="open-design-system-browser"
+      data-preparing={preparing ? "true" : undefined}
+      data-candidate={showCandidateDot ? "true" : undefined}
+      aria-busy={preparing || undefined}
       onClick={onOpen}
     >
-      Draft Design System
+      <span
+        className="seed-workbench__ds-entry-label"
+        data-preparing={preparing ? "true" : undefined}
+      >
+        Draft Design System
+      </span>
+      {showCandidateDot ? (
+        <span
+          aria-hidden
+          className="dsb-navrow-candidate-dot"
+          data-testid="ds-entry-candidate-dot"
+        />
+      ) : null}
     </button>
   );
 }
@@ -2737,34 +2826,14 @@ export function DesignSystemBrowser({
   const homeHasCandidate = Boolean(
     model &&
       [
-        ...model.foundations.principles,
+        ...model.foundations.concepts,
         ...(model.foundations.visualLanguage
           ? [model.foundations.visualLanguage.row]
           : [])
       ].some((row) => row.status === "candidate")
   );
-  const foundationLeafHasCandidate = (leafId: DsLeafId): boolean => {
-    if (!model) return false;
-    if (leafId === "layout") {
-      return model.foundations.layout.rows.some(
-        (row) => row.status === "candidate"
-      );
-    }
-    if (leafId === "interaction") {
-      return model.foundations.interaction.rows.some(
-        (row) => row.status === "candidate"
-      );
-    }
-    const leaf = model.foundations.tokenLeaves.find(
-      (candidate) => candidate.id === leafId
-    );
-    return Boolean(
-      leaf &&
-        [...leaf.rules, ...leaf.groups.flatMap((group) => group.rows)].some(
-          (row) => row.status === "candidate"
-        )
-    );
-  };
+  const leafHasCandidate = (leafId: DsLeafId): boolean =>
+    Boolean(model && foundationLeafHasCandidate(model, leafId));
 
   const mainContent = renderMain();
 
@@ -2847,7 +2916,7 @@ export function DesignSystemBrowser({
                         undefined
                       }
                       data-candidate={
-                        foundationLeafHasCandidate(leaf.id) || undefined
+                        leafHasCandidate(leaf.id) || undefined
                       }
                       onClick={() => openLeaf(section, leaf.id)}
                     >
@@ -2859,7 +2928,7 @@ export function DesignSystemBrowser({
                         strokeWidth={2}
                       />
                       <span className="dsb-navrow-label">{leaf.name}</span>
-                      {foundationLeafHasCandidate(leaf.id) ? (
+                      {leafHasCandidate(leaf.id) ? (
                         <span aria-hidden className="dsb-navrow-candidate-dot" />
                       ) : null}
                       {hasRuleUpdate(
@@ -3125,6 +3194,10 @@ export function ComponentDetail({
     href: string;
     bounds: DsHeroContentSize;
   } | null>(null);
+  // Declared states whose `?state=` navigation never reported geometry (B3).
+  // A state-level failure reverts to the default document instead of
+  // demoting the whole live tier to the static capture.
+  const [failedStates, setFailedStates] = useState<readonly string[]>([]);
   const [liveStageWidth, setLiveStageWidth] = useState(0);
   const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const liveFrameRef = useRef<HTMLIFrameElement>(null);
@@ -3144,6 +3217,7 @@ export function ComponentDetail({
     verdict.phase === "unreachable" ? verdict.key : null
   );
   const capture = plan.kind === "static" ? plan.capture : null;
+  const captureMark = capture ? captureNodeMark(capture) : null;
   // The provenance popover lists the hero's capture first (the plan's tier
   // verdict), the rest in declared order.
   const popoverCaptures =
@@ -3165,22 +3239,34 @@ export function ComponentDetail({
     });
     setHoveredState(null);
     setLiveMeasurement(null);
+    setFailedStates([]);
   }
   // Each query-state navigation is a fresh geometry attempt even though it
-  // shares the same surface/live key. Discard the old bounds before commit so
-  // a differently-sized state never flashes at the previous state's offset.
-  // The URL also gives messages and timers an attempt identity.
+  // shares the same surface/live key. The previous report is KEPT as the
+  // stage's layout geometry (B1): the stage height — and the states row
+  // sitting under it — must not collapse to the 240px placeholder, or the
+  // hovered button slides out from under the pointer and the row's
+  // mouseleave oscillates the iframe until the geometry timeout demotes the
+  // component. The iframe stays veiled while unsettled, so stale bounds
+  // never frame new-state content. The URL gives messages and timers an
+  // attempt identity.
   if (
     plan.kind === "live" &&
     liveUrl !== null &&
     verdict.key === plan.liveKey &&
     verdict.href !== liveUrl
   ) {
-    setLiveMeasurement(null);
     dispatchVerdict({ type: "navigate", key: plan.liveKey, href: liveUrl });
   }
-  const liveContentSize =
-    liveMeasurement?.href === liveUrl ? liveMeasurement.bounds : null;
+  // "Settled" means the current document reported its own bounds; only then
+  // is the iframe revealed. Layout always uses the latest report, stale or
+  // not (see above).
+  const liveSettled =
+    liveMeasurement !== null && liveMeasurement.href === liveUrl;
+  const liveDefaultUrl =
+    plan.kind === "live"
+      ? componentHeroLiveUrl(plan.liveHero, null)
+      : null;
   const liveOrigin = useMemo(() => {
     if (liveUrl === null) return null;
     try {
@@ -3191,7 +3277,7 @@ export function ComponentDetail({
   }, [liveUrl]);
   const liveFrameLayout = componentHeroFrameLayout(
     liveStageWidth,
-    liveContentSize
+    liveMeasurement?.bounds ?? null
   );
   const liveFrameTransform =
     liveFrameLayout === null
@@ -3232,8 +3318,11 @@ export function ComponentDetail({
     return () => window.removeEventListener("message", receiveSize);
   }, [liveOrigin, liveUrl, plan.kind, plan.liveKey]);
   // ~5s without the first valid v2 geometry report = the harness is gone or
-  // still on the legacy body-size contract; demote to the static capture and
-  // say why instead of displaying an uncentered or blank hero.
+  // still on the legacy body-size contract. A DEFAULT-document timeout demotes
+  // the whole live tier to the static capture and says why, instead of
+  // displaying an uncentered or blank hero. A declared-STATE timeout (B3)
+  // fails only that state: record it and revert to the default document —
+  // one broken state never kills a component whose default renders fine.
   useEffect(() => {
     if (
       plan.kind !== "live" ||
@@ -3246,21 +3335,31 @@ export function ComponentDetail({
     }
     const key = plan.liveKey;
     const href = liveUrl;
+    const defaultHref = liveDefaultUrl;
     const timer = setTimeout(() => {
+      const decision = heroLiveTimeoutDecision(href, defaultHref);
+      if (decision.kind === "state-failure") {
+        const stateName = decision.state;
+        if (stateName !== null) {
+          setFailedStates((previous) =>
+            previous.includes(stateName) ? previous : [...previous, stateName]
+          );
+        }
+        setHoveredState(null);
+        return;
+      }
       dispatchVerdict({ type: "timeout", key, href });
     }, DS_HERO_LIVE_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [liveUrl, plan.kind, plan.liveKey, verdict.href, verdict.key, verdict.phase]);
-  // States row hover/focus drives `?state=<name>` re-navigation, debounced;
-  // leaving the row restores the harness default immediately.
+  }, [liveUrl, liveDefaultUrl, plan.kind, plan.liveKey, verdict.href, verdict.key, verdict.phase]);
+  // States row hover/focus drives `?state=<name>` re-navigation, debounced.
+  // Restoring the default on leave is debounced by the SAME window (B4): with
+  // the stage height held steady during navigation, a symmetric debounce
+  // absorbs pointer jitter between adjacent buttons without a visible delay.
   const scheduleState = useCallback((name: string | null) => {
     if (stateTimerRef.current !== null) {
       clearTimeout(stateTimerRef.current);
       stateTimerRef.current = null;
-    }
-    if (name === null) {
-      setHoveredState(null);
-      return;
     }
     stateTimerRef.current = setTimeout(() => {
       setHoveredState(name);
@@ -3349,22 +3448,40 @@ export function ComponentDetail({
                       width: liveFrameLayout.frameWidth,
                       height: liveFrameLayout.frameHeight,
                       transform: liveFrameTransform ?? undefined,
-                      visibility:
-                        liveContentSize === null ? "hidden" : "visible"
+                      visibility: liveSettled ? "visible" : "hidden"
                     }
               }
             />
           </div>
         ) : capture ? (
-          <img
-            className="dsb-hero-image"
-            src={artifactScreenshotUrl(capture.artifactPath, session)}
-            alt={
-              capture.origin === "code"
-                ? `Code render of ${capture.nodeName}`
-                : `Source capture of ${capture.nodeName}`
-            }
-          />
+          <figure
+            className="dsb-placard-figure dsb-hero-figure"
+            data-orientation={captureOrientation(capture)}
+            data-testid="ds-component-figure"
+          >
+            <SourceCaptureImage
+              capture={capture}
+              session={session}
+              className="dsb-hero-image"
+              alt={
+                capture.origin === "code"
+                  ? `Code render of ${capture.nodeName}`
+                  : `Source capture of ${capture.nodeName}`
+              }
+            />
+            {captureMark ? (
+              <span
+                className="dsb-placard-mark"
+                aria-hidden="true"
+                style={{
+                  left: `${captureMark.x * 100}%`,
+                  top: `${captureMark.y * 100}%`,
+                  width: `${captureMark.width * 100}%`,
+                  height: `${captureMark.height * 100}%`
+                }}
+              />
+            ) : null}
+          </figure>
         ) : (
           <div
             className="dsb-placard-unavailable dsb-hero-unavailable"
@@ -3376,9 +3493,8 @@ export function ComponentDetail({
               No source capture
             </span>
             <span className="dsb-placard-unavailable-note">
-              This component has no capture and no live implementation yet —
-              ask the agent to implement this component for a real-time
-              preview.
+              No locator screenshot is available yet. A live preview appears
+              after this component is implemented.
             </span>
           </div>
         )}
@@ -3407,6 +3523,7 @@ export function ComponentDetail({
                   type="button"
                   className="dsb-hero-state dsb-hero-state--live"
                   data-active={hoveredState === name || undefined}
+                  data-unreachable={failedStates.includes(name) || undefined}
                   onMouseEnter={() => scheduleState(name)}
                   onFocus={() => scheduleState(name)}
                   onBlur={handleStateBlur}

@@ -110,18 +110,56 @@ function registeredHandlers(): Map<string, ToolHandler> {
   return handlers;
 }
 
+function expectWaitArmedAfterOpen(response: {
+  content: Array<{ type: string; text: string }>;
+  structuredContent: Record<string, unknown>;
+}): void {
+  expect(response.structuredContent.wait_armed).toBe(true);
+  expect(response.structuredContent.next_action).toBeUndefined();
+  expect(response.content[0].text).toMatch(/embedded browser/i);
+  expect(response.content[0].text).toContain("wait_for_agent_command");
+  expect(response.content[0].text).toContain(
+    "First open the Workbench URL above"
+  );
+  expect(response.content[0].text).toContain("user-visible chat message");
+  expect(response.content[0].text).toMatch(/open it manually/i);
+  expect(response.content[0].text).not.toContain(
+    "Call `wait_for_agent_command` now"
+  );
+}
+
+test("first-open seed-reference-registration re-arms wait with zero seeds", async () => {
+  const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-wait-gate-"));
+  cleanup.push(projectPath);
+  initializeProjectDb(projectPath);
+  activeFixture.projectPath = projectPath;
+
+  const handler = registeredHandlers().get("create_or_open_project");
+  if (!handler) throw new Error("create_or_open_project not registered");
+
+  expectWaitArmedAfterOpen(await handler({}));
+});
+
+test("open_workbench does not send the Agent into wait before the Workbench URL can be opened", async () => {
+  const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-wait-gate-"));
+  cleanup.push(projectPath);
+  initializeProjectDb(projectPath);
+  activeFixture.projectPath = projectPath;
+
+  const handler = registeredHandlers().get("open_workbench");
+  if (!handler) throw new Error("open_workbench not registered");
+
+  const response = await handler({});
+  expect(response.structuredContent.url).toMatch(/^http:\/\/127\.0\.0\.1:/);
+  expectWaitArmedAfterOpen(response);
+});
+
 test("project response re-arms wait during Alignment answering", async () => {
   createProjectAtStage("alignment-answering");
   const handler = registeredHandlers().get("create_or_open_project");
   if (!handler) throw new Error("create_or_open_project not registered");
 
-  const response = await handler({});
-  expect(response.structuredContent.next_action).toEqual({
-    tool: "wait_for_agent_command"
-  });
-  expect(response.content[0].text).toContain(
-    "Call `wait_for_agent_command` now"
-  );
+  expectWaitArmedAfterOpen(await handler({}));
 });
 
 test("post-Alignment project response and direct wait both fail closed without a lease", async () => {
@@ -154,12 +192,7 @@ test("post-Alignment project response re-arms for an active Rule Update Review",
   if (!handler) throw new Error("create_or_open_project not registered");
 
   const response = await handler({});
-  expect(response.structuredContent.next_action).toEqual({
-    tool: "wait_for_agent_command"
-  });
-  expect(response.content[0].text).toContain(
-    "Call `wait_for_agent_command` now"
-  );
+  expectWaitArmedAfterOpen(response);
 });
 
 test("direct wait reports state_unavailable instead of starting a lease", async () => {

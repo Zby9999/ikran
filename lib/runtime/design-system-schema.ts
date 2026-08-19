@@ -656,7 +656,7 @@ function validateDesignSystemMeta(
   const unknownField = rejectUnknownFields(json, [
     "name",
     "visualLanguage",
-    "principles"
+    "concepts"
   ]);
   if (unknownField) return unknownField;
   const nameFailure = requireString(json, "name", {});
@@ -678,7 +678,7 @@ function validateDesignSystemMeta(
   if (visualFailure) return visualFailure;
 
   return (
-    checkEntryArray(json.principles, "principles", (value, ctx) => {
+    checkEntryArray(json.concepts, "concepts", (value, ctx) => {
       return validateRuleBody(value, ctx);
     }, ["global-rule"]) ?? { ok: true }
   );
@@ -1230,10 +1230,10 @@ export function collectStatusEntries(
 
   switch (fileKind) {
     case "design-system.json": {
-      const principles = root.principles as unknown[];
+      const concepts = root.concepts as unknown[];
       return [
         fromEntry(root.visualLanguage),
-        ...principles.map((p) => fromEntry(p))
+        ...concepts.map((p) => fromEntry(p))
       ];
     }
     case "token.json": {

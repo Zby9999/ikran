@@ -6,7 +6,7 @@ import { CheckIcon } from "@phosphor-icons/react";
 import styles from "./alignment-ui.module.css";
 
 export const ALIGNMENT_STAGES = [
-  { id: "design-principle", label: "Design principle", color: "#c97759" },
+  { id: "design-concept", label: "Design Concept", color: "#c97759" },
   { id: "visual-language", label: "Visual language", color: "#4178ba" },
   { id: "token", label: "Token", color: "#be5fde" },
   { id: "layout", label: "Layout", color: "#dc3a91" },
@@ -39,7 +39,7 @@ export type AlignmentQuestionSegment = {
 /** Paper 42S-0 — Extraction panel progress colors only (not card/stage accents). */
 export const EXTRACTION_PROGRESS_STAGE_COLORS: Record<AlignmentStageId, string> =
   {
-    "design-principle": "#e78460",
+    "design-concept": "#e78460",
     "visual-language": "#5192e1",
     token: "#c774e4",
     layout: "#e863a4",
@@ -113,9 +113,6 @@ export type AlignmentStagePanelProps = {
   currentStage: AlignmentStageId;
   coverage: AlignmentCoverage;
   onStageChange: (stage: AlignmentStageId) => void;
-  onComplete: () => void;
-  completed?: boolean;
-  completionEnabled?: boolean;
   className?: string;
 };
 
@@ -123,16 +120,8 @@ export function AlignmentStagePanel({
   currentStage,
   coverage,
   onStageChange,
-  onComplete,
-  completed = false,
-  completionEnabled = true,
   className
 }: AlignmentStagePanelProps) {
-  const canComplete =
-    completionEnabled &&
-    !completed &&
-    ALIGNMENT_STAGES.every(({ id }) => coverage[id]);
-
   return (
     <nav
       aria-label="Design intent alignment stages"
@@ -168,18 +157,6 @@ export function AlignmentStagePanel({
             </button>
           );
         })}
-      </div>
-
-      <div className={styles.completeTray}>
-        <button
-          aria-label="Complete alignment"
-          className={styles.completeButton}
-          disabled={!canComplete}
-          onClick={onComplete}
-          type="button"
-        >
-          {completed ? "Completed" : "Complete"}
-        </button>
       </div>
     </nav>
   );

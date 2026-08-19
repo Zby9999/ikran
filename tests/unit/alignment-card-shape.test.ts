@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 
 import {
+  ALIGNMENT_CARD_TYPE,
   AlignmentCardProjectionProvider,
   AlignmentCardShapeUtil,
   AlignmentCardShapeView,
@@ -11,6 +12,7 @@ import {
   alignmentCardEditorUpdates,
   isAlignmentCanvasPointerDown,
   normalizeAlignmentCardDimensions,
+  setOnlyOpenAlignmentCard,
   type AlignmentCardShape
 } from "../../components/workbench/alignment-card-shape";
 
@@ -113,6 +115,84 @@ describe("AlignmentCardShapeUtil", () => {
       { id: "question-2", x: 500, expanded: false, editing: false, w: 320 },
       { id: "annotation-1", x: 100, expanded: false, editing: false, w: 320 }
     ]);
+  });
+
+  test("raises the open dialog above overlapping sibling cards", () => {
+    const bringToFront = vi.fn();
+    const updateShape = vi.fn();
+    const editor = {
+      getCurrentPageShapes: () => [
+        {
+          id: "shape:q1",
+          type: ALIGNMENT_CARD_TYPE,
+          x: 500,
+          props: {
+            w: 320,
+            placement: "right",
+            cardKind: "question",
+            expanded: false,
+            editing: false
+          }
+        },
+        {
+          id: "shape:q2",
+          type: ALIGNMENT_CARD_TYPE,
+          x: 500,
+          props: {
+            w: 320,
+            placement: "right",
+            cardKind: "question",
+            expanded: false,
+            editing: false
+          }
+        }
+      ],
+      run: (fn: () => void) => fn(),
+      updateShape,
+      bringToFront
+    };
+
+    setOnlyOpenAlignmentCard(editor as never, "shape:q1");
+    expect(bringToFront).toHaveBeenCalledWith(["shape:q1"]);
+
+    bringToFront.mockClear();
+    editor.getCurrentPageShapes = () => [
+      {
+        id: "shape:q1",
+        type: ALIGNMENT_CARD_TYPE,
+        x: 500,
+        props: {
+          w: 360,
+          placement: "right",
+          cardKind: "question",
+          expanded: true,
+          editing: false
+        }
+      }
+    ];
+    setOnlyOpenAlignmentCard(editor as never, "shape:q1");
+    expect(bringToFront).toHaveBeenCalledWith(["shape:q1"]);
+
+    bringToFront.mockClear();
+    setOnlyOpenAlignmentCard(editor as never, null);
+    expect(bringToFront).not.toHaveBeenCalled();
+
+    editor.getCurrentPageShapes = () => [
+      {
+        id: "shape:a1",
+        type: ALIGNMENT_CARD_TYPE,
+        x: 500,
+        props: {
+          w: 320,
+          placement: "right",
+          cardKind: "agent-annotation",
+          expanded: false,
+          editing: false
+        }
+      }
+    ];
+    setOnlyOpenAlignmentCard(editor as never, "shape:a1");
+    expect(bringToFront).toHaveBeenCalledWith(["shape:a1"]);
   });
 
   test("keeps the frame-facing edge fixed while a left card changes width", () => {

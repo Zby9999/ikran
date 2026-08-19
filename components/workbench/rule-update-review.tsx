@@ -81,6 +81,58 @@ export type RuleUpdateProjection = {
   categories_with_unfinished_proposals: RuleUpdateCategory[];
 };
 
+/**
+ * True when any published Rule Update still has unfinished proposals —
+ * the same signal Browser nav rows use for the red attention dot.
+ */
+export function useDesignSystemHasPendingRuleUpdate(
+  session: string,
+  enabled: boolean
+): boolean {
+  const [hasPending, setHasPending] = useState(false);
+
+  useEffect(() => {
+    if (!enabled) {
+      setHasPending(false);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/rule-update-review", {
+          headers: { "x-ikran-session": session },
+          cache: "no-store"
+        });
+        const data = (await response.json()) as RuleUpdateProjection & {
+          ok?: boolean;
+        };
+        if (cancelled) return;
+        if (!response.ok || data.ok !== true) {
+          setHasPending(false);
+          return;
+        }
+        setHasPending(data.categories_with_unfinished_proposals.length > 0);
+      } catch {
+        if (!cancelled) setHasPending(false);
+      }
+    };
+    void load();
+    const unsubscribe = subscribeRuntimeEvents(session, {
+      onRecord: (event) => {
+        if (event.kind === "rule-update" || event.kind === "design-system") {
+          void load();
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [session, enabled]);
+
+  return hasPending;
+}
+
 export function useRuleUpdateReviewView(session: string, open: boolean) {
   const [projection, setProjection] = useState<RuleUpdateProjection | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -395,7 +447,7 @@ function ProposalCard({
                 </div>
               ) : proposal.status === "waiting_agent" ? (
                   <p className="dsb-ru-wait-copy">
-                    Decision sent. The Agent will apply this exact revision.
+                    Ask the Agent to continue.
                   </p>
                 ) : proposal.status === "failed" ? (
                   <p className="dsb-ru-wait-copy">

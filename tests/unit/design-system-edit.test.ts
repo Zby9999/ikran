@@ -130,7 +130,7 @@ function ingestVisualLanguage(projectPath: string): void {
       status: "candidate",
       links: ["visual-language-card"]
     },
-    principles: []
+    concepts: []
   });
   const declared = recordSourceArtifact(projectPath, {
     path: "design-system/design-system.json",

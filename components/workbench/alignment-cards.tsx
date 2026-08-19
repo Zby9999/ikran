@@ -3,6 +3,7 @@
 import {
   useEffect,
   useId,
+  useRef,
   useState,
   type CSSProperties,
   type FormEvent,
@@ -38,6 +39,14 @@ export function activateAlignmentQuestionCard(
 
 export function previewAlignmentQuestionFocus(onFocusPreview?: () => void) {
   onFocusPreview?.();
+}
+
+/** Grow an alignment card editor field to its content instead of scrolling at two lines. */
+export function hugAlignmentAnswerTextarea(
+  textarea: Pick<HTMLTextAreaElement, "style" | "scrollHeight">
+) {
+  textarea.style.height = "auto";
+  textarea.style.height = `${textarea.scrollHeight}px`;
 }
 
 export function endAlignmentCardFocusPreview(
@@ -92,7 +101,7 @@ export type AlignmentQuestionCardProps = {
 };
 
 const STAGE_TINTS: Record<AlignmentStageId, string> = {
-  "design-principle": "#fff0ea",
+  "design-concept": "#fff0ea",
   "visual-language": "#e6f1ff",
   token: "#fbeeff",
   layout: "#f8eff3",
@@ -101,7 +110,7 @@ const STAGE_TINTS: Record<AlignmentStageId, string> = {
 };
 
 const STAGE_SUBMIT_COLORS: Record<AlignmentStageId, string> = {
-  "design-principle": "#a88a7e",
+  "design-concept": "#a88a7e",
   "visual-language": "#698db9",
   token: "#ae6fc3",
   layout: "#b2688f",
@@ -129,6 +138,7 @@ export function AlignmentQuestionCard({
   className
 }: AlignmentQuestionCardProps) {
   const editorId = useId();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const savedAnswer = finalAnswer?.trim() ?? "";
   const initialDraft = savedAnswer || proposedAnswer || "";
   const [draft, setDraft] = useState(initialDraft);
@@ -146,6 +156,12 @@ export function AlignmentQuestionCard({
     setDraft(savedAnswer || proposedAnswer || "");
     if (savedAnswer) setSubmittedAnswer("");
   }, [proposedAnswer, savedAnswer]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    hugAlignmentAnswerTextarea(textarea);
+  }, [draft, expanded]);
 
   async function submitAnswer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -224,6 +240,7 @@ export function AlignmentQuestionCard({
             <textarea
               aria-label={`Answer question ${number}`}
               id={editorId}
+              ref={textareaRef}
               disabled={readOnly || !expanded || submitting}
               onChange={(event) => setDraft(event.currentTarget.value)}
               placeholder="Add your design intent..."
@@ -279,7 +296,14 @@ export function AgentAnnotationCard({
   evidenceAnchor: _evidenceAnchor,
   className
 }: AgentAnnotationCardProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useState("");
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    hugAlignmentAnswerTextarea(textarea);
+  }, [draft, editing]);
 
   function submitAnnotation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -330,6 +354,7 @@ export function AgentAnnotationCard({
         <form className={styles.annotationEditor} onSubmit={submitAnnotation}>
           <textarea
             aria-label="Add information to agent annotation"
+            ref={textareaRef}
             onChange={(event) => setDraft(event.currentTarget.value)}
             placeholder="Add your design intent..."
             rows={2}

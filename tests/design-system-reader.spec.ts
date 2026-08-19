@@ -1,7 +1,7 @@
 // Ikran Issue 09C-A — Reader Projection e2e through the real Workbench.
 //
 // Full chain: alignment completes → 09B-rich sources (composite text styles,
-// alias chains, candidate + gap statuses, a rich principle, an object layout
+// alias chains, candidate + gap statuses, a rich concept, an object layout
 // rule) declared + ingested through MCP → the Typography leaf renders the
 // visual Type Atlas with construction data attached to each source-backed
 // specimen → the Layout leaf renders Source Capture placards (09C-D02): a
@@ -162,7 +162,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         status: "formalized",
         links: [designerEditedCardId]
       },
-      principles: [
+      concepts: [
         {
           id: "principle-intent",
           value: "Design with intent across all product surfaces. Every choice needs a reason the designer can repeat; state that reason next to the choice and avoid decoration without a job. Marketing one-offs may be treated as exceptions.",
@@ -434,7 +434,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
       )
     ).toMatchObject({ kind: "domain-rule", domain: "shadow" });
 
-    // ---- Foundations home: principle title + prose body. ----
+    // ---- Foundations home: design concept title + prose body. ----
     await entryButton.click();
     const sheet = page.getByTestId("ds-sheet");
     await expect(sheet).toHaveAttribute("data-open", "true");
@@ -452,7 +452,7 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         )
       )
       .toBe("none");
-    const richPrinciple = page.getByTestId("ds-principle-principle-intent");
+    const richPrinciple = page.getByTestId("ds-concept-principle-intent");
     await expect(richPrinciple).toBeVisible();
     await expect(richPrinciple).toContainText("Intent over decoration");
     await expect(richPrinciple).toContainText("Design with intent");

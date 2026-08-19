@@ -207,7 +207,7 @@ function writeApprovalFixtures(dir: string) {
       status: "formalized",
       links: ["card-edited"]
     },
-    principles: [
+    concepts: [
       {
         id: "p1",
         value: "少即是多。",
@@ -446,11 +446,11 @@ describe("approveDesignSystemEntry happy path", () => {
         readProjectFile(dir, "design-system/design-system.json")
       );
       expect(
-        json.principles.find((p: { id: string }) => p.id === "p1").status
+        json.concepts.find((p: { id: string }) => p.id === "p1").status
       ).toBe("formalized");
       // Other entries untouched.
       expect(
-        json.principles.find((p: { id: string }) => p.id === "p2").status
+        json.concepts.find((p: { id: string }) => p.id === "p2").status
       ).toBe("candidate");
       expect(json.visualLanguage.status).toBe("formalized");
     });
@@ -495,7 +495,7 @@ describe("approveDesignSystemEntry happy path", () => {
       // The second write equals the first file with ONLY p2's status flipped,
       // re-serialized canonically — no reordering/reformat noise.
       const expected = JSON.parse(afterFirst);
-      expected.principles.find((p: { id: string }) => p.id === "p2").status =
+      expected.concepts.find((p: { id: string }) => p.id === "p2").status =
         "formalized";
       expect(afterSecond).toBe(`${stableJsonStringify(expected)}\n`);
     });
@@ -752,7 +752,7 @@ describe("approval transitions and rejections", () => {
         readProjectFile(dir, "design-system/design-system.json")
       );
       expect(
-        source.principles.find((principle: { id: string }) => principle.id === "p3")
+        source.concepts.find((principle: { id: string }) => principle.id === "p3")
           .status
       ).toBe("formalized");
       expect(listEvents(dir, "design_system_entry_approved")).toHaveLength(1);
@@ -782,7 +782,7 @@ describe("approval transitions and rejections", () => {
         readProjectFile(dir, "design-system/design-system.json")
       );
       expect(
-        source.principles.find((principle: { id: string }) => principle.id === "p3")
+        source.concepts.find((principle: { id: string }) => principle.id === "p3")
           .status
       ).toBe("candidate");
       expect(listEvents(dir, "design_system_entry_reverted")[0].payload).toMatchObject({
@@ -793,7 +793,7 @@ describe("approval transitions and rejections", () => {
 
       // Reverting revokes the earlier direct approval. An Agent cannot put
       // the identical bytes back to formalized without a new designer click.
-      source.principles.find(
+      source.concepts.find(
         (principle: { id: string }) => principle.id === "p3"
       ).status = "formalized";
       writeProjectFile(dir, "design-system/design-system.json", source);
@@ -829,7 +829,7 @@ describe("approval transitions and rejections", () => {
       const source = JSON.parse(
         readProjectFile(dir, "design-system/design-system.json")
       );
-      source.principles.find(
+      source.concepts.find(
         (principle: { id: string }) => principle.id === "p1"
       ).status = "formalized";
       writeProjectFile(dir, "design-system/design-system.json", source);
@@ -882,7 +882,7 @@ describe("approval transitions and rejections", () => {
       const json = JSON.parse(
         readProjectFile(dir, "design-system/design-system.json")
       );
-      json.principles = json.principles.filter(
+      json.concepts = json.concepts.filter(
         (p: { id: string }) => p.id !== "p2"
       );
       writeProjectFile(dir, "design-system/design-system.json", json);
@@ -906,7 +906,7 @@ describe("approval transitions and rejections", () => {
       seedAndIngest(dir);
       const relativePath = "design-system/design-system.json";
       const source = JSON.parse(readProjectFile(dir, relativePath));
-      source.principles.find(
+      source.concepts.find(
         (principle: { id: string }) => principle.id === "p1"
       ).meaning = "Undeclared semantic change that the designer has not reviewed";
       writeProjectFile(dir, relativePath, source);
@@ -921,7 +921,7 @@ describe("approval transitions and rejections", () => {
         status: "candidate"
       });
       expect(
-        JSON.parse(readProjectFile(dir, relativePath)).principles.find(
+        JSON.parse(readProjectFile(dir, relativePath)).concepts.find(
           (principle: { id: string }) => principle.id === "p1"
         )
       ).toMatchObject({
@@ -938,7 +938,7 @@ describe("approval transitions and rejections", () => {
       const relativePath = "design-system/design-system.json";
       const expectedSourceDigest = sha256OfFile(dir, relativePath);
       const source = JSON.parse(readProjectFile(dir, relativePath));
-      source.principles.find(
+      source.concepts.find(
         (principle: { id: string }) => principle.id === "p2"
       ).meaning = "Concurrent source write after preflight";
       writeProjectFile(dir, relativePath, source);
@@ -1187,7 +1187,7 @@ describe("post-approval consistency", () => {
       const source = JSON.parse(
         readProjectFile(dir, "design-system/design-system.json")
       );
-      source.principles.find(
+      source.concepts.find(
         (principle: { id: string }) => principle.id === "p3"
       ).value = "Agent replaced the approved principle.";
       writeProjectFile(dir, "design-system/design-system.json", source);
@@ -1240,7 +1240,7 @@ describe("atomicity + LWW race", () => {
       expect(listEvents(dir, "design_system_entry_reverted")).toHaveLength(1);
 
       const source = JSON.parse(readProjectFile(dir, relativePath));
-      source.principles.find(
+      source.concepts.find(
         (principle: { id: string }) => principle.id === "p3"
       ).status = "formalized";
       writeProjectFile(dir, relativePath, source);

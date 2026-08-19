@@ -130,7 +130,7 @@ function alignmentResponse(): Response {
     JSON.stringify({
       ok: true,
       sections: [
-        "design-principle",
+        "design-concept",
         "visual-language",
         "token",
         "layout",
@@ -208,12 +208,12 @@ describe("Workbench Runtime consistency", () => {
     client.dispose();
   });
 
-  test("loads alignment and exposes prepare, return, answer, append, and complete mutations", async () => {
+  test("loads alignment and exposes prepare, return, answer, append, complete, and confirm-prototype mutations", async () => {
     const snapshots: unknown[] = [];
     const writes: unknown[] = [];
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.includes("design-intent-alignment") && init?.method === "PATCH") {
+      if (init?.method === "PATCH") {
         writes.push(JSON.parse(String(init.body)));
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,
@@ -241,6 +241,7 @@ describe("Workbench Runtime consistency", () => {
     expect(await client.recordDesignerAnswer("question-1", "Use 16px")).toEqual({ ok: true });
     expect(await client.appendAgentAnnotationInformation("annotation-1", "Keep this exception")).toEqual({ ok: true });
     expect(await client.completeDesignIntentAlignment()).toEqual({ ok: true });
+    expect(await client.confirmPrototype()).toEqual({ ok: true });
     expect(writes).toEqual([
       { action: "prepare" },
       { action: "return-to-seed-reference" },
@@ -252,7 +253,8 @@ describe("Workbench Runtime consistency", () => {
         action: "append-agent-annotation-information",
         input: { annotationId: "annotation-1", information: "Keep this exception" }
       },
-      { action: "complete" }
+      { action: "complete" },
+      { action: "confirm-prototype" }
     ]);
     client.dispose();
   });

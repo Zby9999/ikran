@@ -41,7 +41,7 @@ function validDesignSystemJson() {
       status: "candidate",
       links: ["card-1"]
     },
-    principles: [
+    concepts: [
       entry({ id: "principle-1" }),
       entry({ id: "principle-2", status: "gap", links: [], value: "待定。" })
     ]
@@ -220,7 +220,7 @@ test.describe("shared entry contract", () => {
 
     const globalRules = validDesignSystemJson();
     Object.assign(globalRules.visualLanguage, { kind: "global-rule" });
-    for (const principle of globalRules.principles) {
+    for (const principle of globalRules.concepts) {
       Object.assign(principle, { kind: "global-rule" });
     }
     expect(
@@ -339,7 +339,7 @@ test.describe("shared entry contract", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("design-system.json", () => {
-  test("valid file (principles + visual language prose as JSON string)", () => {
+  test("valid file (concepts + visual language prose as JSON string)", () => {
     const res = validateDesignSystemJson(
       "design-system.json",
       validDesignSystemJson()
@@ -347,9 +347,9 @@ test.describe("design-system.json", () => {
     expect(res.ok).toBe(true);
   });
 
-  test("missing name / visualLanguage / principles → missing_required_field", () => {
+  test("missing name / visualLanguage / concepts → missing_required_field", () => {
     const valid = validDesignSystemJson();
-    for (const field of ["name", "visualLanguage", "principles"] as const) {
+    for (const field of ["name", "visualLanguage", "concepts"] as const) {
       const broken = { ...valid, [field]: undefined };
       const res = validateDesignSystemJson("design-system.json", broken);
       expect(res.ok, field).toBe(false);
@@ -358,10 +358,10 @@ test.describe("design-system.json", () => {
     }
   });
 
-  test("principle value must be prose and legacy rich objects explain the migration", () => {
+  test("concept value must be prose and legacy rich objects explain the migration", () => {
     const res = validateDesignSystemJson("design-system.json", {
       ...validDesignSystemJson(),
-      principles: [entry({ value: { statement: "Keep hierarchy clear." } })]
+      concepts: [entry({ value: { statement: "Keep hierarchy clear." } })]
     });
     expect(res).toMatchObject({
       ok: false,
@@ -1393,7 +1393,7 @@ test.describe("collectStatusEntries", () => {
     expect(gap).toMatchObject({ status: "gap", links: [] });
   });
 
-  test("design-system.json yields visual language + principles", () => {
+  test("design-system.json yields visual language + concepts", () => {
     const entries = collectStatusEntries(
       "design-system.json",
       validDesignSystemJson()
@@ -1479,17 +1479,17 @@ test.describe("declaration wiring (deep checkFile seam)", () => {
     });
   });
 
-  test("design-system.json missing principles is rejected at declaration", () => {
+  test("design-system.json missing concepts is rejected at declaration", () => {
     withTempProject((dir) => {
       insertAnsweredCard(dir, "card-1");
       const broken = validDesignSystemJson() as Record<string, unknown>;
-      delete broken.principles;
+      delete broken.concepts;
       writeProjectFile(dir, "design-system/design-system.json", broken);
 
       const res = recordSourceArtifact(dir, {
         path: "design-system/design-system.json",
         artifactType: "design-system.json",
-        semanticPurpose: "meta + principles",
+        semanticPurpose: "meta + concepts",
         relatedRecordIds: ["card-1"]
       });
       expect(res.ok).toBe(false);

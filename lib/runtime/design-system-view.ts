@@ -31,6 +31,7 @@ import {
   isCaptureNodeRectBounds
 } from "./design-system-schema";
 import { codeCaptureDigest } from "./code-capture-digest";
+import { deriveSourceCaptures } from "./design-system-source-capture";
 import type {
   DesignSystemEntryKind,
   DesignSystemFileKind,
@@ -147,6 +148,10 @@ export interface DesignSystemLayoutCapture {
    * capture's code files changed (content digest mismatch) or went missing. */
   stale: boolean;
   nodeRect: LayoutCaptureNodeRect | null;
+  /** When set, `artifactPath` is a full-frame screenshot and the Browser
+   * CSS-crops this window (0–1 of the image) to the 3:2 / 2:3 locator.
+   * Absent for Agent-declared PNGs that are already cropped. */
+  locatorCrop?: LayoutCaptureNodeRect | null;
   origin: DesignSystemCaptureOrigin;
   /** Code-backed captures only: the code files this capture froze and their
    * content digest at capture time; both null for source captures. */
@@ -220,7 +225,7 @@ export interface DesignSystemView {
   name: string;
   foundations: {
     visualLanguage: DesignSystemEntryView | null;
-    principles: DesignSystemEntryView[];
+    concepts: DesignSystemEntryView[];
   };
   tokens: {
     primitive: DesignSystemEntryView[];
@@ -546,6 +551,11 @@ function buildDesignSystemViewFromDb(
       `SELECT id, frame_node_id, frame_name, created_at
        FROM figma_evidence_surfaces WHERE id = ?`
     );
+    const surfaceCaptureStmt = db.prepare(
+      `SELECT id, screenshot_artifact_path, frame_bounds_json,
+              positional_nodes_json, created_at
+       FROM figma_evidence_surfaces WHERE id = ?`
+    );
     // Capture freshness (09C-D02): a linked surface is stale once superseded
     // (lineage tip moved on) or when it no longer exists at all.
     const captureStaleStmt = db.prepare(
@@ -596,6 +606,7 @@ function buildDesignSystemViewFromDb(
         unresolved_links: []
       };
       const versionIds: string[] = [];
+      const anchorJsons: string[] = [];
 
       for (const link of links) {
         const card = cardStmt.get(link) as
@@ -620,6 +631,7 @@ function buildDesignSystemViewFromDb(
             answer_source: card.answer_source
           });
           versionIds.push(...anchorEvidenceVersionIds(card.anchor_json));
+          anchorJsons.push(card.anchor_json);
           continue;
         }
         const annotation = annotationStmt.get(link) as
@@ -639,6 +651,7 @@ function buildDesignSystemViewFromDb(
             inference: annotation.inference
           });
           versionIds.push(...anchorEvidenceVersionIds(annotation.anchor_json));
+          anchorJsons.push(annotation.anchor_json);
           continue;
         }
         const edit = editStmt.get(link) as
@@ -700,12 +713,28 @@ function buildDesignSystemViewFromDb(
           evidence,
           ...(row.section === "layout" || row.section === "components.spec"
             ? {
-                captures: capturesOfRaw(
-                  sourceCaptures,
-                  captureStaleOf,
-                  codeCaptureStaleOf,
-                  liveSurfaceOf
-                )
+                captures:
+                  capturesOfRaw(
+                    sourceCaptures,
+                    captureStaleOf,
+                    codeCaptureStaleOf,
+                    liveSurfaceOf
+                  ) ??
+                  deriveSourceCaptures({
+                    projectPath,
+                    anchorJsons,
+                    loadSurface: (id) =>
+                      surfaceCaptureStmt.get(id) as
+                        | {
+                            id: string;
+                            screenshot_artifact_path: string | null;
+                            frame_bounds_json: string | null;
+                            positional_nodes_json: string | null;
+                            created_at: string;
+                          }
+                        | undefined,
+                    staleOf: captureStaleOf
+                  })
               }
             : {}),
           ...(row.section === "components.spec"

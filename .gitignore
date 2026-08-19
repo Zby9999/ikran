@@ -2,6 +2,7 @@ node_modules
 .next
 .next-real-seed
 .next-ikran-*
+.next-walkthrough
 .playwright-mcp
 .pi-subagents/
 .pi/sandbox.json

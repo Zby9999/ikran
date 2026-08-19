@@ -6,6 +6,8 @@ import {
   approvalReducer,
   buildColorLeafModel,
   buildDesignSystemBrowserModel,
+  foundationLeafHasCandidate,
+  designSystemHasActionableCandidate,
   canOpenDesignSystemBrowser,
   classifyToken,
   detectSwatch,
@@ -52,7 +54,7 @@ function emptyView(): DesignSystemView {
   return {
     generated_at: "2026-07-29T00:00:00.000Z",
     name: "",
-    foundations: { visualLanguage: null, principles: [] },
+    foundations: { visualLanguage: null, concepts: [] },
     tokens: { primitive: [], semantic: [], component: [] },
     layout: [],
     interaction: [],
@@ -72,11 +74,11 @@ function fixtureView(): DesignSystemView {
         name: null,
         value: { description: "Quiet, editorial surfaces." }
       }),
-      principles: [
+      concepts: [
         entry({
           entry_id: "p1",
           file_kind: "design-system.json",
-          section: "foundations.principles",
+          section: "foundations.concepts",
           name: null,
           value: "Evidence before inference.",
           status: "candidate"
@@ -322,11 +324,11 @@ describe("buildDesignSystemBrowserModel", () => {
     expect(model.empty).toBe(false);
     expect(model.name).toBe("Landing Seed");
 
-    // Foundations Home: principles + visual language narrative.
+    // Foundations Home: concepts + visual language narrative.
     expect(model.foundations.visualLanguage?.description).toBe(
       "Quiet, editorial surfaces."
     );
-    expect(model.foundations.principles.map((row) => row.value)).toEqual([
+    expect(model.foundations.concepts.map((row) => row.value)).toEqual([
       "Evidence before inference."
     ]);
 
@@ -583,6 +585,199 @@ describe("buildColorLeafModel (color page redesign)", () => {
     expect(model.rules).toEqual([]);
     expect(model.semantic).toEqual([]);
     expect(model.component).toEqual([]);
+  });
+});
+
+describe("foundationLeafHasCandidate (sidebar blue dot)", () => {
+  test("Color ignores collapsed primitive tokens once page options are formalized", () => {
+    const view = emptyView();
+    view.tokens.primitive = [
+      entry({
+        entry_id: "primitive.color.black",
+        section: "token.primitive",
+        name: "color.black",
+        kind: "token",
+        domain: "color",
+        value: "#000000",
+        status: "candidate"
+      }),
+      entry({
+        entry_id: "primitive.color.white",
+        section: "token.primitive",
+        name: "color.white",
+        kind: "token",
+        domain: "color",
+        value: "#FFFFFF",
+        status: "candidate"
+      })
+    ];
+    view.tokens.semantic = [
+      entry({
+        entry_id: "semantic.color.canvas",
+        name: "color.canvas",
+        kind: "token",
+        domain: "color",
+        alias: "primitive.color.white",
+        value: { alias: "primitive.color.white", usage: "page canvas" },
+        status: "formalized"
+      }),
+      entry({
+        entry_id: "semantic.color.ink",
+        name: "color.ink",
+        kind: "token",
+        domain: "color",
+        alias: "primitive.color.black",
+        value: { alias: "primitive.color.black", usage: "body ink" },
+        status: "formalized"
+      }),
+      entry({
+        entry_id: "semantic.rule.no-brand-ui-color",
+        name: "rule.no-brand-ui-color",
+        kind: "domain-rule",
+        domain: "color",
+        meaning: "No extra brand UI color.",
+        value: "Interface is near-white and near-black only.",
+        status: "formalized"
+      })
+    ];
+
+    const model = buildDesignSystemBrowserModel(view);
+    const colorPage = buildColorLeafModel(view);
+    expect(
+      [
+        ...colorPage.rules,
+        ...colorPage.semantic,
+        ...colorPage.component
+      ].every((item) => item.status === "formalized")
+    ).toBe(true);
+    expect(foundationLeafHasCandidate(model, "color")).toBe(false);
+  });
+
+  test("Color still lights when a semantic option or color rule is candidate", () => {
+    const view = emptyView();
+    view.tokens.primitive = [
+      entry({
+        entry_id: "primitive.color.white",
+        section: "token.primitive",
+        name: "color.white",
+        kind: "token",
+        domain: "color",
+        value: "#FFFFFF",
+        status: "candidate"
+      })
+    ];
+    view.tokens.semantic = [
+      entry({
+        entry_id: "semantic.color.canvas",
+        name: "color.canvas",
+        kind: "token",
+        domain: "color",
+        alias: "primitive.color.white",
+        value: { alias: "primitive.color.white", usage: "page canvas" },
+        status: "candidate"
+      })
+    ];
+    expect(
+      foundationLeafHasCandidate(buildDesignSystemBrowserModel(view), "color")
+    ).toBe(true);
+
+    view.tokens.semantic = [
+      entry({
+        entry_id: "semantic.color.canvas",
+        name: "color.canvas",
+        kind: "token",
+        domain: "color",
+        alias: "primitive.color.white",
+        value: { alias: "primitive.color.white", usage: "page canvas" },
+        status: "formalized"
+      }),
+      entry({
+        entry_id: "semantic.rule.no-brand-ui-color",
+        name: "rule.no-brand-ui-color",
+        kind: "domain-rule",
+        domain: "color",
+        meaning: "No extra brand UI color.",
+        value: "Interface is near-white and near-black only.",
+        status: "candidate"
+      })
+    ];
+    expect(
+      foundationLeafHasCandidate(buildDesignSystemBrowserModel(view), "color")
+    ).toBe(true);
+  });
+
+  test("Typography still counts primitive candidates as page options", () => {
+    const view = emptyView();
+    view.tokens.primitive = [
+      entry({
+        entry_id: "primitive.fontFamily.nats",
+        section: "token.primitive",
+        name: "fontFamily.nats",
+        kind: "token",
+        domain: "typography",
+        value: "NATS",
+        status: "candidate"
+      })
+    ];
+    expect(
+      foundationLeafHasCandidate(
+        buildDesignSystemBrowserModel(view),
+        "typography"
+      )
+    ).toBe(true);
+  });
+});
+
+describe("designSystemHasActionableCandidate (entry-button blue dot)", () => {
+  test("is false on an empty view", () => {
+    expect(designSystemHasActionableCandidate(null)).toBe(false);
+    expect(designSystemHasActionableCandidate(emptyView())).toBe(false);
+  });
+
+  test("lights when any Browser sidebar row would still show a candidate dot", () => {
+    expect(designSystemHasActionableCandidate(fixtureView())).toBe(true);
+  });
+
+  test("ignores collapsed Color primitive candidates once page options are formalized", () => {
+    const view = emptyView();
+    view.tokens.primitive = [
+      entry({
+        entry_id: "primitive.color.black",
+        section: "token.primitive",
+        name: "color.black",
+        kind: "token",
+        domain: "color",
+        value: "#000000",
+        status: "candidate"
+      })
+    ];
+    view.tokens.semantic = [
+      entry({
+        entry_id: "semantic.color.canvas",
+        name: "color.canvas",
+        kind: "token",
+        domain: "color",
+        alias: "primitive.color.black",
+        value: { alias: "primitive.color.black" },
+        status: "formalized"
+      })
+    ];
+    expect(designSystemHasActionableCandidate(view)).toBe(false);
+  });
+
+  test("clears once every actionable row is formalized", () => {
+    const view = emptyView();
+    view.foundations.concepts = [
+      entry({
+        entry_id: "p1",
+        file_kind: "design-system.json",
+        section: "foundations.concepts",
+        name: null,
+        value: "Evidence before inference.",
+        status: "formalized"
+      })
+    ];
+    expect(designSystemHasActionableCandidate(view)).toBe(false);
   });
 });
 
@@ -1099,6 +1294,7 @@ import {
   componentHeroLiveKey,
   componentHeroLiveUrl,
   heroLiveFallbackCopy,
+  heroLiveTimeoutDecision,
   heroLiveVerdictReducer,
   parseComponentHeroSizeMessage,
   planComponentHero,
@@ -1275,6 +1471,52 @@ describe("componentHeroLiveUrl (Issue 33)", () => {
     expect(
       componentHeroLiveUrl(liveHero({ previewUrl: null }), "hover")
     ).toBeNull();
+  });
+
+  test("a state named default resolves to the no-query resting URL", () => {
+    const hero = liveHero();
+    expect(componentHeroLiveUrl(hero, "default")).toBe(
+      "http://127.0.0.1:4401/__ikran/component/button"
+    );
+    expect(componentHeroLiveUrl(hero, " Default ")).toBe(
+      "http://127.0.0.1:4401/__ikran/component/button"
+    );
+    // Only the exact resting-state name normalizes; lookalikes still force.
+    expect(componentHeroLiveUrl(hero, "default-hover")).toBe(
+      "http://127.0.0.1:4401/__ikran/component/button?state=default-hover"
+    );
+  });
+});
+
+describe("heroLiveTimeoutDecision (state-level failure, B3)", () => {
+  const defaultHref = "http://127.0.0.1:4401/__ikran/component/button";
+
+  test("a default-document timeout demotes the whole live tier", () => {
+    expect(heroLiveTimeoutDecision(defaultHref, defaultHref)).toEqual({
+      kind: "demote"
+    });
+    // No known default (e.g. preview URL missing) also demotes.
+    expect(heroLiveTimeoutDecision(defaultHref, null)).toEqual({
+      kind: "demote"
+    });
+  });
+
+  test("a declared-state timeout fails only that state and names it", () => {
+    expect(
+      heroLiveTimeoutDecision(`${defaultHref}?state=hover`, defaultHref)
+    ).toEqual({ kind: "state-failure", state: "hover" });
+    expect(
+      heroLiveTimeoutDecision(
+        `${defaultHref}?state=${encodeURIComponent("focus visible")}`,
+        defaultHref
+      )
+    ).toEqual({ kind: "state-failure", state: "focus visible" });
+  });
+
+  test("an unparseable state href still fails at state level", () => {
+    expect(
+      heroLiveTimeoutDecision("not a url", defaultHref)
+    ).toEqual({ kind: "state-failure", state: null });
   });
 });
 

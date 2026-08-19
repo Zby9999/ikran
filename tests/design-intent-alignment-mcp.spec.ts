@@ -117,8 +117,8 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
       name: "create_alignment_question_card",
       arguments: {
         alignmentAttemptId: attemptId,
-        idempotencyKey: "premature-design-principle-question",
-        section: "design-principle",
+        idempotencyKey: "premature-design-concept-question",
+        section: "design-concept",
         observation: "Calm Hierarchy",
         question: "Should the hierarchy remain calm?",
         proposedAnswer: "Yes.",
@@ -142,7 +142,7 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
       arguments: {
         alignmentAttemptId: attemptId,
         idempotencyKey: "alignment-assumption-1",
-        section: "design-principle",
+        section: "design-concept",
         inference: "reasonable",
         title: "Existing hierarchy",
         body: "The current visual hierarchy appears intentional.",
@@ -167,14 +167,14 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     let firstCardId = "";
     const proposedCards: Array<{ id: string; answer: string }> = [];
     for (const section of [
-      "design-principle",
+      "design-concept",
       "visual-language",
       "token",
       "layout",
       "component",
       "interaction"
     ]) {
-      if (section !== "design-principle") {
+      if (section !== "design-concept") {
         const sectionAnnotationEvent = sse.waitForRecord();
         expect(sc(await client.callTool({
           name: "create_agent_annotation",

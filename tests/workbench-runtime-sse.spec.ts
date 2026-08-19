@@ -132,7 +132,7 @@ test.describe("Task 11 — SSE record invalidation", () => {
         },
         author: "designer",
         body: "Placeholder annotation",
-        section: "design-principle"
+        section: "design-concept"
       },
       { "x-ikran-session": token },
       runtime.port

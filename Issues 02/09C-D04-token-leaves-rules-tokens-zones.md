@@ -31,7 +31,7 @@ seed 下页面以真实内容——规则卡——开场,而不是空 Tokens 区
   (`components/workbench/design-system-browser.tsx`):折叠行 = 序号锚点 +
   statement + meaning + status chip + 展开箭头;展开后 = entry 字段条件渲染
   (非空才显示)+ ⓘ evidence 链 + candidate 审批;
-- 展开字段区与 Home principles / Interaction rules 共用 `dsb-principle-fields`
+- 展开字段区与 Home concepts / Interaction rules 共用 `dsb-principle-fields`
   视觉语言,是同一卡片家族的第三个成员;字段内容按 entry value 数据驱动,不为
   domain rule 设计新视觉;
 - domain-rule 的 status / approval 语义与 token 相同(candidate → formalized,

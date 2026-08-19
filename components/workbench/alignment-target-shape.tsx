@@ -67,7 +67,7 @@ export class AlignmentTargetShapeUtil extends BaseBoxShapeUtil<AlignmentTargetSh
     w: T.number,
     h: T.number,
     stage: T.literalEnum(
-      "design-principle",
+      "design-concept",
       "visual-language",
       "token",
       "layout",
@@ -77,7 +77,7 @@ export class AlignmentTargetShapeUtil extends BaseBoxShapeUtil<AlignmentTargetSh
   };
 
   getDefaultProps(): AlignmentTargetShape["props"] {
-    return { w: 40, h: 40, stage: "design-principle" };
+    return { w: 40, h: 40, stage: "design-concept" };
   }
 
   override canEdit() {

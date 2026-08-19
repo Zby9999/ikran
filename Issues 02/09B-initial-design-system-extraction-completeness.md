@@ -192,10 +192,10 @@ Agent fixture 验证；Runtime 必须保存足够的 claim/excerpt/target lineag
 - Layout：canvas/container、grid、section rhythm、responsive relationships；
 - Components：inventory、anatomy、variants、sizes、states、token links、boundaries、
   usage/content rules、responsive behavior、code links 和 open gaps；
-- Principles / visual language：statement、scope、rationale、use / avoid 和 exceptions。
+- Design Concept / visual language：statement、scope、rationale、use / avoid 和 exceptions。
 - Domain rules：领域级判断规则（如「不要用阴影做区域区分」「CTA 用 ink 色」），
   以 `kind: domain-rule` 写入所属领域的 source 文件并带正确 `domain`；
-  不够全局的规则不得升级为 principle，也不得伪装成叙事 token。
+  不够全局的规则不得升级为 Design Concept，也不得伪装成叙事 token。
 
 只抽取 evidence 支持且对系统可复用的类别。不存在的产品状态或组件不是 gap。
 
@@ -282,7 +282,7 @@ Good / bad 对照（bad 同时违反一句一条、事实结构化、原文语�
 ### Entry kind 与文件归属
 
 - 所有 foundation entry（`token.json`、`layout-rules.json`、`interaction-rules.json`
-  与 `design-system.json` 的 principles / visualLanguage）必须携带显式 `kind`：
+  与 `design-system.json` 的 concepts / visualLanguage）必须携带显式 `kind`：
   `token | domain-rule | global-rule`。
 - kind 与文件归属必须一致，ingest 时确定性校验并给 typed reason：
   - `token`：只允许 `token.json`；
@@ -316,9 +316,9 @@ Good / bad 对照（bad 同时违反一句一条、事实结构化、原文语�
 not-applicable，而不是无声省略。额外字段必须在 ingest、DB view 和 derived export
 中原样保留，不能因为 Browser v1 暂未渲染而丢失。
 
-### Principles、layout 与 interaction
+### Design Concept、layout 与 interaction
 
-- Principle value 支持 `statement / rationale / scope / use / avoid / exceptions`。
+- Design Concept value 支持 `statement / rationale / scope / use / avoid / exceptions`。
 - Layout rule 支持 relationship、responsive behavior、token links 和 acceptance checks。
 - Interaction rule 支持 applies-to、state behavior、motion、layout invariants、accessibility
   和 acceptance checks。
@@ -388,7 +388,7 @@ data/API/derived-export 完整性和现有 Browser 信息架构内已经定义�
 - [x] 把一个无关 edited card 链接到 formalized entry 后，Agent audit / fixture
       validation 失败，并保留可审计 lineage。
 - [x] 对照 Skill Test 5 的适用信息类别核查 tokens、components、layout、interaction 和
-      principles；不要求机械复制旧文件或固定条目数量。
+      concepts；不要求机械复制旧文件或固定条目数量。
 - [x] 真实 smoke 与 deterministic MCP / fixture tests 分开记录。
 
 ## Likely difficulties for Agent

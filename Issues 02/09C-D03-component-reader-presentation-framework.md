@@ -258,7 +258,7 @@ Source-generated / Schematic / unavailable 五档链过于复杂，收缩为：
    直接查看，点击即进详情页。Blocks 与 Components 表现形式不同的问题随之
    消解——各自只有详情页，无需共处一个网格；交互层级只剩 Section Tabs
    一层。
-2. **Foundations Home 保留**：它承载 principles 与 visual language 叙述，
+2. **Foundations Home 保留**：它承载 concepts 与 visual language 叙述，
    是内容页而非目录，不受本决策影响。
 3. **侧边栏承接原 Home 的职责**：分组（Blocks / Components），组头带状态
    汇总（n formalized · m candidate），条目带状态点；点击 Components tab
