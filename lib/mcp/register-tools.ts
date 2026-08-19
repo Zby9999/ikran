@@ -20,10 +20,11 @@ import { registerResearchExportTools } from "./research-export-tools";
 import { registerInitialDesignSystemTools } from "./initial-design-system-tools";
 import {
   IKRAN_MCP_INSTRUCTIONS,
+  resolveMcpInstructions,
   type RegisterIkranToolsDeps
 } from "./shared";
 
-export { IKRAN_MCP_INSTRUCTIONS };
+export { IKRAN_MCP_INSTRUCTIONS, resolveMcpInstructions };
 export type {
   DiscoveredWorkingFolder,
   RegisterIkranToolsDeps,

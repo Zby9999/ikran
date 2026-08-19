@@ -40,7 +40,7 @@ afterEach(() => {
 
 describe("release selection policy", () => {
   test("selects the runtime/build surface for Product without test or R&D trees", async () => {
-    const files = await selectReleaseFiles({ repoRoot: ROOT, kit: "product", source: "filesystem" });
+    const files = await selectReleaseFiles({ repoRoot: ROOT, kit: "agent-plugin", source: "filesystem" });
     const paths = files.map((file: { path: string }) => file.path);
 
     expect(paths).toContain("README.md");
@@ -49,8 +49,10 @@ describe("release selection policy", () => {
     expect(paths).toContain(".npmrc");
     expect(paths).toContain("plugin.json");
     expect(paths).toContain("mcp.json");
-    expect(paths).toContain(".mcp.json");
-    expect(paths).toContain(".claude-plugin/plugin.json");
+    expect(paths).toContain(".cursor-plugin/plugin.json");
+    expect(paths).toContain(".codex-plugin/plugin.json");
+    expect(paths).not.toContain(".mcp.json");
+    expect(paths).not.toContain(".claude-plugin/plugin.json");
     expect(paths).toContain("skills/design-system-governance/SKILL.md");
     expect(paths).toContain("app/page.tsx");
     expect(paths).toContain("bin/ikran-runtime.mjs");
@@ -86,15 +88,33 @@ describe("release selection policy", () => {
     expect(paths).toContain("tests/global-setup.ts");
     expect(paths).toContain("tests/unit/release-selection.test.ts");
     expect(paths).toContain("scripts/release/build.mjs");
+    expect(paths).toContain("plugin.json");
+    expect(paths).toContain(".cursor-plugin/plugin.json");
+    expect(paths).toContain(".claude-plugin/plugin.json");
+    expect(paths).toContain(".mcp.json");
     expect(paths.some((file: string) => file.startsWith("app/prototypes/"))).toBe(false);
     expect(paths.some(isForbidden)).toBe(false);
+  });
+
+  test("selects Claude Code files without Cursor or Codex adapters", async () => {
+    const files = await selectReleaseFiles({ repoRoot: ROOT, kit: "claude-plugin", source: "filesystem" });
+    const paths = files.map((file: { path: string }) => file.path);
+
+    expect(paths).toContain(".mcp.json");
+    expect(paths).toContain(".claude-plugin/plugin.json");
+    expect(paths).toContain("skills/design-system-governance/SKILL.md");
+    expect(paths).not.toContain("plugin.json");
+    expect(paths).not.toContain("mcp.json");
+    expect(paths).not.toContain(".cursor-plugin/plugin.json");
+    expect(paths).not.toContain(".codex-plugin/plugin.json");
+    expect(paths.some((file: string) => file.startsWith("tests/"))).toBe(false);
   });
 
   test("fails closed when a required runtime file is missing", async () => {
     const fixture = makeRepositoryFixture();
     unlinkSync(path.join(fixture, "bin/ikran.mjs"));
 
-    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "product" })).rejects.toMatchObject({
+    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "agent-plugin" })).rejects.toMatchObject({
       code: "missing_required_path"
     });
   });
@@ -103,7 +123,7 @@ describe("release selection policy", () => {
     const fixture = makeRepositoryFixture();
     unlinkSync(path.join(fixture, "LICENSE"));
 
-    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "product" })).rejects.toMatchObject({
+    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "agent-plugin" })).rejects.toMatchObject({
       code: "missing_required_path",
       details: { path: "LICENSE" }
     });
@@ -116,7 +136,7 @@ describe("release selection policy", () => {
     manifest.license = "MIT";
     writeFileSync(manifestPath, `${JSON.stringify(manifest)}\n`);
 
-    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "product" })).rejects.toMatchObject({
+    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "agent-plugin" })).rejects.toMatchObject({
       code: "release_license_mismatch",
       details: {
         expected: "Apache-2.0",
@@ -134,12 +154,52 @@ describe("release selection policy", () => {
       `${JSON.stringify({ name: "ikran", version: "9.9.9" })}\n`
     );
 
-    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "product" })).rejects.toMatchObject({
+    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "claude-plugin" })).rejects.toMatchObject({
       code: "claude_plugin_metadata_mismatch",
       details: {
         packageVersion: "0.1.0-alpha.1",
         claudeVersion: "9.9.9"
       }
+    });
+  });
+
+  test("fails closed when Cursor plugin metadata drifts from package version", async () => {
+    const fixture = makeRepositoryFixture();
+    write(
+      fixture,
+      ".cursor-plugin/plugin.json",
+      `${JSON.stringify({
+        name: "ikran",
+        version: "9.9.9",
+        skills: "./skills/",
+        mcpServers: "./mcp.json"
+      })}\n`
+    );
+
+    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "agent-plugin" })).rejects.toMatchObject({
+      code: "cursor_plugin_metadata_mismatch",
+      details: {
+        packageVersion: "0.1.0-alpha.1",
+        cursorVersion: "9.9.9"
+      }
+    });
+  });
+
+  test("fails closed when Codex plugin MCP points at Claude .mcp.json", async () => {
+    const fixture = makeRepositoryFixture();
+    write(
+      fixture,
+      ".codex-plugin/plugin.json",
+      `${JSON.stringify({
+        name: "ikran",
+        version: "0.1.0-alpha.1",
+        skills: "./skills/",
+        mcpServers: "./.mcp.json"
+      })}\n`
+    );
+
+    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "agent-plugin" })).rejects.toMatchObject({
+      code: "codex_mcp_adapter_invalid"
     });
   });
 
@@ -149,7 +209,7 @@ describe("release selection policy", () => {
     execFileSync("git", ["add", "."], { cwd: fixture });
     write(fixture, "app/untracked-local-output.ts", "export const leaked = true;\n");
 
-    const files = await selectReleaseFiles({ repoRoot: fixture, kit: "product", source: "git" });
+    const files = await selectReleaseFiles({ repoRoot: fixture, kit: "agent-plugin", source: "git" });
     expect(files.some((file: { path: string }) => file.path === "app/untracked-local-output.ts")).toBe(false);
     await expect(assertCleanReleaseSource(fixture)).rejects.toMatchObject({
       code: "dirty_release_source"
@@ -158,7 +218,7 @@ describe("release selection policy", () => {
       buildReleaseKit({
         repoRoot: fixture,
         outDir: makeTemporaryDirectory("ikran-dirty-release-output-"),
-        kit: "product",
+        kit: "agent-plugin",
         version: "0.1.0-alpha.1"
       })
     ).rejects.toMatchObject({ code: "dirty_release_source" });
@@ -167,13 +227,13 @@ describe("release selection policy", () => {
   test("rejects forbidden local state and credential-shaped content inside an allowed tree", async () => {
     const stateFixture = makeRepositoryFixture();
     write(stateFixture, "app/.env.local", "FIGMA_PAT=not-even-a-real-token\n");
-    await expect(selectReleaseFiles({ repoRoot: stateFixture, kit: "product" })).rejects.toMatchObject({
+    await expect(selectReleaseFiles({ repoRoot: stateFixture, kit: "agent-plugin" })).rejects.toMatchObject({
       code: "forbidden_path"
     });
 
     const secretFixture = makeRepositoryFixture();
     write(secretFixture, "app/leaked-token.ts", `export const token = "figd_${"A".repeat(40)}";\n`);
-    await expect(selectReleaseFiles({ repoRoot: secretFixture, kit: "product" })).rejects.toMatchObject({
+    await expect(selectReleaseFiles({ repoRoot: secretFixture, kit: "agent-plugin" })).rejects.toMatchObject({
       code: "sensitive_content"
     });
   });
@@ -181,7 +241,7 @@ describe("release selection policy", () => {
   test("rejects symlink escape and path traversal identities", async () => {
     const fixture = makeRepositoryFixture();
     symlinkSync(tmpdir(), path.join(fixture, "app/escape"));
-    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "product" })).rejects.toMatchObject({
+    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "agent-plugin" })).rejects.toMatchObject({
       code: "symlink_not_allowed"
     });
 
@@ -203,7 +263,7 @@ describe("deterministic release build", () => {
       buildReleaseKitForTests({
         repoRoot: fixture,
         outDir: output,
-        kit: "product",
+        kit: "agent-plugin",
         version: "0.2.0",
         sourceDateEpoch: 1_700_000_000
       })
@@ -216,7 +276,7 @@ describe("deterministic release build", () => {
       buildReleaseKitForTests({
         repoRoot: fixture,
         outDir: output,
-        kit: "product",
+        kit: "agent-plugin",
         version: "../0.1.0",
         sourceDateEpoch: 1_700_000_000
       })
@@ -229,7 +289,7 @@ describe("deterministic release build", () => {
     const secondOut = makeTemporaryDirectory("ikran-release-out-b-");
     const options = {
       repoRoot: fixture,
-      kit: "product",
+      kit: "agent-plugin",
       version: "0.1.0-alpha.1",
       sourceDateEpoch: 1_700_000_000
     } as const;
@@ -263,23 +323,29 @@ describe("deterministic release build", () => {
     const tarEntries = listTarEntries(firstArchive);
     const tarPaths = tarEntries.map((entry) => entry.path);
     expect(tarPaths).toContain(
-      "ikran-product-test-kit-0.1.0-alpha.1/RELEASE-MANIFEST.json"
+      "ikran-agent-plugin-kit-0.1.0-alpha.1/RELEASE-MANIFEST.json"
     );
-    expect(tarPaths).toContain("ikran-product-test-kit-0.1.0-alpha.1/package.json");
-    expect(tarPaths).toContain("ikran-product-test-kit-0.1.0-alpha.1/.mcp.json");
+    expect(tarPaths).toContain("ikran-agent-plugin-kit-0.1.0-alpha.1/package.json");
+    expect(tarPaths).not.toContain("ikran-agent-plugin-kit-0.1.0-alpha.1/.mcp.json");
+    expect(tarPaths).not.toContain(
+      "ikran-agent-plugin-kit-0.1.0-alpha.1/.claude-plugin/plugin.json"
+    );
     expect(tarPaths).toContain(
-      "ikran-product-test-kit-0.1.0-alpha.1/.claude-plugin/plugin.json"
+      "ikran-agent-plugin-kit-0.1.0-alpha.1/.cursor-plugin/plugin.json"
     );
-    expect(tarPaths).toContain("ikran-product-test-kit-0.1.0-alpha.1/LICENSE");
+    expect(tarPaths).toContain(
+      "ikran-agent-plugin-kit-0.1.0-alpha.1/.codex-plugin/plugin.json"
+    );
+    expect(tarPaths).toContain("ikran-agent-plugin-kit-0.1.0-alpha.1/LICENSE");
     expect(tarPaths.some(isForbidden)).toBe(false);
     const tarModes = new Map(tarEntries.map((entry) => [entry.path, entry.mode]));
     for (const executable of ["bin/ikran.mjs", "bin/ikran-mcp.mjs", "bin/ikran-runtime.mjs"]) {
       expect(
-        tarModes.get(`ikran-product-test-kit-0.1.0-alpha.1/${executable}`),
+        tarModes.get(`ikran-agent-plugin-kit-0.1.0-alpha.1/${executable}`),
         executable
       ).toBe(0o755);
     }
-    expect(tarModes.get("ikran-product-test-kit-0.1.0-alpha.1/package.json")).toBe(0o644);
+    expect(tarModes.get("ikran-agent-plugin-kit-0.1.0-alpha.1/package.json")).toBe(0o644);
   });
 });
 
@@ -306,20 +372,20 @@ describe("profile installation gate", () => {
       write(fixture, `node_modules/${dependency}/package.json`, `${JSON.stringify({ name: dependency })}\n`);
     }
 
-    await expect(verifyInstalledProfile({ root: fixture, kit: "product" })).resolves.toMatchObject({
+    await expect(verifyInstalledProfile({ root: fixture, kit: "agent-plugin" })).resolves.toMatchObject({
       productionDependencies: 5,
       omittedDevDependencies: 3
     });
 
     write(fixture, "node_modules/vitest/package.json", "{\"name\":\"vitest\"}\n");
-    await expect(verifyInstalledProfile({ root: fixture, kit: "product" })).rejects.toMatchObject({
+    await expect(verifyInstalledProfile({ root: fixture, kit: "agent-plugin" })).rejects.toMatchObject({
       code: "dev_dependency_installed",
       details: { leaked: ["vitest"] }
     });
 
     rmSync(path.join(fixture, "node_modules/vitest"), { recursive: true, force: true });
     rmSync(path.join(fixture, "node_modules/playwright-core"), { recursive: true, force: true });
-    await expect(verifyInstalledProfile({ root: fixture, kit: "product" })).rejects.toMatchObject({
+    await expect(verifyInstalledProfile({ root: fixture, kit: "agent-plugin" })).rejects.toMatchObject({
       code: "missing_installed_dependency",
       details: { missing: ["playwright-core"] }
     });
@@ -395,12 +461,31 @@ function makeRepositoryFixture() {
           args: ["${CLAUDE_PLUGIN_ROOT}/bin/ikran-mcp.mjs", "--prod"],
           env: {
             IKRAN_CWD: "${CLAUDE_PROJECT_DIR}",
-            IKRAN_STATE_DIR: "${CLAUDE_PROJECT_DIR}/.ikran"
+            IKRAN_STATE_DIR: "${CLAUDE_PROJECT_DIR}/.ikran",
+            IKRAN_MCP_HOST: "claude"
           }
         }
       }
     })}\n`,
     ".claude-plugin/plugin.json": "{\"name\":\"ikran\",\"version\":\"0.1.0-alpha.1\"}\n",
+    ".cursor-plugin/plugin.json": `${JSON.stringify({
+      name: "ikran",
+      version: "0.1.0-alpha.1",
+      skills: "./skills/",
+      mcpServers: "./mcp.json"
+    })}\n`,
+    ".codex-plugin/plugin.json": `${JSON.stringify({
+      name: "ikran",
+      version: "0.1.0-alpha.1",
+      skills: "./skills/",
+      mcpServers: {
+        ikran: {
+          command: "node",
+          args: ["./bin/ikran-mcp.mjs", "--prod"],
+          cwd: "."
+        }
+      }
+    })}\n`,
     "skills/design-system-governance/SKILL.md": "# Governance\n",
     "app/layout.tsx": "export default function Layout() { return null; }\n",
     "app/page.tsx": "export default function Page() { return null; }\n",

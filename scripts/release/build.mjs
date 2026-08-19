@@ -7,6 +7,7 @@ import { createDeterministicTarGz } from "./deterministic-tar.mjs";
 import {
   ReleasePolicyError,
   getReleaseKit,
+  DEFAULT_RELEASE_KITS,
   normalizeReleaseVersion
 } from "./policy.mjs";
 import { assertCleanReleaseSource, selectReleaseFiles } from "./selection.mjs";
@@ -105,7 +106,7 @@ async function buildReleaseKitFromSource({
 }
 
 export async function buildReleaseKits(options) {
-  const kitIds = options.kits ?? ["product", "contributor"];
+  const kitIds = options.kits ?? DEFAULT_RELEASE_KITS;
   const results = [];
   for (const kit of kitIds) results.push(await buildReleaseKit({ ...options, kit }));
   return Object.freeze(results);
@@ -152,7 +153,7 @@ async function main(argv) {
   const outDir = path.resolve(repoRoot, args["out-dir"] ?? "dist/release");
   const packageJson = JSON.parse(await import("node:fs/promises").then(({ readFile }) => readFile(path.join(repoRoot, "package.json"), "utf8")));
   const version = args.version ?? packageJson.version;
-  const kits = args.kit && args.kit !== "all" ? [args.kit] : ["product", "contributor"];
+  const kits = args.kit && args.kit !== "all" ? [args.kit] : [...DEFAULT_RELEASE_KITS];
   const results = await buildReleaseKits({ repoRoot, outDir, version, kits });
   process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
 }

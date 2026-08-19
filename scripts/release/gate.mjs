@@ -5,19 +5,20 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildReleaseKits } from "./build.mjs";
-import { ReleasePolicyError } from "./policy.mjs";
+import { ReleasePolicyError, isProductFamilyKit, getReleaseKit } from "./policy.mjs";
 import { smokeProductKit } from "./smoke-product.mjs";
 import { verifyReleaseArtifact } from "./verify-artifact.mjs";
 import { verifyInstalledProfile } from "./verify-install.mjs";
 
-/** Build both assets, verify them offline, and optionally test clean installs. */
+/** Build all Kit assets, verify them offline, and optionally test clean installs. */
 export async function gateRelease({ repoRoot, outDir, version, clean = "none", keepExtracted = false }) {
-  if (!new Set(["none", "product", "contributor", "all"]).has(clean)) {
+  if (!new Set(["none", "product", "agent-plugin", "claude-plugin", "contributor", "all"]).has(clean)) {
     throw new ReleasePolicyError("invalid_clean_gate", `Unknown clean gate: ${clean}`);
   }
   const results = await buildReleaseKits({ repoRoot, outDir, version });
   const extracted = [];
   const reports = [];
+  let smokedProductFamily = false;
   try {
     for (const result of results) {
       const destination = await mkdtemp(path.join(tmpdir(), `ikran-${result.kit}-gate-`));
@@ -29,13 +30,21 @@ export async function gateRelease({ repoRoot, outDir, version, clean = "none", k
         kit: result.kit,
         destination
       });
-      const shouldClean = clean === "all" || clean === result.kit;
+      const kit = getReleaseKit(result.kit);
+      const shouldClean =
+        clean === "all" ||
+        clean === result.kit ||
+        (clean === "product" && isProductFamilyKit(kit));
       let install = null;
       let smoke = null;
-      if (shouldClean && result.kit === "product") {
-        await run("npm", ["run", "setup:product"], verified.extractedRoot);
-        install = await verifyInstalledProfile({ root: verified.extractedRoot, kit: "product" });
-        smoke = await smokeProductKit({ root: verified.extractedRoot });
+      if (shouldClean && isProductFamilyKit(kit)) {
+        const smokeThisKit = clean === result.kit || !smokedProductFamily;
+        if (smokeThisKit) {
+          await run("npm", ["run", "setup:product"], verified.extractedRoot);
+          install = await verifyInstalledProfile({ root: verified.extractedRoot, kit: result.kit });
+          smoke = await smokeProductKit({ root: verified.extractedRoot });
+          smokedProductFamily = true;
+        }
       }
       if (shouldClean && result.kit === "contributor") {
         await run("npm", ["run", "setup:contributor"], verified.extractedRoot);

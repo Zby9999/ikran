@@ -2,7 +2,7 @@
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { ReleasePolicyError, getReleaseKit } from "./policy.mjs";
+import { ReleasePolicyError, getReleaseKit, isProductFamilyKit } from "./policy.mjs";
 
 /**
  * Post-install gate for an extracted kit. Product must contain every direct
@@ -28,7 +28,7 @@ export async function verifyInstalledProfile({ root, kit: kitId }) {
     );
   }
 
-  if (kit.id === "product") {
+  if (isProductFamilyKit(kit)) {
     const leaked = [];
     for (const dependency of devOnly) {
       if (await packageIsInstalled(root, dependency)) leaked.push(dependency);
@@ -45,7 +45,7 @@ export async function verifyInstalledProfile({ root, kit: kitId }) {
   return Object.freeze({
     kit: kit.id,
     productionDependencies: production.length,
-    omittedDevDependencies: kit.id === "product" ? devOnly.length : 0
+    omittedDevDependencies: isProductFamilyKit(kit) ? devOnly.length : 0
   });
 }
 
@@ -76,7 +76,7 @@ async function main(argv) {
   );
   const result = await verifyInstalledProfile({
     root: path.resolve(args.root ?? process.cwd()),
-    kit: args.kit ?? "product"
+    kit: args.kit ?? "agent-plugin"
   });
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }

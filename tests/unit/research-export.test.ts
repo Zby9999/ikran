@@ -32,6 +32,7 @@ import {
   RESEARCH_EXPORT_FILES
 } from "../../lib/runtime/research-export";
 import {
+  CLAUDE_MCP_INSTRUCTIONS,
   CLAUDE_MCP_TEXT_BUDGET,
   IKRAN_MCP_INSTRUCTIONS
 } from "../../lib/mcp/shared";
@@ -589,7 +590,8 @@ test("eligible export writes the package, keeps early stages, and guards undecla
 
 test("MCP instructions mention export_research within the resident budget", () => {
   expect(IKRAN_MCP_INSTRUCTIONS).toContain("export_research");
-  expect(Buffer.byteLength(IKRAN_MCP_INSTRUCTIONS, "utf8")).toBeLessThanOrEqual(
+  expect(CLAUDE_MCP_INSTRUCTIONS).toContain("export_research");
+  expect(Buffer.byteLength(CLAUDE_MCP_INSTRUCTIONS, "utf8")).toBeLessThanOrEqual(
     CLAUDE_MCP_TEXT_BUDGET
   );
 });

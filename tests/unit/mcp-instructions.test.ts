@@ -9,65 +9,62 @@ import { describe, expect, test } from "vitest";
 import { registerIkranTools } from "../../lib/mcp/register-tools";
 import { DECLARE_COMPONENT_LIVE_HEROES_DESCRIPTION } from "../../lib/mcp/rule-capture-tools";
 import {
+  CLAUDE_MCP_INSTRUCTIONS,
   CLAUDE_MCP_TEXT_BUDGET,
   failureResult,
   IKRAN_MCP_INSTRUCTIONS,
+  resolveMcpInstructions,
   type RegisterIkranToolsDeps
 } from "../../lib/mcp/shared";
 
+function expectBehavioralFloor(text: string) {
+  expect(text).toContain("OPEN-AND-WAIT");
+  expect(text).toContain("open that URL first");
+  expect(text).toContain("wait_for_agent_command");
+  expect(text).toContain("record_artifact_written");
+  expect(text).toContain("Never silently drop");
+  expect(text).toContain("formalize unrelated claims");
+  expect(text).toContain("sole Active ingestion path");
+  expect(text).toContain("rule taxonomy");
+  expect(text).toContain("never move silently");
+  expect(text).toContain("rule-update proposal");
+  expect(text).toContain("reconcile_designer_conversation");
+  expect(text).toContain("design-system source only");
+  expect(text).toContain("never feedback");
+  expect(text).toContain("capture_rule_screenshot");
+  expect(text).toContain("declare_component_live_heroes");
+  expect(text).toContain("verify_component_live_heroes");
+  expect(text).toContain("never reuse existing capture files");
+  expect(text).toContain("claim_alignment_preparation");
+  expect(text).toContain("section_contract");
+  expect(text).toContain("claim_initial_design_system_preparation");
+  expect(text).toContain("source_contract");
+  expect(text).not.toContain("48 characters");
+  expect(text).not.toContain("Layout good:");
+  expect(text).not.toContain("entry_kind_file_ownership");
+  expect(text).not.toContain("TYPOGRAPHY ROLE WRITING STYLE");
+  expect(text).not.toContain("focus-target-set");
+  expect(text).not.toContain("output_language");
+  expect(text).not.toContain("2–5 word");
+}
+
 describe("MCP instructions channel split", () => {
-  test("stays within the resident budget", () => {
+  test("keeps the Agent Plugin resident channel as the default", () => {
+    expectBehavioralFloor(IKRAN_MCP_INSTRUCTIONS);
+    expect(resolveMcpInstructions({})).toBe(IKRAN_MCP_INSTRUCTIONS);
+    expect(resolveMcpInstructions({ IKRAN_MCP_HOST: "cursor" })).toBe(
+      IKRAN_MCP_INSTRUCTIONS
+    );
+  });
+
+  test("serves the Claude 2KB variant only when IKRAN_MCP_HOST=claude", () => {
     expect(
-      Buffer.byteLength(IKRAN_MCP_INSTRUCTIONS, "utf8")
+      Buffer.byteLength(CLAUDE_MCP_INSTRUCTIONS, "utf8")
     ).toBeLessThanOrEqual(CLAUDE_MCP_TEXT_BUDGET);
-  });
-
-  test("keeps the behavioral floor and global disciplines", () => {
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("OPEN-AND-WAIT");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("open that URL first");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("wait_for_agent_command");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("record_artifact_written");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("Never silently drop");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("formalize unrelated claims");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("sole Active ingestion path");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("rule taxonomy");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("never move silently");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("rule-update proposal");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "reconcile_designer_conversation"
+    expectBehavioralFloor(CLAUDE_MCP_INSTRUCTIONS);
+    expect(resolveMcpInstructions({ IKRAN_MCP_HOST: "claude" })).toBe(
+      CLAUDE_MCP_INSTRUCTIONS
     );
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("design-system source only");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("never feedback");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("capture_rule_screenshot");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "declare_component_live_heroes"
-    );
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "verify_component_live_heroes"
-    );
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "never reuse existing capture files"
-    );
-  });
-
-  test("points at on-demand contracts instead of restating them", () => {
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("claim_alignment_preparation");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("section_contract");
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain(
-      "claim_initial_design_system_preparation"
-    );
-    expect(IKRAN_MCP_INSTRUCTIONS).toContain("source_contract");
-
-    // Contract content markers must not leak back into the resident channel.
-    expect(IKRAN_MCP_INSTRUCTIONS).not.toContain("48 characters");
-    expect(IKRAN_MCP_INSTRUCTIONS).not.toContain("Layout good:");
-    expect(IKRAN_MCP_INSTRUCTIONS).not.toContain("entry_kind_file_ownership");
-    expect(IKRAN_MCP_INSTRUCTIONS).not.toContain(
-      "TYPOGRAPHY ROLE WRITING STYLE"
-    );
-    expect(IKRAN_MCP_INSTRUCTIONS).not.toContain("focus-target-set");
-    expect(IKRAN_MCP_INSTRUCTIONS).not.toContain("output_language");
-    expect(IKRAN_MCP_INSTRUCTIONS).not.toContain("2–5 word");
   });
 
   test("serializes structured details into the model-visible failure text", () => {

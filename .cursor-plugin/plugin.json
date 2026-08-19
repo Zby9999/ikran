@@ -1,0 +1,14 @@
+{
+  "name": "ikran",
+  "description": "Local Ikran research workbench: MCP tools for designer-Agent alignment, plus design-system governance skills. Install the extracted Product Test Kit, not this Git repository.",
+  "version": "0.1.0-alpha.3",
+  "author": {
+    "name": "Ikran"
+  },
+  "homepage": "https://github.com/Zby9999/recursive-design-agent",
+  "repository": "https://github.com/Zby9999/recursive-design-agent",
+  "license": "Apache-2.0",
+  "keywords": ["design-system", "mcp", "figma", "workbench", "rule-update"],
+  "skills": "./skills/",
+  "mcpServers": "./mcp.json"
+}
