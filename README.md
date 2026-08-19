@@ -13,7 +13,7 @@ This Git repository is research source. The installable package is the
 **Product Test Kit** on GitHub Releases — a directory with `plugin.json`,
 `mcp.json`, and `skills/`.
 
-If a user asked you to find Ikran on GitHub and install it, follow this path
+If you want to instal ikran Agent Plugin, follow this path
 only:
 
 1. Open the latest GitHub Release for this project.
