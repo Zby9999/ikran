@@ -13,8 +13,6 @@ This Git repository is the research source. The installable Agent Plugin is the
 **Product Test Kit** on GitHub Releases — a directory with `plugin.json`,
 `mcp.json`, and `skills/`.
 
-### Cloned this repository to install Ikran?
-
 Do not register this checkout as the plugin root. Keep it only if you need the
 research source. Download the newest `ikran-product-test-kit-*.tar.gz` from
 GitHub Releases instead; during the alpha, that may be attached to a
