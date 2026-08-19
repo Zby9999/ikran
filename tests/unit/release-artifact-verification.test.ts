@@ -31,7 +31,7 @@ describe("release artifact verification", () => {
       repoRoot: ROOT,
       outDir: output,
       kit: "product",
-      version: "0.1.0-alpha.2",
+      version: "0.1.0-alpha.3",
       sourceDateEpoch: 1_700_000_000
     });
 
@@ -45,7 +45,7 @@ describe("release artifact verification", () => {
 
     expect(verified).toMatchObject({
       kit: "product",
-      version: "0.1.0-alpha.2",
+      version: "0.1.0-alpha.3",
       fileCount: built.fileCount,
       sha256: built.sha256
     });
@@ -62,7 +62,7 @@ describe("release artifact verification", () => {
       repoRoot: ROOT,
       outDir: output,
       kit: "product",
-      version: "0.1.0-alpha.2",
+      version: "0.1.0-alpha.3",
       sourceDateEpoch: 1_700_000_000
     });
     const originalChecksum = readFileSync(built.checksumPath);

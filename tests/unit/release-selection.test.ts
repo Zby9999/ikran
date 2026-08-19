@@ -49,6 +49,8 @@ describe("release selection policy", () => {
     expect(paths).toContain(".npmrc");
     expect(paths).toContain("plugin.json");
     expect(paths).toContain("mcp.json");
+    expect(paths).toContain(".mcp.json");
+    expect(paths).toContain(".claude-plugin/plugin.json");
     expect(paths).toContain("skills/design-system-governance/SKILL.md");
     expect(paths).toContain("app/page.tsx");
     expect(paths).toContain("bin/ikran-runtime.mjs");
@@ -120,6 +122,23 @@ describe("release selection policy", () => {
         expected: "Apache-2.0",
         packageJson: "MIT",
         packageLock: "Apache-2.0"
+      }
+    });
+  });
+
+  test("fails closed when Claude plugin metadata drifts from package version", async () => {
+    const fixture = makeRepositoryFixture();
+    write(
+      fixture,
+      ".claude-plugin/plugin.json",
+      `${JSON.stringify({ name: "ikran", version: "9.9.9" })}\n`
+    );
+
+    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "product" })).rejects.toMatchObject({
+      code: "claude_plugin_metadata_mismatch",
+      details: {
+        packageVersion: "0.1.0-alpha.1",
+        claudeVersion: "9.9.9"
       }
     });
   });
@@ -247,6 +266,10 @@ describe("deterministic release build", () => {
       "ikran-product-test-kit-0.1.0-alpha.1/RELEASE-MANIFEST.json"
     );
     expect(tarPaths).toContain("ikran-product-test-kit-0.1.0-alpha.1/package.json");
+    expect(tarPaths).toContain("ikran-product-test-kit-0.1.0-alpha.1/.mcp.json");
+    expect(tarPaths).toContain(
+      "ikran-product-test-kit-0.1.0-alpha.1/.claude-plugin/plugin.json"
+    );
     expect(tarPaths).toContain("ikran-product-test-kit-0.1.0-alpha.1/LICENSE");
     expect(tarPaths.some(isForbidden)).toBe(false);
     const tarModes = new Map(tarEntries.map((entry) => [entry.path, entry.mode]));
@@ -363,8 +386,21 @@ function makeRepositoryFixture() {
     "components.json": "{}\n",
     "playwright.config.ts": "export default {};\n",
     "vitest.config.ts": "export default {};\n",
-    "plugin.json": "{\"name\":\"ikran\"}\n",
+    "plugin.json": "{\"name\":\"ikran\",\"version\":\"0.1.0-alpha.1\"}\n",
     "mcp.json": "{\"mcpServers\":{}}\n",
+    ".mcp.json": `${JSON.stringify({
+      mcpServers: {
+        ikran: {
+          command: "node",
+          args: ["${CLAUDE_PLUGIN_ROOT}/bin/ikran-mcp.mjs", "--prod"],
+          env: {
+            IKRAN_CWD: "${CLAUDE_PROJECT_DIR}",
+            IKRAN_STATE_DIR: "${CLAUDE_PROJECT_DIR}/.ikran"
+          }
+        }
+      }
+    })}\n`,
+    ".claude-plugin/plugin.json": "{\"name\":\"ikran\",\"version\":\"0.1.0-alpha.1\"}\n",
     "skills/design-system-governance/SKILL.md": "# Governance\n",
     "app/layout.tsx": "export default function Layout() { return null; }\n",
     "app/page.tsx": "export default function Page() { return null; }\n",

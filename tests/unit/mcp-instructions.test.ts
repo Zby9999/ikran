@@ -6,13 +6,20 @@
 
 import { describe, expect, test } from "vitest";
 
-import { failureResult, IKRAN_MCP_INSTRUCTIONS } from "../../lib/mcp/shared";
+import { registerIkranTools } from "../../lib/mcp/register-tools";
+import { DECLARE_COMPONENT_LIVE_HEROES_DESCRIPTION } from "../../lib/mcp/rule-capture-tools";
+import {
+  CLAUDE_MCP_TEXT_BUDGET,
+  failureResult,
+  IKRAN_MCP_INSTRUCTIONS,
+  type RegisterIkranToolsDeps
+} from "../../lib/mcp/shared";
 
 describe("MCP instructions channel split", () => {
   test("stays within the resident budget", () => {
     expect(
       Buffer.byteLength(IKRAN_MCP_INSTRUCTIONS, "utf8")
-    ).toBeLessThanOrEqual(2150);
+    ).toBeLessThanOrEqual(CLAUDE_MCP_TEXT_BUDGET);
   });
 
   test("keeps the behavioral floor and global disciplines", () => {
@@ -98,5 +105,62 @@ describe("MCP instructions channel split", () => {
     expect(result.content[0]?.text).toBe(
       "wait_for_agent_command failed: state_unavailable"
     );
+  });
+});
+
+describe("Claude Code MCP text budget", () => {
+  test("keeps the live-hero declaration description inside the truncation limit", () => {
+    expect(
+      Buffer.byteLength(DECLARE_COMPONENT_LIVE_HEROES_DESCRIPTION, "utf8")
+    ).toBeLessThanOrEqual(CLAUDE_MCP_TEXT_BUDGET);
+    expect(DECLARE_COMPONENT_LIVE_HEROES_DESCRIPTION).toContain(
+      "live_hero_contract"
+    );
+    expect(DECLARE_COMPONENT_LIVE_HEROES_DESCRIPTION).toContain(
+      "metadata-only"
+    );
+    expect(DECLARE_COMPONENT_LIVE_HEROES_DESCRIPTION).toContain(
+      "verify_component_live_heroes"
+    );
+    expect(DECLARE_COMPONENT_LIVE_HEROES_DESCRIPTION).not.toContain(
+      "data-ikran-component-root"
+    );
+  });
+
+  test("keeps every registered tool description inside the truncation limit", () => {
+    const descriptions: Array<{ name: string; description: string }> = [];
+    const mcp = {
+      registerTool(
+        name: string,
+        spec: { description?: string }
+      ) {
+        descriptions.push({ name, description: spec.description ?? "" });
+      }
+    };
+    const deps: RegisterIkranToolsDeps = {
+      ensureRuntime: async () => ({
+        host: "127.0.0.1",
+        port: 1,
+        token: "test",
+        url: "http://127.0.0.1:1/?session=test&view=workbench",
+        spawned: false
+      }),
+      discoverWorkingFolder: async () => ({
+        folder: null,
+        source: "none",
+        roots: []
+      }),
+      host: "127.0.0.1",
+      prod: true,
+      mcpEntryPath: "/tmp/ikran-mcp.mjs"
+    };
+    registerIkranTools(mcp as never, deps);
+    expect(descriptions.length).toBeGreaterThan(0);
+    for (const tool of descriptions) {
+      expect(
+        Buffer.byteLength(tool.description, "utf8"),
+        tool.name
+      ).toBeLessThanOrEqual(CLAUDE_MCP_TEXT_BUDGET);
+    }
   });
 });

@@ -66,6 +66,54 @@ export async function selectReleaseFiles({ repoRoot, kit: kitId, source = "auto"
   return Object.freeze(files);
 }
 
+function validateHostPluginMetadata(byPath, packageJson) {
+  const plugin = parseJsonFile(byPath.get("plugin.json"), "plugin.json");
+  const claudePlugin = parseJsonFile(
+    byPath.get(".claude-plugin/plugin.json"),
+    ".claude-plugin/plugin.json"
+  );
+  const claudeMcp = parseJsonFile(byPath.get(".mcp.json"), ".mcp.json");
+
+  if (plugin.version !== packageJson.version) {
+    throw new ReleasePolicyError(
+      "plugin_version_mismatch",
+      "Agent Plugin version must match package.json",
+      {
+        packageVersion: packageJson.version,
+        pluginVersion: plugin.version ?? null
+      }
+    );
+  }
+  if (claudePlugin.version !== packageJson.version || claudePlugin.name !== plugin.name) {
+    throw new ReleasePolicyError(
+      "claude_plugin_metadata_mismatch",
+      "Claude plugin metadata must match package.json version and Agent Plugin name",
+      {
+        packageVersion: packageJson.version,
+        pluginName: plugin.name ?? null,
+        claudeVersion: claudePlugin.version ?? null,
+        claudeName: claudePlugin.name ?? null
+      }
+    );
+  }
+
+  const server = claudeMcp.mcpServers?.ikran;
+  const args = Array.isArray(server?.args) ? server.args : [];
+  if (
+    server?.command !== "node" ||
+    !args.includes("${CLAUDE_PLUGIN_ROOT}/bin/ikran-mcp.mjs") ||
+    !args.includes("--prod") ||
+    server?.env?.IKRAN_CWD !== "${CLAUDE_PROJECT_DIR}" ||
+    server?.env?.IKRAN_STATE_DIR !== "${CLAUDE_PROJECT_DIR}/.ikran"
+  ) {
+    throw new ReleasePolicyError(
+      "claude_mcp_adapter_invalid",
+      "Claude .mcp.json must invoke ikran-mcp --prod with CLAUDE_PLUGIN_ROOT and project-local IKRAN paths",
+      { server: server ?? null }
+    );
+  }
+}
+
 export async function assertCleanReleaseSource(repoRoot) {
   const root = await realpath(path.resolve(repoRoot));
   let stdout;
@@ -260,6 +308,8 @@ function validatePackageBoundary(files, kit) {
       "Release .npmrc may contain only engine-strict=true"
     );
   }
+
+  validateHostPluginMetadata(byPath, packageJson);
 
   if (kit.id !== "product") return;
   const dependencies = packageJson.dependencies ?? {};

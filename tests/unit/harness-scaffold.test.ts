@@ -6,6 +6,8 @@ import { afterEach, expect, test } from "vitest";
 
 import {
   IKRAN_COMPONENT_SIZING_HELPER_SOURCE,
+  LIVE_HERO_CONTRACT,
+  LIVE_HERO_CONTRACT_VERSION,
   scaffoldComponentHarness
 } from "../../lib/runtime/harness-scaffold";
 
@@ -32,8 +34,16 @@ test("writes the canonical sizing helper at the declared path", () => {
     ok: true,
     helper_path: "prototype/src/lib/ikran-component-harness.ts",
     already_present: false,
-    protocol_version: 2
+    protocol_version: 2,
+    live_hero_contract: LIVE_HERO_CONTRACT
   });
+  expect(result.ok && result.live_hero_contract.version).toBe(
+    LIVE_HERO_CONTRACT_VERSION
+  );
+  expect(LIVE_HERO_CONTRACT.layout).toContain("data-ikran-component-root");
+  expect(LIVE_HERO_CONTRACT.sizing).toContain("ikran:component-size");
+  expect(LIVE_HERO_CONTRACT.browser).toContain("presentation viewport");
+  expect(LIVE_HERO_CONTRACT.nextjs_chrome).toContain("nextjs-portal");
   const written = readFileSync(
     path.join(dir, "prototype/src/lib/ikran-component-harness.ts"),
     "utf8"
@@ -50,7 +60,11 @@ test("is idempotent: an identical existing file reports already_present", () => 
   const helperPath = "prototype/src/lib/ikran-component-harness.ts";
   scaffoldComponentHarness(dir, { helperPath });
   const result = scaffoldComponentHarness(dir, { helperPath });
-  expect(result).toMatchObject({ ok: true, already_present: true });
+  expect(result).toMatchObject({
+    ok: true,
+    already_present: true,
+    live_hero_contract: LIVE_HERO_CONTRACT
+  });
 });
 
 test("never clobbers a hand-edited file", () => {

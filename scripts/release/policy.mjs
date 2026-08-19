@@ -11,6 +11,8 @@ const SHARED_FILES = Object.freeze([
   "package-lock.json",
   "plugin.json",
   "mcp.json",
+  ".mcp.json",
+  ".claude-plugin/plugin.json",
   "next.config.ts",
   "next-env.d.ts",
   "postcss.config.mjs",
@@ -43,6 +45,8 @@ const SHARED_ANCHORS = Object.freeze([
   "lib/runtime/http-server.mjs",
   "plugin.json",
   "mcp.json",
+  ".mcp.json",
+  ".claude-plugin/plugin.json",
   "skills/design-system-governance/SKILL.md"
 ]);
 

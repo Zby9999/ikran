@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ikran": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/ikran-mcp.mjs", "--prod"],
+      "env": {
+        "IKRAN_CWD": "${CLAUDE_PROJECT_DIR}",
+        "IKRAN_STATE_DIR": "${CLAUDE_PROJECT_DIR}/.ikran"
+      }
+    }
+  }
+}

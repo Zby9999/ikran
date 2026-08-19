@@ -46,16 +46,19 @@ matches the Runtime source.
 ### Agent host setup
 
 The Product Test Kit root is an [Agent Plugin](https://agent-plugins.org/)
-1.0 package: `plugin.json`, `mcp.json`, and `skills/`. Install **the extracted
-Kit directory**, not this Git repository. A clone of the research repo includes
-internal archives that must not ship inside a plugin.
+1.0 package (`plugin.json`, `mcp.json`, and `skills/`) and a Claude Code plugin
+(`.claude-plugin/plugin.json`, `.mcp.json`, and the same `skills/`). Install
+**the extracted Kit directory**, not this Git repository. A clone of the
+research repo includes internal archives that must not ship inside a plugin.
 
 After `npm run setup:product`, register the extracted Kit as a local plugin in
-a host that supports Agent Plugins (Cursor, Codex, and other 1.0 clients). The
-host discovers `skills/design-system-governance` and starts `ikran-mcp --prod`
-from `mcp.json`. Leave `IKRAN_CWD` unset so the host workspace Roots can bind
-the designer's project; Runtime state stays under the plugin data directory
-until `setup_workspace` pins a project-local `.ikran/`.
+a host that supports Agent Plugins (Cursor, Codex, and other 1.0 clients) or
+load it in Claude Code with `--plugin-dir`. The host discovers
+`skills/design-system-governance` and starts `ikran-mcp --prod`. Leave
+`IKRAN_CWD` unset in Agent Plugin hosts so workspace Roots can bind the
+designer's project; Runtime state stays under the plugin data directory until
+`setup_workspace` pins a project-local `.ikran/`. Claude Code's bundled
+`.mcp.json` binds `IKRAN_CWD` and `IKRAN_STATE_DIR` to `${CLAUDE_PROJECT_DIR}`.
 
 Hosts that only speak MCP still launch the same stdio entry. An installed
 package exposes the designer launcher as `ikran` and the Agent host entry as
@@ -112,6 +115,37 @@ codex mcp add ikran \
 Use `codex mcp get ikran` to inspect it and `codex mcp remove ikran` to remove
 it. The command above is the current Product Test Kit interface. Contributors
 may drop `--prod` to use the development surface.
+
+For Claude Code, prepare the extracted Kit first, then load it from the
+designer's project directory so `${CLAUDE_PROJECT_DIR}` is the project, not
+the Kit:
+
+```bash
+cd /absolute/path/to/extracted-ikran
+npm run setup:product
+
+cd /absolute/path/to/your-project
+claude --plugin-dir /absolute/path/to/extracted-ikran
+```
+
+That adapter starts `ikran-mcp --prod` and exposes
+`skills/design-system-governance`. Do not publish this repository as a Claude
+marketplace plugin: `--prod` still requires the production build created by
+`npm run setup:product`, which Claude's bounded `npm ci --ignore-scripts` does
+not replace.
+
+If you only need the MCP tools without the plugin Skill, register the same
+stdio entry at Claude's local scope. Do not commit another machine's Kit path
+into a shared project `.mcp.json`:
+
+```bash
+claude mcp add --transport stdio --scope local \
+  --env IKRAN_CWD=/absolute/path/to/your-project \
+  --env IKRAN_STATE_DIR=/absolute/path/to/your-project/.ikran \
+  ikran -- node /absolute/path/to/extracted-ikran/bin/ikran-mcp.mjs --prod
+
+claude mcp get ikran
+```
 
 After the MCP server is available, ask the Agent to open Ikran. If a host does
 not surface the MCP tool, `npm start` remains the launcher fallback for opening
@@ -187,7 +221,7 @@ still excluding `Attempts/`, `.scratch/`, `workflow/`, `Design issue/`,
 Release maintainers build the two deterministic archives with:
 
 ```bash
-npm run release:build -- --version v0.1.0-alpha.2
+npm run release:build -- --version v0.1.0-alpha.3
 ```
 
 Before a Draft Release is created, the full gate rebuilds both archives,
@@ -195,7 +229,7 @@ verifies their checksum and embedded manifest, extracts them with traversal and
 symlink defenses, then exercises each clean-download profile:
 
 ```bash
-npm run release:gate -- --version v0.1.0-alpha.2
+npm run release:gate -- --version v0.1.0-alpha.3
 ```
 
 The Product gate performs an omitted-dev install and drives the extracted MCP

@@ -31,7 +31,10 @@ import {
   exportResearchPackage,
   RESEARCH_EXPORT_FILES
 } from "../../lib/runtime/research-export";
-import { IKRAN_MCP_INSTRUCTIONS } from "../../lib/mcp/shared";
+import {
+  CLAUDE_MCP_TEXT_BUDGET,
+  IKRAN_MCP_INSTRUCTIONS
+} from "../../lib/mcp/shared";
 
 function withProject(run: (projectPath: string) => void): void {
   const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-research-export-"));
@@ -587,6 +590,6 @@ test("eligible export writes the package, keeps early stages, and guards undecla
 test("MCP instructions mention export_research within the resident budget", () => {
   expect(IKRAN_MCP_INSTRUCTIONS).toContain("export_research");
   expect(Buffer.byteLength(IKRAN_MCP_INSTRUCTIONS, "utf8")).toBeLessThanOrEqual(
-    2150
+    CLAUDE_MCP_TEXT_BUDGET
   );
 });

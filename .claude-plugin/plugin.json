@@ -1,11 +1,9 @@
 {
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ikran",
-  "version": "0.1.0-alpha.3",
   "description": "Local Ikran research workbench: MCP tools for designer-Agent alignment, plus design-system governance skills. Install the extracted Product Test Kit, not this Git repository.",
+  "version": "0.1.0-alpha.3",
   "author": {
-    "name": "Ikran",
-    "url": "https://github.com/Zby9999/recursive-design-agent"
+    "name": "Ikran"
   },
   "homepage": "https://github.com/Zby9999/recursive-design-agent",
   "repository": "https://github.com/Zby9999/recursive-design-agent",
