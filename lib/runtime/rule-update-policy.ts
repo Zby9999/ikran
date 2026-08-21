@@ -1,4 +1,6 @@
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
+import type { DesignSystemIngestPlan } from "./design-system-ingest";
+import { sortKeysDeep } from "./design-system-entry-provenance";
 
 const RULE_UPDATE_PROTECTED_PHASES: ReadonlySet<string> = new Set([
   "prototype_validation",
@@ -47,6 +49,159 @@ export type RuleUpdateProposalPathAuthorization =
         | "proposal_base_digest_conflict";
       details?: unknown;
     };
+
+type StoredRuleRow = {
+  entry_id: string;
+  file_kind: string;
+  section: string;
+  name: string | null;
+  kind: string | null;
+  domain: string | null;
+  value_json: string;
+  source_captures_json: string | null;
+  meaning: string;
+  status: string;
+  links_json: string;
+};
+
+function parsedJson(raw: string | null, fallback: unknown): unknown {
+  if (raw === null) return fallback;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return fallback;
+  }
+}
+
+function semanticRuleRow(row: StoredRuleRow): unknown {
+  return sortKeysDeep({
+    entry_id: row.entry_id,
+    section: row.section,
+    name: row.name,
+    kind: row.kind,
+    domain: row.domain,
+    value: parsedJson(row.value_json, null),
+    source_captures: parsedJson(row.source_captures_json, []),
+    meaning: row.meaning,
+    status: row.status,
+    links: parsedJson(row.links_json, [])
+  });
+}
+
+/**
+ * Retire is deliberately narrower than a general artifact write: the staged
+ * ingest must equal the current source with exactly the accepted entry gone.
+ * Reordering is ignored because removing a row necessarily shifts positions.
+ */
+export function validateRuleUpdateIngestPlanOnDb(
+  db: DatabaseType,
+  proposalId: string,
+  plan: DesignSystemIngestPlan
+):
+  | { ok: true }
+  | { ok: false; reason: "retire_semantic_diff_mismatch"; details: unknown } {
+  const proposal = db
+    .prepare(
+      `SELECT p.kind, r.source_artifact_path, r.entry_id
+       FROM rule_update_proposals p
+       JOIN rule_update_proposal_revisions r
+         ON r.proposal_id = p.id AND r.revision = p.current_revision
+       WHERE p.id = ?`
+    )
+    .get(proposalId) as
+    | { kind: string; source_artifact_path: string | null; entry_id: string | null }
+    | undefined;
+  if (!proposal || proposal.kind !== "retire") return { ok: true };
+
+  const fail = (details: unknown) => ({
+    ok: false as const,
+    reason: "retire_semantic_diff_mismatch" as const,
+    details
+  });
+  if (
+    proposal.source_artifact_path !== plan.sourcePath ||
+    proposal.entry_id === null
+  ) {
+    return fail({
+      expected_source: proposal.source_artifact_path,
+      observed_source: plan.sourcePath,
+      entry_id: proposal.entry_id
+    });
+  }
+
+  const current = db
+    .prepare(
+      `SELECT entry_id, file_kind, section, name, kind, domain, value_json,
+              source_captures_json, meaning, status, links_json
+       FROM design_system_entries
+       WHERE source_artifact_path = ?`
+    )
+    .all(plan.sourcePath) as unknown as StoredRuleRow[];
+  const target = current.find((row) => row.entry_id === proposal.entry_id);
+  if (!target) return fail({ missing_target: proposal.entry_id });
+  const source = db
+    .prepare("SELECT artifact_type FROM source_artifacts WHERE path = ?")
+    .get(plan.sourcePath) as { artifact_type: string } | undefined;
+  if (
+    source?.artifact_type !== plan.fileKind ||
+    current.some((row) => row.file_kind !== plan.fileKind)
+  ) {
+    return fail({
+      retired_entry_id: proposal.entry_id,
+      expected_file_kind: source?.artifact_type ?? target.file_kind,
+      observed_file_kind: plan.fileKind
+    });
+  }
+  if (plan.fileKind === "design-system.json") {
+    const meta = db
+      .prepare("SELECT name FROM design_system_meta WHERE singleton = 1")
+      .get() as { name: string } | undefined;
+    if ((meta?.name ?? "") !== (plan.systemName ?? "")) {
+      return fail({
+        retired_entry_id: proposal.entry_id,
+        changed_file_field: "name"
+      });
+    }
+  }
+
+  const expected = new Map(
+    current
+      .filter((row) => row.entry_id !== proposal.entry_id)
+      .map((row) => [row.entry_id, JSON.stringify(semanticRuleRow(row))])
+  );
+  const observed = new Map(
+    plan.rows.map((row) => [
+      row.entry_id,
+      JSON.stringify(sortKeysDeep({
+        entry_id: row.entry_id,
+        section: row.section,
+        name: row.name,
+        kind: row.kind,
+        domain: row.domain,
+        value: row.value,
+        source_captures: row.source_captures,
+        meaning: row.meaning,
+        status: row.status,
+        links: row.links
+      }))
+    ])
+  );
+  const expectedIds = [...expected.keys()].sort();
+  const observedIds = [...observed.keys()].sort();
+  if (JSON.stringify(expectedIds) !== JSON.stringify(observedIds)) {
+    return fail({
+      retired_entry_id: proposal.entry_id,
+      expected_entry_ids: expectedIds,
+      observed_entry_ids: observedIds
+    });
+  }
+  for (const entryId of expectedIds) {
+    if (expected.get(entryId) !== observed.get(entryId)) {
+      return fail({ retired_entry_id: proposal.entry_id, changed_entry_id: entryId });
+    }
+  }
+  return { ok: true };
+}
 
 /**
  * A confirmed proposal authorizes one exact artifact write in the current

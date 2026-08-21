@@ -19,6 +19,7 @@ import {
 import { findEarliestPendingAgentCommand } from "../../lib/runtime/agent-command";
 import { closeProjectDb, openProjectDb } from "../../lib/runtime/db";
 import { authorizeRuleUpdateProposalPathOnDb } from "../../lib/runtime/rule-update-policy";
+import { validateRuleUpdateIngestPlanOnDb } from "../../lib/runtime/rule-update-policy";
 import { completeRuleUpdateApplyOnArtifactDeclaration } from "../../lib/runtime/rule-update-apply";
 import { logEventOnDb } from "../../lib/runtime/events";
 
@@ -36,6 +37,226 @@ function createProject(): string {
   initializeProjectDb(projectPath);
   return projectPath;
 }
+
+function seedExistingInteractionRule(projectPath: string): void {
+  const db = openProjectDb(projectPath);
+  try {
+    db.prepare(
+      `INSERT INTO source_artifacts
+         (id, path, artifact_type, semantic_purpose, related_record_ids_json,
+          readiness, declaration_version, status, created_at, updated_at,
+          content_digest)
+       VALUES ('source-retire', 'design-system/interaction-rules.json',
+               'interaction-rules.json', 'test fixture', '[]', NULL, 1,
+               'ingested', '2026-08-21T00:00:00.000Z',
+               '2026-08-21T00:00:00.000Z', 'digest-retire')`
+    ).run();
+    db.prepare(
+      `INSERT INTO design_system_entries
+         (id, source_artifact_path, file_kind, section, entry_id, name,
+          value_json, meaning, status, links_json, position, created_at, updated_at)
+       VALUES ('row-retire', 'design-system/interaction-rules.json',
+               'interaction-rules.json', 'interaction',
+               'interaction.selection-feedback', 'Selection feedback',
+               '"Show feedback immediately."', 'Show feedback immediately.',
+               'formalized', '[]', 0, '2026-08-21T00:00:00.000Z',
+               '2026-08-21T00:00:00.000Z')`
+    ).run();
+  } finally {
+    closeProjectDb(db);
+  }
+}
+
+test("retire drafts bind one existing Rule without inventing replacement prose", () => {
+  const projectPath = createProject();
+  seedExistingInteractionRule(projectPath);
+  const review = createRuleUpdateReview(projectPath, { context: "Retire duplicate rule" });
+  if (!review.ok) throw new Error(review.reason);
+
+  expect(draftRuleUpdateProposal(projectPath, {
+    reviewId: review.review.id,
+    kind: "retire",
+    classification: "proposed_update",
+    title: "Selection feedback",
+    fullRuleBody: "",
+    reason: "The behavior is duplicated by the canonical feedback rule.",
+    affectedItems: ["interaction.selection-feedback"],
+    evidenceRecordIds: [],
+    target: {
+      category: "foundations.interaction",
+      sourceArtifactPath: "design-system/interaction-rules.json",
+      entryId: "interaction.selection-feedback"
+    }
+  })).toMatchObject({
+    ok: true,
+    proposal: {
+      kind: "retire",
+      full_rule_body: "",
+      current_rule_body: "Show feedback immediately.",
+      base_digest: "digest-retire",
+      target: {
+        sourceArtifactPath: "design-system/interaction-rules.json",
+        entryId: "interaction.selection-feedback",
+        proposedTargetPath: null
+      }
+    }
+  });
+
+  expect(draftRuleUpdateProposal(projectPath, {
+    reviewId: review.review.id,
+    kind: "retire",
+    classification: "proposed_update",
+    title: "Missing rule",
+    fullRuleBody: "",
+    reason: "It is obsolete.",
+    affectedItems: [],
+    evidenceRecordIds: [],
+    target: {
+      category: "foundations.interaction",
+      sourceArtifactPath: "design-system/interaction-rules.json",
+      entryId: "interaction.missing"
+    }
+  })).toEqual({ ok: false, reason: "rule_entry_not_found" });
+
+  expect(publishRuleUpdateReview(projectPath, review.review.id).ok).toBe(true);
+  const published = getRuleUpdateReviewProjection(projectPath);
+  if (!published.ok) throw new Error(published.reason);
+  const proposalId = published.reviews[0]?.proposals[0]?.id;
+  if (!proposalId) throw new Error("retire proposal missing");
+  expect(reviseRuleUpdateProposal(projectPath, {
+    proposalId,
+    title: "Missing rule",
+    fullRuleBody: "",
+    target: {
+      category: "foundations.interaction",
+      sourceArtifactPath: "design-system/interaction-rules.json",
+      entryId: "interaction.missing"
+    }
+  })).toEqual({ ok: false, reason: "rule_entry_not_found" });
+  expect(decideRuleUpdateProposal(projectPath, {
+    proposalId,
+    decision: "accepted"
+  })).toMatchObject({
+    ok: true,
+    command: {
+      payload: {
+        proposal_id: proposalId,
+        kind: "retire",
+        full_rule_body: ""
+      }
+    }
+  });
+  expect(claimRuleUpdateDecision(projectPath)).toMatchObject({
+    ok: true,
+    completed: false,
+    proposal: { id: proposalId, kind: "retire" }
+  });
+});
+
+test("retire ingest accepts only the exact target removal", () => {
+  const projectPath = createProject();
+  seedExistingInteractionRule(projectPath);
+  const review = createRuleUpdateReview(projectPath, { context: "Retire exact Rule" });
+  if (!review.ok) throw new Error(review.reason);
+  const proposal = draftRuleUpdateProposal(projectPath, {
+    reviewId: review.review.id,
+    kind: "retire",
+    classification: "proposed_update",
+    title: "Selection feedback",
+    fullRuleBody: "",
+    reason: "Duplicated by a canonical rule.",
+    affectedItems: [],
+    evidenceRecordIds: [],
+    target: {
+      category: "foundations.interaction",
+      sourceArtifactPath: "design-system/interaction-rules.json",
+      entryId: "interaction.selection-feedback"
+    }
+  });
+  if (!proposal.ok) throw new Error(proposal.reason);
+  const db = openProjectDb(projectPath);
+  try {
+    const emptyPlan = {
+      fileKind: "interaction-rules.json" as const,
+      sourcePath: "design-system/interaction-rules.json",
+      rows: [],
+      firstIngest: false,
+      systemName: null,
+      now: "2026-08-21T00:00:01.000Z"
+    };
+    expect(validateRuleUpdateIngestPlanOnDb(db, proposal.proposal.id, emptyPlan))
+      .toEqual({ ok: true });
+
+    expect(validateRuleUpdateIngestPlanOnDb(db, proposal.proposal.id, {
+      ...emptyPlan,
+      fileKind: "layout-rules.json"
+    })).toMatchObject({ ok: false, reason: "retire_semantic_diff_mismatch" });
+
+    expect(validateRuleUpdateIngestPlanOnDb(db, proposal.proposal.id, {
+      ...emptyPlan,
+      rows: [{
+        entry_id: "interaction.other",
+        section: "interaction",
+        name: "Unrelated",
+        kind: null,
+        domain: null,
+        value: "Added content",
+        source_captures: [],
+        meaning: "Added content",
+        status: "formalized",
+        links: [],
+        position: 0
+      }]
+    })).toMatchObject({ ok: false, reason: "retire_semantic_diff_mismatch" });
+  } finally {
+    closeProjectDb(db);
+  }
+});
+
+test("rejecting a retire leaves the active Rule untouched and needs no write", () => {
+  const projectPath = createProject();
+  seedExistingInteractionRule(projectPath);
+  const review = createRuleUpdateReview(projectPath, { context: "Reject Retire" });
+  if (!review.ok) throw new Error(review.reason);
+  const proposal = draftRuleUpdateProposal(projectPath, {
+    reviewId: review.review.id,
+    kind: "retire",
+    classification: "proposed_update",
+    title: "Keep selection feedback",
+    fullRuleBody: "",
+    reason: "Review whether this is truly duplicated.",
+    affectedItems: ["interaction.selection-feedback"],
+    evidenceRecordIds: [],
+    target: {
+      category: "foundations.interaction",
+      sourceArtifactPath: "design-system/interaction-rules.json",
+      entryId: "interaction.selection-feedback"
+    }
+  });
+  if (!proposal.ok) throw new Error(proposal.reason);
+  expect(publishRuleUpdateReview(projectPath, review.review.id).ok).toBe(true);
+  expect(decideRuleUpdateProposal(projectPath, {
+    proposalId: proposal.proposal.id,
+    decision: "rejected"
+  })).toMatchObject({ ok: true, proposal: { status: "rejected" } });
+  expect(claimRuleUpdateDecision(projectPath)).toMatchObject({
+    ok: true,
+    completed: true,
+    proposal: { id: proposal.proposal.id, status: "rejected" }
+  });
+  const db = openProjectDb(projectPath);
+  try {
+    expect(db.prepare(
+      `SELECT entry_id FROM design_system_entries
+       WHERE source_artifact_path = ? AND entry_id = ?`
+    ).get(
+      "design-system/interaction-rules.json",
+      "interaction.selection-feedback"
+    )).toEqual({ entry_id: "interaction.selection-feedback" });
+  } finally {
+    closeProjectDb(db);
+  }
+});
 
 test("draft proposals stay private until their Review publishes as one batch", () => {
   const projectPath = createProject();

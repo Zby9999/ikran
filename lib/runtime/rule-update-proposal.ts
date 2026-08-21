@@ -19,7 +19,12 @@ import { buildLoggedEvent, insertEvent } from "./events";
 import { parseJsonStringArray } from "./json-columns";
 import { canonicalizeArtifactPath } from "./source-artifact";
 
-export const RULE_UPDATE_PROPOSAL_KINDS = ["new", "update", "move"] as const;
+export const RULE_UPDATE_PROPOSAL_KINDS = [
+  "new",
+  "update",
+  "move",
+  "retire"
+] as const;
 
 export type RuleUpdateProposalKind =
   (typeof RULE_UPDATE_PROPOSAL_KINDS)[number];
@@ -230,6 +235,9 @@ export function proposeRuleUpdate(
   const kind: RuleUpdateProposalKind =
     kindInput.length === 0 ? "move" : (kindInput as RuleUpdateProposalKind);
   if (!isKind(kind)) return { ok: false, reason: "invalid_proposal_kind" };
+  if (kind === "retire") {
+    return { ok: false, reason: "retire_requires_managed_review" };
+  }
 
   const classificationInput = trimmed(input.classification);
   const classification: RuleUpdateClassification =

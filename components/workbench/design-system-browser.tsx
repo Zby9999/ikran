@@ -80,7 +80,8 @@ import {
   RuleUpdateInteractionsPage,
   RuleUpdateUpdatesForEntry,
   useRuleUpdateReviewView,
-  type RuleUpdateCategory
+  type RuleUpdateCategory,
+  type RuleUpdateProposalView
 } from "./rule-update-review";
 import {
   DS_HERO_LIVE_TIMEOUT_MS,
@@ -785,6 +786,7 @@ type RowListProps = {
   onApproveRows?: (rows: DsRow[]) => void;
   renderRuleUpdateAfter?: (entryId: string) => ReactNode;
   hasRuleUpdateForEntry?: (entryId: string) => boolean;
+  retireRuleUpdateForEntry?: (entryId: string) => RuleUpdateProposalView | undefined;
   onEditEntry?: (
     row: DsRow,
     field: "meaning" | "value" | "value.description",
@@ -1129,6 +1131,7 @@ function RuleLedgerCardShell({
 }) {
   const editor = useRuleInlineEditor(rule.row, rows, rule.body);
   const pendingRuleUpdate = rows.hasRuleUpdateForEntry?.(rule.row.entryId) ?? false;
+  const retireProposal = rows.retireRuleUpdateForEntry?.(rule.row.entryId);
   return (
     <>
       <li
@@ -1137,6 +1140,7 @@ function RuleLedgerCardShell({
         data-editing={editor.editing || undefined}
         data-approve-error={approval.kind === "error" || undefined}
         data-rule-update-pending={pendingRuleUpdate || undefined}
+        data-rule-retire={retireProposal ? "" : undefined}
       >
         <div className="dsb-interaction-ledger-row">
           <div className="dsb-interaction-ledger-meta">
@@ -1144,16 +1148,22 @@ function RuleLedgerCardShell({
               <span className="dsb-interaction-anchor" aria-hidden>
                 {rule.anchor}
               </span>
-              <EntryStatusChip
-                row={rule.row}
-                approval={approval}
-                onApprove={
-                  rows.onApprove
-                    ? () => rows.onApprove?.(rule.row)
-                    : undefined
-                }
-                testId="ds-interaction-status"
-              />
+              {retireProposal ? (
+                <span className="dsb-retire-chip" data-testid="ds-interaction-status">
+                  Delete
+                </span>
+              ) : (
+                <EntryStatusChip
+                  row={rule.row}
+                  approval={approval}
+                  onApprove={
+                    rows.onApprove
+                      ? () => rows.onApprove?.(rule.row)
+                      : undefined
+                  }
+                  testId="ds-interaction-status"
+                />
+              )}
             </span>
             <span className="dsb-rule-row-actions">
               <RuleInlineActions row={rule.row} editor={editor} />
@@ -1892,6 +1902,7 @@ function LayoutPlacardBlock({
   const capture = rule.captures[activeIndex];
   const approval = rows.approvals[rule.row.key] ?? { kind: "idle" as const };
   const editor = useRuleInlineEditor(rule.row, rows, rule.body);
+  const retireProposal = rows.retireRuleUpdateForEntry?.(rule.row.entryId);
   const orientation = capture ? captureOrientation(capture) : null;
   const mark = capture ? captureNodeMark(capture) : null;
   return (
@@ -1900,6 +1911,7 @@ function LayoutPlacardBlock({
       className="dsb-placard dsb-placard-enter"
       style={{ "--i": index } as CSSProperties}
       data-testid={`ds-layout-placard-${rule.row.entryId}`}
+      data-rule-retire={retireProposal ? "" : undefined}
     >
       {capture ? (
         <figure
@@ -1961,12 +1973,18 @@ function LayoutPlacardBlock({
             <RuleInlineTitle editor={editor} />
           </span>
           <span className="dsb-rule-row-actions">
-            <EntryStatusChip
-              row={rule.row}
-              approval={approval}
-              onApprove={rows.onApprove ? () => rows.onApprove?.(rule.row) : undefined}
-              testId={`ds-layout-status-${rule.row.entryId}`}
-            />
+            {retireProposal ? (
+              <span className="dsb-retire-chip" data-testid={`ds-layout-status-${rule.row.entryId}`}>
+                Delete
+              </span>
+            ) : (
+              <EntryStatusChip
+                row={rule.row}
+                approval={approval}
+                onApprove={rows.onApprove ? () => rows.onApprove?.(rule.row) : undefined}
+                testId={`ds-layout-status-${rule.row.entryId}`}
+              />
+            )}
             <RuleInlineActions row={rule.row} editor={editor} />
             <InfoPopover
               entry={rule.row.entry}
@@ -2629,12 +2647,32 @@ export function DesignSystemBrowser({
                   )}` as RuleUpdateCategory);
           return ruleUpdateProjection.reviews.some((review) =>
             review.proposals.some((proposal) =>
-                proposal.kind === "update" &&
+                (proposal.kind === "update" || proposal.kind === "retire") &&
                 proposal.target.category === category &&
                 proposal.target.entryId === entryId &&
                 !["applied", "rejected"].includes(proposal.status)
             )
           );
+        }
+      : undefined,
+    retireRuleUpdateForEntry: ruleUpdateProjection
+      ? (entryId) => {
+          const category: RuleUpdateCategory =
+            route.kind === "section"
+              ? route.section === "foundations"
+                ? "foundations.home"
+                : (`component:${componentLeafId(model?.components.landingLeaf ?? "component:")}` as RuleUpdateCategory)
+              : route.section === "foundations"
+                ? (`foundations.${route.leaf}` as RuleUpdateCategory)
+                : (`component:${componentLeafId(route.leaf)}` as RuleUpdateCategory);
+          return ruleUpdateProjection.reviews
+            .flatMap((review) => review.proposals)
+            .find((proposal) =>
+              proposal.kind === "retire" &&
+              proposal.target.category === category &&
+              proposal.target.entryId === entryId &&
+              !["applied", "rejected"].includes(proposal.status)
+            );
         }
       : undefined,
     renderRuleUpdateAfter: ruleUpdateProjection

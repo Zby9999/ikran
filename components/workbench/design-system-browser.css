@@ -714,6 +714,17 @@
   font-size: 11px !important;
 }
 
+.dsb-ru-wait-copy p,
+.dsb-ru-record-evidence p {
+  margin: 3px 0 0;
+}
+
+.dsb-ru-record-evidence {
+  color: var(--dsc-ink-2);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .dsb-ru-actions {
   display: flex;
   align-items: center;
@@ -2232,6 +2243,27 @@
   font-size: 10px;
   line-height: 15px;
   font-variant-numeric: tabular-nums;
+}
+
+.dsb-retire-chip {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: rgb(197 17 17 / 9%);
+  padding: 0 12px;
+  color: #8f0f0f;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 15px;
+}
+
+.dsb-interaction-rule[data-rule-retire] .dsb-interaction-ledger-main .dsb-card-title,
+.dsb-interaction-rule[data-rule-retire] .dsb-interaction-ledger-main .dsb-rule-inline-title,
+.dsb-placard[data-rule-retire] .dsb-placard-statement .dsb-card-title,
+.dsb-placard[data-rule-retire] .dsb-placard-statement .dsb-rule-inline-title {
+  opacity: 0.4;
 }
 
 /* Unify edit + evidence triggers inside the rule meta row. */

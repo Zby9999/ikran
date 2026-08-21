@@ -324,6 +324,25 @@ function targetMatchesCategoriesOnDb(
   return true;
 }
 
+function isRetirableRuleTargetOnDb(
+  db: DatabaseType,
+  target: RuleUpdateTarget
+): boolean {
+  if (!target.sourceArtifactPath || !target.entryId) return false;
+  return Boolean(
+    db
+      .prepare(
+        `SELECT 1 FROM design_system_entries
+         WHERE source_artifact_path = ? AND entry_id = ?
+           AND section IN (
+             'foundations.visual-language', 'foundations.concepts',
+             'layout', 'interaction'
+           )`
+      )
+      .get(target.sourceArtifactPath, target.entryId)
+  );
+}
+
 function baseDigestsOnDb(
   db: DatabaseType,
   target: RuleUpdateTarget
@@ -365,7 +384,7 @@ export function draftRuleUpdateProposal(
     !isKind(kind) ||
     !isClassification(classification) ||
     !title ||
-    !fullRuleBody ||
+    (kind !== "retire" && !fullRuleBody) ||
     !reason
   ) {
     return { ok: false, reason: "invalid_proposal" };
@@ -382,6 +401,15 @@ export function draftRuleUpdateProposal(
   ) {
     return { ok: false, reason: "invalid_proposal_target" };
   }
+  if (
+    kind === "retire" &&
+    (!target.sourceArtifactPath ||
+      !target.entryId ||
+      target.sourceCategory ||
+      target.proposedTargetPath)
+  ) {
+    return { ok: false, reason: "invalid_proposal_target" };
+  }
   try {
     return withProjectTransaction(projectPath, (db) => {
       const review = reviewOnDb(db, reviewId);
@@ -391,6 +419,12 @@ export function draftRuleUpdateProposal(
       }
       if (!targetMatchesCategoriesOnDb(db, target)) {
         return { ok: false as const, reason: "invalid_proposal_target" };
+      }
+      if (
+        kind === "retire" &&
+        !isRetirableRuleTargetOnDb(db, target)
+      ) {
+        return { ok: false as const, reason: "rule_entry_not_found" };
       }
       const evidenceTables = [
         "alignment_question_cards",
@@ -603,7 +637,7 @@ export function reviseRuleUpdateProposal(
   const proposalId = text(input.proposalId);
   const title = text(input.title);
   const fullRuleBody = text(input.fullRuleBody);
-  if (!proposalId || !title || !fullRuleBody) {
+  if (!proposalId || !title) {
     return { ok: false, reason: "invalid_revision" };
   }
   const targetResult = canonicalTarget(projectPath, input.target);
@@ -613,6 +647,18 @@ export function reviseRuleUpdateProposal(
     return withProjectTransaction(projectPath, (db) => {
       const current = proposalProjectionOnDb(db, proposalId);
       if (!current) return { ok: false as const, reason: "proposal_not_found" };
+      if (current.kind !== "retire" && !fullRuleBody) {
+        return { ok: false as const, reason: "invalid_revision" };
+      }
+      if (
+        current.kind === "retire" &&
+        (!target.sourceArtifactPath ||
+          !target.entryId ||
+          target.sourceCategory ||
+          target.proposedTargetPath)
+      ) {
+        return { ok: false as const, reason: "invalid_proposal_target" };
+      }
       const review = reviewOnDb(db, current.review_id);
       if (review?.context === "Legacy Rule Update") {
         return { ok: false as const, reason: "proposal_not_managed" };
@@ -625,6 +671,12 @@ export function reviseRuleUpdateProposal(
       }
       if (!targetMatchesCategoriesOnDb(db, target)) {
         return { ok: false as const, reason: "invalid_proposal_target" };
+      }
+      if (
+        current.kind === "retire" &&
+        !isRetirableRuleTargetOnDb(db, target)
+      ) {
+        return { ok: false as const, reason: "rule_entry_not_found" };
       }
       const previousNeedsRevision = current.status === "needs_revision";
       if (
@@ -746,6 +798,7 @@ export function decideRuleUpdateProposal(
         proposal_id: proposalId,
         revision: current.revision,
         decision: input.decision,
+        kind: current.kind,
         title: current.title,
         full_rule_body: current.full_rule_body,
         reason: current.reason,
@@ -1364,7 +1417,9 @@ export function getRuleUpdateReviewProjection(projectPath: string):
             proposal_id: proposal.id,
             revision: revision.revision,
             title: revision.title,
-            description: revision.full_rule_body,
+            description: proposal.kind === "retire"
+              ? proposal.reason
+              : revision.full_rule_body,
             created_at: revision.created_at,
             target_category: revision.target_category,
             terminal:
@@ -1411,7 +1466,11 @@ export function getRuleUpdateReviewProjection(projectPath: string):
             proposal_id: proposal.id,
             revision: apply.revision,
             title: proposal.title,
-            description: apply.status === "applied" ? "Agent applied and declared the source artifact." : apply.error ?? "Application needs a new revision.",
+            description: apply.status === "applied"
+              ? proposal.kind === "retire"
+                ? "Agent retired the accepted Rule and declared the source artifact."
+                : "Agent applied and declared the source artifact."
+              : apply.error ?? "Application needs a new revision.",
             created_at: apply.completed_at ?? apply.created_at,
             target_category: proposal.target.category,
             terminal: true

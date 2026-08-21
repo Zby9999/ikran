@@ -37,7 +37,8 @@ import {
 } from "./source-artifact-digest";
 import {
   authorizeRuleUpdateProposalPathOnDb,
-  projectRequiresRuleUpdateProposalOnDb
+  projectRequiresRuleUpdateProposalOnDb,
+  validateRuleUpdateIngestPlanOnDb
 } from "./rule-update-policy";
 import {
   assertArtifactPathInProject,
@@ -609,6 +610,14 @@ export function recordSourceArtifact(
         });
         if (!prepared.ok) return prepared;
         ingestPlan = prepared.plan;
+        if (declaration.proposalId !== undefined) {
+          const semanticAuthorization = validateRuleUpdateIngestPlanOnDb(
+            db,
+            declaration.proposalId,
+            ingestPlan
+          );
+          if (!semanticAuthorization.ok) return semanticAuthorization;
+        }
         contentDigest = sourceContentDigestOf(
           readFileSync(absolutePath, "utf8")
         );

@@ -15,6 +15,23 @@ import { listEvents } from "../../lib/runtime/events";
 import { getProjectDbPath } from "../../lib/runtime/paths";
 import { proposeRuleUpdate } from "../../lib/runtime/rule-update-proposal";
 
+test("retire cannot bypass the managed Review lifecycle", () => {
+  const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-rule-retire-legacy-"));
+  try {
+    initializeProjectDb(projectPath);
+    expect(proposeRuleUpdate(projectPath, {
+      kind: "retire",
+      sourceArtifactPath: "design-system/interaction-rules.json",
+      entryId: "interaction.duplicate",
+      reason: "Duplicate Rule",
+      affectedItems: ["interaction.duplicate"],
+      evidenceRecordIds: ["evidence-1"]
+    })).toEqual({ ok: false, reason: "retire_requires_managed_review" });
+  } finally {
+    rmSync(projectPath, { recursive: true, force: true });
+  }
+});
+
 test("rule-update proposal records an awaiting-confirmation event without moving sources", () => {
   const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-rule-proposal-"));
   try {

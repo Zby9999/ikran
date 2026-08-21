@@ -1180,7 +1180,7 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(36);
+        expect(CURRENT_SCHEMA_VERSION).toBe(37);
         expect(
           db.prepare("PRAGMA table_info(prototype_surfaces)").all()
         ).toEqual(
@@ -1335,6 +1335,89 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
+  test("v36→v37 preserves proposal references and admits only the retire kind", () => {
+    const db = new DatabaseSync(":memory:");
+    try {
+      db.exec(`
+        PRAGMA foreign_keys = ON;
+        CREATE TABLE rule_update_reviews (
+          id TEXT PRIMARY KEY
+        );
+        CREATE TABLE rule_update_proposals (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK (kind IN ('new', 'update', 'move')),
+          classification TEXT NOT NULL CHECK (classification IN (
+            'local_exception', 'reusable_candidate', 'rule_conflict',
+            'open_gap', 'proposed_update', 'no_finding'
+          )),
+          title TEXT NOT NULL,
+          change_description TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          affected_items_json TEXT NOT NULL,
+          evidence_record_ids_json TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN (
+            'awaiting_confirmation', 'confirmed', 'canceled'
+          )),
+          source_artifact_path TEXT,
+          entry_id TEXT,
+          proposed_target_path TEXT,
+          created_at TEXT NOT NULL,
+          decided_at TEXT,
+          review_id TEXT REFERENCES rule_update_reviews(id) ON DELETE RESTRICT,
+          current_revision INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE rule_update_proposal_revisions (
+          proposal_id TEXT NOT NULL REFERENCES rule_update_proposals(id) ON DELETE RESTRICT,
+          revision INTEGER NOT NULL,
+          PRIMARY KEY (proposal_id, revision)
+        );
+        INSERT INTO rule_update_reviews VALUES ('review-v36');
+        INSERT INTO rule_update_proposals
+          (id, kind, classification, title, change_description, reason,
+           affected_items_json, evidence_record_ids_json, status,
+           source_artifact_path, entry_id, proposed_target_path, created_at,
+           decided_at, review_id, current_revision)
+        VALUES ('proposal-v36', 'update', 'proposed_update', 'Existing',
+                'body', 'reason', '[]', '[]', 'confirmed',
+                'design-system/interaction-rules.json', 'interaction.old',
+                NULL, '2026-08-21T00:00:00.000Z', NULL, 'review-v36', 1);
+        INSERT INTO rule_update_proposal_revisions VALUES ('proposal-v36', 1);
+        PRAGMA user_version = 36;
+      `);
+
+      applyPendingMigrations(db, 36);
+
+      expect(userVersion(db)).toBe(37);
+      expect(
+        db.prepare("SELECT kind, review_id FROM rule_update_proposals WHERE id = 'proposal-v36'").get()
+      ).toEqual({ kind: "update", review_id: "review-v36" });
+      expect(
+        db.prepare("SELECT proposal_id FROM rule_update_proposal_revisions").get()
+      ).toEqual({ proposal_id: "proposal-v36" });
+      expect(() => db.prepare(
+        `INSERT INTO rule_update_proposals
+          (id, kind, classification, title, change_description, reason,
+           affected_items_json, evidence_record_ids_json, status,
+           created_at, review_id, current_revision)
+         VALUES ('retire-v37', 'retire', 'proposed_update', 'Retire', '',
+                 'duplicate', '[]', '[]', 'awaiting_confirmation',
+                 '2026-08-21T00:00:01.000Z', 'review-v36', 1)`
+      ).run()).not.toThrow();
+      expect(() => db.prepare(
+        `INSERT INTO rule_update_proposals
+          (id, kind, classification, title, change_description, reason,
+           affected_items_json, evidence_record_ids_json, status,
+           created_at, review_id, current_revision)
+         VALUES ('bad-v37', 'merge', 'proposed_update', 'Merge', '',
+                 'duplicate', '[]', '[]', 'awaiting_confirmation',
+                 '2026-08-21T00:00:02.000Z', 'review-v36', 1)`
+      ).run()).toThrow(/constraint/i);
+      expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
   test("v34 repairs a v33 Rule Update revision table opened before per-path digests", () => {
     const db = new DatabaseSync(":memory:");
     try {
@@ -1348,7 +1431,7 @@ test.describe("PRAGMA user_version migration runner", () => {
         PRAGMA user_version = 33;
       `);
       applyPendingMigrations(db, 33);
-      expect(userVersion(db)).toBe(36);
+      expect(userVersion(db)).toBe(37);
       expect(db.prepare("PRAGMA table_info(rule_update_proposal_revisions)").all()).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -1402,7 +1485,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       applyPendingMigrations(db, 31);
 
-      expect(userVersion(db)).toBe(36);
+      expect(userVersion(db)).toBe(37);
       expect(
         db.prepare(
           `SELECT scope_kind, scope_id, alignment_attempt_id

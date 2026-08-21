@@ -30,13 +30,14 @@ export type { RuleUpdateCategory } from "@/lib/runtime/rule-update-category";
 export type RuleUpdateProposalView = {
   id: string;
   review_id: string;
-  kind: "new" | "update" | "move";
+  kind: "new" | "update" | "move" | "retire";
   classification: string;
   title: string;
   full_rule_body: string;
   current_rule_body: string | null;
   reason: string;
   affected_items: string[];
+  evidence_record_ids: string[];
   status: "pending_review" | "waiting_agent" | "applied" | "rejected" | "failed" | "needs_revision";
   target: {
     category: RuleUpdateCategory;
@@ -259,8 +260,8 @@ function ProposalCard({
   const save = async () => {
     const trimmedTitle = title.trim();
     const trimmedBody = body.trim();
-    if (!trimmedTitle || !trimmedBody) {
-      setError("Title and proposed rule are required.");
+    if (!trimmedTitle || (proposal.kind !== "retire" && !trimmedBody)) {
+      setError(proposal.kind === "retire" ? "Title is required." : "Title and proposed rule are required.");
       return;
     }
     const targetPath = ruleUpdateCategoryArtifact(proposal.target.category);
@@ -274,7 +275,7 @@ function ProposalCard({
         category: proposal.target.category,
         sourceCategory: proposal.target.sourceCategory ?? undefined,
         sourceArtifactPath:
-          proposal.kind === "move"
+          proposal.kind === "move" || proposal.kind === "retire"
             ? proposal.target.sourceArtifactPath
             : targetPath,
         entryId: proposal.target.entryId ?? undefined,
@@ -359,7 +360,7 @@ function ProposalCard({
         <div className="dsb-ru-body">
           <div className="dsb-ru-body-inner">
             <div className="dsb-ru-detail">
-              <div>
+              {proposal.kind !== "retire" ? <div>
                 <span className="dsb-ru-label">Proposed</span>
                 {editing ? (
                   <Textarea
@@ -373,7 +374,7 @@ function ProposalCard({
                 ) : (
                   <p>{proposal.full_rule_body}</p>
                 )}
-              </div>
+              </div> : null}
               <div>
                 <span className="dsb-ru-label">Reason</span>
                 <p>{proposal.reason}</p>
@@ -387,7 +388,7 @@ function ProposalCard({
                       size="icon-xs"
                       className="dsb-rule-save-icon active:scale-[0.96] active:translate-y-0"
                       aria-label={`Save Rule Update ${proposal.title}`}
-                      disabled={busy || !title.trim() || !body.trim()}
+                      disabled={busy || !title.trim() || (proposal.kind !== "retire" && !body.trim())}
                       onClick={() => void save()}
                     >
                       <HugeiconsIcon
@@ -446,9 +447,10 @@ function ProposalCard({
                   ) : null}
                 </div>
               ) : proposal.status === "waiting_agent" ? (
-                  <p className="dsb-ru-wait-copy">
-                    Ask the Agent to continue.
-                  </p>
+                  <div className="dsb-ru-wait-copy">
+                    <strong>Waiting for Agent</strong>
+                    <p>Ask the Agent to continue.</p>
+                  </div>
                 ) : proposal.status === "failed" ? (
                   <p className="dsb-ru-wait-copy">
                     Application failed. The Agent can retry the same command.
@@ -549,7 +551,7 @@ export function RuleUpdateCategoryStream({
         (proposal) =>
           proposal.target.category === category &&
           !["applied", "rejected"].includes(proposal.status) &&
-          (proposal.kind !== "update" || proposal.target.entryId === null)
+          (!["update", "retire"].includes(proposal.kind) || proposal.target.entryId === null)
       )
       .map((proposal) => ({ proposal, transcript: review.transcript }))
   );
@@ -617,7 +619,7 @@ export function RuleUpdateUpdatesForEntry({
     review.proposals
       .filter(
         (proposal) =>
-          proposal.kind === "update" &&
+          (proposal.kind === "update" || proposal.kind === "retire") &&
           proposal.target.category === category &&
           proposal.target.entryId === entryId &&
           !["applied", "rejected"].includes(proposal.status)
@@ -749,7 +751,11 @@ export function RuleUpdateInteractionsPage({
                   {index + 1}
                 </span>
                 {proposal ? (
-                  <span className="dsb-ru-record-kind">Proposal</span>
+                  <span className="dsb-ru-record-kind">
+                    {proposal.kind === "retire" && proposal.status === "applied"
+                      ? "Retired"
+                      : "Proposal"}
+                  </span>
                 ) : null}
                 {proposal ? (
                   <Button
@@ -788,10 +794,19 @@ export function RuleUpdateInteractionsPage({
                       <p>{message.content}</p>
                     </div>
                   ))
-                ) : proposal ? (
+                ) : null}
+                {proposal ? (
                   <p className="dsb-ru-record-summary">
-                    {proposal.full_rule_body}
+                    {proposal.kind === "retire"
+                      ? proposal.reason
+                      : proposal.full_rule_body}
                   </p>
+                ) : null}
+                {proposal && proposal.evidence_record_ids.length > 0 ? (
+                  <div className="dsb-ru-record-evidence">
+                    <strong>Evidence</strong>
+                    <p>{proposal.evidence_record_ids.join(", ")}</p>
+                  </div>
                 ) : null}
               </div>
             </article>

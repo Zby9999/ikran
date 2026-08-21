@@ -281,7 +281,7 @@ export const proposeRuleUpdateInputShape = {
   kind: z
     .string()
     .optional()
-    .describe("new | update | move. Defaults to move."),
+    .describe("new | update | move | retire. Defaults to move."),
   classification: z
     .string()
     .optional()
@@ -300,7 +300,7 @@ export const proposeRuleUpdateInputShape = {
     .string()
     .optional()
     .describe(
-      "Artifact path this proposal may authorize. Required for move; also supply it for new/update proposals that will write a Design System source in a Rule-Update-protected phase."
+      "Artifact path this proposal may authorize. Required for move and retire; also supply it for new/update proposals that will write a Design System source in a Rule-Update-protected phase."
     ),
   entryId: z.string().optional(),
   proposedTargetPath: z.string().optional()

@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 36;
+export const CURRENT_SCHEMA_VERSION = 37;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1769,6 +1769,67 @@ CREATE INDEX IF NOT EXISTS idx_rule_update_apply_proposal
            ADD COLUMN screenshot_generation INTEGER NOT NULL DEFAULT 0`
         );
       }
+    }
+  },
+  {
+    version: 37,
+    foreignKeysOff: true,
+    up(db) {
+      // Issue 41: Retire is the exact-removal primitive. SQLite cannot alter
+      // a CHECK constraint in place, so preserve proposal identities while
+      // widening the durable kind vocabulary.
+      const proposalTable = db
+        .prepare(
+          `SELECT 1 AS present FROM sqlite_master
+           WHERE type = 'table' AND name = 'rule_update_proposals'`
+        )
+        .get();
+      if (!proposalTable) return;
+      db.exec(`
+CREATE TABLE rule_update_proposals_v37 (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('new', 'update', 'move', 'retire')),
+  classification TEXT NOT NULL CHECK (classification IN (
+    'local_exception',
+    'reusable_candidate',
+    'rule_conflict',
+    'open_gap',
+    'proposed_update',
+    'no_finding'
+  )),
+  title TEXT NOT NULL,
+  change_description TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  affected_items_json TEXT NOT NULL,
+  evidence_record_ids_json TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN (
+    'awaiting_confirmation', 'confirmed', 'canceled'
+  )),
+  source_artifact_path TEXT,
+  entry_id TEXT,
+  proposed_target_path TEXT,
+  created_at TEXT NOT NULL,
+  decided_at TEXT,
+  review_id TEXT REFERENCES rule_update_reviews(id) ON DELETE RESTRICT,
+  current_revision INTEGER NOT NULL DEFAULT 1
+);
+INSERT INTO rule_update_proposals_v37
+  (id, kind, classification, title, change_description, reason,
+   affected_items_json, evidence_record_ids_json, status,
+   source_artifact_path, entry_id, proposed_target_path, created_at,
+   decided_at, review_id, current_revision)
+SELECT id, kind, classification, title, change_description, reason,
+       affected_items_json, evidence_record_ids_json, status,
+       source_artifact_path, entry_id, proposed_target_path, created_at,
+       decided_at, review_id, current_revision
+FROM rule_update_proposals;
+DROP TABLE rule_update_proposals;
+ALTER TABLE rule_update_proposals_v37 RENAME TO rule_update_proposals;
+CREATE INDEX idx_rule_update_proposals_status
+  ON rule_update_proposals(status);
+CREATE INDEX idx_rule_update_proposals_created_at
+  ON rule_update_proposals(created_at);
+      `);
     }
   }
 ];

@@ -63,7 +63,7 @@ export function registerRuleUpdateTools(
     "propose_rule_update",
     {
       description:
-        "Draft one full Rule Update proposal. For the Review flow pass reviewId, fullRuleBody, and targetCategory (foundations.home/color/typography/materials/layout/interaction or component:<entryId>); move proposals also pass their typed sourceCategory. The draft stays private until publish_rule_update_review. Legacy callers without reviewId keep the chat-only awaiting_confirmation path. This tool never edits source artifacts.",
+        "Draft one Rule Update proposal. For new/update/move pass the complete fullRuleBody. Retire is available only inside a managed Review: omit fullRuleBody and bind exactly one existing prose Rule in foundations.home/layout/interaction with sourceArtifactPath plus entryId; an accepted retire authorizes only that Rule's removal. Pass targetCategory (foundations.home/color/typography/materials/layout/interaction or component:<entryId>); move proposals also pass their typed sourceCategory. The draft stays private until publish_rule_update_review. This tool never edits source artifacts.",
       inputSchema: proposeRuleUpdateInputSchema
     },
     async (args) => {

@@ -878,6 +878,125 @@ test("09A design system browser: declare → render → approve write-back", asy
       page.getByTestId("ds-evidence-interaction-calm-feedback")
     ).toHaveCount(0);
 
+    // Issue 41: Retire is reviewed on the existing Rule, not as a replacement
+    // body. Accept keeps the Delete state until the Agent declares the exact
+    // removal; the applied proposal then remains in Interaction Records.
+    const retireReview = structuredContent(await client.callTool({
+      name: "create_rule_update_review",
+      arguments: { context: "Retire duplicated feedback behavior" }
+    }));
+    expect(retireReview).toMatchObject({ ok: true, review: { status: "draft" } });
+    const retireReviewId = String((retireReview.review as { id: string }).id);
+    const retireProposal = structuredContent(await client.callTool({
+      name: "propose_rule_update",
+      arguments: {
+        reviewId: retireReviewId,
+        kind: "retire",
+        classification: "proposed_update",
+        title: "Measured feedback",
+        reason: "The canonical disclosure rule now covers this behavior.",
+        affectedItems: ["interaction-calm-feedback"],
+        evidenceRecordIds: [designerEditedCardId],
+        targetCategory: "foundations.interaction",
+        sourceArtifactPath: "design-system/interaction-rules.json",
+        entryId: "interaction-calm-feedback"
+      }
+    }));
+    expect(retireProposal).toMatchObject({
+      ok: true,
+      proposal: { kind: "retire", full_rule_body: "" }
+    });
+    const retireProposalId = String((retireProposal.proposal as { id: string }).id);
+    expect(structuredContent(await client.callTool({
+      name: "publish_rule_update_review",
+      arguments: { reviewId: retireReviewId }
+    }))).toMatchObject({ ok: true, proposal_count: 1 });
+
+    await expect(interactionRule.getByTestId("ds-interaction-status")).toHaveText("Delete");
+    await expect(interactionRule.locator(".dsb-card-title")).toHaveCSS("opacity", "0.4");
+    await expect(interactionRule.locator(".dsb-card-desc")).toHaveCSS("opacity", "1");
+    await expect(interactionRule.getByRole("button", { name: /Edit rule/ })).toHaveCSS("opacity", "1");
+    await expect(
+      interactionRule.getByRole("button", {
+        name: "Evidence for interaction rule interaction-calm-feedback"
+      })
+    ).toHaveCSS("opacity", "1");
+    const retireSlot = interactionRule.locator("xpath=following-sibling::li[1]");
+    await retireSlot.getByRole("button", { name: "Expand Measured feedback" }).click();
+    await expect(retireSlot.getByText("Proposed", { exact: true })).toHaveCount(0);
+    await expect(retireSlot).toContainText(
+      "The canonical disclosure rule now covers this behavior."
+    );
+    await retireSlot.getByRole("button", { name: "Accept", exact: true }).click();
+    await expect(retireSlot).toContainText("Waiting for Agent");
+    await expect(retireSlot).toContainText("Ask the Agent to continue.");
+    await expect(interactionRule.getByTestId("ds-interaction-status")).toHaveText("Delete");
+
+    const retireClaim = structuredContent(await client.callTool({
+      name: "claim_rule_update_decision",
+      arguments: {}
+    }));
+    expect(retireClaim).toMatchObject({
+      ok: true,
+      completed: false,
+      command: {
+        status: "claimed",
+        payload: { proposal_id: retireProposalId, decision: "accepted" }
+      }
+    });
+    writeSource("design-system/interaction-rules.json", {
+      rules: [
+        {
+          id: "interaction-purposeful-disclosure",
+          value: "Changed while retiring another Rule.",
+          meaning: "Purposeful progressive disclosure",
+          status: "candidate",
+          links: [designerEditedCardId]
+        }
+      ]
+    });
+    expect(structuredContent(await client.callTool({
+      name: "record_artifact_written",
+      arguments: {
+        path: "design-system/interaction-rules.json",
+        artifactType: "interaction-rules.json",
+        semanticPurpose: "Attempt an unrelated change with a Retire",
+        relatedRecordIds: [designerEditedCardId],
+        proposalId: retireProposalId
+      }
+    }))).toMatchObject({ ok: false, error: "retire_semantic_diff_mismatch" });
+    await expect(interactionRule.getByTestId("ds-interaction-status")).toHaveText("Delete");
+    writeSource("design-system/interaction-rules.json", {
+      rules: [
+        {
+          id: "interaction-purposeful-disclosure",
+          value: "Reveal secondary controls only when their context becomes relevant.",
+          meaning: "Purposeful progressive disclosure",
+          status: "candidate",
+          links: [designerEditedCardId]
+        }
+      ]
+    });
+    expect(structuredContent(await client.callTool({
+      name: "record_artifact_written",
+      arguments: {
+        path: "design-system/interaction-rules.json",
+        artifactType: "interaction-rules.json",
+        semanticPurpose: "Retire the accepted duplicate Rule",
+        relatedRecordIds: [designerEditedCardId],
+        proposalId: retireProposalId
+      }
+    }))).toMatchObject({ ok: true, record: { status: "ingested" } });
+    await expect(page.getByText("Measured feedback", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: /^(Records|Interaction records)$/ }).click();
+    const retiredRecord = page
+      .getByTestId("rule-update-interaction-records")
+      .locator(".dsb-ru-record")
+      .filter({ hasText: "The canonical disclosure rule now covers this behavior." });
+    await expect(retiredRecord).toContainText("Retired");
+    await expect(retiredRecord).toContainText("Evidence");
+    await expect(retiredRecord).toContainText(designerEditedCardId);
+
     // ---- ⓘ evidence chain for a row. ----
     await page.getByRole("tab", { name: "Foundations" }).click();
     await page.getByRole("button", { name: "Color", exact: true }).click();
