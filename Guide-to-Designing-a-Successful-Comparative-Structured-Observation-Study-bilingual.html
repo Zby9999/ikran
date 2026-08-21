@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Guide to Designing a Successful Comparative Structured Observation Study - Bilingual (EN/ZH)</title>
+<style>
+@font-face {
+  font-family: "Geist";
+  src: url("assets/Geist-VariableFont_wght.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Serif";
+  src: url("assets/IBMPlexSerif-Italic.ttf") format("truetype");
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+}
+:root {
+  --en-color: #1a1a2e;
+  --zh-color: #2d3436;
+  --border: #e0e0e0;
+  --divider: rgba(0, 0, 0, 0.16);
+  --bg-en: #fafbfc;
+  --bg-zh: #f8f9fa;
+  --max-width: 1000px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--en-color);
+  background: #fff;
+}
+.page-wrap { max-width: var(--max-width); margin: 0 auto; padding: 5rem 1.5rem 4rem; }
+.paper { position: relative; }
+.paper::before {
+  content: ""; position: absolute; inset: 0 auto 0 50%; width: 1px;
+  background: var(--divider); transform: translateX(-0.5px); pointer-events: none;
+}
+.bilingual-row {
+  position: relative; z-index: 1; display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 32px; margin-bottom: 32px; align-items: start;
+}
+.col { padding: 12px 16px; border: 0; border-radius: 16px; min-width: 0; }
+.col.en { background: var(--bg-en); font-family: "Geist", system-ui, -apple-system, sans-serif; }
+.col.en p, .col.en li { letter-spacing: -0.02em; }
+.col.zh {
+  background: var(--bg-zh);
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  color: var(--zh-color);
+}
+.paper-header { margin-bottom: 2rem; }
+.title-row .col, .meta-row .col, .heading-row .col, .caption-row .col { background: transparent; border: none; }
+.title-row .col { padding: 0.5rem 0; border-radius: 0; }
+.title-row h1 { font-size: 20px; line-height: 1.674; font-weight: 400; }
+.title-row .en h1 { font-family: "IBM Plex Serif", Georgia, serif; font-style: italic; }
+.meta-row .col { padding: 0.25rem 0; font-size: 0.9rem; }
+.meta { color: #555; }
+.citation-row .col { padding: 0.25rem 0; }
+.citation-box { border-left: 2px solid #b8b8b8; padding-left: 0.85rem; }
+.citation-label { font-weight: 700; margin-bottom: 0.35rem; }
+.affiliation-row .col { padding-top: 0.15rem; padding-bottom: 0.15rem; }
+.affiliation-row + .affiliation-row { margin-top: -18px; }
+.footnote-row { margin-top: -12px; }
+.footnote-row .col { border-top: 1px solid #999; padding-top: 0.35rem; font-size: 0.78rem; line-height: 1.45; }
+.heading-row { scroll-margin-top: 32px; margin-top: 32px; margin-bottom: 4px; }
+.heading-row .col { padding: 0.25rem 24px; border-radius: 0; }
+.heading-row h2, .heading-row h3, .heading-row h4 {
+  border: 0; padding: 0; font-weight: 400; line-height: 1.674; color: inherit;
+}
+.heading-row h2 { font-size: 18px; }
+.heading-row h3 { font-size: 16px; }
+.heading-row h4 { font-size: 14px; }
+.heading-row .en h2, .heading-row .en h3, .heading-row .en h4 {
+  font-family: "IBM Plex Serif", Georgia, serif; font-style: italic;
+}
+p { text-align: justify; hyphens: auto; }
+ol, ul { padding-left: 1.5rem; }
+li { margin-bottom: 0.6rem; text-align: justify; }
+.checklist, .checklist ul { list-style: none; padding-left: 1.45rem; }
+.checklist { margin: 0.2rem 0 0.8rem; }
+.checklist ul { margin-top: 0.15rem; margin-bottom: 0.2rem; }
+.checklist li { position: relative; margin-bottom: 0.12rem; }
+.checklist li::before {
+  content: "□"; position: absolute; left: -1.35rem; top: 0; font-size: 0.95em; line-height: inherit;
+}
+.dot-list { margin-top: 0.15rem; }
+.dot-list li { margin-bottom: 0.2rem; }
+.list-heading { margin-top: 0.55rem; margin-bottom: 0.2rem; font-weight: 700; }
+.definition-row { margin-top: 0; }
+.definition-row .col { padding-top: 0; }
+.definition {
+  margin: 0.45rem 1.25rem 0.55rem; padding: 0.65rem 1.1rem;
+  border-left: 2px solid #9a9a9a; font-style: normal;
+}
+.definition p { text-align: left; }
+.paper-table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+.paper-table th, .paper-table td { border-top: 1px solid #999; padding: 0.3rem 0.5rem; text-align: left; vertical-align: top; }
+.paper-table thead th { border-top: 1.5px solid #333; border-bottom: 1px solid #666; }
+.paper-table tbody tr:last-child td { border-bottom: 1.5px solid #333; }
+.ref-block {
+  position: relative; z-index: 1; margin: 0.5rem 0 1rem; background: #fff;
+  font-family: "Georgia", "Times New Roman", "Songti SC", "SimSun", serif;
+}
+.ref-block p.ref { font-size: 0.82rem; line-height: 1.5; text-align: left; margin-bottom: 0.35rem; }
+.ref-num { font-weight: 600; }
+.footer-note {
+  margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+  font-size: 0.8rem; color: #888; text-align: center; font-family: system-ui, sans-serif;
+}
+.section-guide {
+  display: none;
+  position: fixed;
+  z-index: 20;
+  top: 50%;
+  left: 80px;
+  width: 167px;
+  transform: translateY(-50%);
+}
+.section-guide__link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 167px;
+  height: 17px;
+  color: rgba(0, 0, 0, 0.16);
+  text-decoration: none;
+  outline: none;
+}
+.section-guide__line {
+  display: block;
+  width: 32px;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(1);
+  transform-origin: left center;
+  transition: transform 180ms ease, color 180ms ease;
+}
+.section-guide__label {
+  position: absolute;
+  left: 104px;
+  top: 50%;
+  color: #000;
+  font: 400 14px/1.2 "Geist", system-ui, sans-serif;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 140ms ease;
+}
+.section-guide__link[aria-current="location"] { color: rgba(0, 0, 0, 0.48); }
+.section-guide__link:focus-visible { color: rgba(0, 0, 0, 0.82); }
+.section-guide__link:focus-visible .section-guide__line { transform: scaleX(2.4); }
+.section-guide__link:focus-visible .section-guide__label { opacity: 1; }
+@media (min-width: 1401px) {
+  .section-guide { display: flex; flex-direction: column; }
+}
+@media (hover: hover) and (pointer: fine) {
+  .section-guide__link:hover { color: rgba(0, 0, 0, 0.82); }
+  .section-guide__link:hover .section-guide__line { transform: scaleX(2.4); }
+  .section-guide__link:hover .section-guide__label { opacity: 1; }
+  .section-guide__link:has(+ .section-guide__link:hover),
+  .section-guide__link:hover + .section-guide__link { color: rgba(0, 0, 0, 0.52); }
+  .section-guide__link:has(+ .section-guide__link:hover) .section-guide__line,
+  .section-guide__link:hover + .section-guide__link .section-guide__line { transform: scaleX(1.65); }
+  .section-guide__link:has(+ .section-guide__link + .section-guide__link:hover),
+  .section-guide__link:hover + .section-guide__link + .section-guide__link { color: rgba(0, 0, 0, 0.34); }
+  .section-guide__link:has(+ .section-guide__link + .section-guide__link:hover) .section-guide__line,
+  .section-guide__link:hover + .section-guide__link + .section-guide__link .section-guide__line { transform: scaleX(1.3); }
+  .section-guide__link:has(+ .section-guide__link + .section-guide__link + .section-guide__link:hover),
+  .section-guide__link:hover + .section-guide__link + .section-guide__link + .section-guide__link { color: rgba(0, 0, 0, 0.24); }
+  .section-guide__link:has(+ .section-guide__link + .section-guide__link + .section-guide__link:hover) .section-guide__line,
+  .section-guide__link:hover + .section-guide__link + .section-guide__link + .section-guide__link .section-guide__line { transform: scaleX(1.125); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .section-guide__line, .section-guide__label { transition: none; }
+}
+@media (max-width: 860px) {
+  .page-wrap { padding: 2rem 1rem 4rem; }
+  .paper::before { display: none; }
+  .bilingual-row { grid-template-columns: 1fr; row-gap: 16px; }
+  .affiliation-row + .affiliation-row { margin-top: 0; }
+}
+@media print {
+  .paper::before { display: none; }
+  .bilingual-row { break-inside: avoid; page-break-inside: avoid; }
+  .section-guide { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="page-wrap">
+  <nav class="section-guide" aria-label="Paper sections">
+    <a class="section-guide__link" href="#section-abstract" aria-label="Abstract">
+      <span class="section-guide__line" aria-hidden="true"></span>
+      <span class="section-guide__label" aria-hidden="true">Abstract</span>
+    </a>
+    <a class="section-guide__link" href="#section-introduction" aria-label="Introduction">
+      <span class="section-guide__line" aria-hidden="true"></span>
+      <span class="section-guide__label" aria-hidden="true">Introduction</span>
+    </a>
+    <a class="section-guide__link" href="#section-characterizing" aria-label="Characterizing CSO">
+      <span class="section-guide__line" aria-hidden="true"></span>
+      <span class="section-guide__label" aria-hidden="true">Characterizing CSO</span>
+    </a>
+    <a class="section-guide__link" href="#section-checklist" aria-label="CSO Checklist">
+      <span class="section-guide__line" aria-hidden="true"></span>
+      <span class="section-guide__label" aria-hidden="true">CSO Checklist</span>
+    </a>
+    <a class="section-guide__link" href="#section-example" aria-label="Example">
+      <span class="section-guide__line" aria-hidden="true"></span>
+      <span class="section-guide__label" aria-hidden="true">Example</span>
+    </a>
+    <a class="section-guide__link" href="#section-ux-designers" aria-label="For UX Designers">
+      <span class="section-guide__line" aria-hidden="true"></span>
+      <span class="section-guide__label" aria-hidden="true">For UX Designers</span>
+    </a>
+    <a class="section-guide__link" href="#section-acknowledgments" aria-label="Acknowledgments">
+      <span class="section-guide__line" aria-hidden="true"></span>
+      <span class="section-guide__label" aria-hidden="true">Acknowledgments</span>
+    </a>
+    <a class="section-guide__link" href="#section-reading" aria-label="Recommended Reading">
+      <span class="section-guide__line" aria-hidden="true"></span>
+      <span class="section-guide__label" aria-hidden="true">Recommended Reading</span>
+    </a>
+  </nav>
+
+  <article class="paper">
+    <header class="paper-header">
+      <div class="bilingual-row title-row">
+        <div class="col en" lang="en"><h1>Guide to Designing a Successful Comparative Structured Observation Study</h1></div>
+        <div class="col zh" lang="zh-CN"><h1>成功设计比较性结构化观察研究指南</h1></div>
+      </div>
+
+      <div class="bilingual-row meta-row">
+        <div class="col en" lang="en"><p class="meta">HAL open science</p></div>
+        <div class="col zh" lang="zh-CN"><p class="meta">HAL 开放科学</p></div>
+      </div>
+      <div class="bilingual-row meta-row">
+        <div class="col en" lang="en"><p class="meta">Wendy E Mackay, Joanna Mcgrenere</p></div>
+        <div class="col zh" lang="zh-CN"><p class="meta">Wendy E Mackay、Joanna Mcgrenere</p></div>
+      </div>
+
+      <div class="bilingual-row citation-row">
+        <div class="col en" lang="en"><div class="citation-box"><p class="citation-label">To cite this version:</p><p>Wendy E Mackay, Joanna Mcgrenere. Guide to Designing a Successful Comparative Structured Observation Study. Supplemental material to the Extended Abstracts of the CHI 2025 Conference on Human Factors in Computing System, 2025, pp.1-3. ⟨hal-05588548⟩</p></div></div>
+        <div class="col zh" lang="zh-CN"><div class="citation-box"><p class="citation-label">引用此版本：</p><p>Wendy E Mackay、Joanna Mcgrenere。《成功设计比较性结构化观察研究指南》。《CHI 2025 人机交互系统人因会议扩展摘要集》的补充材料，2025 年，第 1–3 页。⟨hal-05588548⟩</p></div></div>
+      </div>
+      <div class="bilingual-row meta-row">
+        <div class="col en" lang="en"><p class="meta"><strong>HAL Id:</strong> hal-05588548<br /><a href="https://hal.science/hal-05588548v1">https://hal.science/hal-05588548v1</a></p></div>
+        <div class="col zh" lang="zh-CN"><p class="meta"><strong>HAL ID：</strong>hal-05588548<br /><a href="https://hal.science/hal-05588548v1">https://hal.science/hal-05588548v1</a></p></div>
+      </div>
+      <div class="bilingual-row meta-row">
+        <div class="col en" lang="en"><p class="meta">Submitted on 11 Apr 2026</p></div>
+        <div class="col zh" lang="zh-CN"><p class="meta">提交于 2026 年 4 月 11 日</p></div>
+      </div>
+      <div class="bilingual-row">
+        <div class="col en" lang="en"><p><strong>HAL</strong> is a multi-disciplinary open access archive for the deposit and dissemination of scientific research documents, whether they are published or not. The documents may come from teaching and research institutions in France or abroad, or from public or private research centers.</p></div>
+        <div class="col zh" lang="zh-CN"><p><strong>HAL</strong> 是一个多学科开放获取档案库，用于存放和传播科学研究文献，无论这些文献是否已经发表。这些文献可能来自法国或其他国家的教学与研究机构，也可能来自公共或私营研究中心。</p></div>
+      </div>
+      <div class="bilingual-row">
+        <div class="col en" lang="fr"><p>L’archive ouverte pluridisciplinaire HAL, est destinée au dépôt et à la diffusion de documents scientifiques de niveau recherche, publiés ou non, émanant des établissements d’enseignement et de recherche français ou étrangers, des laboratoires publics ou privés.</p></div>
+        <div class="col zh" lang="zh-CN"><p>多学科开放档案 HAL 用于存放和传播研究级科学文献，这些文献无论是否发表，均可来自法国或外国的教学与研究机构，以及公共或私营实验室。</p></div>
+      </div>
+      <div class="bilingual-row meta-row">
+        <div class="col en" lang="en"><p class="meta">Distributed under a Creative Commons CC BY 4.0 - Attribution - International License</p></div>
+        <div class="col zh" lang="zh-CN"><p class="meta">根据 Creative Commons CC BY 4.0——署名—国际许可协议发布</p></div>
+      </div>
+      <div class="bilingual-row meta-row affiliation-row">
+        <div class="col en" lang="en"><p class="meta"><strong>Wendy E. Mackay</strong><br />mackay@lisn.fr<br />Université Paris-Saclay, CNRS, Inria<br />Laboratoire Interdisciplinaire des Sciences du Numerique<br />Orsay, France</p></div>
+        <div class="col zh" lang="zh-CN"><p class="meta"><strong>Wendy E. Mackay</strong><br />mackay@lisn.fr<br />Université Paris-Saclay、CNRS、Inria<br />Laboratoire Interdisciplinaire des Sciences du Numerique<br />法国奥赛</p></div>
+      </div>
+      <div class="bilingual-row meta-row affiliation-row">
+        <div class="col en" lang="en"><p class="meta"><strong>Joanna McGrenere</strong><br />joanna@cs.ubc.ca<br />University of British Columbia<br />Computer Science<br />Vancouver, Canada</p></div>
+        <div class="col zh" lang="zh-CN"><p class="meta"><strong>Joanna McGrenere</strong><br />joanna@cs.ubc.ca<br />University of British Columbia<br />Computer Science<br />加拿大温哥华</p></div>
+      </div>
+    </header>
+
+    <div class="bilingual-row heading-row" id="section-abstract">
+      <div class="col en" lang="en"><h2>ABSTRACT</h2></div>
+      <div class="col zh" lang="zh-CN"><h2>摘要</h2></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p><em>Comparative Structured Observation</em> is a qualitative method for HCI (Human-Computer Interaction) researchers and User Experience (UX) designers to assess and advance mid- or late-phase interaction designs. The goal is to obtain rich, qualitative insights from users as they compare design variants to evolve a proposed design concept. Participants are encouraged to consider specific trade-offs between different design variants and help designers assess whether the design is on the right track.</p></div>
+      <div class="col zh" lang="zh-CN"><p>比较性结构化观察（Comparative Structured Observation）是一种定性方法，供人机交互（Human-Computer Interaction，HCI）研究者和用户体验（UX）设计师评估并推进中期或后期的交互设计。其目标是让用户比较不同的设计变体，从而获得丰富的定性洞见，以发展提出的设计概念。研究参与者被鼓励思考不同设计变体之间的具体权衡，并帮助设计师评估设计是否走在正确的方向上。</p></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>The method takes advantage of structure of a controlled experiment to ensure that participants experience similar, ecologically valid tasks with each variant which enhances their ability to reflect the advantages and disadvantages of each.</p></div>
+      <div class="col zh" lang="zh-CN"><p>该方法借鉴受控实验的结构，确保参与者在每个变体下体验相似且具有生态效度的任务，从而增强他们反思每个变体优点与缺点的能力。</p></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>This guide is designed to help both HCI researchers and UX designers learn and apply this method. We identify the criteria for creating a successful <em>Comparative Structured Observation</em> study, followed by a checklist and an example of a <em>Comparative Structured Observation</em> study design. We then discuss how HCI paper reviewers can determine whether or not a particular study should be considered a <em>Comparative Structured Observation</em> and discuss how UX designers in industry may benefit from the method. Note that this guide is intended as a practical accompaniment to (Mackay &amp; McGrenere, 2025), published at ACM/Transactions on Computer-Human Interaction.</p></div>
+      <div class="col zh" lang="zh-CN"><p>本指南旨在帮助 HCI 研究者和 UX 设计师学习并应用这一方法。我们首先确定创建成功的比较性结构化观察研究所需的标准，随后给出一份清单和一个比较性结构化观察研究设计示例。然后，我们讨论 HCI 论文评审者如何判断某项研究是否应被视为比较性结构化观察，并讨论业界 UX 设计师如何从该方法中受益。请注意，本指南旨在作为（Mackay &amp; McGrenere，2025）一文的实用配套材料；该论文发表于 ACM/Transactions on Computer-Human Interaction。</p></div>
+    </div>
+
+    <div class="bilingual-row heading-row">
+      <div class="col en" lang="en"><h3>CCS CONCEPTS</h3></div>
+      <div class="col zh" lang="zh-CN"><h3>CCS 概念</h3></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><ul class="dot-list"><li><strong>Human-centered computing → HCI design and evaluation methods..</strong></li></ul></div>
+      <div class="col zh" lang="zh-CN"><ul class="dot-list"><li><strong>以人为中心的计算 → HCI 设计与评估方法。</strong></li></ul></div>
+    </div>
+
+    <div class="bilingual-row heading-row">
+      <div class="col en" lang="en"><h3>KEYWORDS</h3></div>
+      <div class="col zh" lang="zh-CN"><h3>关键词</h3></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p><em>Comparative Structured Observation</em>, Design methodology, Interventionist, Mixed-methods, Qualitative methods, Quantitative methods, Research methodology</p></div>
+      <div class="col zh" lang="zh-CN"><p>比较性结构化观察、设计方法论、干预式、混合方法、定性方法、定量方法、研究方法论</p></div>
+    </div>
+
+    <div class="bilingual-row heading-row" id="section-introduction">
+      <div class="col en" lang="en"><h2>1 &nbsp; INTRODUCTION</h2></div>
+      <div class="col zh" lang="zh-CN"><h2>1 &nbsp; 引言</h2></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>A key creative aspect of HCI research and UX design is to generate novel design concepts. Although we have many methods for finding out about users and generating ideas during the early phases of design, and both qualitative and quantitative methods for evaluating late-phase designs, we lack methods for exploring the middle phase of a design, when the goal is not to determine if the details of the design are correct, but rather to see if the design itself is on the right track. Greenberg and Buxton [5] highlight the difference between <em>getting the design right</em> — perfecting a particular design — and <em>getting the right design</em> — determining which design direction makes the most sense. The latter goal is not to validate a final design, but rather to obtain insights from users to help verify the design direction and refine the concept.</p></div>
+      <div class="col zh" lang="zh-CN"><p>HCI 研究和 UX 设计的一个关键创造性方面，是生成新颖的设计概念。尽管我们拥有许多方法，可以在设计早期了解用户并生成想法，也拥有用于评估后期设计的定性和定量方法，但我们缺少探索设计中期阶段的方法；在这一阶段，目标不是确定设计细节是否正确，而是判断设计本身是否走在正确的方向上。Greenberg 和 Buxton [5] 强调了“把设计做对”（完善某个特定设计）与“做出正确的设计”（确定最有意义的设计方向）之间的差异。后一个目标不是验证最终设计，而是从用户那里获得洞见，以帮助验证设计方向并完善概念。</p></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>Mackay &amp; McGrenere [6] address this challenge by introducing <em>Comparative Structured Observation</em>, a rigorous mixed-method approach for assessing mid-phase designs by asking study participants to compare and contrast their experiences with different design variants. This guide offers a step-by-step approach to designing and running an effective <em>Comparative Structured Observation</em>. The primary audience includes HCI researchers who would like to assess a novel design concept — not from the perspective of performance, but rather to see if a novel concept for an interactive system makes sense to pursue. The method is also appropriate for UX designers who want to quickly understand users’ reactions to a novel design direction. Finally, we hope to help HCI reviewers to assess whether or not requirements of a <em>Comparative Structured Observation</em>.</p></div>
+      <div class="col zh" lang="zh-CN"><p>Mackay &amp; McGrenere [6] 通过引入比较性结构化观察来应对这一挑战：这是一种严格的混合方法，用来评估中期设计，要求研究参与者比较并对照他们在不同设计变体下的体验。本指南提供了设计并开展有效比较性结构化观察的分步方法。主要读者包括希望评估新颖设计概念的 HCI 研究者——不是从性能角度出发，而是为了判断一个交互系统的新颖概念是否值得继续推进。该方法同样适合希望快速了解用户对新颖设计方向反应的 UX 设计师。最后，我们希望帮助 HCI 评审者判断某项研究是否满足比较性结构化观察的要求。</p></div>
+    </div>
+    <div class="bilingual-row footnote-row">
+      <div class="col en" lang="en"><p><em>CHI’25, April 2025, Yokohama, Japan</em><br />2025. This is the author’s version of a handout presented as part of a course at the ACM/CHI’25 conference. Some material is taken from the definitive Version of Record, which was published in <em>TOCHI</em>, https://doi.org/10.1145/nnnnnnn.nnnnnnn.</p></div>
+      <div class="col zh" lang="zh-CN"><p><em>CHI’25，2025 年 4 月，横滨，日本</em><br />2025。这是作者在 ACM/CHI’25 会议课程中展示的讲义版本。其中部分材料取自最终记录版本，该版本发表于 <em>TOCHI</em>，https://doi.org/10.1145/nnnnnnn.nnnnnnn。</p></div>
+    </div>
+
+    <div class="bilingual-row heading-row" id="section-characterizing">
+      <div class="col en" lang="en"><h2>2 &nbsp; CHARACTERIZING COMPARATIVE STRUCTURED OBSERVATION</h2></div>
+      <div class="col zh" lang="zh-CN"><h2>2 &nbsp; 界定比较性结构化观察</h2></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>The key goal of <em>Comparative Structured Observation</em> is observe participants as they experience selected design variants and to capture their reflections in order to generate implications for design. This includes identifying which aspects of the design do or do not work well and why, as well as providing suggestions for how to improve the design.</p></div>
+      <div class="col zh" lang="zh-CN"><p>比较性结构化观察的关键目标，是观察参与者体验选定的设计变体，并捕捉他们的反思，以生成对设计的启示。这包括识别设计的哪些方面有效、哪些方面无效以及原因，并提出改进设计的建议。</p></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>We define <strong><em>Comparative Structured Observation</em></strong> as:</p></div>
+      <div class="col zh" lang="zh-CN"><p>我们将比较性结构化观察定义为：</p></div>
+    </div>
+    <div class="bilingual-row definition-row">
+      <div class="col en" lang="en"><blockquote class="definition"><p>an interventionist, qualitative method for assessing and advancing a design concept where researchers observe participants as they compare and reflect deeply upon their experiences with selected design variants, exposure to which is structured according to experimental design principles.</p></blockquote></div>
+      <div class="col zh" lang="zh-CN"><blockquote class="definition"><p>一种用于评估并推进设计概念的干预式定性方法：研究者观察参与者比较并深入反思他们对选定设计变体的体验，而参与者接触这些变体的方式按照实验设计原则加以结构化。</p></blockquote></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>We chose the name <em>Comparative Structured Observation</em> because it includes the three key characteristics of the method: comparison, structure and observation. We often abbreviate it to <em>CSO</em> and can refer to it as a <em>Comparative Structured Observation</em> study or just “CSO”.</p></div>
+      <div class="col zh" lang="zh-CN"><p>之所以选择“比较性结构化观察”这个名称，是因为它包含该方法的三个关键特征：比较、结构和观察。我们通常将其缩写为 <em>CSO</em>，可以称其为比较性结构化观察研究，也可以简称为“CSO”。</p></div>
+    </div>
+
+    <div class="bilingual-row heading-row" id="section-checklist">
+      <div class="col en" lang="en"><h2>3 &nbsp; COMPARATIVE STRUCTURED OBSERVATION CHECKLIST</h2></div>
+      <div class="col zh" lang="zh-CN"><h2>3 &nbsp; 比较性结构化观察清单</h2></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>How should you consider whether or not your design is suitable for being assessed with a <em>Comparative Structured Observation</em> study? The following checklists should help you to decide, first, whether or not a <em>Comparative Structured Observation</em> study is appropriate for your research question and then what to include in your study protocol and suggestions for how to capture and analyze the data, what to include when you report your findings.</p></div>
+      <div class="col zh" lang="zh-CN"><p>你应如何判断自己的设计是否适合通过比较性结构化观察研究来评估？下面的清单应能帮助你首先决定比较性结构化观察研究是否适合你的研究问题，然后决定研究方案应包含哪些内容、如何采集和分析数据，以及报告研究发现时应包含哪些内容。</p></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>Every <em>Comparative Structured Observation</em> study asks study participants to interact with at least two design variants with equivalent activities/tasks to provide them with recent, comparable experiences that enhance their ability to reflect on and compare those design variants. Each design variant must be sufficiently well developed that users can obtain a realistic idea of how they would use each in a real-world context. In experimental design terms, this means that the study must always include at least one <em>within-participant factor</em>.</p></div>
+      <div class="col zh" lang="zh-CN"><p>每项比较性结构化观察研究都会要求参与者使用至少两个设计变体完成等效的活动/任务，为他们提供新近且可比较的体验，增强其反思和比较这些设计变体的能力。每个设计变体都必须开发得足够完善，使用户能够对自己在真实世界情境中如何使用它形成现实的认识。用实验设计的术语来说，这意味着研究必须始终包含至少一个被试内因素。</p></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>The simplest form of a <em>Comparative Structured Observation</em> asks participants to experience two design variants, whereas more elaborate study designs can include additional design variants, additional activities, or both. Activities may include prescribed tasks, steps in a scenario, or other activities relevant to the proposed use of the design. In experiment terms, each study includes at least one <em>design variant</em> factor with two or more distinct design variants. Studies may also include additional factors, such as different types of tasks, levels of difficulty or types of expertise. Each of the above requires an associated activity, where the combination of one design variant and one activity is called a <em>condition</em>. The activities associated with each design variant should be as equivalent as possible, ideally isomorphic, so that each design variant can be associated with a similar activity.</p></div>
+      <div class="col zh" lang="zh-CN"><p>比较性结构化观察最简单的形式，是让参与者体验两个设计变体；更复杂的研究设计还可以加入额外的设计变体、额外的活动，或两者兼有。活动可以包括规定的任务、情境中的步骤，或与设计拟议用途相关的其他活动。用实验术语来说，每项研究至少包含一个设计变体因素，该因素有两个或更多彼此不同的设计变体。研究还可以包含其他因素，例如不同类型的任务、难度等级或专业水平。上述每个因素都需要一个相应的活动；一个设计变体与一个活动的组合称为一个条件。与每个设计变体相关联的活动应尽可能等效，理想情况下应当同构，这样每个设计变体都能与一个相似的活动关联起来。</p></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>The following checklists will help you decide if your project appropriate for being assessed with a <em>Comparative Structured Observation</em> study.</p></div>
+      <div class="col zh" lang="zh-CN"><p>下面的清单将帮助你判断，你的项目是否适合采用比较性结构化观察研究。</p></div>
+    </div>
+
+    <div class="bilingual-row heading-row">
+      <div class="col en" lang="en"><h3>3.1 &nbsp; Is a CSO study appropriate?</h3></div>
+      <div class="col zh" lang="zh-CN"><h3>3.1 &nbsp; CSO 研究是否合适？</h3></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en">
+        <ul class="checklist">
+          <li>Clearly defined target user population</li>
+          <li>Design concept based on formative research with users:
+            <ul><li>Preliminary user studies</li><li>Research literature</li><li>Both</li></ul>
+          </li>
+          <li>Design variant is an interactive prototype
+            <ul><li>Advanced <em>Wizard of Oz</em></li><li>Medium-fidelity prototype</li><li>Hi-fidelity prototype</li></ul>
+          </li>
+          <li>One or more <em>comparison</em> design variant(s), including
+            <ul><li><em>Status Quo</em> (existing system)</li><li>Novel alternative design</li><li>Mix of the above</li></ul>
+          </li>
+          <li>Grounded activity for participants to perform, such as
+            <ul><li>Specific task to accomplish</li><li>Scenario to follow</li><li>Experience within a defined interactive</li></ul>
+          </li>
+          <li>Equivalent activities for each condition, such as
+            <ul><li>Duration</li><li>Number of actions</li><li>Level of difficulty</li></ul>
+          </li>
+          <li>Ecological validity (Relevance to real-world user context)</li>
+          <li>Access to members of the target population in a specific setting, such as
+            <ul><li>Lab setting</li><li>Field setting</li><li>Combination</li></ul>
+          </li>
+        </ul>
+      </div>
+      <div class="col zh" lang="zh-CN">
+        <ul class="checklist">
+          <li>明确界定的目标用户群体</li>
+          <li>基于用户形成性研究的设计概念：
+            <ul><li>初步用户研究</li><li>研究文献</li><li>两者兼有</li></ul>
+          </li>
+          <li>设计变体是一个交互式原型
+            <ul><li>高级 <em>Wizard of Oz</em></li><li>中保真原型</li><li>高保真原型</li></ul>
+          </li>
+          <li>一个或多个<em>比较</em>设计变体，包括
+            <ul><li><em>Status Quo</em>（现有系统）</li><li>新颖的替代设计</li><li>上述各项的混合</li></ul>
+          </li>
+          <li>供参与者执行的、具有实际依据的活动，例如
+            <ul><li>要完成的具体任务</li><li>要遵循的情境</li><li>在定义好的交互中体验</li></ul>
+          </li>
+          <li>每个条件的等效活动，例如
+            <ul><li>持续时间</li><li>操作次数</li><li>难度等级</li></ul>
+          </li>
+          <li>生态效度（与真实世界用户情境的相关性）</li>
+          <li>在特定情境中接触目标人群的渠道，例如
+            <ul><li>实验室情境</li><li>实地情境</li><li>组合情境</li></ul>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="bilingual-row heading-row">
+      <div class="col en" lang="en"><h3>3.2 &nbsp; What belongs in the study protocol?</h3></div>
+      <div class="col zh" lang="zh-CN"><h3>3.2 &nbsp; 研究方案应包含什么？</h3></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>If your project has met the above requirements, you can design your study protocol. Ensure that your research or design questions are not framed as causal hypotheses, but rather relate to user’s reflections based on their experiences with each design variant.</p></div>
+      <div class="col zh" lang="zh-CN"><p>如果你的项目已经满足上述要求，就可以设计研究方案。确保你的研究问题或设计问题不是以因果假设的形式提出，而是与用户基于各个设计变体体验所作的反思相关。</p></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en">
+        <ul class="checklist">
+          <li>Choose the design variants
+            <ul><li>Design variant 1 + Design variant 2</li><li>Design variant 1 + Status quo variant</li><li>Design variant 1 + [status quo] and/or [mulitple variants]</li></ul>
+          </li>
+          <li>Specify additional factors (optional)
+            <ul><li>Multiple task types, e.g. search vs. decide</li><li>Level of expertise, e.g. novice vs. expert</li><li>Level of difficulty, e.g., easy, medium, hard</li></ul>
+          </li>
+          <li>Calculate number of conditions
+            <ul><li># design variants x # other factors (optional)</li></ul>
+          </li>
+          <li>Create equivalent activities for each condition
+            <ul><li>Task</li><li>Scenario</li><li>Experience</li><li>Sequence of activities</li><li>Other</li></ul>
+          </li>
+          <li>Calculate # conditions per participant</li>
+          <li>Allocate design variants and activities to participants, ideally counter-balanced for order</li>
+        </ul>
+        <p class="list-heading">Data collection</p>
+        <ul class="checklist"><li>Audio recording</li><li>Video recording</li><li>Hand-written notes</li><li>Participant action log</li><li>Rank of design variants</li><li>Questions about variants</li><li>Quantitative data, e.g. performance [optional]</li></ul>
+        <p class="list-heading">Design the study protocol</p>
+        <ul class="checklist"><li>Brief participants about the study</li><li>Obtain informed consent</li><li>Demonstrate design variants (optional)</li><li>Practice using design variants (optional)</li><li>Part 1: For each condition (design variant + activity)
+          <ul><li>Perform activity</li><li>Answer questions about design variant</li></ul>
+        </li><li>Additional parts (optional)</li><li>Open-ended exploration (optional)</li><li>Reflective interview to compare design variants: pros, cons, trade-offs</li></ul>
+      </div>
+      <div class="col zh" lang="zh-CN">
+        <ul class="checklist">
+          <li>选择设计变体
+            <ul><li>设计变体 1 + 设计变体 2</li><li>设计变体 1 + 现状变体</li><li>设计变体 1 + [现状] 和/或 [多个变体]</li></ul>
+          </li>
+          <li>指定额外因素（可选）
+            <ul><li>多种任务类型，例如搜索与决策</li><li>专业水平，例如新手与专家</li><li>难度等级，例如简单、中等、困难</li></ul>
+          </li>
+          <li>计算条件数量
+            <ul><li># 设计变体 × # 其他因素（可选）</li></ul>
+          </li>
+          <li>为每个条件创建等效活动
+            <ul><li>任务</li><li>情境</li><li>体验</li><li>活动顺序</li><li>其他</li></ul>
+          </li>
+          <li>计算每位参与者的条件数量</li>
+          <li>将设计变体和活动分配给参与者，理想情况下对顺序进行反平衡</li>
+        </ul>
+        <p class="list-heading">数据收集</p>
+        <ul class="checklist"><li>音频录制</li><li>视频录制</li><li>手写笔记</li><li>参与者操作日志</li><li>对设计变体排序</li><li>关于变体的问题</li><li>定量数据，例如表现数据［可选］</li></ul>
+        <p class="list-heading">设计研究方案</p>
+        <ul class="checklist"><li>向参与者介绍研究</li><li>取得知情同意</li><li>演示设计变体（可选）</li><li>练习使用设计变体（可选）</li><li>第 1 部分：针对每个条件（设计变体 + 活动）
+          <ul><li>执行活动</li><li>回答有关设计变体的问题</li></ul>
+        </li><li>其他部分（可选）</li><li>开放式探索（可选）</li><li>比较设计变体的反思性访谈：优点、缺点、权衡</li></ul>
+      </div>
+    </div>
+
+    <div class="bilingual-row heading-row">
+      <div class="col en" lang="en"><h3>3.3 &nbsp; Data Analysis</h3></div>
+      <div class="col zh" lang="zh-CN"><h3>3.3 &nbsp; 数据分析</h3></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><ul class="checklist"><li>Thematic analysis
+        <ul><li>Transcript of talk aloud during activities</li><li>Transcript from interview</li></ul>
+      </li><li>Log analysis</li><li>Question analysis</li></ul></div>
+      <div class="col zh" lang="zh-CN"><ul class="checklist"><li>主题分析
+        <ul><li>活动期间出声叙述的转写稿</li><li>访谈转写稿</li></ul>
+      </li><li>日志分析</li><li>问题分析</li></ul></div>
+    </div>
+
+    <div class="bilingual-row heading-row">
+      <div class="col en" lang="en"><h3>3.4 &nbsp; Findings</h3></div>
+      <div class="col zh" lang="zh-CN"><h3>3.4 &nbsp; 研究发现</h3></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><ul class="checklist"><li>Specific pros/cons/trade-offs for each variant</li><li>Key inductive themes</li><li>Potential improvements</li><li>Potential new direction</li><li>Overall assessment of design variants</li></ul></div>
+      <div class="col zh" lang="zh-CN"><ul class="checklist"><li>每个变体的具体优点/缺点/权衡</li><li>关键归纳性主题</li><li>潜在改进</li><li>潜在的新方向</li><li>对设计变体的总体评估</li></ul></div>
+    </div>
+
+    <div class="bilingual-row heading-row" id="section-example">
+      <div class="col en" lang="en"><h2>4 &nbsp; EXAMPLE</h2></div>
+      <div class="col zh" lang="zh-CN"><h2>4 &nbsp; 示例</h2></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>HCI researchers have already published a number of variations of <em>Comparative Structured Observation</em> in the HCI literature, although not all of them have been labeled as such. The following example illustrates how to apply the <em>Comparative Structured Observation</em> method to evaluating a novel design concept.</p></div>
+      <div class="col zh" lang="zh-CN"><p>HCI 研究者已经在 HCI 文献中发表了若干比较性结构化观察的变体，尽管并非所有研究都以此名称标注。下面的示例说明如何将比较性结构化观察方法应用于评估一个新颖的设计概念。</p></div>
+    </div>
+
+    <div class="bilingual-row heading-row">
+      <div class="col en" lang="en"><h3>4.1 &nbsp; Example: HelpCall</h3></div>
+      <div class="col zh" lang="zh-CN"><h3>4.1 &nbsp; 示例：HelpCall</h3></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p><strong>Concept:</strong> Older adults commonly depend on their family or social circle for remote tech support. However, standard video-conferencing systems are inadequate for their needs. <em>HelpCall</em> is a video-conferencing add-on that captures, displays and saves steps from live demonstrations given by remote family members to help older adults learn computer tasks. The designers want to assess two design variants — Tooltip and List — to see if the <em>HelpCall</em> concept can successfully mediate these remote video calls.</p></div>
+      <div class="col zh" lang="zh-CN"><p><strong>概念：</strong>老年人通常依赖家人或社交圈来获得远程技术支持。然而，标准视频会议系统并不能满足他们的需求。<em>HelpCall</em> 是一个视频会议附加组件，能够捕捉、显示并保存远程家庭成员进行实时演示时的步骤，帮助老年人学习计算机任务。设计师希望评估两个设计变体——Tooltip 和 List——以了解 <em>HelpCall</em> 概念能否成功支持这些远程视频通话。</p></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p><strong>Is a CSO study appropriate? Yes</strong></p><ul class="dot-list"><li><em>User population:</em> Older adults</li><li><em>Formative research:</em> Literature review + cognitive walkthrough with older adults and design experts</li><li><em>Interactive prototype:</em> Interactive mock-up of predetermined tasks + Wizard-of-Oz control</li><li><em>Comparison variants:</em> Two: Tooltip + List + Status Quo</li><li><em>Activities:</em> six learning tasks, beginner and intermediate difficulty</li><li><em>Equivalent activities:</em> three equally unfamiliar tasks per participant</li><li><em>Ecological validity:</em> Mimics real video call between an older adult and a helper</li><li><em>Access:</em> Older adults in their own homes with a simulated video call</li></ul></div>
+      <div class="col zh" lang="zh-CN"><p><strong>CSO 研究是否合适？是</strong></p><ul class="dot-list"><li><em>用户群体：</em>老年人</li><li><em>形成性研究：</em>文献综述 + 与老年人和设计专家开展认知走查</li><li><em>交互式原型：</em>预定任务的交互式样机 + Wizard-of-Oz 控制</li><li><em>比较变体：</em>两个：Tooltip + List + Status Quo</li><li><em>活动：</em>六个学习任务，难度为初级和中级</li><li><em>等效活动：</em>每位参与者三个同样不熟悉的任务</li><li><em>生态效度：</em>模拟一位老年人与一名协助者之间的真实视频通话</li><li><em>访问：</em>老年人在自己家中，通过模拟视频通话</li></ul></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p class="list-heading">What belongs in the study protocol?</p><ul class="dot-list"><li><em>Design variants:</em> Tooltip + List + Plain video call (status quo)</li><li><em>Additional factors:</em> None</li><li><em>Conditions:</em> Three</li><li><em>Equivalent activities:</em> Six possible tasks, chosen for lack of familiarity</li><li><em>Conditions per participant:</em> Three</li><li><em>Counter-balance order:</em> Status quo first, then counter-balanced order for two design variants</li></ul></div>
+      <div class="col zh" lang="zh-CN"><p class="list-heading">研究方案应包含什么？</p><ul class="dot-list"><li><em>设计变体：</em>Tooltip + List + 普通视频通话（现状）</li><li><em>额外因素：</em>无</li><li><em>条件：</em>三个</li><li><em>等效活动：</em>六个可能的任务，因参与者不熟悉而选定</li><li><em>每位参与者的条件数：</em>三个</li><li><em>反平衡顺序：</em>先进行现状条件，然后对两个设计变体采用反平衡顺序</li></ul></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><ul class="dot-list"><li><em>Data collection:</em> Video recordings, screen recordings, comparison questionnaire, notes</li><li><em>Protocol:</em> Briefing, Informed Consent, three tasks, three questionnaires, comparative interview, debriefing</li><li><em>Data analysis:</em> Mixed thematic analysis</li></ul><p class="list-heading">Data analysis</p><ul class="dot-list"><li><em>Qualitative:</em> Mixed thematic analysis of comparative interview transcripts combined with behavior observed during tasks</li><li><em>Quantitative:</em> Six metrics: pre-task self-rated confidence in completing the task (1-5 Likert scale), post-task confidence with and without augmented assistance, duration of the helper demonstration and no-helper attempt rounds and error rate.</li></ul></div>
+      <div class="col zh" lang="zh-CN"><ul class="dot-list"><li><em>数据收集：</em>视频录制、屏幕录制、比较问卷、笔记</li><li><em>方案：</em>说明、知情同意、三个任务、三份问卷、比较性访谈、事后说明</li><li><em>数据分析：</em>混合主题分析</li></ul><p class="list-heading">数据分析</p><ul class="dot-list"><li><em>定性：</em>将比较性访谈转写稿的混合主题分析与任务期间观察到的行为相结合</li><li><em>定量：</em>六项指标：任务前对完成任务信心的自评（1–5 Likert 量表）、有无增强辅助时的任务后信心、协助者演示的持续时间、无协助者尝试轮次的持续时间，以及错误率。</li></ul></div>
+    </div>
+
+    <div class="bilingual-row heading-row" id="section-ux-designers">
+      <div class="col en" lang="en"><h2>5 &nbsp; COMPARATIVE STRUCTURED OBSERVATION FOR UX DESIGNERS</h2></div>
+      <div class="col zh" lang="zh-CN"><h2>5 &nbsp; 面向 UX 设计师的比较性结构化观察</h2></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>Although Mackay &amp; McGrenere explicitly targeted HCI researchers, a simplified version is also appropriate for product designers who need an efficient method for assessing a mid-phase design concept for a new or revised product. UX designers are often under tighter timelines than academics but face less stringent requirements for rigor in their user studies. They may thus find <em>Structured Observation</em> useful, but explicitly relax certain requirements, such as not fully counter-balancing task order; or restricting their thematic analysis to key themes, such as “breakdowns, workarounds and user innovations” [7]. However, even a “relaxed <em>Comparative Structured Observation</em>” will let participants experience and reflect on design variants, thus providing designers insights about complex new design concepts.</p></div>
+      <div class="col zh" lang="zh-CN"><p>尽管 Mackay &amp; McGrenere 明确将 HCI 研究者作为目标读者，简化版本同样适用于产品设计师：他们需要一种高效方法来评估新产品或改版产品的中期设计概念。UX 设计师通常比学术研究者面临更紧的时间安排，但其用户研究对严谨性的要求也较低。因此，他们可能会发现结构化观察很有用，但会明确放宽某些要求，例如不完全对任务顺序进行反平衡；或者将主题分析限制在关键主题上，如“失效、变通方案和用户创新”[7]。不过，即使是“放宽要求的比较性结构化观察”，也能让参与者体验并反思设计变体，从而为设计师提供关于复杂新设计概念的洞见。</p></div>
+    </div>
+
+    <div class="bilingual-row heading-row" id="section-acknowledgments">
+      <div class="col en" lang="en"><h2>ACKNOWLEDGMENTS</h2></div>
+      <div class="col zh" lang="zh-CN"><h2>致谢</h2></div>
+    </div>
+    <div class="bilingual-row">
+      <div class="col en" lang="en"><p>This work was partially supported by European Research Council (ERC) grant № 321135 “CREATIV: Creating Co-Adaptive Human-Computer Partnerships” and Natural Sciences and Engineering Research Council of Canada (NSERC) grant № RGPIN-2017-04549 “Highly personalized user interfaces”.</p></div>
+      <div class="col zh" lang="zh-CN"><p>本工作部分获得 European Research Council（ERC）资助，项目编号 № 321135“CREATIV：Creating Co-Adaptive Human-Computer Partnerships”，以及 Natural Sciences and Engineering Research Council of Canada（NSERC）资助，项目编号 № RGPIN-2017-04549“Highly personalized user interfaces”。</p></div>
+    </div>
+
+    <div class="bilingual-row heading-row" id="section-reading">
+      <div class="col en" lang="en"><h2>RECOMMENDED READING</h2></div>
+      <div class="col zh" lang="zh-CN"><h2>推荐阅读</h2></div>
+    </div>
+    <div class="ref-block">
+      <p class="ref"><span class="ref-num">[1]</span> Hugh Beyer and Karen Holtzblatt. 1997. <em>Contextual Design: Defining Customer-Centered Systems.</em> Morgan Kaufmann Publishers Inc., San Francisco, CA, USA.</p>
+      <p class="ref"><span class="ref-num">[2]</span> Virginia Braun and Victoria Clarke. 2019. Reflecting on reflexive thematic analysis. <em>Qualitative Research in Sport, Exercise and Health</em> 11, 4 (2019), 589–597. <a href="https://doi.org/10.1080/2159676X.2019.1628806">https://doi.org/10.1080/2159676X.2019.1628806</a></p>
+      <p class="ref"><span class="ref-num">[3]</span> Thomas D Cook and D T Campbell. 1979. <em>Quasi-Experimentation: Design and Analysis Issues for Field Settings.</em> Houghton Mifflin, New York.</p>
+      <p class="ref"><span class="ref-num">[4]</span> Juliet M Corbin and Anselm Strauss. 1990. Grounded theory research: Procedures, canons, and evaluative criteria. <em>Qualitative sociology</em> 13, 1 (1990), 3–21.</p>
+      <p class="ref"><span class="ref-num">[5]</span> Saul Greenberg and Bill Buxton. 2008. Usability Evaluation Considered Harmful (Some of the Time). In <em>Proceedings of the SIGCHI Conference on Human Factors in Computing Systems</em> (Florence, Italy) (CHI ’08). Association for Computing Machinery, New York, NY, USA, 111–120. <a href="https://doi.org/10.1145/1357054.1357074">https://doi.org/10.1145/1357054.1357074</a></p>
+      <p class="ref"><span class="ref-num">[6]</span> Wendy Mackay and Joanna McGrenere. 2025. Comparative Structured Observation. <em>ACM Trans. Comput.-Hum. Interact.</em> 32, 2 (jan 2025), 27. <a href="https://doi.org/10.1145/3711838">https://doi.org/10.1145/3711838</a></p>
+      <p class="ref"><span class="ref-num">[7]</span> Wendy E. Mackay. 2023. <em>DOIT: The Design of Interactive Things.</em> CHI 2023 Preview. Inria, Paris, France.</p>
+      <p class="ref"><span class="ref-num">[8]</span> Anselm L. Strauss and Juliet M. Corbin. 1998. <em>Basics of qualitative research: techniques and procedures for developing grounded theory.</em> Sage Publications, Thousand Oaks, California. 312 pages.</p>
+    </div>
+  </article>
+  <p class="footer-note">Bilingual translation generated from the original PDF. Source: HAL record hal-05588548v1, supplemental material to the CHI’25 handout. No captioned figures or tables were detected in the source PDF.</p>
+</div>
+<script>
+(() => {
+  const links = Array.from(document.querySelectorAll(".section-guide__link"));
+  const sections = links
+    .map((link) => document.querySelector(link.getAttribute("href")))
+    .filter(Boolean);
+  if (!links.length || !sections.length) return;
+
+  const updateCurrentSection = () => {
+    const readingLine = window.innerHeight * 0.3;
+    let current = sections[0];
+    for (const section of sections) {
+      if (section.getBoundingClientRect().top <= readingLine) current = section;
+      else break;
+    }
+    for (const link of links) {
+      if (link.getAttribute("href") === "#" + current.id) {
+        link.setAttribute("aria-current", "location");
+      } else {
+        link.removeAttribute("aria-current");
+      }
+    }
+  };
+
+  updateCurrentSection();
+  if ("IntersectionObserver" in window) {
+    const observer = new IntersectionObserver(updateCurrentSection, {
+      rootMargin: "0px 0px -70% 0px",
+      threshold: 0,
+    });
+    sections.forEach((section) => observer.observe(section));
+  } else {
+    window.addEventListener("scroll", updateCurrentSection, { passive: true });
+  }
+  window.addEventListener("resize", updateCurrentSection, { passive: true });
+  window.addEventListener("hashchange", updateCurrentSection);
+})();
+</script>
+</body>
+</html>
