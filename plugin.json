@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ikran",
-  "version": "0.1.0-alpha.4",
-  "description": "Local Ikran research workbench: MCP tools for designer-Agent alignment, plus design-system governance skills. Install the matching extracted Release Kit, not this Git repository.",
+  "version": "0.1.0-alpha.5",
+  "description": "Local Ikran research workbench: MCP tools plus Ikran Alignment and Ikran Governance skills. Install the matching extracted Release Kit, not this Git repository.",
   "author": {
     "name": "Ikran",
     "url": "https://github.com/Zby9999/ikran"

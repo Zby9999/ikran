@@ -18,6 +18,10 @@ export async function writeDraftReleaseNotes({ outDir, version, outputPath }) {
 
   const notes = `# Ikran v${safeVersion}\n\n` +
     `Alpha evaluation build for macOS on Apple Silicon. Download one product Kit: the Agent Plugin Kit (Cursor, Codex, Agent Plugin 1.0) or the Claude Plugin Kit (Claude Code beta, 2KB MCP contract). They are not interchangeable.\n\n` +
+    `## What's new\n\n` +
+    `- Adds the on-demand \`skills/ikran-alignment\` Skill. It guides the Agent to turn Seed Reference evidence and designer direction into decision-shaped annotations, high-information questions, and evidence-grounded proposed answers across all six Ikran Alignment sections.\n` +
+    `- Renames \`skills/design-system-governance\` to \`skills/ikran-governance\` so both bundled Skills are explicitly scoped to Ikran.\n` +
+    `- Keeps Runtime \`section_contract\` authoritative for ordering, card counts, schemas, evidence targets, and completion; the Skill carries the heavier semantic questioning guidance.\n\n` +
     `## Download one Kit\n\n` +
     `- **Agent Plugin Kit** — production Runtime plus Agent Plugin 1.0 (\`plugin.json\`, \`mcp.json\`, \`skills/\`) and host-native Cursor/Codex adapters (\`.cursor-plugin/plugin.json\`, \`.codex-plugin/plugin.json\`). Does not include the Claude Code adapter.\n` +
     `- **Claude Plugin Kit** — the same production Runtime plus the Claude Code-native adapter (\`.claude-plugin/plugin.json\`, \`.mcp.json\`). Uses the 2KB-truncated MCP instruction budget. Does not include Cursor or Codex adapters.\n` +
@@ -31,7 +35,7 @@ export async function writeDraftReleaseNotes({ outDir, version, outputPath }) {
     "cd /absolute/path/to/your-project\n" +
     "claude --plugin-dir /absolute/path/to/extracted-ikran\n" +
     "```\n\n" +
-    "That adapter starts `ikran-mcp --prod` and exposes `skills/design-system-governance`. Ask Claude to open Ikran, then open the returned localhost Workbench URL in the system browser.\n\n" +
+    "That adapter starts `ikran-mcp --prod` and exposes `skills/ikran-alignment` plus `skills/ikran-governance`. Ask Claude to open Ikran, then open the returned localhost Workbench URL in the system browser.\n\n" +
     "If you only need the MCP tools without the plugin Skill, register the same stdio entry at Claude's local scope. Do not commit another machine's Kit path into a shared project `.mcp.json`:\n\n" +
     "```bash\n" +
     "claude mcp add --transport stdio --scope local \\\n" +

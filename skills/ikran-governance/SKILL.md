@@ -1,9 +1,9 @@
 ---
-name: design-system-governance
-description: Governs design-system Rules during Rule Update and design-system maintenance. Use when deciding whether an observation deserves a reusable Rule, or whether existing Rules should be kept, revised, merged, or retired.
+name: ikran-governance
+description: Govern Ikran design-system Rules during Rule Update and design-system maintenance. Use when deciding whether an observation deserves a reusable Rule, or whether existing Rules should be kept, revised, merged, or retired.
 ---
 
-# Design System Governance
+# Ikran Governance
 
 A design system is a **compression layer**, not an archive. It preserves the
 smallest coherent set of decisions that future surfaces need.

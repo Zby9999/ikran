@@ -51,7 +51,8 @@ const RUNTIME_ANCHORS = Object.freeze([
   "bin/ikran-runtime.mjs",
   "lib/mcp/register-tools.ts",
   "lib/runtime/http-server.mjs",
-  "skills/design-system-governance/SKILL.md"
+  "skills/ikran-alignment/SKILL.md",
+  "skills/ikran-governance/SKILL.md"
 ]);
 
 const OPTIONAL_RELEASE_DOCS = Object.freeze([

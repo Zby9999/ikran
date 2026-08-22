@@ -1,7 +1,7 @@
 {
   "name": "ikran",
-  "description": "Local Ikran research workbench: MCP tools for designer-Agent alignment, plus design-system governance skills. Install the matching extracted Release Kit, not this Git repository.",
-  "version": "0.1.0-alpha.4",
+  "description": "Local Ikran research workbench: MCP tools plus Ikran Alignment and Ikran Governance skills. Install the matching extracted Release Kit, not this Git repository.",
+  "version": "0.1.0-alpha.5",
   "author": {
     "name": "Ikran"
   },
