@@ -2245,24 +2245,22 @@
   font-variant-numeric: tabular-nums;
 }
 
-.dsb-retire-chip {
-  display: inline-flex;
-  height: 24px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  background: rgb(197 17 17 / 9%);
-  padding: 0 12px;
-  color: #8f0f0f;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 15px;
+.dsb-interaction-rule[data-rule-retire] .dsb-interaction-ledger-tags,
+.dsb-interaction-rule[data-rule-retire] .dsb-interaction-ledger-main {
+  opacity: 0.4;
 }
 
-.dsb-interaction-rule[data-rule-retire] .dsb-interaction-ledger-main .dsb-card-title,
-.dsb-interaction-rule[data-rule-retire] .dsb-interaction-ledger-main .dsb-rule-inline-title,
-.dsb-placard[data-rule-retire] .dsb-placard-statement .dsb-card-title,
-.dsb-placard[data-rule-retire] .dsb-placard-statement .dsb-rule-inline-title {
+.dsb-placard[data-rule-retire] {
+  animation: none;
+}
+
+.dsb-placard[data-rule-retire] > .dsb-placard-figure,
+.dsb-placard[data-rule-retire] > .dsb-placard-unavailable,
+.dsb-placard[data-rule-retire] > .dsb-placard-thumbs,
+.dsb-placard[data-rule-retire] .dsb-placard-statement,
+.dsb-placard[data-rule-retire] .dsb-rule-row-actions > .dsb-chip,
+.dsb-placard[data-rule-retire] .dsb-rule-prose,
+.dsb-placard[data-rule-retire] .dsb-placard-caption {
   opacity: 0.4;
 }
 

@@ -912,16 +912,40 @@ test("09A design system browser: declare → render → approve write-back", asy
       arguments: { reviewId: retireReviewId }
     }))).toMatchObject({ ok: true, proposal_count: 1 });
 
-    await expect(interactionRule.getByTestId("ds-interaction-status")).toHaveText("Delete");
-    await expect(interactionRule.locator(".dsb-card-title")).toHaveCSS("opacity", "0.4");
-    await expect(interactionRule.locator(".dsb-card-desc")).toHaveCSS("opacity", "1");
-    await expect(interactionRule.getByRole("button", { name: /Edit rule/ })).toHaveCSS("opacity", "1");
-    await expect(
-      interactionRule.getByRole("button", {
-        name: "Evidence for interaction rule interaction-calm-feedback"
-      })
-    ).toHaveCSS("opacity", "1");
+    const retireStatus = interactionRule.getByTestId("ds-interaction-status");
+    await expect(retireStatus).toHaveText("Delete");
+    await expect(retireStatus).toHaveClass(/\bdsb-chip\b/);
+    await expect(retireStatus).toHaveCSS("font-size", "12px");
+    await expect(retireStatus).toHaveCSS("font-weight", "400");
+    await expect(retireStatus).toHaveCSS("line-height", "12px");
+    const effectiveOpacity = (locator: typeof retireStatus) =>
+      locator.evaluate((element) => {
+        let opacity = 1;
+        for (
+          let node: Element | null = element;
+          node;
+          node = node.parentElement
+        ) {
+          opacity *= Number.parseFloat(getComputedStyle(node).opacity || "1");
+        }
+        return opacity;
+      });
+    await expect(interactionRule).toHaveCSS("opacity", "1");
+    expect(await effectiveOpacity(retireStatus)).toBeCloseTo(0.4);
+    expect(
+      await effectiveOpacity(interactionRule.locator(".dsb-interaction-anchor"))
+    ).toBeCloseTo(0.4);
+    expect(
+      await effectiveOpacity(interactionRule.locator(".dsb-interaction-ledger-main"))
+    ).toBeCloseTo(0.4);
+    expect(
+      await effectiveOpacity(interactionRule.locator(".dsb-rule-edit-icon"))
+    ).toBe(1);
+    expect(
+      await effectiveOpacity(interactionRule.locator(".dsb-info-trigger"))
+    ).toBe(1);
     const retireSlot = interactionRule.locator("xpath=following-sibling::li[1]");
+    await expect(retireSlot).toHaveCSS("opacity", "1");
     await retireSlot.getByRole("button", { name: "Expand Measured feedback" }).click();
     await expect(retireSlot.getByText("Proposed", { exact: true })).toHaveCount(0);
     await expect(retireSlot).toContainText(

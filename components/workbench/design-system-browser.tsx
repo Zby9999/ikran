@@ -1149,7 +1149,11 @@ function RuleLedgerCardShell({
                 {rule.anchor}
               </span>
               {retireProposal ? (
-                <span className="dsb-retire-chip" data-testid="ds-interaction-status">
+                <span
+                  className="dsb-chip"
+                  data-status="pending-review"
+                  data-testid="ds-interaction-status"
+                >
                   Delete
                 </span>
               ) : (
@@ -1974,7 +1978,11 @@ function LayoutPlacardBlock({
           </span>
           <span className="dsb-rule-row-actions">
             {retireProposal ? (
-              <span className="dsb-retire-chip" data-testid={`ds-layout-status-${rule.row.entryId}`}>
+              <span
+                className="dsb-chip"
+                data-status="pending-review"
+                data-testid={`ds-layout-status-${rule.row.entryId}`}
+              >
                 Delete
               </span>
             ) : (
