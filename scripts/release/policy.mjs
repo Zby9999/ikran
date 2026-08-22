@@ -2,7 +2,7 @@ import path from "node:path";
 
 export const RELEASE_LICENSE = "Apache-2.0";
 
-const SHARED_FILES = Object.freeze([
+const RUNTIME_FILES = Object.freeze([
   ".node-version",
   ".npmrc",
   "LICENSE",
@@ -16,7 +16,26 @@ const SHARED_FILES = Object.freeze([
   "tsconfig.json"
 ]);
 
-const SHARED_TREES = Object.freeze(["app", "bin", "components", "lib", "public"]);
+const AGENT_PLUGIN_FILES = Object.freeze([
+  "plugin.json",
+  "mcp.json",
+  ".cursor-plugin/plugin.json",
+  ".codex-plugin/plugin.json"
+]);
+
+const CLAUDE_PLUGIN_FILES = Object.freeze([
+  ".mcp.json",
+  ".claude-plugin/plugin.json"
+]);
+
+const SHARED_TREES = Object.freeze([
+  "app",
+  "bin",
+  "components",
+  "lib",
+  "public",
+  "skills"
+]);
 
 const SHARED_EXCLUDED_TREES = Object.freeze([
   // Designer-only route prototypes are tracked for R&D continuity, but are not
@@ -24,14 +43,15 @@ const SHARED_EXCLUDED_TREES = Object.freeze([
   "app/prototypes"
 ]);
 
-const SHARED_ANCHORS = Object.freeze([
+const RUNTIME_ANCHORS = Object.freeze([
   "app/layout.tsx",
   "app/page.tsx",
   "bin/ikran.mjs",
   "bin/ikran-mcp.mjs",
   "bin/ikran-runtime.mjs",
   "lib/mcp/register-tools.ts",
-  "lib/runtime/http-server.mjs"
+  "lib/runtime/http-server.mjs",
+  "skills/design-system-governance/SKILL.md"
 ]);
 
 const OPTIONAL_RELEASE_DOCS = Object.freeze([
@@ -40,31 +60,55 @@ const OPTIONAL_RELEASE_DOCS = Object.freeze([
   "CHANGELOG.md"
 ]);
 
+const PRODUCT_PROFILE = Object.freeze({
+  setup: "npm run setup:product",
+  installStrategy: "npm ci --omit=dev",
+  browserStrategy: "npx --no-install playwright-core install chromium",
+  build: null,
+  start: "npm run start:prod",
+  test: null
+});
+
+export const DEFAULT_RELEASE_KITS = Object.freeze([
+  "agent-plugin",
+  "claude-plugin",
+  "contributor"
+]);
+
 export const RELEASE_KITS = deepFreeze({
-  product: {
-    id: "product",
-    title: "Ikran Product Test Kit",
-    assetStem: "ikran-product-test-kit",
-    files: SHARED_FILES,
+  "agent-plugin": {
+    id: "agent-plugin",
+    family: "product",
+    title: "Ikran Agent Plugin Kit",
+    assetStem: "ikran-agent-plugin-kit",
+    files: [...RUNTIME_FILES, ...AGENT_PLUGIN_FILES],
     trees: SHARED_TREES,
     excludedTrees: SHARED_EXCLUDED_TREES,
-    requiredAnchors: SHARED_ANCHORS,
+    requiredAnchors: [...RUNTIME_ANCHORS, ...AGENT_PLUGIN_FILES],
     optionalFiles: OPTIONAL_RELEASE_DOCS,
-    profile: {
-      setup: "npm run setup:product",
-      installStrategy: "npm ci --omit=dev",
-      browserStrategy: "npx --no-install playwright-core install chromium",
-      build: null,
-      start: "npm run start:prod",
-      test: null
-    }
+    profile: PRODUCT_PROFILE
+  },
+  "claude-plugin": {
+    id: "claude-plugin",
+    family: "product",
+    title: "Ikran Claude Plugin Kit",
+    assetStem: "ikran-claude-plugin-kit",
+    files: [...RUNTIME_FILES, ...CLAUDE_PLUGIN_FILES],
+    trees: SHARED_TREES,
+    excludedTrees: SHARED_EXCLUDED_TREES,
+    requiredAnchors: [...RUNTIME_ANCHORS, ...CLAUDE_PLUGIN_FILES],
+    optionalFiles: OPTIONAL_RELEASE_DOCS,
+    profile: PRODUCT_PROFILE
   },
   contributor: {
     id: "contributor",
+    family: "contributor",
     title: "Ikran Contributor Verification Kit",
     assetStem: "ikran-contributor-verification-kit",
     files: [
-      ...SHARED_FILES,
+      ...RUNTIME_FILES,
+      ...AGENT_PLUGIN_FILES,
+      ...CLAUDE_PLUGIN_FILES,
       "components.json",
       "playwright.config.ts",
       "vitest.config.ts"
@@ -72,7 +116,9 @@ export const RELEASE_KITS = deepFreeze({
     trees: [...SHARED_TREES, "tests", "scripts/release"],
     excludedTrees: SHARED_EXCLUDED_TREES,
     requiredAnchors: [
-      ...SHARED_ANCHORS,
+      ...RUNTIME_ANCHORS,
+      ...AGENT_PLUGIN_FILES,
+      ...CLAUDE_PLUGIN_FILES,
       "tests/global-setup.ts",
       "tests/fixtures.ts",
       "scripts/release/build.mjs"
@@ -157,6 +203,10 @@ export function getReleaseKit(kitId) {
     );
   }
   return kit;
+}
+
+export function isProductFamilyKit(kit) {
+  return kit.family === "product";
 }
 
 export function normalizeReleaseVersion(version) {

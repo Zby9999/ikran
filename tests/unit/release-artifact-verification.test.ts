@@ -30,8 +30,8 @@ describe("release artifact verification", () => {
     const built = await buildReleaseKitForTests({
       repoRoot: ROOT,
       outDir: output,
-      kit: "product",
-      version: "0.1.0-alpha.1",
+      kit: "agent-plugin",
+      version: "0.1.0-alpha.3",
       sourceDateEpoch: 1_700_000_000
     });
 
@@ -39,13 +39,13 @@ describe("release artifact verification", () => {
       archivePath: built.archivePath,
       manifestPath: built.manifestPath,
       checksumPath: built.checksumPath,
-      kit: "product",
+      kit: "agent-plugin",
       destination
     });
 
     expect(verified).toMatchObject({
-      kit: "product",
-      version: "0.1.0-alpha.1",
+      kit: "agent-plugin",
+      version: "0.1.0-alpha.3",
       fileCount: built.fileCount,
       sha256: built.sha256
     });
@@ -61,8 +61,8 @@ describe("release artifact verification", () => {
     const built = await buildReleaseKitForTests({
       repoRoot: ROOT,
       outDir: output,
-      kit: "product",
-      version: "0.1.0-alpha.1",
+      kit: "agent-plugin",
+      version: "0.1.0-alpha.3",
       sourceDateEpoch: 1_700_000_000
     });
     const originalChecksum = readFileSync(built.checksumPath);
@@ -74,7 +74,7 @@ describe("release artifact verification", () => {
         archivePath: built.archivePath,
         manifestPath: built.manifestPath,
         checksumPath: built.checksumPath,
-        kit: "product"
+        kit: "agent-plugin"
       })
     ).rejects.toMatchObject({ code: "checksum_mismatch" });
 
@@ -87,7 +87,7 @@ describe("release artifact verification", () => {
         archivePath: built.archivePath,
         manifestPath: built.manifestPath,
         checksumPath: built.checksumPath,
-        kit: "product"
+        kit: "agent-plugin"
       })
     ).rejects.toMatchObject({ code: "embedded_manifest_mismatch" });
   });

@@ -8,6 +8,7 @@ import {
   RELEASE_LICENSE,
   assertSafeReleasePath,
   getReleaseKit,
+  isProductFamilyKit,
   sensitiveContentReason
 } from "./policy.mjs";
 
@@ -64,6 +65,122 @@ export async function selectReleaseFiles({ repoRoot, kit: kitId, source = "auto"
   const files = [...selected.values()].sort((left, right) => compareText(left.path, right.path));
   validatePackageBoundary(files, kit);
   return Object.freeze(files);
+}
+
+function validateHostPluginMetadata(byPath, packageJson, kit) {
+  const plugin = byPath.has("plugin.json")
+    ? parseJsonFile(byPath.get("plugin.json"), "plugin.json")
+    : null;
+  const pluginName = plugin?.name ?? "ikran";
+
+  if (plugin && plugin.version !== packageJson.version) {
+    throw new ReleasePolicyError(
+      "plugin_version_mismatch",
+      "Agent Plugin version must match package.json",
+      {
+        packageVersion: packageJson.version,
+        pluginVersion: plugin.version ?? null
+      }
+    );
+  }
+
+  if (byPath.has(".cursor-plugin/plugin.json") || byPath.has(".codex-plugin/plugin.json")) {
+    if (!plugin) {
+      throw new ReleasePolicyError(
+        "missing_required_path",
+        "Agent Plugin hosts require plugin.json",
+        { path: "plugin.json", kit: kit.id }
+      );
+    }
+  }
+
+  if (byPath.has(".claude-plugin/plugin.json")) {
+    const claudePlugin = parseJsonFile(
+      byPath.get(".claude-plugin/plugin.json"),
+      ".claude-plugin/plugin.json"
+    );
+    assertHostPluginIdentity(claudePlugin, packageJson, pluginName, "claude");
+    const claudeMcp = parseJsonFile(byPath.get(".mcp.json"), ".mcp.json");
+    const claudeServer = claudeMcp.mcpServers?.ikran;
+    const claudeArgs = Array.isArray(claudeServer?.args) ? claudeServer.args : [];
+    if (
+      claudeServer?.command !== "node" ||
+      !claudeArgs.includes("${CLAUDE_PLUGIN_ROOT}/bin/ikran-mcp.mjs") ||
+      !claudeArgs.includes("--prod") ||
+      claudeServer?.env?.IKRAN_CWD !== "${CLAUDE_PROJECT_DIR}" ||
+      claudeServer?.env?.IKRAN_STATE_DIR !== "${CLAUDE_PROJECT_DIR}/.ikran" ||
+      claudeServer?.env?.IKRAN_MCP_HOST !== "claude"
+    ) {
+      throw new ReleasePolicyError(
+        "claude_mcp_adapter_invalid",
+        "Claude .mcp.json must invoke ikran-mcp --prod with CLAUDE_PLUGIN_ROOT, project-local IKRAN paths, and IKRAN_MCP_HOST=claude",
+        { server: claudeServer ?? null }
+      );
+    }
+  }
+
+  if (byPath.has(".cursor-plugin/plugin.json")) {
+    const cursorPlugin = parseJsonFile(
+      byPath.get(".cursor-plugin/plugin.json"),
+      ".cursor-plugin/plugin.json"
+    );
+    assertHostPluginIdentity(cursorPlugin, packageJson, pluginName, "cursor");
+    if (cursorPlugin.skills !== "./skills/" || cursorPlugin.mcpServers !== "./mcp.json") {
+      throw new ReleasePolicyError(
+        "cursor_plugin_adapter_invalid",
+        "Cursor plugin must discover ./skills/ and the Agent Plugin mcp.json",
+        {
+          skills: cursorPlugin.skills ?? null,
+          mcpServers: cursorPlugin.mcpServers ?? null
+        }
+      );
+    }
+  }
+
+  if (byPath.has(".codex-plugin/plugin.json")) {
+    const codexPlugin = parseJsonFile(
+      byPath.get(".codex-plugin/plugin.json"),
+      ".codex-plugin/plugin.json"
+    );
+    assertHostPluginIdentity(codexPlugin, packageJson, pluginName, "codex");
+    if (codexPlugin.skills !== "./skills/") {
+      throw new ReleasePolicyError(
+        "codex_plugin_adapter_invalid",
+        "Codex plugin must discover ./skills/",
+        { skills: codexPlugin.skills ?? null }
+      );
+    }
+    const codexServer = codexPlugin.mcpServers?.ikran;
+    const codexArgs = Array.isArray(codexServer?.args) ? codexServer.args : [];
+    if (
+      typeof codexPlugin.mcpServers === "string" ||
+      codexServer?.command !== "node" ||
+      !codexArgs.includes("./bin/ikran-mcp.mjs") ||
+      !codexArgs.includes("--prod") ||
+      codexServer?.cwd !== "."
+    ) {
+      throw new ReleasePolicyError(
+        "codex_mcp_adapter_invalid",
+        "Codex plugin must inline ikran-mcp --prod with plugin-root cwd, not Claude .mcp.json placeholders",
+        { server: codexServer ?? null, mcpServers: codexPlugin.mcpServers ?? null }
+      );
+    }
+  }
+}
+
+function assertHostPluginIdentity(parsed, packageJson, pluginName, host) {
+  if (parsed.version !== packageJson.version || parsed.name !== pluginName) {
+    throw new ReleasePolicyError(
+      `${host}_plugin_metadata_mismatch`,
+      `${host[0].toUpperCase()}${host.slice(1)} plugin metadata must match package.json version and Agent Plugin name`,
+      {
+        packageVersion: packageJson.version,
+        pluginName,
+        [`${host}Version`]: parsed.version ?? null,
+        [`${host}Name`]: parsed.name ?? null
+      }
+    );
+  }
 }
 
 export async function assertCleanReleaseSource(repoRoot) {
@@ -261,7 +378,9 @@ function validatePackageBoundary(files, kit) {
     );
   }
 
-  if (kit.id !== "product") return;
+  validateHostPluginMetadata(byPath, packageJson, kit);
+
+  if (!isProductFamilyKit(kit)) return;
   const dependencies = packageJson.dependencies ?? {};
   const devDependencies = packageJson.devDependencies ?? {};
   for (const dependency of PRODUCT_BUILD_DEPENDENCIES) {

@@ -10,7 +10,11 @@ import { getProjectDbPath } from "../../lib/runtime/paths";
 import { recordDesignerFeedback } from "../../lib/runtime/designer-feedback";
 import { proposeRuleUpdate } from "../../lib/runtime/rule-update-proposal";
 import { INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT } from "../../lib/runtime/initial-design-system-preparation";
-import { IKRAN_MCP_INSTRUCTIONS } from "../../lib/mcp/shared";
+import {
+  CLAUDE_MCP_INSTRUCTIONS,
+  CLAUDE_MCP_TEXT_BUDGET,
+  IKRAN_MCP_INSTRUCTIONS
+} from "../../lib/mcp/shared";
 
 function withProject(run: (projectPath: string) => void): void {
   const projectPath = mkdtempSync(path.join(tmpdir(), "ikran-designer-feedback-"));
@@ -240,10 +244,13 @@ test("feedback MCP surface is write-only", async () => {
 });
 
 test("MCP instructions require completion-time reconciliation and generation isolation", () => {
-  expect(Buffer.byteLength(IKRAN_MCP_INSTRUCTIONS, "utf8")).toBeLessThanOrEqual(
-    2150
+  expect(Buffer.byteLength(CLAUDE_MCP_INSTRUCTIONS, "utf8")).toBeLessThanOrEqual(
+    CLAUDE_MCP_TEXT_BUDGET
   );
   expect(IKRAN_MCP_INSTRUCTIONS).toContain(
+    "reconcile_designer_conversation"
+  );
+  expect(CLAUDE_MCP_INSTRUCTIONS).toContain(
     "reconcile_designer_conversation"
   );
   expect(IKRAN_MCP_INSTRUCTIONS).not.toContain(

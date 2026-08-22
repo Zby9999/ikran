@@ -6,7 +6,7 @@ on:
       version:
         description: Version in package.json (with or without a leading v)
         required: true
-        default: 0.1.0-alpha.1
+        default: 0.1.0-alpha.4
         type: string
 
 permissions:
@@ -39,17 +39,18 @@ jobs:
         run: test "$(uname -m)" = arm64
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
-      - name: Build and test both clean-download Kits
+      - name: Build and test the clean-download Kits
         run: npm run release:gate -- --version "$RELEASE_VERSION"
       - name: Write checksummed Draft Release notes
         run: node scripts/release/notes.mjs --version="$RELEASE_VERSION" --out-dir=dist/release --output=dist/release/draft-release-notes.md
-      - name: Create the prerelease draft with exactly two Kit archives
+      - name: Create the prerelease draft with the Agent, Claude, and Contributor Kit archives
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           ASSET_VERSION="${RELEASE_VERSION#v}"
           gh release create "v${ASSET_VERSION}" \
-            "dist/release/ikran-product-test-kit-${ASSET_VERSION}.tar.gz" \
+            "dist/release/ikran-agent-plugin-kit-${ASSET_VERSION}.tar.gz" \
+            "dist/release/ikran-claude-plugin-kit-${ASSET_VERSION}.tar.gz" \
             "dist/release/ikran-contributor-verification-kit-${ASSET_VERSION}.tar.gz" \
             --draft \
             --prerelease \

@@ -42,7 +42,7 @@ if (!existsSync(path.join(appDir, "app"))) process.exit(1);
 if (prod) assertProdBuildMatchesSource({ appDir, prod, nextDistDir });
 
 const mcpLibDir = path.join(appDir, "lib/mcp");
-const { registerIkranTools, IKRAN_MCP_INSTRUCTIONS } = await importTsxModule(
+const { registerIkranTools, resolveMcpInstructions } = await importTsxModule(
   pathToFileURL(path.join(mcpLibDir, "register-tools.ts")).href
 );
 const { resolveWorkingFolder } = await importTsxModule(
@@ -128,7 +128,7 @@ socketServer = createServer((socket) => {
   const release = lifecycle.acquire("mcp");
   const mcp = new McpServer(
     { name: "ikran", version: packageVersion },
-    { instructions: IKRAN_MCP_INSTRUCTIONS }
+    { instructions: resolveMcpInstructions(process.env) }
   );
   const registerTool = mcp.registerTool.bind(mcp);
   mcp.registerTool = (name, config, callback) => registerTool(
