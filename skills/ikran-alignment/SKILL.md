@@ -44,24 +44,23 @@ For each section in the claimed contract:
 1. Inspect the available Seed Reference evidence, Design Language Description,
    Reference Notes, and section-bound Designer Annotations. Follow the current
    Ikran evidence-routing instructions; treat missing evidence as uncertainty.
-2. Write the section's confirmed observations and reasonable inferences as
-   concise Agent Annotations. Each Annotation should expose one meaningful
-   interpretation that later extraction may rely on.
-3. Generate candidate questions from the remaining decision gaps. A candidate
-   survives only when different answers would produce meaningfully different
-   design-system output or future design behavior.
-4. Rank surviving questions by **information gain**: downstream impact first,
-   then uncertainty, then reuse scope. Keep the smallest set that covers the
-   section without combining separate decisions.
-5. Draft a proposed answer only from current evidence and designer direction.
-   Phrase it as the most supported interpretation, with the unresolved boundary
-   visible to the designer.
-6. Persist the section in the contract's required order, then audit it before
+2. Record confirmed observations and reasonable inferences as concise Agent
+   Annotations.
+3. Rank the remaining decision gaps by downstream impact, uncertainty, and
+   reuse scope. Retain gaps whose answers would meaningfully change downstream
+   design behavior or design-system output.
+4. Draft the highest-value Question and its supported proposed answer. Rescan
+   the evidence and section lens for another distinct, consequential gap; repeat
+   until the Runtime maximum or **saturation**.
+5. Persist the section in the contract's required order, then audit it before
    moving on.
 
-A section is ready when its cards cover its consequential decision gaps,
-contain no question answerable by direct evidence inspection, and introduce no
-unsupported intent.
+Saturation means every relevant part of the section lens has been checked and
+each remaining uncertainty is resolved, directly inspectable, duplicate,
+unsupported, or inconsequential. The Runtime minimum is a validity floor:
+continue beyond it while a qualifying gap remains. Use each card for one
+distinct decision, leaving unused capacity when saturation occurs below the
+maximum.
 
 ## Section lenses
 

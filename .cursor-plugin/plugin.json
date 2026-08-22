@@ -1,7 +1,7 @@
 {
   "name": "ikran",
   "description": "Local Ikran research workbench: MCP tools plus Ikran Alignment and Ikran Governance skills. Install the matching extracted Release Kit, not this Git repository.",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "author": {
     "name": "Ikran"
   },

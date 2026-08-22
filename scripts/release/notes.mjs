@@ -19,9 +19,8 @@ export async function writeDraftReleaseNotes({ outDir, version, outputPath }) {
   const notes = `# Ikran v${safeVersion}\n\n` +
     `Alpha evaluation build for macOS on Apple Silicon. Download one product Kit: the Agent Plugin Kit (Cursor, Codex, Agent Plugin 1.0) or the Claude Plugin Kit (Claude Code beta, 2KB MCP contract). They are not interchangeable.\n\n` +
     `## What's new\n\n` +
-    `- Adds the on-demand \`skills/ikran-alignment\` Skill. It guides the Agent to turn Seed Reference evidence and designer direction into decision-shaped annotations, high-information questions, and evidence-grounded proposed answers across all six Ikran Alignment sections.\n` +
-    `- Renames \`skills/design-system-governance\` to \`skills/ikran-governance\` so both bundled Skills are explicitly scoped to Ikran.\n` +
-    `- Keeps Runtime \`section_contract\` authoritative for ordering, card counts, schemas, evidence targets, and completion; the Skill carries the heavier semantic questioning guidance.\n\n` +
+    `- Updates \`skills/ikran-alignment\` with a saturation loop: after drafting each Question, the Agent rescans the evidence and section lens for another distinct, consequential decision gap.\n` +
+    `- Treats the Runtime minimum as a validity floor rather than a stopping point, while leaving capacity unused when no further qualifying gap remains.\n\n` +
     `## Download one Kit\n\n` +
     `- **Agent Plugin Kit** — production Runtime plus Agent Plugin 1.0 (\`plugin.json\`, \`mcp.json\`, \`skills/\`) and host-native Cursor/Codex adapters (\`.cursor-plugin/plugin.json\`, \`.codex-plugin/plugin.json\`). Does not include the Claude Code adapter.\n` +
     `- **Claude Plugin Kit** — the same production Runtime plus the Claude Code-native adapter (\`.claude-plugin/plugin.json\`, \`.mcp.json\`). Uses the 2KB-truncated MCP instruction budget. Does not include Cursor or Codex adapters.\n` +
