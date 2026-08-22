@@ -15,6 +15,9 @@ import { buildReleaseKitForTests } from "../../scripts/release/build.mjs";
 import { verifyReleaseArtifact } from "../../scripts/release/verify-artifact.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
+const PACKAGE_VERSION = JSON.parse(
+  readFileSync(path.join(ROOT, "package.json"), "utf8")
+).version as string;
 const temporaryDirectories: string[] = [];
 
 afterEach(() => {
@@ -31,7 +34,7 @@ describe("release artifact verification", () => {
       repoRoot: ROOT,
       outDir: output,
       kit: "agent-plugin",
-      version: "0.1.0-alpha.3",
+      version: PACKAGE_VERSION,
       sourceDateEpoch: 1_700_000_000
     });
 
@@ -45,7 +48,7 @@ describe("release artifact verification", () => {
 
     expect(verified).toMatchObject({
       kit: "agent-plugin",
-      version: "0.1.0-alpha.3",
+      version: PACKAGE_VERSION,
       fileCount: built.fileCount,
       sha256: built.sha256
     });
@@ -62,7 +65,7 @@ describe("release artifact verification", () => {
       repoRoot: ROOT,
       outDir: output,
       kit: "agent-plugin",
-      version: "0.1.0-alpha.3",
+      version: PACKAGE_VERSION,
       sourceDateEpoch: 1_700_000_000
     });
     const originalChecksum = readFileSync(built.checksumPath);
