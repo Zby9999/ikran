@@ -52,6 +52,7 @@ const RUNTIME_ANCHORS = Object.freeze([
   "lib/mcp/register-tools.ts",
   "lib/runtime/http-server.mjs",
   "skills/ikran-alignment/SKILL.md",
+  "skills/ikran-extraction/SKILL.md",
   "skills/ikran-governance/SKILL.md"
 ]);
 

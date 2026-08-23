@@ -27,6 +27,14 @@ import {
   TOKEN_DOMAINS,
   type DesignSystemFileKind
 } from "./design-system-schema";
+import {
+  DRAFT_FOUNDATION_OWNERS,
+  DRAFT_FOUNDATION_TOKEN_DOMAINS,
+  NON_FOUNDATION_TOKEN_DOMAIN_ROUTES,
+  draftFoundationOwnerForTokenDomain,
+  reviewedDraftFoundationOwnersAreComplete,
+  type DraftFoundationOwner
+} from "./draft-foundation-ownership";
 
 export const INITIAL_DESIGN_SYSTEM_REQUIRED_ARTIFACTS = [
   "design-system/design-system.json",
@@ -268,6 +276,15 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
   entry_kinds: DESIGN_SYSTEM_ENTRY_KINDS,
   entry_kind_file_ownership: DESIGN_SYSTEM_ENTRY_KIND_FILE_OWNERSHIP,
   token_domains: TOKEN_DOMAINS,
+  foundation_ownership: {
+    owners: DRAFT_FOUNDATION_OWNERS,
+    token_domains: DRAFT_FOUNDATION_TOKEN_DOMAINS,
+    reroute: NON_FOUNDATION_TOKEN_DOMAIN_ROUTES,
+    storage:
+      "design-system/token.json and the tokens work unit are storage checkpoints, not a fourth semantic owner.",
+    completion:
+      "Record the tokens work unit only after independent Color, Typography, and Material passes, declaring all three in reviewedFoundationOwners. Do not materialize motion, breakpoint, component-local, or ambiguous other-domain decisions as Draft foundations."
+  },
   token_usage_policy: {
     primitive:
       "Primitive tokens carry construction facts only and write neither meaning nor a usage field.",
@@ -425,7 +442,10 @@ export const DESIGN_SYSTEM_EXTRACTION_WORK_UNIT_KINDS = [
 
 export type DesignSystemExtractionWorkUnitDefinition =
   | { kind: "global" }
-  | { kind: "tokens" }
+  | {
+      kind: "tokens";
+      reviewedFoundationOwners?: DraftFoundationOwner[];
+    }
   | { kind: "layout" }
   | { kind: "interaction" }
   | {
@@ -722,6 +742,8 @@ type ProgressiveExtractionFailure = {
     | "claim_confidence_exceeds_source"
     | "work_unit_artifact_not_ingested"
     | "work_unit_target_out_of_scope"
+    | "foundation_review_incomplete"
+    | "foundation_owner_mismatch"
     | "component_work_unit_mismatch"
     | "component_capture_missing"
     | "manifest_target_not_found"
@@ -1125,6 +1147,25 @@ export function recordDesignSystemExtractionWorkUnit(
   ) {
     return { ok: false, reason: "invalid_work_unit" };
   }
+  if (
+    definition.kind === "tokens" &&
+    !reviewedDraftFoundationOwnersAreComplete(
+      definition.reviewedFoundationOwners
+    )
+  ) {
+    const reviewed = definition.reviewedFoundationOwners ?? [];
+    return {
+      ok: false,
+      reason: "foundation_review_incomplete",
+      details: {
+        expected_owners: DRAFT_FOUNDATION_OWNERS,
+        reviewed_owners: reviewed,
+        missing_owners: DRAFT_FOUNDATION_OWNERS.filter(
+          (owner) => !reviewed.includes(owner)
+        )
+      }
+    };
+  }
   const retiring =
     definition.kind === "component" && definition.retire === true;
   if (
@@ -1434,6 +1475,45 @@ export function recordDesignSystemExtractionWorkUnit(
            FROM design_system_entries`
         )
         .all() as unknown as DesignSystemEntryKeyRow[];
+      if (definition.kind === "tokens") {
+        const misplacedTarget = input.claims
+          .flatMap((claim) =>
+            claim.targets.map((target) => ({ claimId: claim.claimId, target }))
+          )
+          .map(({ claimId, target }) => ({
+            claimId,
+            target,
+            entry: entries.find(
+              (entry) =>
+                entry.source_artifact_path === target.artifactPath &&
+                entry.entry_id === target.entryId
+            )
+          }))
+          .find(
+            ({ entry }) =>
+              entry !== undefined &&
+              draftFoundationOwnerForTokenDomain(entry.domain) === null
+          );
+        if (misplacedTarget?.entry) {
+          const domain = misplacedTarget.entry.domain ?? "missing";
+          const route =
+            NON_FOUNDATION_TOKEN_DOMAIN_ROUTES[
+              domain as keyof typeof NON_FOUNDATION_TOKEN_DOMAIN_ROUTES
+            ];
+          return {
+            ok: false,
+            reason: "foundation_owner_mismatch",
+            details: {
+              claim_id: misplacedTarget.claimId,
+              artifact_path: misplacedTarget.target.artifactPath,
+              entry_id: misplacedTarget.target.entryId,
+              domain,
+              recommended_owner: route?.owner ?? "explicit-gap-or-omission",
+              recommended_work_unit: route?.work_unit ?? null
+            }
+          } as const;
+        }
+      }
       if (definition.kind === "component") {
         const inventoryEntry = entries.find(
           (entry) =>
@@ -1916,6 +1996,7 @@ type FinalizeInitialDesignSystemFailure = {
     | "stale_alignment_attempt"
     | "initial_design_system_command_not_claimed"
     | "extraction_work_units_incomplete"
+    | "foundation_review_incomplete"
     | "extraction_audit_required"
     | "extraction_audit_failed"
     | "manifest_conflicts_unresolved"
@@ -2118,6 +2199,22 @@ export function finalizeInitialDesignSystemPreparation(
           db,
           "extraction_work_units_incomplete",
           { missing_work_unit_keys: missingWorkUnitKeys },
+          context
+        );
+      }
+      const tokensWorkUnit = manifest.workUnits.find(
+        (unit) => unit.key === "tokens"
+      );
+      if (
+        tokensWorkUnit?.definition.kind !== "tokens" ||
+        !reviewedDraftFoundationOwnersAreComplete(
+          tokensWorkUnit.definition.reviewedFoundationOwners
+        )
+      ) {
+        return finalizeFailure(
+          db,
+          "foundation_review_incomplete",
+          { expected_owners: DRAFT_FOUNDATION_OWNERS },
           context
         );
       }

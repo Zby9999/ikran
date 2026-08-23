@@ -11,6 +11,11 @@ import {
   asEvidenceBounds,
   parsePositionalNodes
 } from "./figma-positional-evidence";
+import {
+  DRAFT_FOUNDATION_OWNERS,
+  DRAFT_FOUNDATION_TOKEN_DOMAINS,
+  NON_FOUNDATION_TOKEN_DOMAIN_ROUTES
+} from "./draft-foundation-ownership";
 
 export const ALIGNMENT_SECTIONS = [
   "design-concept",
@@ -53,6 +58,13 @@ export const ALIGNMENT_SECTION_CONTRACT = {
     question_cards_min: ALIGNMENT_SECTION_QUESTION_MIN,
     question_cards_max: ALIGNMENT_SECTION_QUESTION_MAX,
     question_proposed_answer: "required-non-empty-before-finalize"
+  },
+  token_foundations: {
+    owners: DRAFT_FOUNDATION_OWNERS,
+    token_domains: DRAFT_FOUNDATION_TOKEN_DOMAINS,
+    reroute: NON_FOUNDATION_TOKEN_DOMAIN_ROUTES,
+    guidance:
+      "Treat Token as an Alignment lens only. Resolve its decisions into Color, Typography, and Material independently; route motion to Interaction and breakpoints to Layout. Component-local decisions belong to Component. Never use an ambiguous Token bucket or the other domain as a Draft foundation owner."
   },
   question_title: {
     max_characters: ALIGNMENT_QUESTION_TITLE_MAX_LENGTH,

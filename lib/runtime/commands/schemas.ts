@@ -734,7 +734,12 @@ const designSystemExtractionResidualClaimSchema = z.object({
 
 const designSystemExtractionActiveWorkUnitSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("global") }).strict(),
-  z.object({ kind: z.literal("tokens") }).strict(),
+  z.object({
+    kind: z.literal("tokens"),
+    reviewedFoundationOwners: z
+      .array(z.enum(["color", "typography", "material"]))
+      .optional()
+  }).strict(),
   z.object({ kind: z.literal("layout") }).strict(),
   z.object({ kind: z.literal("interaction") }).strict(),
   z.object({

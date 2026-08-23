@@ -97,6 +97,19 @@ describe("Alignment preparation Agent command", () => {
             question_cards_min: 2,
             question_cards_max: 5
           },
+          token_foundations: {
+            owners: ["color", "typography", "material"],
+            token_domains: {
+              color: ["color"],
+              typography: ["typography"],
+              material: expect.arrayContaining(["spacing", "radius", "shadow"])
+            },
+            reroute: {
+              motion: { owner: "interaction", work_unit: "interaction" },
+              breakpoint: { owner: "layout", work_unit: "layout" },
+              other: { owner: "unresolved", work_unit: null }
+            }
+          },
           question_title: {
             max_characters: 48,
             min_words: 2,

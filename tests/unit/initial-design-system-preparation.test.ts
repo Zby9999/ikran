@@ -41,6 +41,14 @@ import { recordSourceArtifact } from "../../lib/runtime/source-artifact";
 import { recordDesignSystemExtractionWorkUnitInputSchema } from "../../lib/runtime/commands/schemas";
 
 const projects: string[] = [];
+const COMPLETE_TOKENS_WORK_UNIT = {
+  kind: "tokens" as const,
+  reviewedFoundationOwners: [
+    "color",
+    "typography",
+    "material"
+  ] as ["color", "typography", "material"]
+};
 
 function createCompletedAlignmentFixture(
   options: { golden?: boolean } = {}
@@ -348,7 +356,7 @@ function recordCompleteProgressiveExtraction(
     },
     {
       key: "tokens",
-      workUnit: { kind: "tokens" as const },
+      workUnit: COMPLETE_TOKENS_WORK_UNIT,
       claims: claimsFor("token")
     },
     {
@@ -458,6 +466,34 @@ afterEach(() => {
 });
 
 describe("Initial Design System preparation", () => {
+  test("requires all three Draft foundation reviews before recording tokens", () => {
+    expect(
+      recordDesignSystemExtractionWorkUnitInputSchema.safeParse({
+        alignmentAttemptId: "attempt-1",
+        idempotencyKey: "tokens-complete",
+        workUnit: COMPLETE_TOKENS_WORK_UNIT,
+        claims: []
+      }).success
+    ).toBe(true);
+
+    expect(
+      recordDesignSystemExtractionWorkUnit("/unused", {
+        alignmentAttemptId: "attempt-1",
+        idempotencyKey: "tokens-incomplete",
+        workUnit: { kind: "tokens" },
+        claims: []
+      })
+    ).toEqual({
+      ok: false,
+      reason: "foundation_review_incomplete",
+      details: {
+        expected_owners: ["color", "typography", "material"],
+        reviewed_owners: [],
+        missing_owners: ["color", "typography", "material"]
+      }
+    });
+  });
+
   test("models active and retired component work units as mutually exclusive MCP inputs", () => {
     const base = {
       alignmentAttemptId: "attempt-1",
@@ -598,6 +634,70 @@ describe("Initial Design System preparation", () => {
     });
   });
 
+  test("rejects non-foundation domains from the tokens storage work unit", () => {
+    const fixture = createCompletedAlignmentFixture();
+    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    if (!claimed.ok) throw new Error(claimed.reason);
+    declareInitialDesignSystemArtifacts(fixture.projectPath, claimed);
+    const tokenCard = claimed.question_cards.find(
+      (card) => card.section === "token"
+    )!;
+
+    writeJson(fixture.projectPath, "design-system/token.json", {
+      primitive: {
+        "duration.fast": {
+          kind: "token",
+          domain: "motion",
+          value: "120ms",
+          status: "candidate",
+          links: [tokenCard.id]
+        }
+      },
+      semantic: {},
+      component: {}
+    });
+    const redeclared = recordSourceArtifact(fixture.projectPath, {
+      path: "design-system/token.json",
+      artifactType: "token.json",
+      semanticPurpose: "Exercise Draft foundation ownership routing",
+      relatedRecordIds: [tokenCard.id]
+    });
+    if (!redeclared.ok) throw new Error(redeclared.reason);
+
+    expect(
+      recordDesignSystemExtractionWorkUnit(fixture.projectPath, {
+        alignmentAttemptId: fixture.attemptId,
+        idempotencyKey: "tokens-motion-mismatch",
+        workUnit: COMPLETE_TOKENS_WORK_UNIT,
+        claims: [
+          {
+            claimId: "motion-token",
+            statement: "Feedback uses a short transition.",
+            sourceRecordIds: [tokenCard.id],
+            sourceExcerpts: [tokenCard.final_answer!],
+            confidence: "confirmed",
+            outcome: "mapped",
+            targets: [
+              {
+                artifactPath: "design-system/token.json",
+                entryId: "primitive.duration.fast"
+              }
+            ]
+          }
+        ]
+      })
+    ).toMatchObject({
+      ok: false,
+      reason: "foundation_owner_mismatch",
+      details: {
+        claim_id: "motion-token",
+        domain: "motion",
+        recommended_owner: "interaction",
+        recommended_work_unit: "interaction"
+      }
+    });
+  });
+
   test("replaces one work unit without disturbing other work units and recomputes coverage", () => {
     const fixture = createCompletedAlignmentFixture();
     const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
@@ -637,7 +737,7 @@ describe("Initial Design System preparation", () => {
     const tokens = recordDesignSystemExtractionWorkUnit(fixture.projectPath, {
       alignmentAttemptId: fixture.attemptId,
       idempotencyKey: "replace-tokens-v1",
-      workUnit: { kind: "tokens" },
+      workUnit: COMPLETE_TOKENS_WORK_UNIT,
       claims: [
         {
           claimId: "token-family",
@@ -711,7 +811,7 @@ describe("Initial Design System preparation", () => {
       {
         alignmentAttemptId: fixture.attemptId,
         idempotencyKey: "recovery-token-v1",
-        workUnit: { kind: "tokens" },
+        workUnit: COMPLETE_TOKENS_WORK_UNIT,
         claims: [
           {
             claimId: "recovery-token-family",
@@ -1154,7 +1254,7 @@ describe("Initial Design System preparation", () => {
         ]
       },
       {
-        definition: { kind: "tokens" as const },
+        definition: COMPLETE_TOKENS_WORK_UNIT,
         idempotencyKey: "audit-tokens",
         claimId: "audit-token-claim",
         sources: [card("token")],
@@ -1347,6 +1447,19 @@ describe("Initial Design System preparation", () => {
     });
     expect(contract.token_domains).toContain("color");
     expect(contract.token_domains).toContain("typography");
+    expect(contract.foundation_ownership).toMatchObject({
+      owners: ["color", "typography", "material"],
+      token_domains: {
+        color: ["color"],
+        typography: ["typography"],
+        material: expect.arrayContaining(["spacing", "radius", "shadow"])
+      },
+      reroute: {
+        motion: { owner: "interaction", work_unit: "interaction" },
+        breakpoint: { owner: "layout", work_unit: "layout" },
+        other: { owner: "unresolved", work_unit: null }
+      }
+    });
     expect(contract.token_open_gap_policy).toEqual({
       representation: "domain-rule",
       status: "gap",
@@ -1995,7 +2108,7 @@ describe("Initial Design System preparation", () => {
       {
         alignmentAttemptId: fixture.attemptId,
         idempotencyKey: "gap-outcome-token-unit",
-        workUnit: { kind: "tokens" },
+        workUnit: COMPLETE_TOKENS_WORK_UNIT,
         claims: tokenRecords.map((record, index) => ({
           claimId: `gap-outcome-token-${index + 1}`,
           statement:

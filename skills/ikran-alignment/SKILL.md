@@ -1,6 +1,6 @@
 ---
 name: ikran-alignment
-description: Prepare evidence-grounded Ikran Design Intent Alignment annotations and questions. Use when fulfilling a prepare_design_intent_alignment command by turning Seed Reference evidence and designer direction into the six Alignment sections.
+description: Prepare evidence-grounded Ikran Design Intent Alignment annotations and decision questions. Use when fulfilling a prepare_design_intent_alignment command, including separating Color, Typography, and Material decisions inside the Token section.
 ---
 
 # Ikran Alignment
@@ -90,16 +90,44 @@ elements should vary, or where consistency should yield to content. Treat
 extractable properties as observations; ask about their meaning or scope only
 when that remains unresolved.
 
-### Token
+### Token (Foundations)
 
-Look for repeated values, semantic roles, scales, aliases, and relationships
-that could become color, typography, spacing, sizing, radius, shadow, opacity,
-motion, or breakpoint tokens.
+`token` is the Runtime section identity and an evidence lens, not a Draft
+Design System destination. Inspect three distinct foundation lenses, then rank
+their decision gaps together within the section's card limit. A lens with no
+consequential gap does not need its own Question.
 
-Ask whether repetition represents a deliberate system, which semantic role a
-value serves, how a scale should behave, or where responsive and contextual
-exceptions belong. A value visible in Figma is evidence; its intended reuse,
-semantic name, and exception policy may be decision gaps.
+#### Color
+
+Look for primitive values, semantic roles, contrast relationships, component
+references, and rules that govern how color creates hierarchy or feedback.
+
+Ask about role, reuse scope, and exceptions when they remain uncertain. Treat
+an inspectable color value as an observation; ask what job it performs rather
+than asking the designer to repeat the value.
+
+#### Typography
+
+Look for family, size, weight, line height, letter spacing, text transform,
+scale relationships, and complete roles such as body, display heading,
+metadata, or action label.
+
+Ask which combinations form reusable roles, how the scale is intended to work,
+and where responsive or contextual exceptions apply. Keep construction facts
+and their composite roles visible as separate findings.
+
+#### Material
+
+Look for spacing, size, ratio, radius, border, shadow, and opacity decisions
+that define shared construction or surface character.
+
+Ask whether repeated values form a system, apply to a component family, or
+belong only to the observed surface. Route structural breakpoints and
+responsive composition questions to Layout. Route duration, easing, and state
+feedback questions to Interaction or the affected Component.
+
+Frame each retained gap so the answer establishes its intended reuse boundary.
+The extraction stage chooses the final owner after the designer answers.
 
 ### Layout
 
@@ -146,6 +174,8 @@ Every Question card should pass all of these tests:
   Agent's best-supported interpretation without disguising it as fact.
 - **Distinct** — another card or Designer Annotation does not already resolve
   the same decision.
+- **Routable** — the decision exposes its reuse boundary clearly enough for
+  downstream owner selection; the Alignment section itself is not that owner.
 
 Prefer “Should the compact spacing remain specific to dense metadata, or define
 the system's default rhythm?” over “Is the spacing 8 px?” The first resolves
@@ -160,6 +190,9 @@ Before finalizing preparation, account for every card:
 - Each proposed answer is supported and remains editable in meaning and tone.
 - Each concern has one primary section; linked consequences in other sections
   do not become duplicate questions.
+- The Token section has independently inspected Color, Typography, and Material;
+  its retained cards are the highest-value gaps across those lenses rather than
+  mechanical one-per-lens coverage.
 - Questions collectively cover high-impact uncertainty without asking the
   designer to approve the entire design one card at a time.
 

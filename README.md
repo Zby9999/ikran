@@ -185,8 +185,8 @@ cd /absolute/path/to/your-project
 claude --plugin-dir /absolute/path/to/extracted-ikran
 ```
 
-That adapter starts `ikran-mcp --prod` and exposes `skills/ikran-alignment`
-plus `skills/ikran-governance`. Do not publish this repository as a Claude
+That adapter starts `ikran-mcp --prod` and exposes `skills/ikran-alignment`,
+`skills/ikran-extraction`, and `skills/ikran-governance`. Do not publish this repository as a Claude
 marketplace plugin: `--prod` still requires the production build created by
 `npm run setup:product`, which Claude's bounded `npm ci --ignore-scripts` does
 not replace.
@@ -280,7 +280,7 @@ still excluding `Attempts/`, `.scratch/`, `workflow/`, `Design issue/`,
 Release maintainers build the three deterministic archives with:
 
 ```bash
-npm run release:build -- --version v0.1.0-alpha.6
+npm run release:build -- --version v0.1.0-alpha.7
 ```
 
 Before a Draft Release is created, the full gate rebuilds all archives,
@@ -288,7 +288,7 @@ verifies their checksum and embedded manifest, extracts them with traversal and
 symlink defenses, then exercises each clean-download profile:
 
 ```bash
-npm run release:gate -- --version v0.1.0-alpha.6
+npm run release:gate -- --version v0.1.0-alpha.7
 ```
 
 The Product gate performs an omitted-dev install and drives the extracted MCP

@@ -54,6 +54,7 @@ describe("release selection policy", () => {
     expect(paths).not.toContain(".mcp.json");
     expect(paths).not.toContain(".claude-plugin/plugin.json");
     expect(paths).toContain("skills/ikran-alignment/SKILL.md");
+    expect(paths).toContain("skills/ikran-extraction/SKILL.md");
     expect(paths).toContain("skills/ikran-governance/SKILL.md");
     expect(paths).toContain("app/page.tsx");
     expect(paths).toContain("bin/ikran-runtime.mjs");
@@ -94,6 +95,7 @@ describe("release selection policy", () => {
     expect(paths).toContain(".claude-plugin/plugin.json");
     expect(paths).toContain(".mcp.json");
     expect(paths).toContain("skills/ikran-alignment/SKILL.md");
+    expect(paths).toContain("skills/ikran-extraction/SKILL.md");
     expect(paths).toContain("skills/ikran-governance/SKILL.md");
     expect(paths.some((file: string) => file.startsWith("app/prototypes/"))).toBe(false);
     expect(paths.some(isForbidden)).toBe(false);
@@ -106,6 +108,7 @@ describe("release selection policy", () => {
     expect(paths).toContain(".mcp.json");
     expect(paths).toContain(".claude-plugin/plugin.json");
     expect(paths).toContain("skills/ikran-alignment/SKILL.md");
+    expect(paths).toContain("skills/ikran-extraction/SKILL.md");
     expect(paths).toContain("skills/ikran-governance/SKILL.md");
     expect(paths).not.toContain("plugin.json");
     expect(paths).not.toContain("mcp.json");
@@ -130,6 +133,16 @@ describe("release selection policy", () => {
     await expect(selectReleaseFiles({ repoRoot: fixture, kit: "agent-plugin" })).rejects.toMatchObject({
       code: "missing_required_path",
       details: { path: "skills/ikran-alignment/SKILL.md" }
+    });
+  });
+
+  test("fails closed when the Ikran Extraction Skill is missing", async () => {
+    const fixture = makeRepositoryFixture();
+    unlinkSync(path.join(fixture, "skills/ikran-extraction/SKILL.md"));
+
+    await expect(selectReleaseFiles({ repoRoot: fixture, kit: "agent-plugin" })).rejects.toMatchObject({
+      code: "missing_required_path",
+      details: { path: "skills/ikran-extraction/SKILL.md" }
     });
   });
 
@@ -502,6 +515,7 @@ function makeRepositoryFixture() {
     })}\n`,
     "skills/ikran-governance/SKILL.md": "# Ikran Governance\n",
     "skills/ikran-alignment/SKILL.md": "# Ikran Alignment\n",
+    "skills/ikran-extraction/SKILL.md": "# Ikran Extraction\n",
     "app/layout.tsx": "export default function Layout() { return null; }\n",
     "app/page.tsx": "export default function Page() { return null; }\n",
     "bin/ikran.mjs": "#!/usr/bin/env node\nexport {};\n",
