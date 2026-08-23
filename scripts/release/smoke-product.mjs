@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { ReleasePolicyError } from "./policy.mjs";
@@ -115,7 +116,27 @@ export async function smokeProductKit({ root, timeoutMs = 120_000 }) {
       timeoutMs
     );
     writePrototypeFixture(projectDir);
-    seedPrototypeValidation(projectDir);
+    await connectFigmaForSmoke(workbenchUrl, timeoutMs);
+    const capturedSeed = await callToolOk(
+      client,
+      "add_seed_reference",
+      {
+        figmaSeedReference:
+          "https://www.figma.com/design/ReleaseGate/Frame?node-id=1-1",
+        referenceNote: "Release-gate prototype"
+      },
+      timeoutMs
+    );
+    prepareDraftPhaseFixture(projectDir);
+    await callToolOk(client, "confirm_draft_design_system", {}, timeoutMs);
+    const seedReferenceId = capturedSeed.record?.id;
+    const evidenceVersionId = capturedSeed.surface?.id;
+    if (typeof seedReferenceId !== "string" || typeof evidenceVersionId !== "string") {
+      throw new ReleasePolicyError(
+        "seed_capture_failed",
+        `Seed capture returned incomplete lineage: ${JSON.stringify(capturedSeed)}`
+      );
+    }
     for (const [artifactPath, artifactType] of [
       ["prototype/package.json", "code"],
       ["prototype/server.mjs", "code"],
@@ -142,8 +163,8 @@ export async function smokeProductKit({ root, timeoutMs = 120_000 }) {
         routePath: "/",
         surfaceKey: "release-gate-home",
         name: "Release Gate Home",
-        seedReferenceIds: ["seed-release-gate"],
-        evidenceVersionIds: ["evidence-release-gate"]
+        seedReferenceIds: [seedReferenceId],
+        evidenceVersionIds: [evidenceVersionId]
       },
       timeoutMs
     );
@@ -232,38 +253,62 @@ http.createServer((_request, response) => {
   );
 }
 
-function seedPrototypeValidation(projectDir) {
+async function connectFigmaForSmoke(workbenchUrl, timeoutMs) {
+  const parsed = new URL(workbenchUrl);
+  const response = await fetch(new URL("/api/figma-connection", parsed), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-ikran-session": parsed.searchParams.get("session")
+    },
+    body: JSON.stringify({ token: "figd_ok_release_gate" }),
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+  const body = await response.json();
+  if (!response.ok || body?.ok !== true || body?.connected !== true) {
+    throw new ReleasePolicyError(
+      "figma_connection_failed",
+      `Release smoke Figma Connection failed: ${JSON.stringify(body)}`
+    );
+  }
+}
+
+/**
+ * The product smoke targets the post-Draft preview boundary, not the full
+ * Alignment/extraction workflow. Seed/evidence still enter through Runtime;
+ * this fixture advances only the audited Draft precondition and records the
+ * canonical phase event before exercising confirm_draft_design_system.
+ */
+function prepareDraftPhaseFixture(projectDir) {
   const db = new DatabaseSync(path.join(projectDir, ".ikran", "ikran.db"));
   try {
     const now = new Date().toISOString();
+    db.exec("BEGIN IMMEDIATE");
     db.prepare(
-      `INSERT INTO seed_references
-       (id, figma_seed_reference, original_design_intent, created_at,
-        registered_via, file_key, node_id)
-       VALUES (?, ?, ?, ?, 'agent', ?, ?)`
-    ).run(
-      "seed-release-gate",
-      "https://www.figma.com/design/ReleaseGate/Frame?node-id=1-1",
-      "Release-gate prototype",
-      now,
-      "ReleaseGate",
-      "1:1"
-    );
-    db.prepare(
-      `INSERT INTO figma_evidence_surfaces
-       (id, seed_reference_id, figma_seed_reference, frame_node_id, frame_name,
-        evidence_views_json, created_at)
-       VALUES (?, ?, ?, '1:1', 'Release Gate', '{}', ?)`
-    ).run(
-      "evidence-release-gate",
-      "seed-release-gate",
-      "https://www.figma.com/design/ReleaseGate/Frame?node-id=1-1",
-      now
-    );
-    db.prepare(
-      `UPDATE project_phase SET phase = 'prototype_validation', updated_at = ?
+      `UPDATE project_phase SET phase = 'draft_design_system', updated_at = ?
        WHERE singleton = 1`
     ).run(now);
+    db.prepare(
+      `INSERT INTO events (event_id, type, payload, created_at)
+       VALUES (?, 'project_phase_confirmed', ?, ?)`
+    ).run(
+      randomUUID(),
+      JSON.stringify({
+        from_phase: "seed",
+        phase: "draft_design_system",
+        command: "initial_design_system_preparation_completed",
+        fixture: "release_gate"
+      }),
+      now
+    );
+    db.exec("COMMIT");
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      // Transaction did not start or already rolled back.
+    }
+    throw error;
   } finally {
     db.close();
   }

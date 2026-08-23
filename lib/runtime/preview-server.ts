@@ -14,7 +14,7 @@
 // All host effects go through `PreviewSupervisorDeps` so unit tests exercise
 // the state machine without spawning processes or binding ports.
 
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer } from "node:net";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -68,6 +68,7 @@ export type PreviewDependencyInstallResult =
       exitCode?: number | null;
       signal?: string | null;
       stderrTail?: string;
+      timedOut?: boolean;
     };
 
 /**
@@ -96,7 +97,8 @@ export interface PreviewSupervisorDeps {
   dependenciesInstalled(root: string): boolean;
   /** Blocking dependency install; resolves false when it fails. */
   installDependencies(
-    root: string
+    root: string,
+    timeoutMs: number
   ): Promise<boolean | PreviewDependencyInstallResult>;
   startDevServer(input: {
     root: string;
@@ -159,7 +161,7 @@ function sanitizeDiagnosticOutput(value: string | undefined): string | undefined
   let output = value
     .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(
-      /\b((?:api[_-]?key|token|secret|password)\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s]+)/gi,
+      /\b(((?:[a-z0-9]+[_-])*(?:api[_-]?key|token|secret|password))\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s]+)/gi,
       "$1[redacted]"
     )
     .replace(/\b(?:figd_|sk-|gh[pousr]_)[A-Za-z0-9_-]{12,}\b/g, "[redacted]")
@@ -193,6 +195,12 @@ function exitDiagnosis(exit: PreviewProcessExit): PreviewFailureDiagnosis {
  * (`killAllPreviewServers`) instead of leaving orphaned servers behind.
  */
 const livePreviewHandles = new Set<PreviewProcessHandle>();
+type LivePreviewOwner = {
+  handle: PreviewProcessHandle;
+  root: string;
+  command: string;
+};
+const livePreviewHandlesByPort = new Map<number, LivePreviewOwner>();
 
 /**
  * Handles stopped by Runtime shutdown rather than by an unexpected process
@@ -219,6 +227,7 @@ export function killAllPreviewServers(): void {
     }
   }
   livePreviewHandles.clear();
+  livePreviewHandlesByPort.clear();
 }
 
 export interface PreviewStartInput {
@@ -237,6 +246,74 @@ export function previewUrlForPort(port: number): string {
   return `http://127.0.0.1:${port}`;
 }
 
+async function installBeforeDeadline(
+  root: string,
+  deadline: number,
+  deps: PreviewSupervisorDeps
+): Promise<boolean | PreviewDependencyInstallResult | null> {
+  let settled = false;
+  let result: boolean | PreviewDependencyInstallResult = false;
+  const remainingMs = Math.max(0, deadline - deps.now());
+  void deps.installDependencies(root, remainingMs).then(
+    (value) => {
+      result = value;
+      settled = true;
+    },
+    (error) => {
+      result = {
+        ok: false,
+        stderrTail: error instanceof Error ? error.message : String(error)
+      };
+      settled = true;
+    }
+  );
+  await Promise.resolve();
+  while (!settled && deps.now() < deadline) {
+    await deps.sleep(PREVIEW_PROBE_INTERVAL_MS);
+  }
+  return settled ? result : null;
+}
+
+async function probeUntilStable(
+  url: string,
+  deadline: number,
+  deps: PreviewSupervisorDeps,
+  options: {
+    failOnUnreachable: boolean;
+    processExit?: () => PreviewProcessExit | null;
+  }
+): Promise<PreviewStartOutcome> {
+  let stableSince: number | null = null;
+  while (deps.now() < deadline) {
+    const processExit = options.processExit?.();
+    if (processExit) {
+      const diagnosis = exitDiagnosis(processExit);
+      return { readiness: "failed", reason: diagnosis.kind, diagnosis };
+    }
+    if (await deps.probeUrl(url)) {
+      stableSince ??= deps.now();
+      if (deps.now() - stableSince >= PREVIEW_STABLE_WINDOW_MS) {
+        return { readiness: "ready", reason: null };
+      }
+    } else {
+      stableSince = null;
+      if (options.failOnUnreachable) {
+        return {
+          readiness: "failed",
+          reason: "port_conflict",
+          diagnosis: { kind: "port_conflict" }
+        };
+      }
+    }
+    await deps.sleep(PREVIEW_PROBE_INTERVAL_MS);
+  }
+  return {
+    readiness: "failed",
+    reason: "preview_timeout",
+    diagnosis: { kind: "preview_timeout" }
+  };
+}
+
 /**
  * Drive one surface from install to ready. Returns the terminal readiness for
  * this attempt; `onReadiness` reports every intermediate transition so the
@@ -251,18 +328,27 @@ export async function startPreviewServer(
 
   if (!deps.dependenciesInstalled(input.root)) {
     input.onReadiness("installing", null);
-    const installed = await deps.installDependencies(input.root);
+    const installed = await installBeforeDeadline(input.root, deadline, deps);
+    if (installed === null) {
+      input.onReadiness("failed", "preview_timeout");
+      return {
+        readiness: "failed",
+        reason: "preview_timeout",
+        diagnosis: { kind: "preview_timeout" }
+      };
+    }
     if (installed === false || (typeof installed === "object" && !installed.ok)) {
       const detail = typeof installed === "object" ? installed : undefined;
       const stderrTail = sanitizeDiagnosticOutput(detail?.stderrTail);
+      const kind = detail?.timedOut ? "preview_timeout" : "install_failed";
       const diagnosis: PreviewFailureDiagnosis = {
-        kind: "install_failed",
+        kind,
         ...(detail?.exitCode !== undefined ? { exitCode: detail.exitCode } : {}),
         ...(detail?.signal !== undefined ? { signal: detail.signal } : {}),
         ...(stderrTail ? { stderrTail } : {})
       };
-      input.onReadiness("failed", "install_failed");
-      return { readiness: "failed", reason: "install_failed", diagnosis };
+      input.onReadiness("failed", kind);
+      return { readiness: "failed", reason: kind, diagnosis };
     }
   }
 
@@ -271,29 +357,48 @@ export async function startPreviewServer(
   // An occupied port is only usable when it already answers as this preview;
   // anything else is a conflict the designer must resolve, not a retry loop.
   if (!(await deps.isPortFree(input.port))) {
-    let stableSince: number | null = null;
+    const owner = livePreviewHandlesByPort.get(input.port);
+    if (!owner) {
+      input.onReadiness("failed", "port_conflict");
+      return {
+        readiness: "failed",
+        reason: "port_conflict",
+        diagnosis: { kind: "port_conflict" }
+      };
+    }
+    if (owner.root === input.root && owner.command === input.command) {
+      let ownedExit: PreviewProcessExit | null = null;
+      void owner.handle.exited.then((exit) => {
+        ownedExit = exit;
+      });
+      const outcome = await probeUntilStable(input.url, deadline, deps, {
+        failOnUnreachable: true,
+        processExit: () => ownedExit
+      });
+      input.onReadiness(outcome.readiness, outcome.reason);
+      return outcome;
+    }
+
+    intentionallyStoppedPreviewHandles.add(owner.handle);
+    owner.handle.kill();
+    livePreviewHandles.delete(owner.handle);
+    livePreviewHandlesByPort.delete(input.port);
+    let released = false;
     while (deps.now() < deadline) {
-      if (!(await deps.probeUrl(input.url))) {
-        input.onReadiness("failed", "port_conflict");
-        return {
-          readiness: "failed",
-          reason: "port_conflict",
-          diagnosis: { kind: "port_conflict" }
-        };
-      }
-      stableSince ??= deps.now();
-      if (deps.now() - stableSince >= PREVIEW_STABLE_WINDOW_MS) {
-        input.onReadiness("ready", null);
-        return { readiness: "ready", reason: null };
+      if (await deps.isPortFree(input.port)) {
+        released = true;
+        break;
       }
       await deps.sleep(PREVIEW_PROBE_INTERVAL_MS);
     }
-    input.onReadiness("failed", "preview_timeout");
-    return {
-      readiness: "failed",
-      reason: "preview_timeout",
-      diagnosis: { kind: "preview_timeout" }
-    };
+    if (!released) {
+      input.onReadiness("failed", "port_conflict");
+      return {
+        readiness: "failed",
+        reason: "port_conflict",
+        diagnosis: { kind: "port_conflict" }
+      };
+    }
   }
 
   const handle = deps.startDevServer({
@@ -302,46 +407,42 @@ export async function startPreviewServer(
     port: input.port
   });
   livePreviewHandles.add(handle);
+  livePreviewHandlesByPort.set(input.port, {
+    handle,
+    root: input.root,
+    command: input.command
+  });
 
   let processExit: PreviewProcessExit | null = null;
   void handle.exited.then((exit) => {
     livePreviewHandles.delete(handle);
+    if (livePreviewHandlesByPort.get(input.port)?.handle === handle) {
+      livePreviewHandlesByPort.delete(input.port);
+    }
     processExit = processExit ?? exit;
   });
 
-  let stableSince: number | null = null;
-  while (deps.now() < deadline) {
-    if (processExit) {
-      const diagnosis = exitDiagnosis(processExit);
-      input.onReadiness("failed", diagnosis.kind);
-      return { readiness: "failed", reason: diagnosis.kind, diagnosis };
-    }
-    if (await deps.probeUrl(input.url)) {
-      stableSince ??= deps.now();
-      if (deps.now() - stableSince >= PREVIEW_STABLE_WINDOW_MS) {
-        input.onReadiness("ready", null);
-        // No auto-restart: a later exit only marks the surface stale.
-        void handle.exited.then(() => {
-          if (!intentionallyStoppedPreviewHandles.has(handle)) {
-            input.onExit("dev_server_exited");
-          }
-        });
-        return { readiness: "ready", reason: null };
+  const outcome = await probeUntilStable(input.url, deadline, deps, {
+    failOnUnreachable: false,
+    processExit: () => processExit
+  });
+  if (outcome.readiness === "ready") {
+    input.onReadiness("ready", null);
+    // No auto-restart: a later exit only marks the surface stale.
+    void handle.exited.then(() => {
+      if (!intentionallyStoppedPreviewHandles.has(handle)) {
+        input.onExit("dev_server_exited");
       }
-    } else {
-      stableSince = null;
-    }
-    await deps.sleep(PREVIEW_PROBE_INTERVAL_MS);
+    });
+    return outcome;
   }
-
   handle.kill();
   livePreviewHandles.delete(handle);
-  input.onReadiness("failed", "preview_timeout");
-  return {
-    readiness: "failed",
-    reason: "preview_timeout",
-    diagnosis: { kind: "preview_timeout" }
-  };
+  if (livePreviewHandlesByPort.get(input.port)?.handle === handle) {
+    livePreviewHandlesByPort.delete(input.port);
+  }
+  input.onReadiness("failed", outcome.reason);
+  return outcome;
 }
 
 /**
@@ -365,9 +466,26 @@ function shellCommand(root: string, command: string, port: number) {
   return spawn(command, {
     cwd: root,
     shell: true,
+    detached: process.platform !== "win32",
     stdio: ["ignore", "ignore", "pipe"],
     env: { ...process.env, PORT: String(port) }
   });
+}
+
+function killProcessTree(child: ChildProcess): void {
+  try {
+    if (process.platform !== "win32" && child.pid) {
+      process.kill(-child.pid, "SIGTERM");
+      return;
+    }
+    child.kill();
+  } catch {
+    try {
+      child.kill();
+    } catch {
+      // Process tree already gone.
+    }
+  }
 }
 
 export const defaultPreviewSupervisorDeps: PreviewSupervisorDeps = {
@@ -385,7 +503,7 @@ export const defaultPreviewSupervisorDeps: PreviewSupervisorDeps = {
       return false;
     }
   },
-  installDependencies(root) {
+  installDependencies(root, timeoutMs) {
     return new Promise((resolve) => {
       const fingerprint = prototypeDependencyFingerprint(root);
       if (!fingerprint) {
@@ -400,17 +518,29 @@ export const defaultPreviewSupervisorDeps: PreviewSupervisorDeps = {
       });
       let settled = false;
       let stderrTail = "";
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        child.kill();
+        resolve({
+          ok: false,
+          timedOut: true,
+          stderrTail: `${stderrTail}\ndependency installation timed out`
+        });
+      }, timeoutMs);
       child.stderr?.on("data", (chunk) => {
         stderrTail = `${stderrTail}${String(chunk)}`.slice(-8_000);
       });
       child.on("error", (error) => {
         if (settled) return;
         settled = true;
+        clearTimeout(timer);
         resolve({ ok: false, stderrTail: `${stderrTail}\n${error.message}` });
       });
       child.on("exit", (code, signal) => {
         if (settled) return;
         settled = true;
+        clearTimeout(timer);
         if (code !== 0) {
           resolve({ ok: false, exitCode: code, signal, stderrTail });
           return;
@@ -461,11 +591,7 @@ export const defaultPreviewSupervisorDeps: PreviewSupervisorDeps = {
     return {
       exited,
       kill() {
-        try {
-          child.kill();
-        } catch {
-          // Process already gone — nothing to supervise.
-        }
+        killProcessTree(child);
       }
     };
   },

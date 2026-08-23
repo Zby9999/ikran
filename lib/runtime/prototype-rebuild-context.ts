@@ -34,6 +34,7 @@ export const PROTOTYPE_PREVIEW_CONTRACT = Object.freeze({
   declaration: {
     sourceArtifactPath: "declared prototype/code entry artifact",
     prototypeRoot: "directory containing package.json",
+    routePath: "explicit absolute page path, such as /",
     packageMetadata: ["scripts.dev", "dependencies", "devDependencies"]
   },
   completion: { readiness: "ready", stale: false },

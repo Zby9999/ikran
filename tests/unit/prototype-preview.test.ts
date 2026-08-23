@@ -5,7 +5,13 @@
 // exercise every terminal path — install failure, port conflict, probe timeout,
 // dev server exit — without spawning a process or binding a port.
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -44,6 +50,7 @@ import {
   allocatePreviewPort,
   defaultPreviewSupervisorDeps,
   isAllowedDevCommand,
+  killAllPreviewServers,
   previewDependencyInstallPlan,
   previewUrlForPort,
   prototypeDependencyFingerprint,
@@ -60,6 +67,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  killAllPreviewServers();
   stopAllPrototypePreviewRefresh();
   setPrototypePreviewRefreshTestHost(null);
   resetRecordBusForTests();
@@ -491,6 +499,38 @@ test("a transient first response is not reported ready when the process exits", 
   ]);
 });
 
+test("record_preview does not succeed when the surface turns stale at handoff", async () => {
+  await withProject(async (projectPath) => {
+    declarePrototypeArtifact(projectPath);
+    enterPrototypeValidation(projectPath);
+    let exitProcess: ((value: { code: number | null; signal: string | null }) => void) | null = null;
+    const exited = new Promise<{ code: number | null; signal: string | null }>(
+      (resolve) => {
+        exitProcess = resolve;
+      }
+    );
+    let probes = 0;
+
+    const result = await recordPreview(projectPath, previewInput(), {
+      supervisor: supervisor({
+        startDevServer: () => ({ exited, kill: () => {} }),
+        probeUrl: async () => {
+          probes += 1;
+          if (probes === 4) exitProcess!({ code: 1, signal: null });
+          return true;
+        }
+      })
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "preview_not_ready",
+      preview_reason: "dev_server_exited",
+      surface: { readiness: "ready", stale: true }
+    });
+  });
+});
+
 test("readiness requires successful probes across the stability window", async () => {
   let probes = 0;
   const outcome = await startPreviewServer(
@@ -557,8 +597,33 @@ test("dependency installs include dev packages without generating a source lockf
   }
 });
 
+test("a dependency install that never settles consumes the readiness budget", async () => {
+  const outcome = await startPreviewServer(
+    {
+      root: "/tmp/prototype",
+      command: "npm run dev",
+      port: PREVIEW_PORT_BASE,
+      url: previewUrlForPort(PREVIEW_PORT_BASE),
+      timeoutMs: 500,
+      onReadiness: () => {},
+      onExit: () => {}
+    },
+    supervisor({
+      dependenciesInstalled: () => false,
+      installDependencies: async () => new Promise(() => {})
+    })
+  );
+
+  expect(outcome).toMatchObject({
+    readiness: "failed",
+    reason: "preview_timeout",
+    diagnosis: { kind: "preview_timeout" }
+  });
+});
+
 test("process failures return a bounded sanitized command diagnosis", async () => {
   const secret = "do-not-return-this-secret";
+  const secondSecret = "another-plain-secret";
   const outcome = await startPreviewServer(
     {
       root: "/tmp/prototype",
@@ -573,7 +638,7 @@ test("process failures return a bounded sanitized command diagnosis", async () =
         exited: Promise.resolve({
           code: 127,
           signal: null,
-          stderrTail: `API_KEY=${secret}\nsh: vite: command not found\n${"x".repeat(10_000)}`
+          stderrTail: `OPENAI_API_KEY=${secret}\nVITE_API_TOKEN=${secondSecret}\nsh: vite: command not found\n${"x".repeat(10_000)}`
         }),
         kill: () => {}
       }),
@@ -588,10 +653,91 @@ test("process failures return a bounded sanitized command diagnosis", async () =
   });
   expect(outcome.diagnosis?.stderrTail).toContain("[redacted]");
   expect(outcome.diagnosis?.stderrTail).not.toContain(secret);
+  expect(outcome.diagnosis?.stderrTail).not.toContain(secondSecret);
   expect(outcome.diagnosis?.stderrTail).toBeDefined();
   expect(outcome.diagnosis?.stderrTail?.length ?? Infinity).toBeLessThanOrEqual(
     2_000
   );
+});
+
+test("a real dev script that ignores PORT cannot pass readiness", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "ikran-preview-ignore-port-"));
+  try {
+    mkdirSync(path.join(root, "node_modules"));
+    writeFileSync(
+      path.join(root, "package.json"),
+      `${JSON.stringify({ scripts: { dev: "node server.mjs" } })}\n`
+    );
+    writeFileSync(
+      path.join(root, "server.mjs"),
+      "setTimeout(() => process.exit(0), 150);\n"
+    );
+    const fingerprint = prototypeDependencyFingerprint(root);
+    writeFileSync(
+      path.join(root, "node_modules", PREVIEW_DEPENDENCY_FINGERPRINT_FILE),
+      `${fingerprint}\n`
+    );
+
+    const outcome = await startPreviewServer(
+      {
+        root,
+        command: "npm run dev",
+        port: 49_999,
+        url: "http://127.0.0.1:49999",
+        timeoutMs: 3_000,
+        onReadiness: () => {},
+        onExit: () => {}
+      },
+      { ...defaultPreviewSupervisorDeps, isPortFree: async () => true }
+    );
+
+    expect(outcome.readiness).toBe("failed");
+    expect(outcome.reason).toBe("dev_server_exited");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("preview timeout terminates the Runtime-owned process tree", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "ikran-preview-process-tree-"));
+  const leakedMarker = path.join(root, "leaked.txt");
+  try {
+    mkdirSync(path.join(root, "node_modules"));
+    writeFileSync(
+      path.join(root, "package.json"),
+      `${JSON.stringify({ scripts: { dev: "node parent.mjs" } })}\n`
+    );
+    writeFileSync(
+      path.join(root, "parent.mjs"),
+      `import { spawn } from "node:child_process";
+spawn(process.execPath, ["-e", "setTimeout(() => require('node:fs').writeFileSync(process.argv[1], 'leaked'), 1000)", ${JSON.stringify(leakedMarker)}], { stdio: "ignore" });
+setInterval(() => {}, 1000);
+`
+    );
+    const fingerprint = prototypeDependencyFingerprint(root);
+    writeFileSync(
+      path.join(root, "node_modules", PREVIEW_DEPENDENCY_FINGERPRINT_FILE),
+      `${fingerprint}\n`
+    );
+
+    const outcome = await startPreviewServer(
+      {
+        root,
+        command: "npm run dev",
+        port: 49_998,
+        url: "http://127.0.0.1:49998",
+        timeoutMs: 300,
+        onReadiness: () => {},
+        onExit: () => {}
+      },
+      { ...defaultPreviewSupervisorDeps, isPortFree: async () => true }
+    );
+    expect(outcome.reason).toBe("preview_timeout");
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    expect(() => readFileSync(leakedMarker, "utf8")).toThrow();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("re-declaring a preview keeps the same surface and preview URL", async () => {
@@ -953,7 +1099,7 @@ test("allocatePreviewPort skips claimed ports and reports exhaustion", async () 
   ).toBeNull();
 });
 
-test("an occupied port already serving this preview is reused as ready", async () => {
+test("an occupied port without a Runtime-owned process fails as a conflict", async () => {
   const transitions: Array<[string, string | null]> = [];
   const outcome = await startPreviewServer(
     {
@@ -966,10 +1112,65 @@ test("an occupied port already serving this preview is reused as ready", async (
     },
     supervisor({ isPortFree: async () => false, probeUrl: async () => true })
   );
-  expect(outcome).toEqual({ readiness: "ready", reason: null });
+  expect(outcome).toMatchObject({
+    readiness: "failed",
+    reason: "port_conflict"
+  });
   expect(transitions).toEqual([
     ["starting", null],
-    ["ready", null]
+    ["failed", "port_conflict"]
+  ]);
+});
+
+test("changed process declarations replace the old owner before reusing its port", async () => {
+  let clock = 0;
+  let running = false;
+  let firstKilled = false;
+  const starts: Array<{ root: string; command: string; port: number }> = [];
+  const deps: PreviewSupervisorDeps = {
+    dependenciesInstalled: () => true,
+    installDependencies: async () => true,
+    startDevServer: (input) => {
+      starts.push(input);
+      running = true;
+      let resolveExit!: (value: { code: number | null; signal: string | null }) => void;
+      const exited = new Promise<{ code: number | null; signal: string | null }>(
+        (resolve) => {
+          resolveExit = resolve;
+        }
+      );
+      return {
+        exited,
+        kill: () => {
+          if (starts.length === 1) firstKilled = true;
+          running = false;
+          resolveExit({ code: 0, signal: "SIGTERM" });
+        }
+      };
+    },
+    probeUrl: async () => true,
+    isPortFree: async () => !running,
+    sleep: async () => {
+      clock += 250;
+    },
+    now: () => clock
+  };
+  const base = {
+    command: "npm run dev",
+    port: PREVIEW_PORT_BASE,
+    url: previewUrlForPort(PREVIEW_PORT_BASE),
+    onReadiness: () => {},
+    onExit: () => {}
+  };
+
+  expect((await startPreviewServer({ ...base, root: "/tmp/prototype-a" }, deps)).readiness)
+    .toBe("ready");
+  expect((await startPreviewServer({ ...base, root: "/tmp/prototype-b" }, deps)).readiness)
+    .toBe("ready");
+  expect(firstKilled).toBe(true);
+  expect(starts.map(({ root }) => root)).toEqual([
+    "/tmp/prototype-a",
+    "/tmp/prototype-b"
   ]);
 });
 

@@ -1318,12 +1318,19 @@ export async function recordPreview(
       readiness: outcome.readiness,
       readiness_reason: outcome.reason
     };
-  if (outcome.readiness !== "ready") {
+  if (outcome.readiness !== "ready" || settledSurface.stale) {
+    const previewReason = settledSurface.stale
+      ? settledSurface.stale_reason ?? "dev_server_exited"
+      : outcome.reason ?? "preview_not_ready";
     return {
       ok: false,
       reason: "preview_not_ready",
-      preview_reason: outcome.reason ?? "preview_not_ready",
-      ...(outcome.diagnosis ? { diagnosis: outcome.diagnosis } : {}),
+      preview_reason: previewReason,
+      ...(outcome.diagnosis
+        ? { diagnosis: outcome.diagnosis }
+        : settledSurface.stale
+          ? { diagnosis: { kind: "dev_server_exited" as const } }
+          : {}),
       run: upserted.run,
       surface: settledSurface,
       preview_url: surfaceUrl
