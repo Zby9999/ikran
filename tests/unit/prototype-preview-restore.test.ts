@@ -309,7 +309,12 @@ test("a failed readiness is terminal: no shutdown parking, no restore retry", as
         installDependencies: async () => false
       })
     });
-    if (!preview.ok) throw new Error(JSON.stringify(preview));
+    expect(preview).toMatchObject({
+      ok: false,
+      reason: "preview_not_ready",
+      preview_reason: "install_failed"
+    });
+    if (preview.ok || preview.reason !== "preview_not_ready") return;
     expect(preview.surface.readiness).toBe("failed");
 
     // Shutdown parks nothing: the failure stays the surface's honest state.

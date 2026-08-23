@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ikran",
   "version": "0.1.0-alpha.7",
-  "description": "Local Ikran research workbench: MCP tools plus Ikran Alignment, Ikran Extraction, and Ikran Governance skills. Install the matching extracted Release Kit, not this Git repository.",
+  "description": "Local Ikran research workbench: MCP tools plus Alignment, Extraction, Prototype, and Governance skills. Install the matching extracted Release Kit, not this Git repository.",
   "author": {
     "name": "Ikran",
     "url": "https://github.com/Zby9999/ikran"

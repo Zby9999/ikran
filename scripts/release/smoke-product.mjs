@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { readFile, rm } from "node:fs/promises";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { DatabaseSync } from "node:sqlite";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { ReleasePolicyError } from "./policy.mjs";
@@ -107,11 +108,63 @@ export async function smokeProductKit({ root, timeoutMs = 120_000 }) {
       );
     }
 
+    await callToolOk(
+      client,
+      "create_or_open_project",
+      { path: projectDir },
+      timeoutMs
+    );
+    writePrototypeFixture(projectDir);
+    seedPrototypeValidation(projectDir);
+    for (const [artifactPath, artifactType] of [
+      ["prototype/package.json", "code"],
+      ["prototype/server.mjs", "code"],
+      ["prototype/index.html", "prototype"]
+    ]) {
+      await callToolOk(
+        client,
+        "record_artifact_written",
+        {
+          path: artifactPath,
+          artifactType,
+          semanticPurpose: "Release-gate prototype preview fixture."
+        },
+        timeoutMs
+      );
+    }
+    const preview = await callToolOk(
+      client,
+      "record_preview",
+      {
+        runId: "release-gate-run",
+        sourceArtifactPath: "prototype/index.html",
+        prototypeRoot: "prototype",
+        routePath: "/",
+        surfaceKey: "release-gate-home",
+        name: "Release Gate Home",
+        seedReferenceIds: ["seed-release-gate"],
+        evidenceVersionIds: ["evidence-release-gate"]
+      },
+      timeoutMs
+    );
+    if (
+      preview.readiness !== "ready" ||
+      preview.surface?.readiness !== "ready" ||
+      preview.surface?.stale !== false
+    ) {
+      throw new ReleasePolicyError(
+        "prototype_preview_not_ready",
+        `Product Kit preview did not settle ready/non-stale: ${JSON.stringify(preview)}`
+      );
+    }
+    await verifyWorkbenchIframe(kitRoot, workbenchUrl, timeoutMs);
+
     return Object.freeze({
       kit: "product",
       tools: tools.tools.length,
       workbenchOrigin: parsed.origin,
-      runtimeService: "ikran-runtime"
+      runtimeService: "ikran-runtime",
+      prototypeSurface: "live"
     });
   } finally {
     const bridgePid = transport?.pid;
@@ -130,6 +183,126 @@ export async function smokeProductKit({ root, timeoutMs = 120_000 }) {
       rm(stateDir, { recursive: true, force: true }),
       rm(projectDir, { recursive: true, force: true })
     ]);
+  }
+}
+
+async function callToolOk(client, name, args, timeoutMs) {
+  const result = await within(
+    client.callTool({ name, arguments: args }),
+    timeoutMs,
+    name
+  );
+  const structured = result?.structuredContent;
+  if (!structured || structured.ok !== true) {
+    throw new ReleasePolicyError(
+      "product_tool_failed",
+      `${name} failed: ${JSON.stringify(structured ?? result)}`
+    );
+  }
+  return structured;
+}
+
+function writePrototypeFixture(projectDir) {
+  const root = path.join(projectDir, "prototype");
+  mkdirSync(path.join(root, "node_modules"), { recursive: true });
+  writeFileSync(
+    path.join(root, "package.json"),
+    `${JSON.stringify({
+      name: "ikran-release-gate-preview",
+      private: true,
+      scripts: { dev: "node server.mjs" }
+    })}\n`
+  );
+  writeFileSync(
+    path.join(root, "server.mjs"),
+    `import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+const root = path.dirname(fileURLToPath(import.meta.url));
+http.createServer((_request, response) => {
+  response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  response.end(fs.readFileSync(path.join(root, "index.html"), "utf8"));
+}).listen(Number(process.env.PORT), "127.0.0.1");
+`
+  );
+  writeFileSync(
+    path.join(root, "index.html"),
+    "<!doctype html><html><body><h1 id=\"release-prototype\">Ikran prototype is live</h1></body></html>\n"
+  );
+}
+
+function seedPrototypeValidation(projectDir) {
+  const db = new DatabaseSync(path.join(projectDir, ".ikran", "ikran.db"));
+  try {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO seed_references
+       (id, figma_seed_reference, original_design_intent, created_at,
+        registered_via, file_key, node_id)
+       VALUES (?, ?, ?, ?, 'agent', ?, ?)`
+    ).run(
+      "seed-release-gate",
+      "https://www.figma.com/design/ReleaseGate/Frame?node-id=1-1",
+      "Release-gate prototype",
+      now,
+      "ReleaseGate",
+      "1:1"
+    );
+    db.prepare(
+      `INSERT INTO figma_evidence_surfaces
+       (id, seed_reference_id, figma_seed_reference, frame_node_id, frame_name,
+        evidence_views_json, created_at)
+       VALUES (?, ?, ?, '1:1', 'Release Gate', '{}', ?)`
+    ).run(
+      "evidence-release-gate",
+      "seed-release-gate",
+      "https://www.figma.com/design/ReleaseGate/Frame?node-id=1-1",
+      now
+    );
+    db.prepare(
+      `UPDATE project_phase SET phase = 'prototype_validation', updated_at = ?
+       WHERE singleton = 1`
+    ).run(now);
+  } finally {
+    db.close();
+  }
+}
+
+async function verifyWorkbenchIframe(kitRoot, workbenchUrl, timeoutMs) {
+  const playwrightUrl = pathToFileURL(
+    path.join(kitRoot, "node_modules", "playwright-core", "index.mjs")
+  ).href;
+  const { chromium } = await import(playwrightUrl);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(workbenchUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    const tokenInput = page.getByRole("textbox", {
+      name: "Figma Personal Access Token"
+    });
+    const selectTool = page.getByRole("button", { name: "Select (V)" });
+    await Promise.race([
+      tokenInput.waitFor({ state: "visible", timeout: timeoutMs }),
+      selectTool.waitFor({ state: "visible", timeout: timeoutMs })
+    ]);
+    if (await tokenInput.isVisible()) {
+      await tokenInput.fill("figd_ok_release_gate");
+      await page.getByRole("button", { name: "Check Figma token" }).click();
+      await page.getByRole("button", { name: "Enter Canvas" }).click();
+    }
+    const iframe = page.getByTestId("prototype-surface-projection-live");
+    await iframe.waitFor({ state: "visible", timeout: timeoutMs });
+    const heading = iframe.contentFrame().locator("#release-prototype");
+    await heading.waitFor({ state: "visible", timeout: timeoutMs });
+    if ((await heading.textContent()) !== "Ikran prototype is live") {
+      throw new ReleasePolicyError(
+        "prototype_iframe_unavailable",
+        "Workbench did not render the ready Prototype Surface as a live iframe"
+      );
+    }
+  } finally {
+    await browser.close();
   }
 }
 

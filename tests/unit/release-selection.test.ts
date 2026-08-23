@@ -56,6 +56,7 @@ describe("release selection policy", () => {
     expect(paths).toContain("skills/ikran-alignment/SKILL.md");
     expect(paths).toContain("skills/ikran-extraction/SKILL.md");
     expect(paths).toContain("skills/ikran-governance/SKILL.md");
+    expect(paths).toContain("skills/ikran-prototype/SKILL.md");
     expect(paths).toContain("app/page.tsx");
     expect(paths).toContain("bin/ikran-runtime.mjs");
     expect(paths).toContain("lib/mcp/register-tools.ts");
@@ -97,6 +98,7 @@ describe("release selection policy", () => {
     expect(paths).toContain("skills/ikran-alignment/SKILL.md");
     expect(paths).toContain("skills/ikran-extraction/SKILL.md");
     expect(paths).toContain("skills/ikran-governance/SKILL.md");
+    expect(paths).toContain("skills/ikran-prototype/SKILL.md");
     expect(paths.some((file: string) => file.startsWith("app/prototypes/"))).toBe(false);
     expect(paths.some(isForbidden)).toBe(false);
   });
@@ -110,6 +112,7 @@ describe("release selection policy", () => {
     expect(paths).toContain("skills/ikran-alignment/SKILL.md");
     expect(paths).toContain("skills/ikran-extraction/SKILL.md");
     expect(paths).toContain("skills/ikran-governance/SKILL.md");
+    expect(paths).toContain("skills/ikran-prototype/SKILL.md");
     expect(paths).not.toContain("plugin.json");
     expect(paths).not.toContain("mcp.json");
     expect(paths).not.toContain(".cursor-plugin/plugin.json");
@@ -516,6 +519,7 @@ function makeRepositoryFixture() {
     "skills/ikran-governance/SKILL.md": "# Ikran Governance\n",
     "skills/ikran-alignment/SKILL.md": "# Ikran Alignment\n",
     "skills/ikran-extraction/SKILL.md": "# Ikran Extraction\n",
+    "skills/ikran-prototype/SKILL.md": "# Ikran Prototype\n",
     "app/layout.tsx": "export default function Layout() { return null; }\n",
     "app/page.tsx": "export default function Page() { return null; }\n",
     "bin/ikran.mjs": "#!/usr/bin/env node\nexport {};\n",

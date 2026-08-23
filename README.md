@@ -186,7 +186,7 @@ claude --plugin-dir /absolute/path/to/extracted-ikran
 ```
 
 That adapter starts `ikran-mcp --prod` and exposes `skills/ikran-alignment`,
-`skills/ikran-extraction`, and `skills/ikran-governance`. Do not publish this repository as a Claude
+`skills/ikran-extraction`, `skills/ikran-prototype`, and `skills/ikran-governance`. Do not publish this repository as a Claude
 marketplace plugin: `--prod` still requires the production build created by
 `npm run setup:product`, which Claude's bounded `npm ci --ignore-scripts` does
 not replace.

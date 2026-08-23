@@ -123,5 +123,28 @@ test("returns seeds, design-system version, and the rebuild contract", async () 
   expect(result.rebuild_contract).toBe(PROTOTYPE_REBUILD_CONTRACT);
   expect(result.rebuild_contract).toContain("get_design_context");
   expect(result.rebuild_contract).toContain("record_preview");
+  expect(result.preview_contract).toEqual({
+    sequence: [
+      "write_complete_prototype",
+      "declare_prototype_and_package_artifacts",
+      "record_preview_once",
+      "verify_ready_surface"
+    ],
+    server: {
+      processOwner: "runtime",
+      host: "127.0.0.1",
+      portEnvironmentVariable: "PORT"
+    },
+    declaration: {
+      sourceArtifactPath: "declared prototype/code entry artifact",
+      prototypeRoot: "directory containing package.json",
+      packageMetadata: ["scripts.dev", "dependencies", "devDependencies"]
+    },
+    completion: { readiness: "ready", stale: false },
+    repair: {
+      error: "preview_not_ready",
+      retryIdentity: "same runId and surfaceKey"
+    }
+  });
   expect(JSON.stringify(result)).not.toContain("figd_ok_secret_never_return");
 });

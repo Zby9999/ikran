@@ -21,7 +21,7 @@ export function registerPrototypeRebuildContextTools(
     "get_prototype_rebuild_context",
     {
       description:
-        "Returns the seed reconstruction context for the prototype_validation phase: seed source identities (fileKey/nodeId/figmaLink), current evidence surface ids, the design-system version, and the rebuild contract. Rebuild the seed page from the LIVE Figma design context fetched via the host's Figma MCP get_design_context — current Figma state is the source of truth; persisted screenshots are auxiliary fallback only. Then declare artifacts and call record_preview with the returned seedReferenceIds and evidence surface ids.",
+        "Returns the authoritative seed reconstruction and machine-readable preview contracts for prototype_validation. Follow preview_contract in order: write the complete prototype, declare prototype and package artifacts, then call record_preview once. Runtime owns PORT and the dev-server process; completion requires readiness=ready and stale=false.",
       inputSchema: emptyInputSchema
     },
     async () => {

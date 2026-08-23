@@ -19,7 +19,7 @@ export function registerPrototypePreviewTools(
     "record_preview",
     {
       description:
-        "Declare a prototype preview after writing the code and declaring its artifact with record_artifact_written. Creates or updates one prototype run plus one Prototype Evidence Surface per previewable page (surfaceKey), and records the run inputs: seed reference ids, evidence version ids (Figma Evidence Surface ids) and the Runtime-derived design-system version. Pass routePath explicitly for every page (`/` for home, `/projects/atlas` for that route); sourceArtifactPath is provenance and is never guessed into a framework route. Runtime — not you — owns the dev server: it installs, starts, probes and reports readiness (installing / starting / ready / failed) on a stable preview URL. Never start, restart or supervise a dev server yourself, and never pass a preview origin or URL. Rejected before the designer confirms the draft design system (phase_gate). During prototype_validation, seedReferenceIds and evidenceVersionIds are required. After the first successful record_preview, Runtime watches prototype files and refreshes the Workbench screenshot itself — do not recapture by calling this tool again on ordinary source/style edits. Call it again only to declare a new page/route, or after the surface goes stale because the dev server exited or became unreachable.",
+        "Hand a complete, declared prototype to the Runtime-owned Workbench preview. Follow get_prototype_rebuild_context.preview_contract first. Creates or updates one run and one surface per surfaceKey; pass explicit sourceArtifactPath, prototypeRoot, routePath, runId, surfaceKey, seedReferenceIds, and evidenceVersionIds. Runtime installs dependencies, injects PORT, starts the dev script, and requires a stable ready/non-stale surface before this tool succeeds. preview_not_ready includes a typed diagnosis; repair it and retry with the same runId and surfaceKey. After success, Runtime watches ordinary source/style edits and refreshes the screenshot without another call.",
       inputSchema: recordPreviewInputSchema
     },
     async (args) => {
@@ -29,8 +29,14 @@ export function registerPrototypePreviewTools(
         return failureResult("record_preview", active.reason, rt);
       }
       const result = await recordPreviewCommand(active.project.path, args);
-      return result.ok
-        ? successResult(rt, result)
+      if (result.ok) return successResult(rt, result);
+      return result.reason === "preview_not_ready"
+        ? failureResult("record_preview", result.reason, rt, {
+            preview_reason: result.preview_reason,
+            diagnosis: result.diagnosis,
+            preview_url: result.preview_url,
+            surface: result.surface
+          })
         : failureResult("record_preview", result.reason, rt);
     }
   );

@@ -422,13 +422,13 @@ export const recordPreviewInputShape = {
     .string()
     .optional()
     .describe(
-      "Project-relative directory Runtime installs and starts the dev server in. Defaults to the project root."
+      "Project-relative directory containing the declared package.json whose scripts.dev and dependencies/devDependencies define the Runtime-owned preview. Defaults to the project root."
     ),
   devCommand: z
     .string()
     .optional()
     .describe(
-      "Dev server command Runtime runs. Defaults to `npm run dev`. Must be a plain package-manager script invocation (e.g. `npm run dev`, `pnpm dev`, `npx vite`); shell chaining, pipes, redirects, or arbitrary commands are rejected."
+      "Dev server command Runtime runs with PORT injected. Defaults to `npm run dev`. The script must bind 127.0.0.1 and use PORT. Must be a plain package-manager script invocation; shell composition is rejected."
     ),
   surfaceKey: z
     .string()

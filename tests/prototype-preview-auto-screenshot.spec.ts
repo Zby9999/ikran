@@ -173,6 +173,14 @@ test("Runtime recaptures the Prototype screenshot after a code edit without anot
     );
     expect(preview.ok).toBe(true);
 
+    await page.goto(workbenchUrl);
+    await enterCanvas(page);
+    const live = page.getByTestId("prototype-surface-projection-live");
+    await expect(live).toBeVisible({ timeout: 20_000 });
+    await expect(live.contentFrame().locator("#heading")).toHaveText(
+      "Version one"
+    );
+
     const second = sc(
       await client.callTool({
         name: "record_preview",
@@ -207,8 +215,6 @@ test("Runtime recaptures the Prototype screenshot after a code edit without anot
     const before = await listSurfaces(port, token);
     const beforeAt = String(before[0]?.screenshot_captured_at);
 
-    await page.goto(workbenchUrl);
-    await enterCanvas(page);
     const screenshot = page.getByTestId(
       "prototype-surface-projection-screenshot"
     );

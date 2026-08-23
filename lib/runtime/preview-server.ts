@@ -15,8 +15,9 @@
 // the state machine without spawning processes or binding ports.
 
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer } from "node:net";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { stopAllPrototypePreviewRefresh } from "./prototype-preview-refresh";
@@ -33,7 +34,41 @@ export const PREVIEW_PORT_RANGE = 100;
 
 /** Overall budget for one record_preview readiness attempt. */
 export const PREVIEW_READY_TIMEOUT_MS = 90_000;
+/** A preview must keep answering across this window before it is declared ready. */
+export const PREVIEW_STABLE_WINDOW_MS = 750;
 const PREVIEW_PROBE_INTERVAL_MS = 250;
+const PREVIEW_DIAGNOSTIC_LIMIT = 2_000;
+export const PREVIEW_DEPENDENCY_FINGERPRINT_FILE =
+  ".ikran-dependency-fingerprint";
+
+export type PreviewFailureKind =
+  | "install_failed"
+  | "port_conflict"
+  | "command_not_found"
+  | "dev_server_exited"
+  | "preview_timeout";
+
+export type PreviewFailureDiagnosis = {
+  kind: PreviewFailureKind;
+  exitCode?: number | null;
+  signal?: string | null;
+  stderrTail?: string;
+};
+
+export type PreviewProcessExit = {
+  code: number | null;
+  signal: string | null;
+  stderrTail?: string;
+};
+
+export type PreviewDependencyInstallResult =
+  | { ok: true }
+  | {
+      ok: false;
+      exitCode?: number | null;
+      signal?: string | null;
+      stderrTail?: string;
+    };
 
 /**
  * The Agent declares a dev command, but Runtime owns the shell — `devCommand`
@@ -52,7 +87,7 @@ export function isAllowedDevCommand(command: string): boolean {
 
 export interface PreviewProcessHandle {
   /** Resolves with the exit description once the dev server process ends. */
-  exited: Promise<{ code: number | null; signal: string | null }>;
+  exited: Promise<PreviewProcessExit>;
   kill(): void;
 }
 
@@ -60,7 +95,9 @@ export interface PreviewSupervisorDeps {
   /** True when the prototype root already has installed dependencies. */
   dependenciesInstalled(root: string): boolean;
   /** Blocking dependency install; resolves false when it fails. */
-  installDependencies(root: string): Promise<boolean>;
+  installDependencies(
+    root: string
+  ): Promise<boolean | PreviewDependencyInstallResult>;
   startDevServer(input: {
     root: string;
     command: string;
@@ -75,8 +112,80 @@ export interface PreviewSupervisorDeps {
 
 export type PreviewStartOutcome = {
   readiness: PreviewReadiness;
-  reason: string | null;
+  reason: PreviewFailureKind | null;
+  diagnosis?: PreviewFailureDiagnosis;
 };
+
+/** Digest of the inputs that determine the installed prototype dependency tree. */
+export function prototypeDependencyFingerprint(root: string): string | null {
+  const inputs = ["package.json"];
+  const lockfile = ["npm-shrinkwrap.json", "package-lock.json"].find((file) =>
+    existsSync(path.join(root, file))
+  );
+  if (lockfile) inputs.push(lockfile);
+  try {
+    const hash = createHash("sha256");
+    for (const relativePath of inputs) {
+      hash.update(relativePath);
+      hash.update("\0");
+      hash.update(
+        readFileSync(/* turbopackIgnore: true */ path.join(root, relativePath))
+      );
+      hash.update("\0");
+    }
+    return hash.digest("hex");
+  } catch {
+    return null;
+  }
+}
+
+export function previewDependencyInstallPlan(root: string): {
+  command: "npm";
+  args: string[];
+} {
+  const hasLock = ["npm-shrinkwrap.json", "package-lock.json"].some((file) =>
+    existsSync(path.join(root, file))
+  );
+  return hasLock
+    ? { command: "npm", args: ["ci", "--include=dev"] }
+    : {
+        command: "npm",
+        args: ["install", "--include=dev", "--no-package-lock"]
+      };
+}
+
+function sanitizeDiagnosticOutput(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  let output = value
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(
+      /\b((?:api[_-]?key|token|secret|password)\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s]+)/gi,
+      "$1[redacted]"
+    )
+    .replace(/\b(?:figd_|sk-|gh[pousr]_)[A-Za-z0-9_-]{12,}\b/g, "[redacted]")
+    .replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/g, "$1[redacted]@");
+  if (output.length > PREVIEW_DIAGNOSTIC_LIMIT) {
+    const marker = "\n...[truncated]...\n";
+    const headLength = Math.floor((PREVIEW_DIAGNOSTIC_LIMIT - marker.length) / 2);
+    output =
+      output.slice(0, headLength) +
+      marker +
+      output.slice(-(PREVIEW_DIAGNOSTIC_LIMIT - marker.length - headLength));
+  }
+  return output.trim();
+}
+
+function exitDiagnosis(exit: PreviewProcessExit): PreviewFailureDiagnosis {
+  const stderrTail = sanitizeDiagnosticOutput(exit.stderrTail);
+  const commandMissing =
+    exit.code === 127 || /(?:command not found|not found)/i.test(stderrTail ?? "");
+  return {
+    kind: commandMissing ? "command_not_found" : "dev_server_exited",
+    exitCode: exit.code,
+    signal: exit.signal,
+    ...(stderrTail ? { stderrTail } : {})
+  };
+}
 
 /**
  * Every dev server this Runtime spawned and has not seen exit. The Runtime
@@ -143,9 +252,17 @@ export async function startPreviewServer(
   if (!deps.dependenciesInstalled(input.root)) {
     input.onReadiness("installing", null);
     const installed = await deps.installDependencies(input.root);
-    if (!installed) {
+    if (installed === false || (typeof installed === "object" && !installed.ok)) {
+      const detail = typeof installed === "object" ? installed : undefined;
+      const stderrTail = sanitizeDiagnosticOutput(detail?.stderrTail);
+      const diagnosis: PreviewFailureDiagnosis = {
+        kind: "install_failed",
+        ...(detail?.exitCode !== undefined ? { exitCode: detail.exitCode } : {}),
+        ...(detail?.signal !== undefined ? { signal: detail.signal } : {}),
+        ...(stderrTail ? { stderrTail } : {})
+      };
       input.onReadiness("failed", "install_failed");
-      return { readiness: "failed", reason: "install_failed" };
+      return { readiness: "failed", reason: "install_failed", diagnosis };
     }
   }
 
@@ -154,12 +271,29 @@ export async function startPreviewServer(
   // An occupied port is only usable when it already answers as this preview;
   // anything else is a conflict the designer must resolve, not a retry loop.
   if (!(await deps.isPortFree(input.port))) {
-    if (await deps.probeUrl(input.url)) {
-      input.onReadiness("ready", null);
-      return { readiness: "ready", reason: null };
+    let stableSince: number | null = null;
+    while (deps.now() < deadline) {
+      if (!(await deps.probeUrl(input.url))) {
+        input.onReadiness("failed", "port_conflict");
+        return {
+          readiness: "failed",
+          reason: "port_conflict",
+          diagnosis: { kind: "port_conflict" }
+        };
+      }
+      stableSince ??= deps.now();
+      if (deps.now() - stableSince >= PREVIEW_STABLE_WINDOW_MS) {
+        input.onReadiness("ready", null);
+        return { readiness: "ready", reason: null };
+      }
+      await deps.sleep(PREVIEW_PROBE_INTERVAL_MS);
     }
-    input.onReadiness("failed", "port_conflict");
-    return { readiness: "failed", reason: "port_conflict" };
+    input.onReadiness("failed", "preview_timeout");
+    return {
+      readiness: "failed",
+      reason: "preview_timeout",
+      diagnosis: { kind: "preview_timeout" }
+    };
   }
 
   const handle = deps.startDevServer({
@@ -169,26 +303,33 @@ export async function startPreviewServer(
   });
   livePreviewHandles.add(handle);
 
-  let exitReason: string | null = null;
-  void handle.exited.then(() => {
+  let processExit: PreviewProcessExit | null = null;
+  void handle.exited.then((exit) => {
     livePreviewHandles.delete(handle);
-    exitReason = exitReason ?? "dev_server_exited";
+    processExit = processExit ?? exit;
   });
 
+  let stableSince: number | null = null;
   while (deps.now() < deadline) {
-    if (exitReason) {
-      input.onReadiness("failed", "dev_server_exited");
-      return { readiness: "failed", reason: "dev_server_exited" };
+    if (processExit) {
+      const diagnosis = exitDiagnosis(processExit);
+      input.onReadiness("failed", diagnosis.kind);
+      return { readiness: "failed", reason: diagnosis.kind, diagnosis };
     }
     if (await deps.probeUrl(input.url)) {
-      input.onReadiness("ready", null);
-      // No auto-restart: a later exit only marks the surface stale.
-      void handle.exited.then(() => {
-        if (!intentionallyStoppedPreviewHandles.has(handle)) {
-          input.onExit("dev_server_exited");
-        }
-      });
-      return { readiness: "ready", reason: null };
+      stableSince ??= deps.now();
+      if (deps.now() - stableSince >= PREVIEW_STABLE_WINDOW_MS) {
+        input.onReadiness("ready", null);
+        // No auto-restart: a later exit only marks the surface stale.
+        void handle.exited.then(() => {
+          if (!intentionallyStoppedPreviewHandles.has(handle)) {
+            input.onExit("dev_server_exited");
+          }
+        });
+        return { readiness: "ready", reason: null };
+      }
+    } else {
+      stableSince = null;
     }
     await deps.sleep(PREVIEW_PROBE_INTERVAL_MS);
   }
@@ -196,7 +337,11 @@ export async function startPreviewServer(
   handle.kill();
   livePreviewHandles.delete(handle);
   input.onReadiness("failed", "preview_timeout");
-  return { readiness: "failed", reason: "preview_timeout" };
+  return {
+    readiness: "failed",
+    reason: "preview_timeout",
+    diagnosis: { kind: "preview_timeout" }
+  };
 }
 
 /**
@@ -220,32 +365,97 @@ function shellCommand(root: string, command: string, port: number) {
   return spawn(command, {
     cwd: root,
     shell: true,
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
     env: { ...process.env, PORT: String(port) }
   });
 }
 
 export const defaultPreviewSupervisorDeps: PreviewSupervisorDeps = {
   dependenciesInstalled(root) {
-    return existsSync(path.join(root, "node_modules"));
+    const fingerprint = prototypeDependencyFingerprint(root);
+    if (!fingerprint) return false;
+    try {
+      return (
+        readFileSync(
+          path.join(root, "node_modules", PREVIEW_DEPENDENCY_FINGERPRINT_FILE),
+          "utf8"
+        ).trim() === fingerprint
+      );
+    } catch {
+      return false;
+    }
   },
   installDependencies(root) {
     return new Promise((resolve) => {
-      const child = spawn("npm", ["install"], {
+      const fingerprint = prototypeDependencyFingerprint(root);
+      if (!fingerprint) {
+        resolve({ ok: false, stderrTail: "package.json is missing or unreadable" });
+        return;
+      }
+      const plan = previewDependencyInstallPlan(root);
+      const child = spawn(plan.command, plan.args, {
         cwd: root,
-        shell: true,
-        stdio: "ignore"
+        shell: false,
+        stdio: ["ignore", "ignore", "pipe"]
       });
-      child.on("error", () => resolve(false));
-      child.on("exit", (code) => resolve(code === 0));
+      let settled = false;
+      let stderrTail = "";
+      child.stderr?.on("data", (chunk) => {
+        stderrTail = `${stderrTail}${String(chunk)}`.slice(-8_000);
+      });
+      child.on("error", (error) => {
+        if (settled) return;
+        settled = true;
+        resolve({ ok: false, stderrTail: `${stderrTail}\n${error.message}` });
+      });
+      child.on("exit", (code, signal) => {
+        if (settled) return;
+        settled = true;
+        if (code !== 0) {
+          resolve({ ok: false, exitCode: code, signal, stderrTail });
+          return;
+        }
+        try {
+          writeFileSync(
+            path.join(root, "node_modules", PREVIEW_DEPENDENCY_FINGERPRINT_FILE),
+            `${fingerprint}\n`,
+            "utf8"
+          );
+          resolve({ ok: true });
+        } catch (error) {
+          resolve({
+            ok: false,
+            exitCode: code,
+            signal,
+            stderrTail: error instanceof Error ? error.message : String(error)
+          });
+        }
+      });
     });
   },
   startDevServer({ root, command, port }) {
     const child = shellCommand(root, command, port);
-    const exited = new Promise<{ code: number | null; signal: string | null }>(
+    const exited = new Promise<PreviewProcessExit>(
       (resolve) => {
-        child.on("error", () => resolve({ code: null, signal: null }));
-        child.on("exit", (code, signal) => resolve({ code, signal }));
+        let settled = false;
+        let stderrTail = "";
+        child.stderr?.on("data", (chunk) => {
+          stderrTail = `${stderrTail}${String(chunk)}`.slice(-8_000);
+        });
+        child.on("error", (error) => {
+          if (settled) return;
+          settled = true;
+          resolve({
+            code: null,
+            signal: null,
+            stderrTail: `${stderrTail}\n${error.message}`
+          });
+        });
+        child.on("exit", (code, signal) => {
+          if (settled) return;
+          settled = true;
+          resolve({ code, signal, stderrTail });
+        });
       }
     );
     return {

@@ -39,9 +39,14 @@ import {
 } from "../../lib/runtime/prototype-preview-refresh";
 import {
   PREVIEW_PORT_BASE,
+  PREVIEW_DEPENDENCY_FINGERPRINT_FILE,
+  PREVIEW_STABLE_WINDOW_MS,
   allocatePreviewPort,
+  defaultPreviewSupervisorDeps,
   isAllowedDevCommand,
+  previewDependencyInstallPlan,
   previewUrlForPort,
+  prototypeDependencyFingerprint,
   startPreviewServer,
   type PreviewSupervisorDeps
 } from "../../lib/runtime/preview-server";
@@ -388,8 +393,12 @@ test("a failed dependency install fails the surface instead of hanging", async (
         installDependencies: async () => false
       })
     });
-    expect(result).toMatchObject({ ok: true, readiness: "failed" });
-    if (!result.ok) return;
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "preview_not_ready",
+      preview_reason: "install_failed"
+    });
+    if (result.ok || result.reason !== "preview_not_ready") return;
     expect(result.surface).toMatchObject({
       readiness: "failed",
       readiness_reason: "install_failed"
@@ -433,10 +442,156 @@ test("a preview URL that never answers fails on the readiness budget", async () 
       supervisor: supervisor({ probeUrl: async () => false }),
       timeoutMs: 1000
     });
-    expect(result).toMatchObject({ ok: true, readiness: "failed" });
-    if (!result.ok) return;
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "preview_not_ready",
+      preview_reason: "preview_timeout"
+    });
+    if (result.ok || result.reason !== "preview_not_ready") return;
     expect(result.surface.readiness_reason).toBe("preview_timeout");
   });
+});
+
+test("a transient first response is not reported ready when the process exits", async () => {
+  let exitProcess: ((value: { code: number | null; signal: string | null }) => void) | null = null;
+  const exited = new Promise<{ code: number | null; signal: string | null }>(
+    (resolve) => {
+      exitProcess = resolve;
+    }
+  );
+  let probes = 0;
+  const transitions: Array<[string, string | null]> = [];
+
+  const outcome = await startPreviewServer(
+    {
+      root: "/tmp/prototype",
+      command: "npm run dev",
+      port: PREVIEW_PORT_BASE,
+      url: previewUrlForPort(PREVIEW_PORT_BASE),
+      onReadiness: (readiness, reason) => transitions.push([readiness, reason]),
+      onExit: () => {}
+    },
+    supervisor({
+      startDevServer: () => ({ exited, kill: () => {} }),
+      probeUrl: async () => {
+        probes += 1;
+        if (probes === 1) exitProcess!({ code: 1, signal: null });
+        return true;
+      }
+    })
+  );
+
+  expect(outcome).toMatchObject({
+    readiness: "failed",
+    reason: "dev_server_exited"
+  });
+  expect(transitions).toEqual([
+    ["starting", null],
+    ["failed", "dev_server_exited"]
+  ]);
+});
+
+test("readiness requires successful probes across the stability window", async () => {
+  let probes = 0;
+  const outcome = await startPreviewServer(
+    {
+      root: "/tmp/prototype",
+      command: "npm run dev",
+      port: PREVIEW_PORT_BASE,
+      url: previewUrlForPort(PREVIEW_PORT_BASE),
+      onReadiness: () => {},
+      onExit: () => {}
+    },
+    supervisor({ probeUrl: async () => (++probes > 0) })
+  );
+
+  expect(PREVIEW_STABLE_WINDOW_MS).toBe(750);
+  expect(outcome.readiness).toBe("ready");
+  expect(probes).toBeGreaterThanOrEqual(4);
+});
+
+test("dependency readiness follows package and lockfile content, not node_modules existence", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "ikran-preview-deps-"));
+  try {
+    mkdirSync(path.join(root, "node_modules"));
+    writeFileSync(
+      path.join(root, "package.json"),
+      JSON.stringify({ scripts: { dev: "vite" }, devDependencies: { vite: "1.0.0" } })
+    );
+    writeFileSync(path.join(root, "package-lock.json"), "{\"lockfileVersion\":3}\n");
+
+    expect(defaultPreviewSupervisorDeps.dependenciesInstalled(root)).toBe(false);
+    const fingerprint = prototypeDependencyFingerprint(root);
+    expect(fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    writeFileSync(
+      path.join(root, "node_modules", PREVIEW_DEPENDENCY_FINGERPRINT_FILE),
+      `${fingerprint}\n`
+    );
+    expect(defaultPreviewSupervisorDeps.dependenciesInstalled(root)).toBe(true);
+
+    writeFileSync(
+      path.join(root, "package.json"),
+      JSON.stringify({ scripts: { dev: "vite" }, devDependencies: { vite: "2.0.0" } })
+    );
+    expect(defaultPreviewSupervisorDeps.dependenciesInstalled(root)).toBe(false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("dependency installs include dev packages without generating a source lockfile", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "ikran-preview-plan-"));
+  try {
+    writeFileSync(path.join(root, "package.json"), "{}\n");
+    expect(previewDependencyInstallPlan(root)).toEqual({
+      command: "npm",
+      args: ["install", "--include=dev", "--no-package-lock"]
+    });
+    writeFileSync(path.join(root, "package-lock.json"), "{}\n");
+    expect(previewDependencyInstallPlan(root)).toEqual({
+      command: "npm",
+      args: ["ci", "--include=dev"]
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("process failures return a bounded sanitized command diagnosis", async () => {
+  const secret = "do-not-return-this-secret";
+  const outcome = await startPreviewServer(
+    {
+      root: "/tmp/prototype",
+      command: "npm run dev",
+      port: PREVIEW_PORT_BASE,
+      url: previewUrlForPort(PREVIEW_PORT_BASE),
+      onReadiness: () => {},
+      onExit: () => {}
+    },
+    supervisor({
+      startDevServer: () => ({
+        exited: Promise.resolve({
+          code: 127,
+          signal: null,
+          stderrTail: `API_KEY=${secret}\nsh: vite: command not found\n${"x".repeat(10_000)}`
+        }),
+        kill: () => {}
+      }),
+      probeUrl: async () => false
+    })
+  );
+
+  expect(outcome).toMatchObject({
+    readiness: "failed",
+    reason: "command_not_found",
+    diagnosis: { kind: "command_not_found", exitCode: 127 }
+  });
+  expect(outcome.diagnosis?.stderrTail).toContain("[redacted]");
+  expect(outcome.diagnosis?.stderrTail).not.toContain(secret);
+  expect(outcome.diagnosis?.stderrTail).toBeDefined();
+  expect(outcome.diagnosis?.stderrTail?.length ?? Infinity).toBeLessThanOrEqual(
+    2_000
+  );
 });
 
 test("re-declaring a preview keeps the same surface and preview URL", async () => {

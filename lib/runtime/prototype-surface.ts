@@ -35,6 +35,7 @@ import {
   previewUrlForPort,
   startPreviewServer,
   type PreviewReadiness,
+  type PreviewFailureDiagnosis,
   type PreviewSupervisorDeps
 } from "./preview-server";
 import { capturePrototypeSurfaceScreenshot } from "./prototype-screenshot";
@@ -127,6 +128,7 @@ export type RecordPreviewFailureReason =
   | "missing_seed_evidence"
   | "artifact_path_escape"
   | "no_available_preview_port"
+  | "preview_not_ready"
   | "db_error";
 
 export type RecordPreviewResult =
@@ -140,7 +142,16 @@ export type RecordPreviewResult =
     }
   | {
       ok: false;
-      reason: RecordPreviewFailureReason;
+      reason: "preview_not_ready";
+      preview_reason: string;
+      diagnosis?: PreviewFailureDiagnosis;
+      run: PrototypeRunRecord;
+      surface: PrototypeSurfaceRecord;
+      preview_url: string;
+    }
+  | {
+      ok: false;
+      reason: Exclude<RecordPreviewFailureReason, "preview_not_ready">;
       phase?: ProjectPhase;
     };
 
@@ -1302,14 +1313,26 @@ export async function recordPreview(
   );
 
   const surface = getPrototypeSurface(projectPath, upserted.surface.id);
-  return {
-    ok: true,
-    run: upserted.run,
-    surface: surface ?? {
+  const settledSurface = surface ?? {
       ...upserted.surface,
       readiness: outcome.readiness,
       readiness_reason: outcome.reason
-    },
+    };
+  if (outcome.readiness !== "ready") {
+    return {
+      ok: false,
+      reason: "preview_not_ready",
+      preview_reason: outcome.reason ?? "preview_not_ready",
+      ...(outcome.diagnosis ? { diagnosis: outcome.diagnosis } : {}),
+      run: upserted.run,
+      surface: settledSurface,
+      preview_url: surfaceUrl
+    };
+  }
+  return {
+    ok: true,
+    run: upserted.run,
+    surface: settledSurface,
     readiness: outcome.readiness,
     preview_url: surfaceUrl,
     event_id: lifecycle.eventId

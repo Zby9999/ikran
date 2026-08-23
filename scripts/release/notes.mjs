@@ -21,7 +21,8 @@ export async function writeDraftReleaseNotes({ outDir, version, outputPath }) {
     `## What's new\n\n` +
     `- Adds \`skills/ikran-extraction\`, a deterministic route from completed Alignment evidence into Draft Design System owners.\n` +
     `- Splits the former Token bucket into independent Color, Typography, and Material reviews, while routing motion to Interaction and breakpoints to Layout.\n` +
-    `- Adds Runtime ownership checks and typed repair failures so incomplete or misplaced foundation extraction cannot finalize silently.\n\n` +
+    `- Adds Runtime ownership checks and typed repair failures so incomplete or misplaced foundation extraction cannot finalize silently.\n` +
+    `- Adds \`skills/ikran-prototype\`, a stable, typed Runtime handoff for first-attempt Workbench iframe previews.\n\n` +
     `## Download one Kit\n\n` +
     `- **Agent Plugin Kit** — production Runtime plus Agent Plugin 1.0 (\`plugin.json\`, \`mcp.json\`, \`skills/\`) and host-native Cursor/Codex adapters (\`.cursor-plugin/plugin.json\`, \`.codex-plugin/plugin.json\`). Does not include the Claude Code adapter.\n` +
     `- **Claude Plugin Kit** — the same production Runtime plus the Claude Code-native adapter (\`.claude-plugin/plugin.json\`, \`.mcp.json\`). Uses the 2KB-truncated MCP instruction budget. Does not include Cursor or Codex adapters.\n` +
@@ -35,7 +36,7 @@ export async function writeDraftReleaseNotes({ outDir, version, outputPath }) {
     "cd /absolute/path/to/your-project\n" +
     "claude --plugin-dir /absolute/path/to/extracted-ikran\n" +
     "```\n\n" +
-    "That adapter starts `ikran-mcp --prod` and exposes `skills/ikran-alignment`, `skills/ikran-extraction`, and `skills/ikran-governance`. Ask Claude to open Ikran, then open the returned localhost Workbench URL in the system browser.\n\n" +
+    "That adapter starts `ikran-mcp --prod` and exposes `skills/ikran-alignment`, `skills/ikran-extraction`, `skills/ikran-prototype`, and `skills/ikran-governance`. Ask Claude to open Ikran, then open the returned localhost Workbench URL in the system browser.\n\n" +
     "If you only need the MCP tools without the plugin Skill, register the same stdio entry at Claude's local scope. Do not commit another machine's Kit path into a shared project `.mcp.json`:\n\n" +
     "```bash\n" +
     "claude mcp add --transport stdio --scope local \\\n" +

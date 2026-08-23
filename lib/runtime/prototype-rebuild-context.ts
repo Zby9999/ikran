@@ -18,6 +18,31 @@ import { designSystemVersionOnDb } from "./prototype-surface";
 export const PROTOTYPE_REBUILD_CONTRACT =
   "Rebuild the seed page as the first prototype. Fetch the CURRENT Figma design context via the host's own Figma MCP get_design_context on each seed's source fileKey/nodeId — live Figma is the structural and visual source of truth. Persisted capture screenshots are auxiliary fallback only (via get_figma_connection_status / Figma Connection outage). Use design-system source for reusable tokens/rules, but the seed page structure/copy/layout comes from the live design context, not from invention. Then declare artifacts and call record_preview with these seedReferenceIds and currentEvidence surface ids as evidenceVersionIds.";
 
+/** Machine-readable preview handoff; prose above remains reconstruction guidance. */
+export const PROTOTYPE_PREVIEW_CONTRACT = Object.freeze({
+  sequence: [
+    "write_complete_prototype",
+    "declare_prototype_and_package_artifacts",
+    "record_preview_once",
+    "verify_ready_surface"
+  ],
+  server: {
+    processOwner: "runtime",
+    host: "127.0.0.1",
+    portEnvironmentVariable: "PORT"
+  },
+  declaration: {
+    sourceArtifactPath: "declared prototype/code entry artifact",
+    prototypeRoot: "directory containing package.json",
+    packageMetadata: ["scripts.dev", "dependencies", "devDependencies"]
+  },
+  completion: { readiness: "ready", stale: false },
+  repair: {
+    error: "preview_not_ready",
+    retryIdentity: "same runId and surfaceKey"
+  }
+} as const);
+
 export type PrototypeRebuildSeed = {
   seedReferenceId: string;
   figmaLink: string;
@@ -37,6 +62,7 @@ export type PrototypeRebuildContextResult =
       design_system_version: string;
       seeds: PrototypeRebuildSeed[];
       rebuild_contract: string;
+      preview_contract: typeof PROTOTYPE_PREVIEW_CONTRACT;
     }
   | { ok: false; reason: "phase_gate"; phase: ProjectPhase }
   | { ok: false; reason: "no_seed_reference" }
@@ -88,7 +114,8 @@ export function getPrototypeRebuildContext(
       ok: true,
       design_system_version: designSystemVersionOnDb(db),
       seeds,
-      rebuild_contract: PROTOTYPE_REBUILD_CONTRACT
+      rebuild_contract: PROTOTYPE_REBUILD_CONTRACT,
+      preview_contract: PROTOTYPE_PREVIEW_CONTRACT
     };
   } catch {
     return { ok: false, reason: "db_error" };
