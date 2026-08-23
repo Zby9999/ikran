@@ -287,7 +287,7 @@ test("09A design system browser: declare → render → approve write-back", asy
     );
     const buttonCodeLinks = ["components/Button.tsx"];
     writeSource("design-system/components/button.json", {
-      id: "button",
+      id: "button-spec",
       name: "Button",
       meaning: "Button component spec",
       status: "candidate",
@@ -396,6 +396,16 @@ test("09A design system browser: declare → render → approve write-back", asy
       "interaction-rules.json",
       [designerEditedCardId]
     ))).toMatchObject({ ok: true, record: { status: "ingested" } });
+    expect(structuredContent(await declare(
+      "design-system/component-list.json",
+      "component-list.json",
+      [annotationIds["component"]]
+    ))).toMatchObject({ ok: true, record: { status: "ingested" } });
+    expect(structuredContent(await declare(
+      "design-system/components/button.json",
+      "component-spec",
+      [annotationIds["component"]]
+    ))).toMatchObject({ ok: true, record: { status: "ingested" } });
 
     // Issues 36-40: the Agent drafts the complete Review privately, then
     // publishes the full batch. The Browser, not chat text, owns revision and
@@ -441,24 +451,45 @@ test("09A design system browser: declare → render → approve write-back", asy
     }));
     expect(newProposalResult).toMatchObject({ ok: true, proposal: { revision: 1 } });
     const newProposalId = String((newProposalResult.proposal as { id: string }).id);
+    const componentProposalResult = structuredContent(await client.callTool({
+      name: "propose_rule_update",
+      arguments: {
+        reviewId,
+        kind: "update",
+        classification: "proposed_update",
+        title: "Button action hierarchy",
+        changeDescription: "Keep one clear action hierarchy in every Button.",
+        fullRuleBody: JSON.stringify({
+          id: "button-spec",
+          value: { description: "Button keeps one clear action hierarchy." }
+        }),
+        reason: "The linked spec used a legacy id distinct from the inventory id.",
+        affectedItems: ["Button"],
+        evidenceRecordIds: [],
+        targetCategory: "component:button-spec",
+        sourceArtifactPath: "design-system/components/button.json",
+        entryId: "button-spec"
+      }
+    }));
+    expect(componentProposalResult).toMatchObject({
+      ok: true,
+      proposal: {
+        revision: 1,
+        change_description: "Keep one clear action hierarchy in every Button.",
+        target: { category: "component:button", entryId: "button" }
+      }
+    });
+    const componentProposalId = String(
+      (componentProposalResult.proposal as { id: string }).id
+    );
     expect(structuredContent(await client.callTool({
       name: "publish_rule_update_review",
       arguments: { reviewId }
-    }))).toMatchObject({ ok: true, proposal_count: 2 });
+    }))).toMatchObject({ ok: true, proposal_count: 3 });
     expect(structuredContent(await declare(
       "design-system/token.json",
       "token.json",
       [tokenDesignerEditedCardId, agentAcceptedCardId]
-    ))).toMatchObject({ ok: true, record: { status: "ingested" } });
-    expect(structuredContent(await declare(
-      "design-system/component-list.json",
-      "component-list.json",
-      [annotationIds["component"]]
-    ))).toMatchObject({ ok: true, record: { status: "ingested" } });
-    expect(structuredContent(await declare(
-      "design-system/components/button.json",
-      "component-spec",
-      [annotationIds["component"]]
     ))).toMatchObject({ ok: true, record: { status: "ingested" } });
     expect(structuredContent(await declare(
       "design-system/interaction-rules.json",
@@ -598,6 +629,17 @@ test("09A design system browser: declare → render → approve write-back", asy
     ).toBeVisible();
     await expect(page.getByRole("cell", { name: "hover" })).toBeVisible();
     await expect(page.getByRole("cell", { name: "disabled" })).toBeVisible();
+    const componentProposalCard = page.locator(".dsb-ru-card").filter({
+      hasText: "Button action hierarchy"
+    });
+    await expect(componentProposalCard).toBeVisible();
+    await componentProposalCard.getByRole("button", {
+      name: "Expand Button action hierarchy"
+    }).click();
+    await expect(componentProposalCard).toContainText(
+      "Keep one clear action hierarchy in every Button."
+    );
+    await expect(componentProposalCard).not.toContainText('"button-spec"');
 
     // ---- Inline rule edit: UI → source + DB + event → SSE refresh. ----
     await page.getByRole("tab", { name: "Foundations" }).click();
@@ -704,8 +746,36 @@ test("09A design system browser: declare → render → approve write-back", asy
     await expect(page.locator(".dsb-breadcrumb-current")).toHaveText(
       /^(Records|Interaction Records)$/
     );
-    await expect(interactionRecords.locator(".dsb-ru-record")).toHaveCount(2);
-    await expect(interactionRecords.getByRole("button", { name: "Check", exact: true })).toHaveCount(2);
+    await expect(interactionRecords.locator(".dsb-ru-record")).toHaveCount(3);
+    await expect(interactionRecords.getByRole("button", { name: "Check", exact: true })).toHaveCount(3);
+    const componentRecord = interactionRecords.locator(".dsb-ru-record").filter({
+      hasText: "Button action hierarchy"
+    });
+    await expect(componentRecord).toContainText(
+      "Keep one clear action hierarchy in every Button."
+    );
+    await expect(componentRecord).not.toContainText('"button-spec"');
+    await componentRecord.getByRole("button", { name: "Check", exact: true }).click();
+    await expect(page.getByTestId("ds-component-title")).toHaveText("Button");
+    await page
+      .getByRole("button", { name: /^(Records|Interaction records)$/ })
+      .click();
+    const componentRecordDecision = page
+      .getByTestId("rule-update-interaction-records")
+      .locator(".dsb-ru-record")
+      .filter({ hasText: "Button action hierarchy" });
+    await componentRecordDecision.getByRole("button", {
+      name: "Expand Button action hierarchy"
+    }).click();
+    await componentRecordDecision.getByRole("button", {
+      name: "Reject",
+      exact: true
+    }).click();
+    await expect(componentRecordDecision.getByRole("button", {
+      name: "Reject",
+      exact: true
+    })).toHaveCount(0);
+    await page.getByRole("tab", { name: "Foundations" }).click();
     await interactionNav.click();
 
     await updateProposalSlot.getByRole("button", { name: "Expand Calm feedback stays immediate" }).click();
@@ -718,6 +788,14 @@ test("09A design system browser: declare → render → approve write-back", asy
     await newProposalCard.getByRole("button", { name: "Accept", exact: true }).click();
     await expect(newProposalCard).toContainText("Waiting for Agent");
 
+    expect(structuredContent(await client.callTool({
+      name: "claim_rule_update_decision",
+      arguments: {}
+    }))).toMatchObject({
+      ok: true,
+      completed: true,
+      command: { payload: { proposal_id: componentProposalId, decision: "rejected" } }
+    });
     expect(structuredContent(await client.callTool({
       name: "claim_rule_update_decision",
       arguments: {}

@@ -2589,21 +2589,38 @@ export function DesignSystemBrowser({
 
   const navigateRuleUpdateCategory = useCallback(
     (category: RuleUpdateCategory, proposalId: string) => {
+      if (category.startsWith("component:")) {
+        const entryId = category.slice("component:".length);
+        const proposal = ruleUpdates.projection?.reviews
+          .flatMap((review) => review.proposals)
+          .find((item) => item.id === proposalId);
+        const targetPath = proposal?.target.proposedTargetPath ??
+          proposal?.target.sourceArtifactPath ?? null;
+        const component = model?.components.list.find((item) =>
+          item.entryId === entryId ||
+          item.spec?.entry_id === entryId ||
+          (targetPath !== null && item.spec?.source_artifact_path === targetPath)
+        );
+        // Keep Records open when even the inventory/specPath compatibility
+        // lookup cannot resolve a legacy orphan. Its embedded ProposalCard
+        // remains a complete Accept/Reject decision surface.
+        if (!component) return;
+        setShowRuleUpdateHistory(false);
+        setFocusedRuleUpdateProposal(proposalId);
+        window.setTimeout(
+          () => setFocusedRuleUpdateProposal((current) => current === proposalId ? null : current),
+          1_200
+        );
+        setSection("components");
+        setRoute({ kind: "leaf", section: "components", leaf: component.leafId });
+        return;
+      }
       setShowRuleUpdateHistory(false);
       setFocusedRuleUpdateProposal(proposalId);
       window.setTimeout(
         () => setFocusedRuleUpdateProposal((current) => current === proposalId ? null : current),
         1_200
       );
-      if (category.startsWith("component:")) {
-        const entryId = category.slice("component:".length);
-        const component = model?.components.list.find((item) => item.entryId === entryId);
-        if (component) {
-          setSection("components");
-          setRoute({ kind: "leaf", section: "components", leaf: component.leafId });
-        }
-        return;
-      }
       setSection("foundations");
       const leaf = category.slice("foundations.".length);
       setRoute(
@@ -2612,7 +2629,7 @@ export function DesignSystemBrowser({
           : { kind: "leaf", section: "foundations", leaf: leaf as DsLeafId }
       );
     },
-    [model]
+    [model, ruleUpdates.projection]
   );
 
   if (!mounted) return null;
@@ -2717,6 +2734,8 @@ export function DesignSystemBrowser({
       return (
         <RuleUpdateInteractionsPage
           projection={ruleUpdates.projection}
+          session={session}
+          onChanged={ruleUpdates.reload}
           onNavigate={navigateRuleUpdateCategory}
         />
       );
@@ -3210,6 +3229,13 @@ export function ComponentDetail({
   rows: RowSharedProps;
   session: string;
 }) {
+  // Component-level Rule Updates mount once, directly below the hero. The
+  // status/evidence rows reuse RowList for ordinary entry controls only;
+  // forwarding the proposal renderer there would duplicate the same card.
+  const technicalRows: RowSharedProps = {
+    ...rows,
+    renderRuleUpdateAfter: undefined
+  };
   // Status/evidence rows for the inventory + spec entries — built on toRow
   // (single owner of the row-key derivation) with display overrides.
   const statusRows: DsRow[] = [];
@@ -3708,7 +3734,7 @@ export function ComponentDetail({
               {statusRows.length > 0 ? (
                 <div className="dsb-reference-group">
                   <h3 className="dsb-reference-label">Status &amp; evidence</h3>
-                  <RowList rows={statusRows} {...rows} />
+                  <RowList rows={statusRows} {...technicalRows} />
                 </div>
               ) : null}
             </div>

@@ -19,10 +19,10 @@ export async function writeDraftReleaseNotes({ outDir, version, outputPath }) {
   const notes = `# Ikran v${safeVersion}\n\n` +
     `Alpha evaluation build for macOS on Apple Silicon. Download one product Kit: the Agent Plugin Kit (Cursor, Codex, Agent Plugin 1.0) or the Claude Plugin Kit (Claude Code beta, 2KB MCP contract). They are not interchangeable.\n\n` +
     `## What's new\n\n` +
-    `- Adds \`skills/ikran-prototype\`, a four-step contract for first-attempt Workbench iframe previews.\n` +
-    `- Makes \`record_preview\` wait for a stable live surface and return typed repair failures instead of reporting premature success.\n` +
-    `- Hardens preview port ownership, dependency preparation, process-tree cleanup, and bounded diagnostics.\n` +
-    `- Extends the Product Kit smoke test through MCP declaration, preview recording, and live iframe verification.\n\n` +
+    `- Unifies component Rule Update identity on the browsable \`component-list.json\` id while resolving source specs through \`specPath\`.\n` +
+    `- Canonicalizes linked legacy spec ids, rejects orphan component targets with actionable valid ids, and hardens Records Check navigation.\n` +
+    `- Makes unfinished proposals directly Acceptable or Rejectable from Records so a missing navigation target cannot deadlock review.\n` +
+    `- Separates the human-readable proposal summary from the complete machine-write body and adds Runtime, MCP, and Chromium regression coverage.\n\n` +
     `## Download one Kit\n\n` +
     `- **Agent Plugin Kit** — production Runtime plus Agent Plugin 1.0 (\`plugin.json\`, \`mcp.json\`, \`skills/\`) and host-native Cursor/Codex adapters (\`.cursor-plugin/plugin.json\`, \`.codex-plugin/plugin.json\`). Does not include the Claude Code adapter.\n` +
     `- **Claude Plugin Kit** — the same production Runtime plus the Claude Code-native adapter (\`.claude-plugin/plugin.json\`, \`.mcp.json\`). Uses the 2KB-truncated MCP instruction budget. Does not include Cursor or Codex adapters.\n` +

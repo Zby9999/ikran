@@ -744,7 +744,161 @@ test("component categories cannot authorize another component artifact", () => {
         sourceArtifactPath: "design-system/components/card.json"
       }
     })
-  ).toEqual({ ok: false, reason: "invalid_proposal_target" });
+  ).toEqual({
+    ok: false,
+    reason: "component_target_not_browsable",
+    details: { received_id: "button", valid_component_ids: [] }
+  });
+});
+
+test("component proposals canonicalize legacy spec ids to the browsable inventory id", () => {
+  const projectPath = createProject();
+  const db = openProjectDb(projectPath);
+  try {
+    db.prepare(
+      `INSERT INTO design_system_entries
+         (id, source_artifact_path, file_kind, section, entry_id, name,
+          value_json, meaning, status, links_json, position, created_at, updated_at)
+       VALUES
+         ('inventory-footer', 'design-system/component-list.json',
+          'component-list.json', 'components.inventory', 'component-footer',
+          'Footer', ?, 'Footer component', 'candidate', '[]', 0, ?, ?),
+         ('spec-footer', 'design-system/components/footer.json',
+          'component-spec', 'components.spec', 'component-footer-spec',
+          'Footer', '{}', 'Footer specification', 'candidate', '[]', 0, ?, ?)`
+    ).run(
+      JSON.stringify({
+        name: "Footer",
+        specPath: "design-system/components/footer.json"
+      }),
+      "2026-08-23T00:00:00.000Z",
+      "2026-08-23T00:00:00.000Z",
+      "2026-08-23T00:00:00.000Z",
+      "2026-08-23T00:00:00.000Z"
+    );
+  } finally {
+    closeProjectDb(db);
+  }
+
+  const review = createRuleUpdateReview(projectPath, {
+    context: "Footer component rule"
+  });
+  if (!review.ok) throw new Error(review.reason);
+  const proposal = draftRuleUpdateProposal(projectPath, {
+    reviewId: review.review.id,
+    kind: "new",
+    classification: "proposed_update",
+    title: "Footer spacing",
+    changeDescription: "Keep footer spacing consistent.",
+    fullRuleBody: JSON.stringify({
+      id: "component-footer-spec",
+      value: { description: "Footer spacing specification" }
+    }),
+    reason: "The rule belongs to Footer.",
+    affectedItems: ["Footer"],
+    evidenceRecordIds: [],
+    target: {
+      category: "component:component-footer-spec",
+      sourceArtifactPath: "design-system/components/footer.json",
+      entryId: "component-footer-spec"
+    }
+  });
+
+  expect(proposal).toMatchObject({
+    ok: true,
+    proposal: {
+      change_description: "Keep footer spacing consistent.",
+      full_rule_body: JSON.stringify({
+        id: "component-footer-spec",
+        value: { description: "Footer spacing specification" }
+      }),
+      target: {
+        category: "component:component-footer",
+        sourceArtifactPath: "design-system/components/footer.json",
+        entryId: "component-footer"
+      }
+    }
+  });
+  if (!proposal.ok) throw new Error(proposal.reason);
+  // Simulate a proposal persisted by the previous release. Read projection
+  // and publication must still recover it through inventory.specPath.
+  const legacyDb = openProjectDb(projectPath);
+  try {
+    legacyDb.prepare(
+      `UPDATE rule_update_proposal_revisions
+       SET target_category = 'component:component-footer-spec',
+           entry_id = 'component-footer-spec'
+       WHERE proposal_id = ?`
+    ).run(proposal.proposal.id);
+    legacyDb.prepare(
+      `UPDATE rule_update_proposals SET entry_id = 'component-footer-spec'
+       WHERE id = ?`
+    ).run(proposal.proposal.id);
+  } finally {
+    closeProjectDb(legacyDb);
+  }
+  expect(publishRuleUpdateReview(projectPath, review.review.id).ok).toBe(true);
+  expect(getRuleUpdateReviewProjection(projectPath)).toMatchObject({
+    ok: true,
+    categories_with_unfinished_proposals: ["component:component-footer"],
+    reviews: [{
+      proposals: [{
+        target: {
+          category: "component:component-footer",
+          entryId: "component-footer"
+        }
+      }]
+    }]
+  });
+});
+
+test("component proposals reject non-browsable ids with actionable inventory ids", () => {
+  const projectPath = createProject();
+  const db = openProjectDb(projectPath);
+  try {
+    db.prepare(
+      `INSERT INTO design_system_entries
+         (id, source_artifact_path, file_kind, section, entry_id, name,
+          value_json, meaning, status, links_json, position, created_at, updated_at)
+       VALUES ('inventory-footer', 'design-system/component-list.json',
+               'component-list.json', 'components.inventory',
+               'component-footer', 'Footer', ?, 'Footer component',
+               'candidate', '[]', 0, ?, ?)`
+    ).run(
+      JSON.stringify({
+        name: "Footer",
+        specPath: "design-system/components/footer.json"
+      }),
+      "2026-08-23T00:00:00.000Z",
+      "2026-08-23T00:00:00.000Z"
+    );
+  } finally {
+    closeProjectDb(db);
+  }
+  const review = createRuleUpdateReview(projectPath, { context: "Ghost target" });
+  if (!review.ok) throw new Error(review.reason);
+
+  expect(draftRuleUpdateProposal(projectPath, {
+    reviewId: review.review.id,
+    kind: "new",
+    classification: "proposed_update",
+    title: "Ghost rule",
+    fullRuleBody: "This must never become an orphan proposal.",
+    reason: "Regression fixture.",
+    affectedItems: [],
+    evidenceRecordIds: [],
+    target: {
+      category: "component:component-ghost",
+      sourceArtifactPath: "design-system/components/ghost.json"
+    }
+  })).toEqual({
+    ok: false,
+    reason: "component_target_not_browsable",
+    details: {
+      received_id: "component-ghost",
+      valid_component_ids: ["component-footer"]
+    }
+  });
 });
 
 test("base drift becomes needs_revision before the Agent may write", () => {

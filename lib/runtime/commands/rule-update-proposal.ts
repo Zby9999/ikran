@@ -43,6 +43,7 @@ export function proposeRuleUpdateCommand(
       kind: input.kind ?? "update",
       classification: input.classification ?? "proposed_update",
       title: input.title ?? "",
+      changeDescription: input.changeDescription,
       fullRuleBody: input.fullRuleBody ?? input.changeDescription ?? "",
       reason: input.reason,
       affectedItems: input.affectedItems,

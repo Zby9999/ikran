@@ -48,7 +48,7 @@ export function registerRuleUpdateTools(
     "publish_rule_update_review",
     {
       description:
-        "Publish every proposal in a draft Review as one visible batch and activate the Rule Update-specific designer wait. An empty batch completes immediately as an explicit no-change Review; an already completed Review is rejected.",
+        "Publish every proposal in a draft Review as one visible batch and activate the Rule Update-specific designer wait. Component targets must resolve to a browsable component-list.json id through its specPath; publishing rejects orphan targets with the valid component ids. An empty batch completes immediately as an explicit no-change Review; an already completed Review is rejected.",
       inputSchema: publishRuleUpdateReviewInputSchema
     },
     async (args) => {
@@ -56,14 +56,19 @@ export function registerRuleUpdateTools(
       const active = requireActiveProjectCommand();
       if (!active.ok) return failureResult("publish_rule_update_review", active.reason, rt);
       const result = publishRuleUpdateReviewCommand(active.project.path, args.reviewId);
-      return result.ok ? successResult(rt, result) : failureResult("publish_rule_update_review", result.reason, rt);
+      return result.ok ? successResult(rt, result) : failureResult(
+        "publish_rule_update_review",
+        result.reason,
+        rt,
+        "details" in result ? result.details : undefined
+      );
     }
   );
   mcp.registerTool(
     "propose_rule_update",
     {
       description:
-        "Draft one Rule Update proposal. For new/update/move pass the complete fullRuleBody. Retire is available only inside a managed Review: omit fullRuleBody and bind exactly one existing prose Rule in foundations.home/layout/interaction with sourceArtifactPath plus entryId; an accepted retire authorizes only that Rule's removal. Pass targetCategory (foundations.home/color/typography/materials/layout/interaction or component:<entryId>); move proposals also pass their typed sourceCategory. The draft stays private until publish_rule_update_review. This tool never edits source artifacts.",
+        "Draft one Rule Update proposal. For new/update/move pass the complete machine-write body in fullRuleBody and a short human-readable changeDescription. Retire is available only inside a managed Review: omit fullRuleBody and bind exactly one existing prose Rule in foundations.home/layout/interaction with sourceArtifactPath plus entryId; an accepted retire authorizes only that Rule's removal. Pass targetCategory as foundations.home/color/typography/materials/layout/interaction or component:<component-list.json id>. Component ids always come from design-system/component-list.json, never from the spec JSON id; Runtime accepts a linked legacy spec id only by canonicalizing it through specPath. Move proposals also pass their typed sourceCategory. The draft stays private until publish_rule_update_review. This tool never edits source artifacts.",
       inputSchema: proposeRuleUpdateInputSchema
     },
     async (args) => {
@@ -75,7 +80,12 @@ export function registerRuleUpdateTools(
       const result = proposeRuleUpdateCommand(active.project.path, args);
       return result.ok
         ? successResult(rt, result)
-        : failureResult("propose_rule_update", result.reason, rt);
+        : failureResult(
+            "propose_rule_update",
+            result.reason,
+            rt,
+            "details" in result ? result.details : undefined
+          );
     }
   );
 

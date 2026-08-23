@@ -8,6 +8,7 @@ import {
 } from "./agent-command";
 import { withProjectTransaction, openProjectDb, closeProjectDb } from "./db";
 import { buildLoggedEvent, insertEvent } from "./events";
+import { specPathMatchesSourceArtifact } from "./design-system-spec-path";
 import { canonicalizeArtifactPath } from "./source-artifact";
 import { settleOrRewaitReviewOnDb } from "./rule-update-apply";
 import {
@@ -18,7 +19,6 @@ import {
 } from "./rule-update-proposal";
 import {
   isRuleUpdateCategory,
-  ruleUpdateCategoryArtifact,
   ruleUpdateFoundationArtifact,
   type RuleUpdateCategory
 } from "./rule-update-category";
@@ -46,6 +46,7 @@ export type RuleUpdateProposalProjection = {
   kind: RuleUpdateProposalKind;
   classification: RuleUpdateClassification;
   title: string;
+  change_description: string;
   full_rule_body: string;
   current_rule_body: string | null;
   reason: string;
@@ -201,6 +202,7 @@ export type DraftRuleUpdateProposalInput = {
   kind: string;
   classification: string;
   title: string;
+  changeDescription?: string;
   fullRuleBody: string;
   reason: string;
   affectedItems: string[];
@@ -270,6 +272,128 @@ function canonicalTarget(
   };
 }
 
+type ComponentIdentity = {
+  inventoryId: string;
+  specId: string | null;
+  specPath: string;
+};
+
+type ComponentTargetFailure = {
+  ok: false;
+  reason: "component_target_not_browsable";
+  details: {
+    received_id: string;
+    valid_component_ids: string[];
+  };
+};
+
+function componentIdentitiesOnDb(db: DatabaseType): ComponentIdentity[] {
+  const inventoryRows = db
+    .prepare(
+      `SELECT entry_id, value_json
+       FROM design_system_entries
+       WHERE section = 'components.inventory'
+       ORDER BY position, entry_id`
+    )
+    .all() as Array<{ entry_id: string; value_json: string }>;
+  const specRows = db
+    .prepare(
+      `SELECT entry_id, source_artifact_path
+       FROM design_system_entries
+       WHERE section = 'components.spec'`
+    )
+    .all() as Array<{ entry_id: string; source_artifact_path: string }>;
+  return inventoryRows.flatMap((row) => {
+    try {
+      const value = JSON.parse(row.value_json) as { specPath?: unknown };
+      if (typeof value.specPath !== "string" || !value.specPath.trim()) return [];
+      const spec = specRows.find((candidate) =>
+        specPathMatchesSourceArtifact(value.specPath as string, candidate.source_artifact_path)
+      );
+      return [{
+        inventoryId: row.entry_id,
+        specId: spec?.entry_id ?? null,
+        specPath: spec?.source_artifact_path ?? value.specPath
+      }];
+    } catch {
+      return [];
+    }
+  });
+}
+
+function resolveComponentIdentityOnDb(
+  db: DatabaseType,
+  componentId: string,
+  artifactPath: string | null
+): ComponentIdentity | null {
+  const matches = componentIdentitiesOnDb(db).filter((identity) =>
+    (identity.inventoryId === componentId || identity.specId === componentId) &&
+    (artifactPath === null ||
+      specPathMatchesSourceArtifact(identity.specPath, artifactPath))
+  );
+  return matches.length === 1 ? matches[0]! : null;
+}
+
+function canonicalizeTargetOnDb(
+  db: DatabaseType,
+  target: RuleUpdateTarget
+): { ok: true; target: RuleUpdateTarget } | ComponentTargetFailure {
+  const validIds = () => componentIdentitiesOnDb(db).map((item) => item.inventoryId);
+  const canonicalizeCategory = (
+    category: RuleUpdateCategory,
+    artifactPath: string | null
+  ): { category: RuleUpdateCategory; identity: ComponentIdentity | null } | ComponentTargetFailure => {
+    if (!category.startsWith("component:")) {
+      return { category, identity: null };
+    }
+    const receivedId = category.slice("component:".length);
+    const identity = resolveComponentIdentityOnDb(db, receivedId, artifactPath);
+    if (!identity) {
+      return {
+        ok: false,
+        reason: "component_target_not_browsable",
+        details: {
+          received_id: receivedId,
+          valid_component_ids: validIds()
+        }
+      };
+    }
+    return {
+      category: `component:${identity.inventoryId}`,
+      identity
+    };
+  };
+
+  const destinationPath = target.proposedTargetPath ?? target.sourceArtifactPath;
+  const destination = canonicalizeCategory(target.category, destinationPath);
+  if ("ok" in destination) return destination;
+  const source = target.sourceCategory
+    ? canonicalizeCategory(target.sourceCategory, target.sourceArtifactPath)
+    : null;
+  if (source && "ok" in source) return source;
+  const identities = [destination.identity, source?.identity ?? null].filter(
+    (value): value is ComponentIdentity => value !== null
+  );
+  const entryId = target.entryId && identities.some(
+    (identity) =>
+      target.entryId === identity.inventoryId || target.entryId === identity.specId
+  )
+    ? identities.find(
+        (identity) =>
+          target.entryId === identity.inventoryId || target.entryId === identity.specId
+      )!.inventoryId
+    : target.entryId;
+  return {
+    ok: true,
+    target: {
+      ...target,
+      category: destination.category,
+      sourceCategory: source?.category ?? null,
+      entryId
+    }
+  };
+}
+
 function baseDigestOnDb(db: DatabaseType, target: RuleUpdateTarget): string | null {
   const targetPath = target.proposedTargetPath ?? target.sourceArtifactPath;
   if (!targetPath) return null;
@@ -287,17 +411,7 @@ function categoryMatchesArtifactOnDb(
   const foundationPath = ruleUpdateFoundationArtifact(category);
   if (foundationPath !== null) return artifactPath === foundationPath;
   const componentId = category.slice("component:".length);
-  const rows = db
-    .prepare(
-      `SELECT DISTINCT source_artifact_path
-       FROM design_system_entries
-       WHERE section = 'components.spec' AND entry_id = ?`
-    )
-    .all(componentId) as Array<{ source_artifact_path: string }>;
-  if (rows.length > 0) {
-    return rows.some((row) => row.source_artifact_path === artifactPath);
-  }
-  return artifactPath === ruleUpdateCategoryArtifact(category);
+  return resolveComponentIdentityOnDb(db, componentId, artifactPath) !== null;
 }
 
 function targetMatchesCategoriesOnDb(
@@ -368,11 +482,12 @@ export function draftRuleUpdateProposal(
   input: DraftRuleUpdateProposalInput
 ):
   | { ok: true; proposal: RuleUpdateProposalProjection }
-  | { ok: false; reason: string } {
+  | { ok: false; reason: string; details?: unknown } {
   const reviewId = text(input.reviewId);
   const kind = text(input.kind);
   const classification = text(input.classification);
   const title = text(input.title);
+  const changeDescription = text(input.changeDescription) || text(input.fullRuleBody);
   const fullRuleBody = text(input.fullRuleBody);
   const reason = text(input.reason);
   const affectedItems = (input.affectedItems ?? []).map(text).filter(Boolean);
@@ -389,29 +504,31 @@ export function draftRuleUpdateProposal(
   ) {
     return { ok: false, reason: "invalid_proposal" };
   }
-  const targetResult = canonicalTarget(projectPath, input.target);
-  if (!targetResult.ok) return targetResult;
-  const target = targetResult.target;
-  if (
-    kind === "move" &&
-    (!target.sourceCategory ||
-      !target.sourceArtifactPath ||
-      !target.proposedTargetPath ||
-      !target.entryId)
-  ) {
-    return { ok: false, reason: "invalid_proposal_target" };
-  }
-  if (
-    kind === "retire" &&
-    (!target.sourceArtifactPath ||
-      !target.entryId ||
-      target.sourceCategory ||
-      target.proposedTargetPath)
-  ) {
-    return { ok: false, reason: "invalid_proposal_target" };
-  }
+  const rawTargetResult = canonicalTarget(projectPath, input.target);
+  if (!rawTargetResult.ok) return rawTargetResult;
   try {
     return withProjectTransaction(projectPath, (db) => {
+      const canonicalized = canonicalizeTargetOnDb(db, rawTargetResult.target);
+      if (!canonicalized.ok) return canonicalized;
+      const target = canonicalized.target;
+      if (
+        kind === "move" &&
+        (!target.sourceCategory ||
+          !target.sourceArtifactPath ||
+          !target.proposedTargetPath ||
+          !target.entryId)
+      ) {
+        return { ok: false as const, reason: "invalid_proposal_target" };
+      }
+      if (
+        kind === "retire" &&
+        (!target.sourceArtifactPath ||
+          !target.entryId ||
+          target.sourceCategory ||
+          target.proposedTargetPath)
+      ) {
+        return { ok: false as const, reason: "invalid_proposal_target" };
+      }
       const review = reviewOnDb(db, reviewId);
       if (!review) return { ok: false as const, reason: "review_not_found" };
       if (review.status !== "draft") {
@@ -460,7 +577,7 @@ export function draftRuleUpdateProposal(
         kind,
         classification,
         title,
-        fullRuleBody,
+        changeDescription,
         reason,
         JSON.stringify(affectedItems),
         JSON.stringify(evidenceRecordIds),
@@ -499,6 +616,7 @@ export function draftRuleUpdateProposal(
           kind,
           classification,
           title,
+          change_description: changeDescription,
           full_rule_body: fullRuleBody,
           target_category: target.category,
           status: "pending_review"
@@ -521,6 +639,7 @@ function proposalProjectionOnDb(
   const row = db
     .prepare(
       `SELECT p.id, p.review_id, p.kind, p.classification, p.reason,
+              p.change_description,
               p.affected_items_json, p.evidence_record_ids_json, p.created_at,
               p.decided_at, p.current_revision,
               r.title, r.full_rule_body, r.target_category,
@@ -548,6 +667,7 @@ function proposalProjectionOnDb(
         review_id: string;
         kind: RuleUpdateProposalKind;
         classification: RuleUpdateClassification;
+        change_description: string;
         reason: string;
         affected_items_json: string;
         evidence_record_ids_json: string;
@@ -591,25 +711,28 @@ function proposalProjectionOnDb(
   else if (row.apply_status === "failed") status = "failed";
   else if (row.apply_status === "needs_revision") status = "needs_revision";
   else if (row.decision === "accepted") status = "waiting_agent";
+  const rawTarget: RuleUpdateTarget = {
+    category: row.target_category,
+    sourceCategory: row.source_category,
+    sourceArtifactPath: row.source_artifact_path,
+    entryId: row.entry_id,
+    proposedTargetPath: row.proposed_target_path
+  };
+  const canonicalizedTarget = canonicalizeTargetOnDb(db, rawTarget);
   return {
     id: row.id,
     review_id: row.review_id,
     kind: row.kind,
     classification: row.classification,
     title: row.title,
+    change_description: row.change_description,
     full_rule_body: row.full_rule_body,
     current_rule_body: currentRuleBody,
     reason: row.reason,
     affected_items: stringArray(row.affected_items_json),
     evidence_record_ids: stringArray(row.evidence_record_ids_json),
     status,
-    target: {
-      category: row.target_category,
-      sourceCategory: row.source_category,
-      sourceArtifactPath: row.source_artifact_path,
-      entryId: row.entry_id,
-      proposedTargetPath: row.proposed_target_path
-    },
+    target: canonicalizedTarget.ok ? canonicalizedTarget.target : rawTarget,
     revision: row.current_revision,
     base_digest: row.apply_status === "needs_revision" ? null : row.base_digest,
     base_digests: row.apply_status === "needs_revision"
@@ -633,18 +756,20 @@ export function reviseRuleUpdateProposal(
   input: RevisionInput & { proposalId: string }
 ):
   | { ok: true; proposal: RuleUpdateProposalProjection }
-  | { ok: false; reason: string } {
+  | { ok: false; reason: string; details?: unknown } {
   const proposalId = text(input.proposalId);
   const title = text(input.title);
   const fullRuleBody = text(input.fullRuleBody);
   if (!proposalId || !title) {
     return { ok: false, reason: "invalid_revision" };
   }
-  const targetResult = canonicalTarget(projectPath, input.target);
-  if (!targetResult.ok) return targetResult;
-  const target = targetResult.target;
+  const rawTargetResult = canonicalTarget(projectPath, input.target);
+  if (!rawTargetResult.ok) return rawTargetResult;
   try {
     return withProjectTransaction(projectPath, (db) => {
+      const canonicalized = canonicalizeTargetOnDb(db, rawTargetResult.target);
+      if (!canonicalized.ok) return canonicalized;
+      const target = canonicalized.target;
       const current = proposalProjectionOnDb(db, proposalId);
       if (!current) return { ok: false as const, reason: "proposal_not_found" };
       if (current.kind !== "retire" && !fullRuleBody) {
@@ -1284,7 +1409,7 @@ export function publishRuleUpdateReview(
   reviewIdInput: string
 ):
   | { ok: true; review: ReviewRow; proposal_count: number }
-  | { ok: false; reason: string } {
+  | { ok: false; reason: string; details?: unknown } {
   const reviewId = text(reviewIdInput);
   if (!reviewId) return { ok: false, reason: "review_id_required" };
   try {
@@ -1303,6 +1428,32 @@ export function publishRuleUpdateReview(
       const count = (db
         .prepare("SELECT COUNT(*) AS count FROM rule_update_proposals WHERE review_id = ?")
         .get(reviewId) as { count: number }).count;
+      const targets = db
+        .prepare(
+          `SELECT r.target_category, r.source_category, r.source_artifact_path,
+                  r.entry_id, r.proposed_target_path
+           FROM rule_update_proposals p
+           JOIN rule_update_proposal_revisions r
+             ON r.proposal_id = p.id AND r.revision = p.current_revision
+           WHERE p.review_id = ?`
+        )
+        .all(reviewId) as Array<{
+          target_category: RuleUpdateCategory;
+          source_category: RuleUpdateCategory | null;
+          source_artifact_path: string | null;
+          entry_id: string | null;
+          proposed_target_path: string | null;
+        }>;
+      for (const target of targets) {
+        const canonicalized = canonicalizeTargetOnDb(db, {
+          category: target.target_category,
+          sourceCategory: target.source_category,
+          sourceArtifactPath: target.source_artifact_path,
+          entryId: target.entry_id,
+          proposedTargetPath: target.proposed_target_path
+        });
+        if (!canonicalized.ok) return canonicalized;
+      }
       const now = new Date().toISOString();
       if (count > 0) {
         const wait = activateRuleUpdateReviewWaitOnDb(db, reviewId, now);
@@ -1419,7 +1570,7 @@ export function getRuleUpdateReviewProjection(projectPath: string):
             title: revision.title,
             description: proposal.kind === "retire"
               ? proposal.reason
-              : revision.full_rule_body,
+              : proposal.change_description,
             created_at: revision.created_at,
             target_category: revision.target_category,
             terminal:

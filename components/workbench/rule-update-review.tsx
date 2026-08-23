@@ -33,6 +33,7 @@ export type RuleUpdateProposalView = {
   kind: "new" | "update" | "move" | "retire";
   classification: string;
   title: string;
+  change_description: string;
   full_rule_body: string;
   current_rule_body: string | null;
   reason: string;
@@ -372,7 +373,7 @@ function ProposalCard({
                     onChange={(event) => setBody(event.target.value)}
                   />
                 ) : (
-                  <p>{proposal.full_rule_body}</p>
+                  <p>{proposal.change_description}</p>
                 )}
               </div> : null}
               <div>
@@ -730,9 +731,13 @@ function RuleUpdateTranscriptPopover({
 
 export function RuleUpdateInteractionsPage({
   projection,
+  session,
+  onChanged,
   onNavigate
 }: {
   projection: RuleUpdateProjection;
+  session: string;
+  onChanged: () => Promise<unknown>;
   onNavigate: (category: RuleUpdateCategory, proposalId: string) => void;
 }) {
   return (
@@ -799,7 +804,7 @@ export function RuleUpdateInteractionsPage({
                   <p className="dsb-ru-record-summary">
                     {proposal.kind === "retire"
                       ? proposal.reason
-                      : proposal.full_rule_body}
+                      : proposal.change_description}
                   </p>
                 ) : null}
                 {proposal && proposal.evidence_record_ids.length > 0 ? (
@@ -809,6 +814,16 @@ export function RuleUpdateInteractionsPage({
                   </div>
                 ) : null}
               </div>
+              {proposal && !["applied", "rejected"].includes(proposal.status) ? (
+                <ProposalCard
+                  proposal={proposal}
+                  transcript={review.transcript}
+                  session={session}
+                  onChanged={onChanged}
+                  focused={false}
+                  embedded
+                />
+              ) : null}
             </article>
             )
           )}
