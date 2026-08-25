@@ -18,6 +18,17 @@ export { markPrototypeSurfacesStaleForShutdown } from "./lib/runtime/prototype-s
 export { getActiveProject } from "./lib/runtime/project.ts";
 `;
 
+const MACH_O_MAGICS = new Set([
+  "cafebabe",
+  "bebafeca",
+  "cafebabf",
+  "bfbafeca",
+  "feedface",
+  "cefaedfe",
+  "feedfacf",
+  "cffaedfe"
+]);
+
 /**
  * Build the Study Kit's MCP/runtime TypeScript graph ahead of time. The
  * downloaded plugin can then start without executing tsx/esbuild, which macOS
@@ -78,25 +89,47 @@ export function buildStudyRuntime({ sourceRoot, destinationRoot }) {
   fs.writeFileSync(runtimeEntry, patched, "utf8");
   precompileNextConfig(destinationRoot);
 
-  const removedRuntimeTranspilers = [
+  const removedNativeRuntimePackages = [
     path.join(destinationRoot, "node_modules", "tsx"),
     path.join(destinationRoot, "node_modules", "esbuild"),
-    path.join(destinationRoot, "node_modules", "@esbuild")
+    path.join(destinationRoot, "node_modules", "@esbuild"),
+    path.join(destinationRoot, "node_modules", "@next", "swc-darwin-arm64"),
+    path.join(destinationRoot, "node_modules", "lightningcss-darwin-arm64"),
+    path.join(destinationRoot, "node_modules", "@tailwindcss", "oxide-darwin-arm64"),
+    path.join(destinationRoot, "node_modules", "@img", "sharp-darwin-arm64"),
+    path.join(destinationRoot, "node_modules", "@img", "sharp-libvips-darwin-arm64"),
+    path.join(destinationRoot, "node_modules", "@rolldown", "binding-darwin-arm64")
   ];
-  for (const packagePath of removedRuntimeTranspilers) {
+  for (const packagePath of removedNativeRuntimePackages) {
     fs.rmSync(packagePath, { recursive: true, force: true });
   }
   for (const executable of ["tsx", "esbuild"]) {
     const binPath = path.join(destinationRoot, "node_modules", ".bin", executable);
     if (fs.lstatSync(binPath, { throwIfNoEntry: false })) fs.unlinkSync(binPath);
   }
+  removeNestedPackageDirectories(
+    path.join(destinationRoot, "node_modules"),
+    "fsevents"
+  );
+
+  const wasmEntry = path.join(
+    destinationRoot,
+    "node_modules",
+    "@next",
+    "swc-wasm-nodejs",
+    "wasm.js"
+  );
+  assertFile(wasmEntry);
+  assertNoNativeMachO(destinationRoot);
 
   return Object.freeze({
     bundle: STUDY_RUNTIME_BUNDLE.split(path.sep).join("/"),
     bytes: fs.statSync(bundleFile).size,
     runtimeTranspiler: "precompiled",
     nextConfig: "precompiled-esm",
-    embeddedEsbuildExecutables: 0
+    swcRuntime: "wasm",
+    embeddedEsbuildExecutables: 0,
+    embeddedNativeMachO: 0
   });
 }
 
@@ -117,6 +150,12 @@ function precompileNextConfig(destinationRoot) {
     "const nextConfig =",
     tsConfig
   );
+  source = replaceExactlyOnce(
+    source,
+    "const nextConfig = {",
+    "const nextConfig = {\n  experimental: { useWasmBinary: true },",
+    tsConfig
+  );
   fs.writeFileSync(mjsConfig, source, "utf8");
   fs.unlinkSync(tsConfig);
 
@@ -132,6 +171,58 @@ function precompileNextConfig(destinationRoot) {
       throw new Error(`Production build did not reference next.config.ts: ${file}`);
     }
     fs.writeFileSync(file, after, "utf8");
+  }
+}
+
+export function assertNoNativeMachO(root) {
+  const nativeFiles = findNativeMachO(root);
+  if (nativeFiles.length > 0) {
+    throw new Error(
+      `Study Runtime contains unexpected native Mach-O files:\n${nativeFiles.join("\n")}`
+    );
+  }
+}
+
+export function findNativeMachO(root) {
+  const nativeFiles = [];
+  for (const file of walkFiles(root)) {
+    const fd = fs.openSync(file, "r");
+    try {
+      const header = Buffer.alloc(4);
+      if (fs.readSync(fd, header, 0, header.length, 0) === header.length) {
+        if (MACH_O_MAGICS.has(header.toString("hex"))) {
+          nativeFiles.push(path.relative(root, file).split(path.sep).join("/"));
+        }
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+  return nativeFiles;
+}
+
+function* walkFiles(root) {
+  if (!fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) return;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const absolute = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      yield* walkFiles(absolute);
+    } else if (entry.isFile()) {
+      yield absolute;
+    }
+  }
+}
+
+function removeNestedPackageDirectories(root, packageName) {
+  if (!fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) return;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const absolute = path.join(root, entry.name);
+    if (entry.name === packageName && path.basename(path.dirname(absolute)) === "node_modules") {
+      fs.rmSync(absolute, { recursive: true, force: true });
+      continue;
+    }
+    removeNestedPackageDirectories(absolute, packageName);
   }
 }
 

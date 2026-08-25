@@ -1,6 +1,6 @@
 {
   "name": "recursive-design-agent",
-  "version": "0.1.0-alpha.10",
+  "version": "0.1.0-alpha.11",
   "license": "Apache-2.0",
   "private": true,
   "packageManager": "npm@11.6.2",
@@ -34,6 +34,7 @@
     "@hugeicons/core-free-icons": "^4.2.2",
     "@hugeicons/react": "^1.1.9",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@next/swc-wasm-nodejs": "16.3.0",
     "@phosphor-icons/react": "^2.1.10",
     "@tailwindcss/postcss": "^4.3.2",
     "@types/node": "^26.1.0",

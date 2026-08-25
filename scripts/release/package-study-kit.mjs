@@ -8,7 +8,7 @@ import path from "node:path";
 import process from "node:process";
 import { DatabaseSync } from "node:sqlite";
 
-import { buildStudyRuntime } from "./build-study-runtime.mjs";
+import { buildStudyRuntime, findNativeMachO } from "./build-study-runtime.mjs";
 import {
   assertProdBuildMatchesSource,
   writeVersionStamp
@@ -28,6 +28,26 @@ const WORKSPACE_JSON_FILES = [
   "evidence-media-retention-v1.json",
   "evidence-media-deletions-v1.json"
 ];
+
+const STUDY_PLUGIN_TOP_LEVEL = new Set([
+  ".codex-plugin",
+  ".next",
+  ".node-version",
+  "LICENSE",
+  "app",
+  "bin",
+  "components",
+  "lib",
+  "next-env.d.ts",
+  "next.config.ts",
+  "node_modules",
+  "package-lock.json",
+  "package.json",
+  "postcss.config.mjs",
+  "public",
+  "skills",
+  "tsconfig.json"
+]);
 
 const SECRET_PATTERNS = [
   ["aws_access_key", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g],
@@ -193,8 +213,9 @@ function copyCodexPlugin(source, destination, version) {
       const relative = path.relative(source, candidate);
       if (!relative) return true;
       const top = relative.split(path.sep)[0];
-      if (new Set([".cursor-plugin", "plugin.json", "mcp.json", ".npmrc", "RELEASE-MANIFEST.json"]).has(top)) return false;
-      if (relative === path.join(".next", "cache") || relative.startsWith(`${path.join(".next", "cache")}${path.sep}`)) return false;
+      if (!STUDY_PLUGIN_TOP_LEVEL.has(top)) return false;
+      if (relative === path.join("app", "prototypes") || relative.startsWith(`${path.join("app", "prototypes")}${path.sep}`)) return false;
+      if (isExcludedNextOutput(relative)) return false;
       if (fs.lstatSync(candidate).isSymbolicLink() && !fs.existsSync(candidate)) return false;
       return true;
     }
@@ -233,19 +254,57 @@ function copyCodexPlugin(source, destination, version) {
   patchPortableRuntimeSocket(path.join(destination, "bin", "ikran-runtime.mjs"), "runtime");
   const studyRuntime = buildStudyRuntime({ sourceRoot: source, destinationRoot: destination });
   writeVersionStamp(destination);
-
-  for (const relative of [
-    path.join(".next", "required-server-files.json"),
-    path.join(".next", "required-server-files.js")
-  ]) {
-    const file = path.join(destination, relative);
-    if (!fs.existsSync(file)) fail(`Missing production build file: ${relative}`);
-    const before = fs.readFileSync(file, "utf8");
-    const after = before.split(source).join(".");
-    if (after.includes(source)) fail(`Failed to sanitize build path: ${relative}`);
-    fs.writeFileSync(file, after, "utf8");
-  }
+  sanitizeNextBuild(destination, source);
   return studyRuntime;
+}
+
+function isExcludedNextOutput(relative) {
+  const excludedDirectories = ["cache", "dev", "diagnostics", "types"]
+    .map((name) => path.join(".next", name));
+  if (excludedDirectories.some((directory) =>
+    relative === directory || relative.startsWith(`${directory}${path.sep}`)
+  )) return true;
+  if (new Set([
+    path.join(".next", "trace"),
+    path.join(".next", "trace-build")
+  ]).has(relative)) return true;
+  return relative.startsWith(`${path.join(".next")}${path.sep}`) && relative.endsWith(".map");
+}
+
+function sanitizeNextBuild(destination, source) {
+  const nextRoot = path.join(destination, ".next");
+  const localRoots = new Set([source, fs.realpathSync(source)]);
+  const requiredServerFiles = new Set([
+    path.join(nextRoot, "required-server-files.json"),
+    path.join(nextRoot, "required-server-files.js")
+  ]);
+
+  for (const file of requiredServerFiles) {
+    if (!fs.existsSync(file)) {
+      fail(`Missing production build file: ${slash(path.relative(destination, file))}`);
+    }
+  }
+
+  for (const file of walkFiles(nextRoot)) {
+    const before = fs.readFileSync(file);
+    let text = before.toString("utf8");
+    let changed = false;
+    for (const localRoot of localRoots) {
+      if (!text.includes(localRoot)) continue;
+      text = text.split(localRoot).join(requiredServerFiles.has(file) ? "." : "plugin-source");
+      changed = true;
+    }
+    if (changed) fs.writeFileSync(file, text, "utf8");
+  }
+
+  for (const file of walkFiles(nextRoot)) {
+    const content = fs.readFileSync(file);
+    for (const localRoot of localRoots) {
+      if (content.includes(Buffer.from(localRoot))) {
+        fail(`Failed to sanitize build path: ${slash(path.relative(destination, file))}`);
+      }
+    }
+  }
 }
 
 function readPluginVersion(source) {
@@ -519,6 +578,7 @@ function marketplaceManifest() {
 
 function scanPackage(root, { forbiddenLiterals }) {
   const forbiddenFiles = [];
+  const nativeRuntimeFiles = findNativeMachO(path.join(root, "plugins", "ikran"));
   const localInformationHits = [];
   const secretHits = [];
   const figmaQueryTokenHits = [];
@@ -552,7 +612,13 @@ function scanPackage(root, { forbiddenLiterals }) {
     }
   }
 
-  const failures = [forbiddenFiles, localInformationHits, secretHits, figmaQueryTokenHits].flat();
+  const failures = [
+    forbiddenFiles,
+    nativeRuntimeFiles.map((file) => ({ file: `plugins/ikran/${file}`, category: "native_mach_o" })),
+    localInformationHits,
+    secretHits,
+    figmaQueryTokenHits
+  ].flat();
   if (failures.length) {
     fail(`Privacy scan failed:\n${JSON.stringify(failures, null, 2)}`);
   }
@@ -560,7 +626,7 @@ function scanPackage(root, { forbiddenLiterals }) {
     ok: true,
     filesScanned,
     bytesScanned,
-    forbiddenRuntimeFiles: 0,
+    forbiddenRuntimeFiles: nativeRuntimeFiles.length,
     localInformationHits: 0,
     credentialHits: 0,
     figmaQueryTokenHits: 0

@@ -17,7 +17,7 @@ afterEach(async () => {
   );
 });
 
-test("Study Runtime precompiles the TypeScript graph and removes runtime esbuild", async () => {
+test("Study Runtime precompiles the TypeScript graph and removes native runtime toolchains", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "ikran-study-runtime-"));
   temporaryDirectories.push(root);
   const sourceRoot = path.join(root, "source");
@@ -26,11 +26,29 @@ test("Study Runtime precompiles the TypeScript graph and removes runtime esbuild
   writeSourceGraph(sourceRoot);
   writeRuntimeEntry(destinationRoot);
   writeNextConfig(destinationRoot);
-  for (const packageName of ["tsx", "esbuild", "@esbuild/darwin-arm64"]) {
+  writeWasmRuntime(destinationRoot);
+  const removedPackages = [
+    "tsx",
+    "esbuild",
+    "@esbuild/darwin-arm64",
+    "@next/swc-darwin-arm64",
+    "lightningcss-darwin-arm64",
+    "@tailwindcss/oxide-darwin-arm64",
+    "@img/sharp-darwin-arm64",
+    "@img/sharp-libvips-darwin-arm64",
+    "@rolldown/binding-darwin-arm64"
+  ];
+  for (const packageName of removedPackages) {
     write(path.join(destinationRoot, "node_modules", packageName, "sentinel"), "present\n");
   }
   for (const executable of ["tsx", "esbuild"]) {
     write(path.join(destinationRoot, "node_modules", ".bin", executable), "#!/bin/sh\n");
+  }
+  for (const nested of [
+    path.join("node_modules", "fsevents", "binding.node"),
+    path.join("node_modules", "vite", "node_modules", "fsevents", "binding.node")
+  ]) {
+    write(path.join(destinationRoot, nested), "native\n");
   }
 
   const result = buildStudyRuntime({ sourceRoot, destinationRoot });
@@ -40,6 +58,8 @@ test("Study Runtime precompiles the TypeScript graph and removes runtime esbuild
   expect(result).toMatchObject({
     runtimeTranspiler: "precompiled",
     nextConfig: "precompiled-esm",
+    swcRuntime: "wasm",
+    embeddedNativeMachO: 0,
     embeddedEsbuildExecutables: 0
   });
   expect(runtime).not.toMatch(/importTsxModule|pathToFileURL|import ["']tsx["']/);
@@ -47,6 +67,9 @@ test("Study Runtime precompiles the TypeScript graph and removes runtime esbuild
   expect(bundle).toContain("registerIkranTools");
   expect(bundle).not.toContain(sourceRoot);
   expect(readFileSync(path.join(destinationRoot, "next.config.mjs"), "utf8")).not.toContain("NextConfig");
+  expect(readFileSync(path.join(destinationRoot, "next.config.mjs"), "utf8")).toContain(
+    "useWasmBinary: true"
+  );
   expect(() => readFileSync(path.join(destinationRoot, "next.config.ts"))).toThrow();
   expect(readFileSync(path.join(destinationRoot, ".next", "required-server-files.json"), "utf8")).toContain("next.config.mjs");
   expect(() => readFileSync(path.join(destinationRoot, "node_modules", "esbuild", "sentinel"))).toThrow();
@@ -54,6 +77,50 @@ test("Study Runtime precompiles the TypeScript graph and removes runtime esbuild
   expect(() => readFileSync(path.join(destinationRoot, "node_modules", "tsx", "sentinel"))).toThrow();
   expect(() => readFileSync(path.join(destinationRoot, "node_modules", ".bin", "tsx"))).toThrow();
   expect(() => readFileSync(path.join(destinationRoot, "node_modules", ".bin", "esbuild"))).toThrow();
+  for (const packageName of removedPackages) {
+    expect(() =>
+      readFileSync(path.join(destinationRoot, "node_modules", packageName, "sentinel"))
+    ).toThrow();
+  }
+  expect(() =>
+    readFileSync(path.join(destinationRoot, "node_modules", "fsevents", "binding.node"))
+  ).toThrow();
+  expect(() =>
+    readFileSync(
+      path.join(
+        destinationRoot,
+        "node_modules",
+        "vite",
+        "node_modules",
+        "fsevents",
+        "binding.node"
+      )
+    )
+  ).toThrow();
+});
+
+test("Study Runtime fails closed when any unexpected Mach-O remains", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "ikran-study-runtime-native-"));
+  temporaryDirectories.push(root);
+  const sourceRoot = path.join(root, "source");
+  const destinationRoot = path.join(root, "destination");
+
+  writeSourceGraph(sourceRoot);
+  writeRuntimeEntry(destinationRoot);
+  writeNextConfig(destinationRoot);
+  writeWasmRuntime(destinationRoot);
+  const unexpectedBinary = path.join(
+    destinationRoot,
+    "node_modules",
+    "unexpected-native-addon",
+    "binding.node"
+  );
+  mkdirSync(path.dirname(unexpectedBinary), { recursive: true });
+  writeFileSync(unexpectedBinary, Buffer.from([0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0, 0]));
+
+  expect(() => buildStudyRuntime({ sourceRoot, destinationRoot })).toThrow(
+    /unexpected native Mach-O/i
+  );
 });
 
 function writeSourceGraph(root: string) {
@@ -82,6 +149,13 @@ function writeNextConfig(root: string) {
   write(
     path.join(root, ".next", "required-server-files.js"),
     'module.exports = {"configFileName":"next.config.ts"};\n'
+  );
+}
+
+function writeWasmRuntime(root: string) {
+  write(
+    path.join(root, "node_modules", "@next", "swc-wasm-nodejs", "wasm.js"),
+    "export default {};\n"
   );
 }
 
