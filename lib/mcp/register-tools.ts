@@ -17,6 +17,7 @@ import { registerNewDesignRunTools } from "./new-design-run-tools";
 import { registerPrototypeRebuildContextTools } from "./prototype-rebuild-context-tools";
 import { registerProjectPhaseTools } from "./project-phase-tools";
 import { registerResearchExportTools } from "./research-export-tools";
+import { registerComponentPreviewTools } from "./component-preview-tools";
 import { registerInitialDesignSystemTools } from "./initial-design-system-tools";
 import {
   IKRAN_MCP_INSTRUCTIONS,
@@ -45,6 +46,7 @@ export function registerIkranTools(
   registerDesignerFeedbackTools(mcp, deps);
   registerConversationReconciliationTools(mcp, deps);
   registerPrototypePreviewTools(mcp, deps);
+  registerComponentPreviewTools(mcp, deps);
   registerRuleCaptureTools(mcp, deps);
   registerNewDesignRunTools(mcp, deps);
   registerPrototypeRebuildContextTools(mcp, deps);

@@ -1180,7 +1180,7 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(37);
+        expect(CURRENT_SCHEMA_VERSION).toBe(43);
         expect(
           db.prepare("PRAGMA table_info(prototype_surfaces)").all()
         ).toEqual(
@@ -1202,6 +1202,14 @@ test.describe("PRAGMA user_version migration runner", () => {
             "figma_evidence_surfaces",
             "region_annotations",
             "annotation_primary_confirmations",
+            "component_formalization_timing_sessions",
+            "component_formalization_timing_spans",
+            "component_preview_registrations",
+            "component_preview_verification_results",
+            "component_preview_verification_batches",
+            "component_preview_verification_work",
+            "component_preview_orchestrations",
+            "component_preview_exceptions",
             "design_intent_alignment",
             "agent_alignment_annotations",
             "alignment_question_cards",
@@ -1387,7 +1395,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       applyPendingMigrations(db, 36);
 
-      expect(userVersion(db)).toBe(37);
+      expect(userVersion(db)).toBe(43);
       expect(
         db.prepare("SELECT kind, review_id FROM rule_update_proposals WHERE id = 'proposal-v36'").get()
       ).toEqual({ kind: "update", review_id: "review-v36" });
@@ -1431,7 +1439,7 @@ test.describe("PRAGMA user_version migration runner", () => {
         PRAGMA user_version = 33;
       `);
       applyPendingMigrations(db, 33);
-      expect(userVersion(db)).toBe(37);
+      expect(userVersion(db)).toBe(43);
       expect(db.prepare("PRAGMA table_info(rule_update_proposal_revisions)").all()).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -1485,7 +1493,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       applyPendingMigrations(db, 31);
 
-      expect(userVersion(db)).toBe(37);
+      expect(userVersion(db)).toBe(43);
       expect(
         db.prepare(
           `SELECT scope_kind, scope_id, alignment_attempt_id

@@ -407,6 +407,7 @@ Ikran 的核心不变量：
 - 人类意图优先创建是主要路径。
 - Visual reference 是可选输入。
 - Agent 创建真实 prototype code，并通过 `record_artifact_written` 声明。
+- 对 code-backed component，Agent 在同一次 `record_artifact_written` 中提交精确的 `componentPreview` 身份、default/state recipe 与对照当前 component contract 的 `semanticImpact` 判断；Runtime 用前后 contract digest 复核无增量路径，并使用一个共享、无 Storybook 的 Preview adapter 自动建立 code link、经默认态几何验证的即时 live hero、缓存验证与内部 Verified Candidate。语义可能变化、recipe state 越界或 provider/fixture 不确定性统一进入一个有界异常包。旧的逐组件 harness/backfill/declaration/verification 工具仅保留历史兼容，不属于 Active next action。详细契约见 `docs/code-backed-component-active-flow.md`。
 - 每个 prototype run 应产生 Prototype Evidence Surface。
 - Prototype feedback 可锚定到 whole surface 或 prototype region。
 - Rule recursion 发生在 prototype feedback、设计系统页面反馈或审查发现之后。

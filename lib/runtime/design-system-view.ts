@@ -182,6 +182,16 @@ export interface DesignSystemLiveHeroView {
   previewUrl: string | null;
   surfaceReadiness: DesignSystemCaptureSurfaceReadiness | null;
   surfaceStale: boolean;
+  /** Render reachability is independent from audit/verification freshness. */
+  liveAvailability?: "available" | "unavailable";
+  verificationFreshness?:
+    | "unverified"
+    | "queued"
+    | "verifying"
+    | "verified"
+    | "failed"
+    | "stale";
+  verificationIdentity?: string | null;
 }
 
 export interface DesignSystemEntryView {
@@ -276,6 +286,12 @@ interface LiveSurfaceInfo {
   readiness: DesignSystemCaptureSurfaceReadiness;
   stale: boolean;
   previewUrl: string;
+}
+
+interface LiveRegistrationInfo {
+  availability: "registered" | "available" | "unavailable";
+  verification: "unverified" | "queued" | "verifying" | "verified" | "failed" | "stale";
+  verificationIdentity: string | null;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -398,7 +414,8 @@ function capturesOfRaw(
 
 function liveHeroOfValue(
   value: unknown,
-  liveSurfaceOf: (surfaceId: string) => LiveSurfaceInfo | null
+  liveSurfaceOf: (surfaceId: string) => LiveSurfaceInfo | null,
+  liveRegistrationOf: (surfaceId: string) => LiveRegistrationInfo | null
 ): DesignSystemLiveHeroView | null {
   if (!isPlainObject(value) || !isPlainObject(value.liveHero)) return null;
   const declaration = value.liveHero;
@@ -414,6 +431,10 @@ function liveHeroOfValue(
     return null;
   }
   const surface = liveSurfaceOf(declaration.surfaceId);
+  const registration = liveRegistrationOf(declaration.surfaceId);
+  const reachable =
+    surface?.readiness === "ready" &&
+    registration?.availability === "available";
   return {
     surfaceId: declaration.surfaceId,
     harnessPath: declaration.harnessPath,
@@ -421,7 +442,14 @@ function liveHeroOfValue(
     codeLinks: value.codeLinks as string[],
     previewUrl: surface?.previewUrl ?? null,
     surfaceReadiness: surface?.readiness ?? null,
-    surfaceStale: surface?.stale ?? false
+    surfaceStale: surface?.stale ?? false,
+    ...(registration
+      ? {
+          liveAvailability: reachable ? ("available" as const) : ("unavailable" as const),
+          verificationFreshness: registration.verification,
+          verificationIdentity: registration.verificationIdentity
+        }
+      : {})
   };
 }
 
@@ -589,6 +617,12 @@ function buildDesignSystemViewFromDb(
         previewUrl: surface.preview_url
       };
     };
+    const liveRegistrationStmt = db.prepare(
+      `SELECT availability_status, verification_status, verification_identity
+       FROM component_preview_registrations
+       WHERE entry_id = ? AND prototype_surface_id = ?
+       ORDER BY updated_at DESC LIMIT 1`
+    );
 
     for (const row of rows) {
       const value = JSON.parse(row.value_json) as unknown;
@@ -738,7 +772,31 @@ function buildDesignSystemViewFromDb(
               }
             : {}),
           ...(row.section === "components.spec"
-            ? { liveHero: liveHeroOfValue(value, liveSurfaceOf) }
+            ? {
+                liveHero: liveHeroOfValue(
+                  value,
+                  liveSurfaceOf,
+                  (surfaceId) => {
+                    const registration = liveRegistrationStmt.get(
+                      row.entry_id,
+                      surfaceId
+                    ) as
+                      | {
+                          availability_status: LiveRegistrationInfo["availability"];
+                          verification_status: LiveRegistrationInfo["verification"];
+                          verification_identity: string | null;
+                        }
+                      | undefined;
+                    return registration
+                      ? {
+                          availability: registration.availability_status,
+                          verification: registration.verification_status,
+                          verificationIdentity: registration.verification_identity
+                        }
+                      : null;
+                  }
+                )
+              }
             : {})
         },
         versionIds: [...new Set(versionIds)]

@@ -67,6 +67,12 @@ export type FormalizeFailure =
   | { ok: false; reason: "empty_modification_review" }
   | {
       ok: false;
+      reason: "component_preview_verification_required";
+      phase: ProjectPhase;
+      verification_entry_ids: string[];
+    }
+  | {
+      ok: false;
       reason: "rule_update_review_required";
       phase: ProjectPhase;
     }
@@ -569,6 +575,20 @@ export function formalizeDesignSystem(
           reason: "unreviewed_feedback",
           phase: current,
           unreviewed_feedback_count: unreviewed
+        };
+      }
+      const verificationBlockers = db
+        .prepare(
+          `SELECT entry_id FROM component_preview_registrations
+           WHERE verification_status <> 'verified' ORDER BY entry_id`
+        )
+        .all() as Array<{ entry_id: string }>;
+      if (verificationBlockers.length > 0) {
+        return {
+          ok: false,
+          reason: "component_preview_verification_required",
+          phase: current,
+          verification_entry_ids: verificationBlockers.map((row) => row.entry_id)
         };
       }
       for (const id of promoteIds) {

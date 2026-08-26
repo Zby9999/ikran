@@ -33,6 +33,8 @@ export interface VerifyComponentLiveHeroesInput {
   /** Per-navigation geometry wait budget. Cold dev-server compiles can
    * exceed the Workbench's 5s hero timeout, so the default is higher. */
   timeoutMs?: number;
+  /** Internal/default-first orchestration scope. Omit for legacy all-state behavior. */
+  states?: readonly string[];
 }
 
 export const LIVE_HERO_VERIFY_DEFAULT_TIMEOUT_MS = 10_000;
@@ -499,7 +501,9 @@ export async function verifyComponentLiveHeroes(
           state,
           url: `${baseUrl}?state=${encodeURIComponent(state)}`
         }))
-      ]
+      ].filter(({ state }) =>
+        input.states === undefined ? true : input.states.includes(state)
+      )
     });
   }
 

@@ -10,6 +10,11 @@ import {
   type PhaseCommandResult,
   type ProjectPhase
 } from "../project-phase";
+import {
+  completeComponentFormalizationTiming,
+  getRunningComponentFormalizationTiming,
+  runComponentFormalizationStage
+} from "../component-formalization-timing";
 
 export function getProjectPhaseCommand(projectPath: string): ProjectPhase {
   return getProjectPhase(projectPath);
@@ -39,7 +44,23 @@ export function formalizeDesignSystemCommand(
   promoteEntryIds: readonly string[] = [],
   modificationReview: string
 ): FormalizeSuccess | FormalizeFailure {
-  return formalizeDesignSystem(projectPath, promoteEntryIds, modificationReview);
+  const result = runComponentFormalizationStage(
+    projectPath,
+    "formalization",
+    { componentCount: promoteEntryIds.length },
+    () => formalizeDesignSystem(projectPath, promoteEntryIds, modificationReview)
+  );
+  if (result.ok) {
+    const session = getRunningComponentFormalizationTiming(projectPath);
+    if (session) {
+      try {
+        completeComponentFormalizationTiming(projectPath, session.id);
+      } catch {
+        // Timing never changes the formalization result.
+      }
+    }
+  }
+  return result;
 }
 
 export function abandonProjectPhaseCommand(

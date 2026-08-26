@@ -795,6 +795,62 @@ export function applyPrototypeCodeChangeOnDb(
   });
   if (affected.length === 0) return { staleIds: [], refreshIds: [] };
 
+  // A registered component's dev server remains the live execution truth
+  // across ordinary source edits. Keep a shared registered surface live,
+  // while invalidating/queueing audit evidence for only the registration
+  // whose module changed; do not conflate either with server reachability.
+  const registeredSurfaceIds = new Set<string>();
+  const registrationTable = db
+    .prepare(
+      `SELECT 1 AS present FROM sqlite_master
+       WHERE type = 'table' AND name = 'component_preview_registrations'`
+    )
+    .get();
+  if (registrationTable) {
+    const affectedSurfaceIds = new Set(affected.map((surface) => surface.id));
+    const sharedPreviewSurfaces = db
+      .prepare(
+        `SELECT DISTINCT prototype_surface_id
+         FROM component_preview_registrations`
+      )
+      .all() as Array<{ prototype_surface_id: string }>;
+    for (const row of sharedPreviewSurfaces) {
+      if (affectedSurfaceIds.has(row.prototype_surface_id)) {
+        registeredSurfaceIds.add(row.prototype_surface_id);
+      }
+    }
+    const registrations = db
+      .prepare(
+        `SELECT id, prototype_surface_id, registration_digest
+         FROM component_preview_registrations WHERE module_path = ?`
+      )
+      .all(relativeArtifactPath) as Array<{
+      id: string;
+      prototype_surface_id: string;
+      registration_digest: string;
+    }>;
+    const artifact = db
+      .prepare(`SELECT content_digest FROM source_artifacts WHERE path = ?`)
+      .get(relativeArtifactPath) as { content_digest: string | null } | undefined;
+    const update = db.prepare(
+      `UPDATE component_preview_registrations
+       SET verification_status = 'queued',
+           verification_identity = ?, updated_at = ? WHERE id = ?`
+    );
+    const now = new Date().toISOString();
+    for (const registration of registrations) {
+      if (!affected.some((surface) => surface.id === registration.prototype_surface_id)) {
+        continue;
+      }
+      const identity = createHash("sha256")
+        .update(
+          `${registration.registration_digest}:${artifact?.content_digest ?? "undeclared"}`
+        )
+        .digest("hex");
+      update.run(identity, now, registration.id);
+    }
+  }
+
   const covered = isPrototypePreviewRefreshActive(
     projectPath,
     relativeArtifactPath
@@ -802,9 +858,12 @@ export function applyPrototypeCodeChangeOnDb(
   if (covered) {
     return { staleIds: [], refreshIds: affected.map((surface) => surface.id) };
   }
+  const staleCandidates = affected.filter(
+    (surface) => !registeredSurfaceIds.has(surface.id)
+  );
   return {
-    staleIds: markSurfacesStaleOnDb(db, affected, "code_changed"),
-    refreshIds: []
+    staleIds: markSurfacesStaleOnDb(db, staleCandidates, "code_changed"),
+    refreshIds: [...registeredSurfaceIds]
   };
 }
 

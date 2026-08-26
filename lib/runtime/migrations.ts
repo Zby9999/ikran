@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 37;
+export const CURRENT_SCHEMA_VERSION = 43;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -1829,6 +1829,219 @@ CREATE INDEX idx_rule_update_proposals_status
   ON rule_update_proposals(status);
 CREATE INDEX idx_rule_update_proposals_created_at
   ON rule_update_proposals(created_at);
+      `);
+    }
+  },
+  {
+    version: 38,
+    up(db) {
+      // Issue 42: operational timing is deliberately separate from canonical
+      // research events. The columns are a strict allow-list so source code,
+      // transcripts, credentials and arbitrary Agent payloads cannot leak into
+      // the timing store.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS component_formalization_timing_sessions (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  component_entry_ids_json TEXT NOT NULL,
+  component_count INTEGER NOT NULL,
+  state_count INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed', 'interrupted')),
+  failure_stage TEXT,
+  failure_code TEXT,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_component_formalization_timing_sessions_run
+  ON component_formalization_timing_sessions(run_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_component_formalization_timing_sessions_status
+  ON component_formalization_timing_sessions(status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS component_formalization_timing_spans (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES component_formalization_timing_sessions(id) ON DELETE CASCADE,
+  stage TEXT NOT NULL CHECK (stage IN (
+    'conversation_reconciliation',
+    'component_code_linking',
+    'harness_preparation',
+    'artifact_declaration',
+    'preview_readiness',
+    'live_hero_declaration',
+    'verification',
+    'formalization'
+  )),
+  attempt INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('running', 'succeeded', 'failed', 'interrupted')),
+  component_count INTEGER,
+  state_count INTEGER,
+  preview_startup TEXT CHECK (preview_startup IS NULL OR preview_startup IN ('cold', 'warm')),
+  cache_status TEXT CHECK (cache_status IS NULL OR cache_status IN ('hit', 'miss', 'partial', 'bypass')),
+  retryable INTEGER NOT NULL DEFAULT 0 CHECK (retryable IN (0, 1)),
+  failure_code TEXT,
+  agent_wait_ms INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  runtime_ms INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_component_formalization_timing_span_attempt
+  ON component_formalization_timing_spans(session_id, stage, attempt);
+CREATE INDEX IF NOT EXISTS idx_component_formalization_timing_spans_session
+  ON component_formalization_timing_spans(session_id, started_at, id);
+      `);
+    }
+  },
+  {
+    version: 39,
+    up(db) {
+      // Issue 43: one project-local registration manifest feeds one shared
+      // adapter route in the existing Preview Server. Project modules are
+      // identities only here; Runtime never imports or executes them.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS component_preview_registrations (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  prototype_surface_id TEXT NOT NULL REFERENCES prototype_surfaces(id) ON DELETE RESTRICT,
+  entry_row_id TEXT NOT NULL REFERENCES design_system_entries(id) ON DELETE RESTRICT,
+  entry_id TEXT NOT NULL,
+  module_path TEXT NOT NULL,
+  export_name TEXT NOT NULL,
+  default_args_json TEXT NOT NULL,
+  state_args_json TEXT NOT NULL DEFAULT '{}',
+  provider_recipe_json TEXT,
+  prototype_root TEXT NOT NULL,
+  adapter_artifact_path TEXT NOT NULL,
+  manifest_artifact_path TEXT NOT NULL,
+  adapter_route TEXT NOT NULL,
+  registration_digest TEXT NOT NULL,
+  availability_status TEXT NOT NULL DEFAULT 'registered' CHECK (availability_status IN ('registered', 'available', 'unavailable')),
+  verification_status TEXT NOT NULL DEFAULT 'unverified' CHECK (verification_status IN ('unverified', 'queued', 'verifying', 'verified', 'failed', 'stale')),
+  verification_identity TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (run_id, entry_id)
+);
+CREATE INDEX IF NOT EXISTS idx_component_preview_registrations_surface
+  ON component_preview_registrations(prototype_surface_id, entry_id);
+CREATE INDEX IF NOT EXISTS idx_component_preview_registrations_verification
+  ON component_preview_registrations(verification_status, updated_at);
+      `);
+    }
+  },
+  {
+    version: 40,
+    up(db) {
+      // Issue 46: durable per-document verification lets the default settle
+      // first and makes non-default work resumable under one identity.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS component_preview_verification_results (
+  id TEXT PRIMARY KEY,
+  registration_id TEXT NOT NULL REFERENCES component_preview_registrations(id) ON DELETE CASCADE,
+  verification_identity TEXT NOT NULL,
+  state TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('queued', 'verifying', 'passed', 'failed', 'interrupted')),
+  failure_reason TEXT,
+  bounds_json TEXT,
+  attempt INTEGER NOT NULL DEFAULT 1,
+  runtime_ms INTEGER,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (registration_id, verification_identity, state)
+);
+CREATE INDEX IF NOT EXISTS idx_component_preview_verification_registration
+  ON component_preview_verification_results(registration_id, verification_identity, status);
+      `);
+    }
+  },
+  {
+    version: 41,
+    up(db) {
+      // Issue 47: durable queue/cache observability for bounded parallel work.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS component_preview_verification_batches (
+  id TEXT PRIMARY KEY,
+  status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed', 'interrupted')),
+  concurrency INTEGER NOT NULL,
+  cache_hits INTEGER NOT NULL DEFAULT 0,
+  work_count INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  total_ms INTEGER,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS component_preview_verification_work (
+  id TEXT PRIMARY KEY,
+  batch_id TEXT NOT NULL REFERENCES component_preview_verification_batches(id) ON DELETE CASCADE,
+  registration_id TEXT NOT NULL REFERENCES component_preview_registrations(id) ON DELETE CASCADE,
+  entry_id TEXT NOT NULL,
+  state TEXT NOT NULL,
+  verification_identity TEXT NOT NULL,
+  priority INTEGER NOT NULL,
+  queue_position INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'passed', 'failed', 'cache_hit', 'interrupted')),
+  cache_hit INTEGER NOT NULL DEFAULT 0 CHECK (cache_hit IN (0, 1)),
+  failure_reason TEXT,
+  queue_wait_ms INTEGER,
+  browser_ms INTEGER,
+  created_at TEXT NOT NULL,
+  started_at TEXT,
+  ended_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_component_preview_verification_work_batch
+  ON component_preview_verification_work(batch_id, queue_position);
+      `);
+    }
+  },
+  {
+    version: 42,
+    up(db) {
+      // Issue 48: recoverable mechanical orchestration. This status is
+      // internal eligibility and never mutates Design System entry status.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS component_preview_orchestrations (
+  id TEXT PRIMARY KEY,
+  registration_id TEXT NOT NULL UNIQUE REFERENCES component_preview_registrations(id) ON DELETE CASCADE,
+  registration_digest TEXT NOT NULL,
+  semantic_digest TEXT NOT NULL,
+  semantic_status TEXT NOT NULL CHECK (semantic_status IN ('no_delta', 'uncertain', 'delta')),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'verifying', 'verified_candidate', 'exception_required', 'failed', 'interrupted')),
+  checkpoint TEXT NOT NULL,
+  failure_stage TEXT,
+  failure_code TEXT,
+  verified_candidate_event_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_component_preview_orchestrations_status
+  ON component_preview_orchestrations(status, updated_at);
+      `);
+    }
+  },
+  {
+    version: 43,
+    up(db) {
+      // Issue 49: one bounded, digest-pinned exception packet and one
+      // structured Agent disposition. No transcript or arbitrary history.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS component_preview_exceptions (
+  id TEXT PRIMARY KEY,
+  dedupe_key TEXT NOT NULL UNIQUE,
+  run_id TEXT NOT NULL,
+  entry_id TEXT NOT NULL,
+  module_path TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('provider_recipe', 'semantic_delta', 'missing_evidence', 'legacy_mapping', 'conflict')),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'resolved')),
+  packet_json TEXT NOT NULL,
+  exception_digest TEXT NOT NULL,
+  disposition_json TEXT,
+  disposition_event_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  resolved_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_component_preview_exceptions_status
+  ON component_preview_exceptions(status, updated_at);
       `);
     }
   }

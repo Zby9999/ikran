@@ -32,8 +32,11 @@ function expectBehavioralFloor(text: string) {
   expect(text).toContain("design-system source only");
   expect(text).toContain("never feedback");
   expect(text).toContain("capture_rule_screenshot");
-  expect(text).toContain("declare_component_live_heroes");
-  expect(text).toContain("verify_component_live_heroes");
+  expect(text).toContain("record_artifact_written.componentPreview");
+  expect(text).toContain("resolve_component_preview_exception");
+  expect(text).toContain("automatic verification");
+  expect(text).not.toContain("declare_component_live_heroes");
+  expect(text).not.toContain("verify_component_live_heroes");
   expect(text).toContain("never reuse existing capture files");
   expect(text).toContain("claim_alignment_preparation");
   expect(text).toContain("section_contract");
@@ -106,18 +109,15 @@ describe("MCP instructions channel split", () => {
 });
 
 describe("Claude Code MCP text budget", () => {
-  test("keeps the live-hero declaration description inside the truncation limit", () => {
+  test("keeps the legacy live-hero description bounded and out of the Active path", () => {
     expect(
       Buffer.byteLength(DECLARE_COMPONENT_LIVE_HEROES_DESCRIPTION, "utf8")
     ).toBeLessThanOrEqual(CLAUDE_MCP_TEXT_BUDGET);
     expect(DECLARE_COMPONENT_LIVE_HEROES_DESCRIPTION).toContain(
-      "live_hero_contract"
+      "Compatibility-only"
     );
     expect(DECLARE_COMPONENT_LIVE_HEROES_DESCRIPTION).toContain(
-      "metadata-only"
-    );
-    expect(DECLARE_COMPONENT_LIVE_HEROES_DESCRIPTION).toContain(
-      "verify_component_live_heroes"
+      "record_artifact_written.componentPreview"
     );
     expect(DECLARE_COMPONENT_LIVE_HEROES_DESCRIPTION).not.toContain(
       "data-ikran-component-root"

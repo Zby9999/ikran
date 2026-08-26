@@ -569,12 +569,14 @@ export function componentHeroLiveKey(
   liveHero: DesignSystemLiveHeroView | null
 ): string | null {
   if (liveHero === null) return null;
+  const availabilitySegment =
+    liveHero.liveAvailability ?? String(liveHero.surfaceStale);
   return [
     liveHero.previewUrl,
     liveHero.harnessPath,
     liveHero.harnessArtifactPath,
     liveHero.surfaceReadiness,
-    String(liveHero.surfaceStale)
+    availabilitySegment
   ]
     .map((segment) => encodeURIComponent(String(segment)))
     .join("|");
@@ -598,12 +600,16 @@ export function planComponentHero(
         ? { kind: "static", capture, liveFallback: "live_unreachable", liveKey }
         : { kind: "unavailable", liveFallback: "live_unreachable", liveKey };
     }
-    if (liveHero.previewUrl === null || liveHero.surfaceReadiness !== "ready") {
+    if (
+      liveHero.previewUrl === null ||
+      liveHero.surfaceReadiness !== "ready" ||
+      liveHero.liveAvailability === "unavailable"
+    ) {
       return capture
         ? { kind: "static", capture, liveFallback: "surface_not_ready", liveKey }
         : { kind: "unavailable", liveFallback: "surface_not_ready", liveKey };
     }
-    if (liveHero.surfaceStale) {
+    if (liveHero.liveAvailability === undefined && liveHero.surfaceStale) {
       return capture
         ? { kind: "static", capture, liveFallback: "surface_stale", liveKey }
         : { kind: "unavailable", liveFallback: "surface_stale", liveKey };

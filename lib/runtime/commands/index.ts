@@ -100,6 +100,13 @@ export {
   abandonProjectPhaseCommand
 } from "./project-phase";
 
+export { getComponentFormalizationTimingCommand } from "./component-formalization-timing";
+export {
+  registerComponentPreviewCommand,
+  resolveComponentPreviewExceptionCommand,
+  startComponentPreviewVerificationCommand
+} from "./component-preview-registration";
+
 export {
   createRegionAnnotationCommand,
   confirmAnnotationPrimaryNodeCommand,

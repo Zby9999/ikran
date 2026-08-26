@@ -11,9 +11,10 @@
 // prepare phase runs before any write, so a rejected ingest persists no
 // index row, no entries and no events.
 //
-// Ingest is replace-by-source: a re-declared file's rows are deleted and
-// re-inserted in one transaction (never hand-merged), so removed entries
-// disappear and ordering follows the latest file. The reserved `alias` key
+// Ingest is replace-by-source semantically, while stable source+entry rows are
+// updated in place so Runtime-owned references (for example component Preview
+// Registrations) survive an ordinary re-declaration. Removed entries and their
+// dependent Preview Registrations disappear in the same transaction. The reserved `alias` key
 // inside token values (see ./design-system-schema) is persisted verbatim —
 // projections downstream treat it as an alias reference, never as content.
 
@@ -462,9 +463,33 @@ export function applyDesignSystemIngestOnDb(
   db: DatabaseType,
   plan: DesignSystemIngestPlan
 ): void {
-  db.prepare(
-    "DELETE FROM design_system_entries WHERE source_artifact_path = ?"
-  ).run(plan.sourcePath);
+  const existingRows = db.prepare(
+    `SELECT id, entry_id FROM design_system_entries
+     WHERE source_artifact_path = ?`
+  ).all(plan.sourcePath) as Array<{ id: string; entry_id: string }>;
+  const existingByEntryId = new Map(
+    existingRows.map((row) => [row.entry_id, row])
+  );
+  const nextEntryIds = new Set(plan.rows.map((row) => row.entry_id));
+  const hasPreviewRegistrations = Boolean(
+    db.prepare(
+      `SELECT 1 FROM sqlite_master
+       WHERE type = 'table' AND name = 'component_preview_registrations'`
+    ).get()
+  );
+  const deleteRegistrations = hasPreviewRegistrations
+    ? db.prepare(
+        `DELETE FROM component_preview_registrations WHERE entry_row_id = ?`
+      )
+    : null;
+  const deleteEntry = db.prepare(
+    `DELETE FROM design_system_entries WHERE id = ?`
+  );
+  for (const row of existingRows) {
+    if (nextEntryIds.has(row.entry_id)) continue;
+    deleteRegistrations?.run(row.id);
+    deleteEntry.run(row.id);
+  }
 
   const insert = db.prepare(
     `INSERT INTO design_system_entries (
@@ -473,7 +498,33 @@ export function applyDesignSystemIngestOnDb(
       position, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
+  const update = db.prepare(
+    `UPDATE design_system_entries SET
+       file_kind = ?, section = ?, name = ?, kind = ?, domain = ?,
+       value_json = ?, source_captures_json = ?, meaning = ?, status = ?,
+       links_json = ?, position = ?, updated_at = ?
+     WHERE id = ?`
+  );
   for (const row of plan.rows) {
+    const existing = existingByEntryId.get(row.entry_id);
+    if (existing) {
+      update.run(
+        plan.fileKind,
+        row.section,
+        row.name,
+        row.kind,
+        row.domain,
+        JSON.stringify(row.value),
+        JSON.stringify(row.source_captures),
+        row.meaning,
+        row.status,
+        JSON.stringify(row.links),
+        row.position,
+        plan.now,
+        existing.id
+      );
+      continue;
+    }
     insert.run(
       randomUUID(),
       plan.fileKind,

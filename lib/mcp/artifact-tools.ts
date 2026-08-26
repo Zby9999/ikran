@@ -17,7 +17,7 @@ export function registerArtifactTools(
   };
 
   mcp.registerTool("record_artifact_written", {
-    description: "Declare a source artifact IMMEDIATELY after writing it with the host's native file editing (ADR 0004). Runtime only acknowledges declared + validated artifacts: a valid declaration enters the event log and the artifact index; undeclared files are excluded from later research export. Pass the artifact path (absolute or project-relative to the project root), its registry artifactType (design-system.json, token.json, component-list.json, component-spec, layout-rules.json, interaction-rules.json, prototype, code), a semanticPurpose, and related Runtime record ids. For rule artifacts, follow the claim source_contract taxonomy, inspect existing rules in that file, and send misplaced-rule moves through the Rule Update Review proposal channel; never move them silently. Initial extraction and Draft review may author the first Design System directly; from Prototype validation onward every Agent-authored Design System write requires an accepted proposal revision from the current Rule Update Review that authorizes this exact artifact path. Never write the file before claim_rule_update_decision returns that accepted revision, and pass its proposalId here so Runtime can verify the authorization — omission rejects with rule_update_proposal_required; stale-cycle, path-mismatched, unknown, and unaccepted ids are rejected separately. Structural validation remains deterministic and fail-closed. A successful design-system declaration may also return advisory quality_diagnostics; these warnings never reject declaration or ingest, and should be repaired only from available evidence rather than by inventing semantics. On failure, report the apply failure through fail_rule_update_apply; retry_rule_update_apply preserves the original command identity.",
+    description: "Declare a source artifact immediately after writing it. For every Active component implementation, include componentPreview with exact current runId, ready surfaceId, Design System entryId, modulePath (equal to path), exportName, defaultArgs, stateArgs, and semanticImpact. Declare semanticImpact=none only after comparing the implementation with the current component contract and finding no reusable semantic change; use possible when judgment is needed and include semanticEvidenceRecordIds. Runtime establishes codeLinks, one shared Storybook-free Preview adapter, verified live availability, digest-cached background verification, and internal Verified Candidate automatically; stop unless the result contains one component Preview exception packet for resolve_component_preview_exception. Never guess identity or author a Story/per-component harness. Rule artifacts retain existing Rule Update Review and designer approval gates.",
     inputSchema: recordArtifactWrittenInputSchema
   }, async (args) => {
     const ctx = await active("record_artifact_written");
@@ -28,7 +28,10 @@ export function registerArtifactTools(
           ok: true,
           record: result.record,
           event_id: result.event_id,
-          quality_diagnostics: result.quality_diagnostics
+          quality_diagnostics: result.quality_diagnostics,
+          ...("component_preview" in result
+            ? { component_preview: result.component_preview }
+            : {})
         })
       : failureResult(
           "record_artifact_written",

@@ -28,6 +28,11 @@ import {
 } from "../design-system-code-backfill";
 import { reconcileProtectedDesignSystemSourceMetadata } from "../design-system-sync";
 import { emitRecordEvent } from "../record-bus";
+import {
+  getRunningComponentFormalizationTiming,
+  runComponentFormalizationStage,
+  updateComponentFormalizationTimingScope
+} from "../component-formalization-timing";
 
 /**
  * Apply the designer's direct candidate ↔ formalized selection to the DB and
@@ -101,7 +106,25 @@ export function backfillComponentCodeLinksCommand(
   projectPath: string,
   mappings: readonly BackfillCodeLinkMapping[]
 ): BackfillCodeLinksResult {
-  return backfillComponentCodeLinks(projectPath, mappings);
+  const result = runComponentFormalizationStage(
+    projectPath,
+    "component_code_linking",
+    { componentCount: mappings.length },
+    () => backfillComponentCodeLinks(projectPath, mappings)
+  );
+  if (result.ok) {
+    const session = getRunningComponentFormalizationTiming(projectPath);
+    if (session) {
+      try {
+        updateComponentFormalizationTimingScope(projectPath, session.id, {
+          componentEntryIds: result.entries.map((entry) => entry.entry_id)
+        });
+      } catch {
+        // Timing never changes command behavior.
+      }
+    }
+  }
+  return result;
 }
 
 export function getDesignSystemViewCommand(

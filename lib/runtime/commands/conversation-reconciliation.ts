@@ -5,6 +5,7 @@ import {
   type ReconcileDesignerConversationInput,
   type ReconcileDesignerConversationResult
 } from "../conversation-reconciliation";
+import { runComponentFormalizationStage } from "../component-formalization-timing";
 
 const conversationMessageSchema = z.object({
   id: z.string().describe("Stable Agent-host message id."),
@@ -61,5 +62,18 @@ export function reconcileDesignerConversationCommand(
   projectPath: string,
   input: ReconcileDesignerConversationInput
 ): ReconcileDesignerConversationResult {
-  return reconcileDesignerConversation(projectPath, input);
+  return runComponentFormalizationStage(
+    projectPath,
+    "conversation_reconciliation",
+    {},
+    () => reconcileDesignerConversation(projectPath, input),
+    {
+      runId: input.runId,
+      startIfMissing: {
+        runId: input.runId,
+        componentEntryIds: [],
+        stateCount: 0
+      }
+    }
+  );
 }

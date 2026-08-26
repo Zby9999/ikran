@@ -210,6 +210,29 @@ export const recordArtifactWrittenInputShape = {
     .optional()
     .describe(
       "design_system_entries ids (or entry_id) this write depended on that are still Candidate. Runtime validates each is status=candidate and records candidate_dependency_declared."
+    ),
+  componentPreview: z
+    .object({
+      runId: z.string(),
+      surfaceId: z.string(),
+      entryId: z.string(),
+      modulePath: z.string(),
+      exportName: z.string(),
+      defaultArgs: z.record(z.string(), z.unknown()).optional(),
+      stateArgs: z
+        .record(z.string(), z.record(z.string(), z.unknown()))
+        .optional(),
+      semanticImpact: z
+        .enum(["none", "possible"])
+        .describe(
+          "Agent judgment against the current component contract. Use none only when evidence proves this implementation changes no reusable semantics; possible creates a bounded exception instead of auto-formalizing."
+        ),
+      semanticEvidenceRecordIds: z.array(z.string()).optional(),
+      providerRecipe: z.record(z.string(), z.unknown()).optional()
+    })
+    .optional()
+    .describe(
+      "Exact same-run component provenance. modulePath must equal this declaration's path; Runtime never guesses from a filename or display name. On success code linking and shared Preview Registration are automatic."
     )
 } as const;
 

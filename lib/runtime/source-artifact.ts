@@ -795,6 +795,14 @@ export function recordSourceArtifact(
         projectPath: path.resolve(projectPath)
       });
     }
+    for (const surfaceId of result.refreshSurfaceIds) {
+      emitRecordEvent({
+        kind: "prototype",
+        action: "updated",
+        id: surfaceId,
+        projectPath: path.resolve(projectPath)
+      });
+    }
     queuePrototypeSurfaceRefreshAfterArtifact(
       projectPath,
       result.refreshSurfaceIds

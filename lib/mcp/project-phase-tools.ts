@@ -8,6 +8,7 @@ import {
   confirmDraftDesignSystemCommand,
   confirmPrototypeCommand,
   formalizeDesignSystemCommand,
+  getComponentFormalizationTimingCommand,
   requireActiveProjectCommand
 } from "../runtime/commands";
 import {
@@ -17,6 +18,13 @@ import {
 } from "./shared";
 
 const emptyInputSchema = z.object({});
+
+const timingInputSchema = z.object({
+  sessionId: z
+    .string()
+    .optional()
+    .describe("Optional timing session id; omit to read the latest local run.")
+});
 
 const formalizeInputSchema = z.object({
   modificationReview: z
@@ -42,6 +50,7 @@ function phaseFailure(
     changed_artifact_paths?: string[];
     source_warnings?: unknown[];
     source_issues?: unknown[];
+    verification_entry_ids?: string[];
   },
   rt: Awaited<ReturnType<RegisterIkranToolsDeps["ensureRuntime"]>>
 ) {
@@ -58,6 +67,9 @@ function phaseFailure(
       : {}),
     ...(result.source_issues !== undefined
       ? { source_issues: result.source_issues }
+      : {}),
+    ...(result.verification_entry_ids !== undefined
+      ? { verification_entry_ids: result.verification_entry_ids }
       : {})
   });
 }
@@ -66,6 +78,33 @@ export function registerProjectPhaseTools(
   mcp: McpServer,
   { ensureRuntime }: RegisterIkranToolsDeps
 ): void {
+  mcp.registerTool(
+    "get_component_formalization_timing",
+    {
+      description:
+        "Read the latest project-local code-backed formalization timing breakdown, or one exact session by id. Returns Runtime work, observable Agent wait, stage attempts, cold/warm Preview startup, cache status, typed failure, and Time to Visual/Verified/Formalized. Operational data only; it is not research evidence.",
+      inputSchema: timingInputSchema
+    },
+    async (args) => {
+      const rt = await ensureRuntime();
+      const active = requireActiveProjectCommand();
+      if (!active.ok) {
+        return failureResult(
+          "get_component_formalization_timing",
+          active.reason,
+          rt
+        );
+      }
+      return successResult(
+        rt,
+        getComponentFormalizationTimingCommand(
+          active.project.path,
+          args.sessionId
+        )
+      );
+    }
+  );
+
   mcp.registerTool(
     "confirm_draft_design_system",
     {
@@ -90,7 +129,7 @@ export function registerProjectPhaseTools(
     "confirm_prototype",
     {
       description:
-        "Declare that the designer confirmed Prototype modifications and audit. Advances prototype_validation to design_system_formal; also re-enters design_system_formal from ready_for_new_design after a new-design-run prototype is confirmed. After advancing, keep the turn going autonomously: freeze the complete current host-conversation range and call reconcile_designer_conversation; pass its id to claim_consolidate_review and give every feedback an outcome; then review reusable candidates, backfill code links, declare component live heroes, verify them, and formalize. The code-back chain is backfill_component_code_links → declare_component_live_heroes → verify_component_live_heroes — formalize is the LAST step, never the next one after backfill. Do not write semantic feedback during active dialogue. Prototype file edits must go through the Agent; do not edit prototype files directly. Rejected out of order.",
+        "Declare that the designer confirmed Prototype modifications and audit. Component implementations must already be declared through record_artifact_written.componentPreview; Runtime owns code linking, the shared live Preview, verification cache, and internal Verified Candidate. Then reconcile the frozen conversation, complete claim_consolidate_review, resolve only emitted component Preview exceptions, wait for automatic verification eligibility, and formalize. Do not run the legacy per-component harness/backfill/declaration/verification chain. Rejected out of order.",
       inputSchema: emptyInputSchema
     },
     async () => {
@@ -104,7 +143,7 @@ export function registerProjectPhaseTools(
         ? successResult(rt, {
             ...result,
             next_action: { tool: "reconcile_designer_conversation" },
-            next: "Continue autonomously: freeze the completed host transcript → reconcile_designer_conversation → claim_consolidate_review(reconciliationId) → outcome every feedback → backfill_component_code_links → declare_component_live_heroes → verify_component_live_heroes → formalize_design_system."
+            next: "Continue autonomously: reconcile the frozen transcript → claim_consolidate_review → outcome feedback → resolve only emitted component Preview exceptions → wait for automatic verification → formalize_design_system."
           })
         : phaseFailure("confirm_prototype", result, rt);
     }
@@ -114,7 +153,7 @@ export function registerProjectPhaseTools(
     "backfill_component_code_links",
     {
       description:
-        "Backfill Prototype code links into Design System component specs. Declare entryId ↔ code-path mappings explicitly — one mapping per component spec entry, one or more code paths per entry; Runtime never auto-matches by name or filename. Every code path must resolve inside the project, exist on disk, and already be declared via record_artifact_written (artifactType code or prototype); a missing file or undeclared path is rejected with the offending path named, and nothing is written. On success value.codeLinks is written back into each entry's source spec JSON (file and DB stay in step, failure restores both) and a design_system_code_links_backfilled event records the exact mapping. Run after the designer confirms the Prototype. codeLinks alone produce NO visible component hero: the mandatory continuation is declare_component_live_heroes (live harness heroes) → verify_component_live_heroes (Runtime loads every harness and confirms real geometry) → formalize_design_system. Do not skip from backfill straight to formalize.",
+        "Compatibility-only repair for legacy records. Explicitly backfills entryId ↔ code paths and never guesses identity. Active components use record_artifact_written.componentPreview, which links and verifies automatically; this tool is not an Active next step.",
       inputSchema: backfillComponentCodeLinksInputSchema
     },
     async (args) => {
@@ -130,8 +169,7 @@ export function registerProjectPhaseTools(
       return result.ok
         ? successResult(rt, {
             ...result,
-            next_action: { tool: "declare_component_live_heroes" },
-            next: "codeLinks alone produce no visible hero. Continue autonomously: scaffold_component_harness (Runtime-owned sizing helper) → write harness routes → record_artifact_written for every new file → record_preview ONCE → declare_component_live_heroes → verify_component_live_heroes (fix and re-verify until every entry reports geometry) → formalize_design_system."
+            next: "Legacy codeLinks repaired. Active updates must be redeclared through record_artifact_written.componentPreview."
           })
         : failureResult(
             "backfill_component_code_links",
@@ -146,7 +184,7 @@ export function registerProjectPhaseTools(
     "formalize_design_system",
     {
       description:
-        "Formalize the Design System and advance design_system_formal to ready_for_new_design. A completed Rule Update round is mandatory for every Prototype confirmation, even when it concludes that no rules should change: reconcile_designer_conversation and claim_consolidate_review must both occur after the latest confirm_prototype, or this rejects with rule_update_review_required. Every designer_feedback row must then be consumed by a confirmed proposal or explicitly dismissed; otherwise this rejects with unreviewed_feedback_count. Any undeclared Design System source drift rejects with rule_update_proposal_required and the changed paths; a missing, invalid, or otherwise unready declared source rejects with design_system_source_not_ready and source_warnings. Source digests are checked again immediately before the final transaction; concurrent drift rejects with design_system_source_changed_during_formalize. Requires modificationReview: your one-sentence attestation that this phase's prototype modifications were inspected for reusable-rule candidates — the review itself is mandatory even when its outcome is 'no reusable rules'. Pass promoteEntryIds to adjudicate Candidates chosen during the chat review: those entries flip candidate → formalized in the same transaction, and their source files are rewritten with the formalized status so file and DB stay in step; unlisted candidates stay candidate. The result carries code_backfill_hints: promoted component specs whose codeLinks are still empty while sourceCaptures remain their only provenance — an advisory gap list for backfill_component_code_links, never a rejection. Rejected out of order.",
+        "Formalize the Design System after current Rule Update Review completion, feedback consumption, source integrity checks, modificationReview, and designer-selected Candidate promotion. Registered component previews must already be fully Runtime-verified; queued/failed/stale registrations reject with component_preview_verification_required. Internal Verified Candidate never auto-promotes to Formalized. Rejected out of order.",
       inputSchema: formalizeInputSchema
     },
     async (args) => {
