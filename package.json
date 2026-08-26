@@ -59,8 +59,6 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@emnapi/core": "^1.11.3",
-    "@emnapi/runtime": "^1.11.3",
     "@playwright/test": "^1.61.1",
     "shadcn": "^4.13.0",
     "vitest": "^4.1.10"
@@ -71,5 +69,9 @@
     "hono": "4.12.34",
     "ip-address": "10.5.0",
     "js-yaml": "4.3.1"
+  },
+  "optionalDependencies": {
+    "@emnapi/core": "1.11.3",
+    "@emnapi/runtime": "1.11.3"
   }
 }
