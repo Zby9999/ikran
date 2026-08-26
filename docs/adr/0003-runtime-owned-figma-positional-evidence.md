@@ -7,7 +7,7 @@ Ikran 将 Figma Connection 和确定性的 Figma positional evidence 摄取收�
 ## 决策
 
 - MVP 使用安装级、只读的 **Figma Connection**。用户提供 Personal Access Token，凭证存放在 macOS Keychain，跨本地项目复用，不进入项目 SQLite、artifact、日志或 research export。OAuth 与多账户是 Future Work，不在 MVP 实施。
-- Figma Connection 是 Workbench 的前置门槛：未连接时显示连接面板并锁定画布；粘贴 Figma link 直接失败，不创建 pending Seed Reference。
+- Figma Connection 是新证据摄取的前置门槛：没有已安装 current evidence 的项目在未连接时显示连接面板并锁定画布；已有 current Evidence Surface（包括预装 Study Kit）的项目无需凭证即可查看和进行 Alignment。新增或刷新证据仍须连接，未连接时失败且不创建 pending Seed Reference。
 - 设计师可在 Workbench 粘贴、Agent 也可经语义 MCP tool 添加 Seed Reference；两者调用同一 Runtime command，并记录真实 initiator。
 - 一个项目可有任意数量的 Seed References，它们共同表达同一种设计语言并共享一个项目级 Design Language Description；单个 Reference 可附带可选 Reference Note。Description 不阻塞摄取，但为空时阻止进入正式 Design Intent Alignment。
 - Seed Reference 的幂等身份是 canonical `file_key` + normalized `node_id`。原始 URL 留作显示与审计；分享时间等非身份参数不参与身份。重复提交只复用并聚焦已有 Frame，不创建重复 Reference 或 Surface。

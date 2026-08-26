@@ -8,6 +8,7 @@ import { recordEvidencePackage } from "../lib/runtime/evidence-package";
 import { setDesignLanguageDescription } from "../lib/runtime/project-readiness";
 import { registerSeedReference } from "../lib/runtime/seed-reference";
 import { killRecordedRuntime, sc, spawnMcpClient } from "./helpers/mcp";
+import { enterCanvas } from "./helpers/workbench";
 
 test("07C one-process Workbench presence wakes the MCP command waiter", async ({ page }) => {
   test.setTimeout(90_000);
@@ -47,10 +48,7 @@ test("07C one-process Workbench presence wakes the MCP command waiter", async ({
       }
     });
     await page.goto(workbenchUrl);
-    await page.getByRole("textbox", { name: "Figma Personal Access Token" })
-      .fill("figd_ok_e2e");
-    await page.getByRole("button", { name: "Check Figma token" }).click();
-    await page.getByRole("button", { name: "Enter Canvas" }).click();
+    await enterCanvas(page);
     await expect(page.getByTestId("sign-seed-next-phase")).toBeEnabled();
 
     const waiting = client.callTool(

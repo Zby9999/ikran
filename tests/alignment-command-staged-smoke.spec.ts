@@ -55,10 +55,7 @@ test("07G staged one-process Agent command handoff survives abandon and restart"
     ).toBe(true);
 
     await page.goto(firstWorkbenchUrl);
-    await page.getByRole("textbox", { name: "Figma Personal Access Token" })
-      .fill("figd_ok_e2e");
-    await page.getByRole("button", { name: "Check Figma token" }).click();
-    await page.getByRole("button", { name: "Enter Canvas" }).click();
+    await enterCanvas(page);
     const workbench = page.getByTestId("seed-workbench");
     await expect(workbench).toHaveAttribute(
       "data-alignment-workflow-stage",

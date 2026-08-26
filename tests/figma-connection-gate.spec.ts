@@ -142,6 +142,62 @@ test("gate closed: canvas paste shows disconnected error, no projection", async 
   expect(JSON.parse(seeds.body).records).toEqual([]);
 });
 
+test("preloaded Figma evidence bypasses the connection gate after credentials are removed", async ({
+  page,
+  runtime,
+  folder
+}) => {
+  const token = await captureToken(page, runtime.baseURL);
+  await bindFolder(token, folder, runtime.port);
+  await ensureGateOpen(page, runtime, token);
+
+  const capture = await httpPost(
+    runtime.port,
+    "/api/seed-capture",
+    {
+      figmaSeedReference:
+        "https://www.figma.com/design/AbCdEfGh/Mock?node-id=1-2"
+    },
+    {
+      host: `localhost:${runtime.port}`,
+      "x-ikran-session": token,
+      "content-type": "application/json"
+    }
+  );
+  expect(capture.status).toBe(200);
+
+  const readiness = await httpPatch(
+    runtime.port,
+    "/api/project/readiness",
+    { designLanguageDescription: "Preloaded Study Kit evidence" },
+    {
+      host: `localhost:${runtime.port}`,
+      "x-ikran-session": token,
+      "content-type": "application/json"
+    }
+  );
+  expect(readiness.status).toBe(200);
+  await page.reload();
+  await page.getByTestId("sign-seed-next-phase").click();
+  await expect(page.getByTestId("seed-workbench")).toHaveAttribute(
+    "data-alignment-workflow-stage",
+    "alignment-preparing"
+  );
+
+  await httpDelete(runtime.port, "/api/figma-connection", {
+    host: `localhost:${runtime.port}`,
+    "x-ikran-session": token
+  });
+  await page.reload();
+
+  await expect(page.getByTestId("seed-reference-projection")).toBeVisible();
+  await expect(page.getByTestId("figma-verification-panel")).toHaveCount(0);
+  await expect(page.getByTestId("seed-workbench")).toHaveAttribute(
+    "data-figma-gate",
+    "open"
+  );
+});
+
 test("invalid token stays closed and never stores credential", async ({
   page,
   runtime,

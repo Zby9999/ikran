@@ -46,9 +46,9 @@ const WorkbenchCanvas = dynamic(
 
 // Issue 02/05A — Figma Connection Gate + Runtime paste capture.
 //
-// Gate closed: show designer Connection Panel, lock canvas, reject paste.
-// Gate open: paste Figma selection links → optimistic loading frame → Runtime
-// atomic capture → Ikran Figma frame (never a tldraw Figma iframe embed).
+// With no installed evidence, Gate closed shows the Connection Panel, locks the
+// canvas, and rejects paste. Existing current evidence remains viewable without
+// a credential; capture and refresh still fail closed until Figma is connected.
 
 export function SeedEvidenceWorkbench({
   session,
@@ -203,7 +203,14 @@ export function SeedEvidenceWorkbench({
     [alignment]
   );
 
-  const showGate = gateStatus !== "open" || !canvasEntered;
+  const hasInstalledFigmaEvidence = records.some(
+    (record) =>
+      Boolean(record.current_surface_id) &&
+      surfaces.some((surface) => surface.id === record.current_surface_id)
+  );
+  const showGate =
+    !hasInstalledFigmaEvidence &&
+    (gateStatus !== "open" || !canvasEntered);
   const canvasLocked = showGate;
 
   useEffect(() => {
@@ -340,6 +347,7 @@ export function SeedEvidenceWorkbench({
       data-alignment-workflow-stage={workflowStage}
       data-project-phase={projectPhase}
       data-agent-command-status={nextAgentCommandStatus}
+      data-runtime-status={runtimeStatus}
     >
       <div className="seed-workbench__folder-stack">
         <FolderChrome

@@ -13,14 +13,15 @@ export async function enterCanvas(
     name: "Figma Personal Access Token"
   });
   const selectTool = page.getByRole("button", { name: "Select (V)" });
-  await expect.poll(async () =>
-    (await tokenInput.isVisible()) || (await selectTool.isVisible())
-  ).toBe(true);
-  if (await tokenInput.isVisible()) {
+  const workbench = page.getByTestId("seed-workbench");
+  await expect(workbench).toHaveAttribute("data-runtime-status", "ready");
+  const gate = await workbench.getAttribute("data-figma-gate");
+  if (gate === "closed") {
+    await expect(tokenInput).toBeVisible();
     await tokenInput.fill("figd_ok_e2e");
     await page.getByRole("button", { name: "Check Figma token" }).click();
     await page.getByRole("button", { name: "Enter Canvas" }).click();
-    await expect(page.getByTestId("figma-verification-panel")).toHaveCount(0);
-    await expect(selectTool).toBeVisible();
   }
+  await expect(page.getByTestId("figma-verification-panel")).toHaveCount(0);
+  await expect(selectTool).toBeVisible();
 }

@@ -130,10 +130,12 @@ _Avoid_: Figma login, Agent Figma connection, token (when referring to the
 product capability)
 
 **Figma Connection Gate**:
-The Workbench precondition requiring an active Figma Connection before the
-canvas can be used. While the gate is closed, the connection panel is shown,
-the canvas is locked, and a pasted Figma link is rejected without creating a
-Seed Reference.
+The Workbench precondition requiring an active Figma Connection before new
+Figma evidence can be captured. A project with no installed current evidence
+shows the connection panel and locks the canvas. A project that already has a
+current Evidence Surface—including a preloaded Study Kit—can view and align
+against that evidence without a credential; new capture and refresh still fail
+closed until Figma is connected.
 _Avoid_: pending Seed Reference, deferred capture
 
 **Figma positional evidence**:
