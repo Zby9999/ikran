@@ -9,6 +9,7 @@ import process from "node:process";
 import { DatabaseSync } from "node:sqlite";
 
 import { buildStudyRuntime, findNativeMachO } from "./build-study-runtime.mjs";
+import { clearPrefilledAlignmentAnswers } from "./study-kit-database.mjs";
 import {
   assertProdBuildMatchesSource,
   writeVersionStamp
@@ -417,8 +418,13 @@ function packageWorkspace(source, destination, label, relativePath) {
   if (state.designSystemEntries || state.sourceArtifacts || state.prototypeRuns || state.prototypeSurfaces) {
     fail(`${label} contains post-Alignment artifacts`);
   }
-  if (state.questionCount !== 16 || state.finalAnswerCount !== 0) {
-    fail(`${label} must contain 16 unanswered Question cards`);
+  if (
+    state.questionCount !== 16 ||
+    state.proposedAnswerCount !== 0 ||
+    state.allProposedAnswerCount !== 0 ||
+    state.finalAnswerCount !== 0
+  ) {
+    fail(`${label} must contain 16 Question cards with no prefilled or final answers`);
   }
 
   const screenshot = path.join(destination, state.screenshotArtifactPath);
@@ -443,6 +449,7 @@ function packageWorkspace(source, destination, label, relativePath) {
       attemptStatus: state.attemptStatus,
       annotations: state.annotationCount,
       questions: state.questionCount,
+      proposedAnswers: state.proposedAnswerCount,
       finalAnswers: state.finalAnswerCount
     }
   };
@@ -482,6 +489,7 @@ function sanitizeDatabase(databasePath, sourceWorkspace, label) {
         }
       }
     }
+    clearPrefilledAlignmentAnswers(db);
     for (const trigger of immutableSnapshotTriggers) {
       db.exec(String(trigger.sql));
     }
@@ -545,6 +553,8 @@ function inspectDatabase(databasePath) {
       attemptStatus: String(workflow.attempt_status),
       annotationCount: scalar("SELECT count(*) FROM agent_alignment_annotations WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1)"),
       questionCount: scalar("SELECT count(*) FROM alignment_question_cards WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1)"),
+      proposedAnswerCount: scalar("SELECT count(*) FROM alignment_question_cards WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1) AND proposed_answer IS NOT NULL"),
+      allProposedAnswerCount: scalar("SELECT count(*) FROM alignment_question_cards WHERE proposed_answer IS NOT NULL"),
       finalAnswerCount: scalar("SELECT count(*) FROM alignment_question_cards WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1) AND final_answer IS NOT NULL AND trim(final_answer) <> ''"),
       designSystemEntries: scalar("SELECT count(*) FROM design_system_entries"),
       sourceArtifacts: scalar("SELECT count(*) FROM source_artifacts"),
@@ -661,11 +671,11 @@ function startHere(packageName, workspaces) {
   const workspaceDescription = single
     ? "one preloaded study workspace"
     : `${workspaces.length} preloaded, independent study workspaces`;
-  return `# ${title}\n\nThis package contains one Codex plugin and ${workspaceDescription}.\n\n## ${setupAudience}\n\n1. Keep this extracted folder intact.\n2. Ask Codex to install the bundled plugin, or run:\n\n   \`\`\`bash\n   codex plugin marketplace add <PATH_TO_${packageName}>\n   codex plugin add ikran@ikran-study-kit\n   \`\`\`\n\n${workspaceInstruction}\n4. Ask: \`打开 Ikran，并继续当前 Alignment。\`\n\nThe workspace already contains its Figma reference, evidence screenshot, positional nodes, and unanswered Alignment cards. A Figma Connection is not required. Do not refresh or replace the reference during the study.\n\nThe workspace is frozen before Draft Design System generation.\n`;
+  return `# ${title}\n\nThis package contains one Codex plugin and ${workspaceDescription}.\n\n## ${setupAudience}\n\n1. Keep this extracted folder intact.\n2. Ask Codex to install the bundled plugin, or run:\n\n   \`\`\`bash\n   codex plugin marketplace add <PATH_TO_${packageName}>\n   codex plugin add ikran@ikran-study-kit\n   \`\`\`\n\n${workspaceInstruction}\n4. Ask: \`打开 Ikran，并继续当前 Alignment。\`\n\nThe workspace already contains its Figma reference, evidence screenshot, positional nodes, and unanswered Alignment cards. Question answer fields are intentionally blank; no proposed answers are prefilled. A Figma Connection is not required. Do not refresh or replace the reference during the study.\n\nThe workspace is frozen before Draft Design System generation.\n`;
 }
 
 function workspaceReadme() {
-  return `# Ikran study workspace\n\nOpen this folder as the Codex workspace, then ask the Agent to open Ikran and continue the existing Alignment.\n\nThe Figma reference and evidence are already installed. Do not connect Figma, refresh the reference, or generate a Draft Design System before answering the study questions.\n`;
+  return `# Ikran study workspace\n\nOpen this folder as the Codex workspace, then ask the Agent to open Ikran and continue the existing Alignment.\n\nThe Figma reference and evidence are already installed. Question answer fields are intentionally blank; no proposed answers are prefilled. Do not connect Figma, refresh the reference, or generate a Draft Design System before answering the study questions.\n`;
 }
 
 function pluginReadme() {
