@@ -1,6 +1,6 @@
 {
   "name": "recursive-design-agent",
-  "version": "0.1.0-alpha.13",
+  "version": "0.1.0-alpha.14",
   "license": "Apache-2.0",
   "private": true,
   "packageManager": "npm@11.6.2",
@@ -14,7 +14,7 @@
   },
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 3000",
-    "build": "next build && node lib/runtime/version-stamp.mjs",
+    "build": "next build --webpack && node lib/runtime/version-stamp.mjs",
     "start": "node bin/ikran.mjs",
     "start:prod": "node bin/ikran.mjs --prod",
     "setup:product": "npm ci --omit=dev && node scripts/release/prune-product-install.mjs && npx --no-install playwright-core install chromium && npm run build",

@@ -115,6 +115,36 @@ export async function smokeProductKit({ root, timeoutMs = 120_000 }) {
       { path: projectDir },
       timeoutMs
     );
+    const projectResponse = await within(
+      fetch(new URL("/api/project", parsed), {
+        headers: { "x-ikran-session": session },
+        signal: AbortSignal.timeout(timeoutMs)
+      }),
+      timeoutMs,
+      "Workbench project route"
+    );
+    const projectText = await projectResponse.text();
+    if (!projectResponse.ok) {
+      throw new ReleasePolicyError(
+        "workbench_project_unavailable",
+        `Workbench project route failed with HTTP ${projectResponse.status}${projectText ? `: ${projectText}` : ""}`
+      );
+    }
+    let projectState;
+    try {
+      projectState = JSON.parse(projectText);
+    } catch {
+      throw new ReleasePolicyError(
+        "invalid_workbench_project",
+        "Workbench project route returned invalid JSON"
+      );
+    }
+    if (projectState?.ok !== true || projectState?.project?.path !== projectDir) {
+      throw new ReleasePolicyError(
+        "invalid_workbench_project",
+        `Workbench project route returned unexpected state: ${projectText}`
+      );
+    }
     writePrototypeFixture(projectDir);
     await connectFigmaForSmoke(workbenchUrl, timeoutMs);
     const capturedSeed = await callToolOk(

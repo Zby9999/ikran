@@ -10,6 +10,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { buildStudyRuntime, findNativeMachO } from "./build-study-runtime.mjs";
 import { clearPrefilledAlignmentAnswers } from "./study-kit-database.mjs";
+import { smokeStudyPlugin } from "./smoke-study-plugin.mjs";
 import {
   assertProdBuildMatchesSource,
   writeVersionStamp
@@ -77,6 +78,7 @@ try {
 
   const pluginDestination = path.join(staging, "plugins", "ikran");
   const studyRuntime = copyCodexPlugin(pluginSource, pluginDestination, pluginVersion);
+  const pluginSmoke = await smokeStudyPlugin({ root: pluginDestination });
 
   const packagedWorkspaces = workspaceSpecs.map((workspace) =>
     packageWorkspace(
@@ -98,7 +100,8 @@ try {
       version: pluginVersion,
       path: "plugins/ikran",
       marketplace: ".agents/plugins/marketplace.json",
-      studyRuntime
+      studyRuntime,
+      smoke: pluginSmoke
     },
     figmaConnectionRequired: false,
     participantCheckpoint: "alignment-answering",
