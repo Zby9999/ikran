@@ -11,6 +11,10 @@ import {
   requireActiveProjectCommand
 } from "../runtime/commands";
 import {
+  commitInitialDesignSystemSemantic,
+  commitInitialDesignSystemSemanticInputSchema
+} from "../runtime/initial-design-system-semantic-commit";
+import {
   failureResult,
   successResult,
   type RegisterIkranToolsDeps
@@ -32,10 +36,39 @@ export function registerInitialDesignSystemTools(
   };
 
   mcp.registerTool(
+    "commit_initial_design_system_semantics",
+    {
+      description:
+        "Submit the intelligent result of Alignment extraction once. Provide only semantic Design System decisions and the Alignment source record ids supporting each decision: visual language, principles, tokens, layout and interaction rules, and component contracts. Runtime deterministically derives stable ids and paths, source excerpts and confidence, Figma source captures, canonical JSON files, artifact declarations, extraction claims, work units, residual coverage, global audit, and finalization. This replaces the many mechanical artifact/work-unit/audit tool calls. Call after claim_initial_design_system_preparation and use that response's alignment attempt and source record ids.",
+      inputSchema: commitInitialDesignSystemSemanticInputSchema
+    },
+    async (args) => {
+      const ctx = await active("commit_initial_design_system_semantics");
+      if (!ctx.ok) return ctx.result;
+      const result = commitInitialDesignSystemSemantic(ctx.projectPath, args);
+      return result.ok
+        ? successResult(ctx.rt, result)
+        : failureResult(
+            "commit_initial_design_system_semantics",
+            result.reason,
+            ctx.rt,
+            result.details === undefined
+              ? result.failedStage === undefined
+                ? undefined
+                : { failed_stage: result.failedStage }
+              : {
+                  failed_stage: result.failedStage ?? null,
+                  details: result.details
+                }
+          );
+    }
+  );
+
+  mcp.registerTool(
     "claim_initial_design_system_preparation",
     {
       description:
-        "Claim the current durable prepare_initial_design_system command. Returns the complete frozen Alignment context in one read: Design Language Description, Seed References and evidence versions, every Agent Annotation, answered Question card with answer source, and Designer Annotation, plus the source contract, required artifacts, completed extraction work units, global audit, and resumable progress. Read and reason over this whole context before writing output section by section. Safe to retry after disconnect; a repeated claim returns the same frozen input and current recovery state. No arguments."
+        "Claim the current durable prepare_initial_design_system command. Returns the complete frozen Alignment context in one read: Design Language Description, Seed References and evidence versions, every Agent Annotation, answered Question card with answer source, and Designer Annotation, plus the source contract and resumable progress. Read and reason over the whole context, then call commit_initial_design_system_semantics once with only the extracted semantic decisions and their source record ids; do not perform section-by-section file or claim bookkeeping. Safe to retry after disconnect; a repeated claim returns the same frozen input and current recovery state. No arguments."
     },
     async () => {
       const ctx = await active("claim_initial_design_system_preparation");
