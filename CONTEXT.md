@@ -355,7 +355,9 @@ threshold as “discard pre-completion successful traces”
 **Source artifact**:
 A source-of-truth project file written by the agent through the Agent host's
 native file editing — design-system markdown, `token.json`, component specs,
-prototype code. The agent *declares* each write via an Ikran tool.
+prototype code. The agent *declares* each write via an Ikran tool. Two narrow
+Runtime write-back exceptions are documented below: the Initial Design System
+semantic commit and Browser designer approval/edit.
 _Avoid_: source file (when meant as this concept), generated file
 
 **Derived artifact**:
@@ -373,12 +375,14 @@ _Avoid_: treating JSONL as the live canonical store
 **Declare**:
 The agent calling an Ikran tool after writing a source artifact, so Runtime
 records the semantic event, validates the output (one-pass repair per Issue 13),
-and generates derived artifacts. File writes happen via the Agent host; Runtime
-learns of them by declaration, not by mediating the write. One sanctioned
-exception: the 09A candidate → formalized approval write-back (decision 5),
-where Runtime writes the design-system source JSON itself — the only way to
-keep the DB row and the source file in lockstep for the Browser's single write
-operation.
+and generates derived artifacts. File writes normally happen via the Agent
+host; Runtime learns of them by declaration, not by mediating the write. Two
+sanctioned exceptions exist: (1) the Initial Design System semantic commit in
+ADR 0006, where the Agent authors one evidence-linked semantic bundle and
+Runtime atomically projects its deterministic JSON, lineage, work units, and
+audit; and (2) the 09A candidate → formalized approval/edit write-back
+(decision 5), where Runtime keeps the DB row and source file in lockstep for a
+single Browser operation.
 _Avoid_: log, register, commit
 
 ## Source-of-truth split

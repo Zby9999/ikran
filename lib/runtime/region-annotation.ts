@@ -176,6 +176,7 @@ export type RegionAnnotationErrorReason =
   | "surface_node_mismatch"
   | "node_not_found"
   | "evidence_geometry_missing"
+  | "alignment_completed"
   | "db_error";
 
 export interface RegionAnnotationResult {
@@ -759,6 +760,13 @@ export function createRegionAnnotation(
 
   try {
     const event = withProjectTransaction(projectPath, (db) => {
+      if (
+        record.author === "designer" &&
+        record.section !== null &&
+        alignmentInputIsFrozenOnDb(db)
+      ) {
+        return { ok: false as const, reason: "alignment_completed" as const };
+      }
       db.prepare(
         `INSERT INTO region_annotations (
           id, surface_id, surface_artifact_id, surface_node_id,
@@ -811,6 +819,7 @@ export function createRegionAnnotation(
         section: record.section
       });
     });
+    if ("ok" in event) return event;
     emitRecordEvent({
       kind: "annotation",
       action: "created",
@@ -956,6 +965,7 @@ export function confirmAnnotationPrimaryNode(
 export type RegionAnnotationDeleteReason =
   | "not_found"
   | "not_deletable"
+  | "alignment_completed"
   | "db_error";
 
 export type RegionAnnotationDeleteResponse =
@@ -966,6 +976,7 @@ export type RegionAnnotationRestoreReason =
   | "not_found"
   | "already_exists"
   | "not_restorable"
+  | "alignment_completed"
   | "db_error";
 
 export type RegionAnnotationRestoreResponse =
@@ -995,6 +1006,13 @@ type PersistedRegionAnnotationRow = {
   section: string | null;
 };
 
+function alignmentInputIsFrozenOnDb(db: DatabaseType): boolean {
+  const row = db.prepare(
+    "SELECT status FROM design_intent_alignment WHERE singleton = 1"
+  ).get() as { status: string } | undefined;
+  return row?.status === "completed";
+}
+
 /**
  * Delete a Region Annotation by id.
  * Product rule: only `author === "designer"` rows may be deleted.
@@ -1018,6 +1036,9 @@ export function deleteRegionAnnotation(
       }
       if (row.author !== "designer") {
         return { ok: false as const, reason: "not_deletable" as const };
+      }
+      if (row.section !== null && alignmentInputIsFrozenOnDb(db)) {
+        return { ok: false as const, reason: "alignment_completed" as const };
       }
       const confirmations = db
         .prepare(
@@ -1113,6 +1134,9 @@ export function restoreRegionAnnotation(
       ) {
         return { ok: false as const, reason: "not_restorable" as const };
       }
+      if (row.section !== null && alignmentInputIsFrozenOnDb(db)) {
+        return { ok: false as const, reason: "alignment_completed" as const };
+      }
 
       db.prepare(
         `INSERT INTO region_annotations (
@@ -1188,6 +1212,7 @@ export type RegionAnnotationBodyUpdateReason =
   | "missing_body"
   | "not_found"
   | "not_editable"
+  | "alignment_completed"
   | "db_error";
 
 export type RegionAnnotationBodyUpdateResponse =
@@ -1228,6 +1253,9 @@ export function updateRegionAnnotationBody(
       }
       if (row.author !== "designer") {
         return { ok: false as const, reason: "not_editable" as const };
+      }
+      if (row.section !== null && alignmentInputIsFrozenOnDb(db)) {
+        return { ok: false as const, reason: "alignment_completed" as const };
       }
       db.prepare("UPDATE region_annotations SET body = ? WHERE id = ?").run(
         body,

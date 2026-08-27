@@ -1,6 +1,6 @@
 # 54 — Durable Incremental Planning Recovery
 
-Status: ready-for-agent
+Status: resolved
 
 ## User Story
 
@@ -64,3 +64,12 @@ The intended human recovery instruction is:
 ## Dependencies
 
 Blocked by: 53 — Atomic Finalize-to-Monitor Section Loop.
+
+## Comments
+
+- 2026-08-28: Persisted checkpoints now expose attempt, global and per-section
+  cursors, plan version, current/valid/stale decisions, cumulative Draft, frozen
+  state, and one next action. Cancellation pauses without acknowledging input;
+  resume re-reads durable backlog. Reopening an active project advertises the
+  direct resume tool instead of generic Agent-command wait, and stops doing so
+  after the preparation command completes.

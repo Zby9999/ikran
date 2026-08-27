@@ -1,6 +1,6 @@
 # 52 — Attempt-Bound Incremental Initial Design System Plan
 
-Status: ready-for-agent
+Status: resolved
 
 ## User Story
 
@@ -67,3 +67,12 @@ artifact, lineage, or completeness gates.
 ## Dependencies
 
 Blocked by: 51 — Alignment Semantic Revision and Section Delta Cursor.
+
+## Comments
+
+- 2026-08-28: Implemented attempt-bound versioned plans with idempotent writes,
+  stable decision-id upsert/retire, durable source/digest dependencies,
+  per-section cursors, selective invalidation, and cumulative hidden Draft
+  state. Unrelated concurrent answer revisions no longer discard a still-fresh
+  section analysis; cross-section decisions can be repaired from the section
+  whose edited source invalidated them.

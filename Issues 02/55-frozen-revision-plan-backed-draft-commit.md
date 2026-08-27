@@ -1,6 +1,6 @@
 # 55 — Frozen-Revision Plan-Backed Draft Commit
 
-Status: ready-for-agent
+Status: resolved
 
 ## User Story
 
@@ -62,6 +62,15 @@ committed.
 - Keep final commit idempotent against the frozen attempt and plan version.
 - This ticket can proceed in parallel with interruption recovery once the plan
   contract exists.
+
+## Comments
+
+- 2026-08-28: Complete freezes revision/digest atomically. The plan-backed
+  commit verifies every current section digest, decision dependency, and Draft
+  source reference before reusing the existing semantic projection, artifact,
+  lineage, audit, and Draft gates. Missing/stale/unbound plans return the named
+  full-analysis fallback and cannot advance phase. Section-bound designer
+  annotations are immutable after Complete.
 
 ## Dependencies
 

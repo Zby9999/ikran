@@ -120,7 +120,7 @@ export function registerDesignIntentAlignmentTools(
     });
 
     mcp.registerTool("record_incremental_initial_design_system_plan", {
-      description: "Persist the Agent's semantic decisions for the returned ready section against its exact revision and sectionDigest. Runtime stores dependencies and invalidates only decisions whose source digest changes; it never invents semantic attribution. Send the cumulative hidden designSystemDraft, then this same call immediately monitors the next section. The plan is operational cache, not visible Draft or research export.",
+      description: "Persist the Agent's semantic decisions for the returned ready section against its revision and exact sectionDigest. Runtime accepts an older global baseRevision when this section and every cited source digest are still current, so unrelated answers do not discard useful work. Decisions are stable-id upserts across sections; use retireDecisionIds to remove invalidated decisions. Every designSystemDraft sourceRefs value must use the durable sourceId returned in a delta and be backed by a current decision dependency. Send the cumulative hidden designSystemDraft, then this same call immediately monitors the next section. The plan is operational cache, not visible Draft or research export.",
       inputSchema: recordIncrementalDesignSystemPlanInputSchema
     }, async (args, extra) => {
       const ctx = await active("record_incremental_initial_design_system_plan");

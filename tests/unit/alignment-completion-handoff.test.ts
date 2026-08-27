@@ -29,11 +29,17 @@ import { listEvents } from "../../lib/runtime/events";
 import { setDesignLanguageDescription } from "../../lib/runtime/project-readiness";
 import { registerSeedReference } from "../../lib/runtime/seed-reference";
 import { readAlignmentSemanticDelta } from "../../lib/runtime/alignment-incremental-planning";
+import {
+  createRegionAnnotation,
+  deleteRegionAnnotation,
+  updateRegionAnnotationBody
+} from "../../lib/runtime/region-annotation";
 
 type Fixture = {
   projectPath: string;
   attemptId: string;
   snapshotId: string;
+  evidenceVersionId: string;
   questionIds: string[];
 };
 
@@ -121,6 +127,7 @@ function createAnsweringFixture(finalize = true): Fixture {
     projectPath,
     attemptId: prepared.attempt.id,
     snapshotId: prepared.input_snapshot.id,
+    evidenceVersionId: evidence.record.id,
     questionIds
   };
 }
@@ -181,6 +188,16 @@ describe("Alignment completion handoff", () => {
   test("atomically freezes the attempt, advances workflow, and creates one pending next command", async () => {
     const fixture = createAnsweringFixture();
     try {
+      const designerAnnotation = createRegionAnnotation(fixture.projectPath, {
+        target: {
+          kind: "figma-surface",
+          evidenceVersionId: fixture.evidenceVersionId
+        },
+        author: "designer",
+        body: "Keep this Alignment input immutable.",
+        section: "design-concept"
+      });
+      if (!designerAnnotation.ok) throw new Error(designerAnnotation.reason);
       expect(
         recordDesignerAnswer(fixture.projectPath, {
           questionCardId: fixture.questionIds[0],
@@ -233,10 +250,18 @@ describe("Alignment completion handoff", () => {
         afterRevision: 0
       })).toMatchObject({
         ok: true,
-        currentRevision: 14,
-        frozenRevision: 14,
+        currentRevision: 15,
+        frozenRevision: 15,
         frozenDigest: expect.stringMatching(/^[a-f0-9]{64}$/)
       });
+      expect(updateRegionAnnotationBody(fixture.projectPath, {
+        annotationId: designerAnnotation.record.id,
+        body: "Attempt to mutate frozen input."
+      })).toEqual({ ok: false, reason: "alignment_completed" });
+      expect(deleteRegionAnnotation(
+        fixture.projectPath,
+        designerAnnotation.record.id
+      )).toEqual({ ok: false, reason: "alignment_completed" });
 
       expect(completeDesignIntentAlignment(fixture.projectPath)).toEqual({
         ok: false,

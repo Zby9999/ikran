@@ -758,6 +758,7 @@ export const recordIncrementalDesignSystemPlanInputSchema = z.object({
   ]),
   sectionDigest: z.string(),
   decisions: z.array(incrementalPlanDecisionSchema),
+  retireDecisionIds: z.array(z.string()).optional(),
   designSystemDraft: z.record(z.string(), z.unknown())
 }).strict();
 

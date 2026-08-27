@@ -1,6 +1,6 @@
 # 56 — Dev-Only Real-Agent Incremental Planning Gate
 
-Status: ready-for-agent
+Status: ready-for-human
 
 ## User Story
 
@@ -75,3 +75,13 @@ a plugin or make the incremental path the production default.
 - 53 — Atomic Finalize-to-Monitor Section Loop.
 - 54 — Durable Incremental Planning Recovery.
 - 55 — Frozen-Revision Plan-Backed Draft Commit.
+
+## Comments
+
+- 2026-08-28: Automated dev implementation and one-process MCP vertical are
+  complete; typecheck, Runtime tests, production-build compatibility, and the
+  unchanged Workbench path pass. The feature remains opt-in through
+  `IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING=1`. Real-Agent normal,
+  edited-answer, interrupted/resumed, and absent-Agent runs plus P50/P95 timing
+  are still required, so this ticket intentionally remains `ready-for-human`
+  and no plugin is packaged or released.

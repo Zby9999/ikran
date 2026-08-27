@@ -370,6 +370,15 @@ describe("Alignment preparation Agent command", () => {
         delta: {
           section: "design-concept",
           revision: 3,
+          fromRevision: 2,
+          toRevision: 3,
+          changes: expect.arrayContaining([
+            expect.objectContaining({
+              revision: 3,
+              sourceKind: "question",
+              operation: "upsert"
+            })
+          ]),
           sources: expect.arrayContaining([
             expect.objectContaining({ kind: "agent-annotation" }),
             expect.objectContaining({
@@ -506,6 +515,178 @@ describe("Alignment preparation Agent command", () => {
           concepts: [{ meaning: "Calm hierarchy" }]
         },
         nextAction: { tool: "record_incremental_initial_design_system_plan" }
+      });
+      const editedDelta = readAlignmentSemanticDelta(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
+        afterRevision: delta.currentRevision
+      });
+      if (!editedDelta.ok || !editedDelta.delta) {
+        throw new Error("missing edited delta");
+      }
+      expect(recordIncrementalDesignSystemPlan(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
+        idempotencyKey: "design-concept-plan-retire-stale",
+        baseRevision: editedDelta.currentRevision,
+        section: editedDelta.delta.section,
+        sectionDigest: editedDelta.delta.sectionDigest,
+        decisions: [],
+        retireDecisionIds: ["calm-principle"],
+        designSystemDraft: { name: "Incremental draft" }
+      })).toMatchObject({ ok: true, planVersion: 2 });
+      expect(readIncrementalPlanningStatus(
+        projectPath,
+        prepared.attempt.id
+      )).toMatchObject({
+        ok: true,
+        staleDecisionIds: [],
+        validDecisionIds: ["retain-observed-intent"]
+      });
+    });
+  });
+
+  test("accepts unrelated concurrent revisions and updates cross-section decisions by stable id", () => {
+    withPreparedProject((projectPath, prepared, anchor) => {
+      claimAlignmentPreparationCommand(projectPath);
+      const cardsBySection = new Map<string, string[]>();
+      for (const section of ALIGNMENT_SECTIONS) {
+        expect(createAgentAnnotation(projectPath, {
+          alignmentAttemptId: prepared.attempt.id,
+          idempotencyKey: `cross-${section}-hypothesis`,
+          section,
+          inference: "reasonable",
+          title: "Section Hypothesis",
+          body: `The ${section} choices appear intentional.`,
+          anchor
+        }).ok).toBe(true);
+        for (let index = 1; index <= 2; index += 1) {
+          const created = createQuestionCard(projectPath, {
+            alignmentAttemptId: prepared.attempt.id,
+            idempotencyKey: `cross-${section}-${index}`,
+            section,
+            observation: `${section} ${index}`,
+            question: `Question ${index} for ${section}?`,
+            proposedAnswer: `Proposed answer ${index}`,
+            anchor
+          });
+          if (!created.ok) throw new Error(created.reason);
+          cardsBySection.set(section, [
+            ...(cardsBySection.get(section) ?? []),
+            created.record.id
+          ]);
+        }
+      }
+      expect(finalizeAlignmentPreparation(projectPath, prepared.attempt.id).ok)
+        .toBe(true);
+      for (const questionCardId of cardsBySection.get("design-concept")!) {
+        expect(recordDesignerAnswer(projectPath, {
+          questionCardId,
+          finalAnswer: "Concept answer"
+        }).ok).toBe(true);
+      }
+      const conceptDelta = readAlignmentSemanticDelta(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
+        afterRevision: 1
+      });
+      if (!conceptDelta.ok || !conceptDelta.delta) {
+        throw new Error("missing concept delta");
+      }
+      const conceptSource = conceptDelta.delta.sources.find(
+        (source) => source.kind === "question"
+      )!;
+
+      for (const questionCardId of cardsBySection.get("visual-language")!) {
+        expect(recordDesignerAnswer(projectPath, {
+          questionCardId,
+          finalAnswer: "Visual answer"
+        }).ok).toBe(true);
+      }
+      expect(recordIncrementalDesignSystemPlan(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
+        idempotencyKey: "concurrent-concept-plan",
+        baseRevision: conceptDelta.currentRevision,
+        section: conceptDelta.delta.section,
+        sectionDigest: conceptDelta.delta.sectionDigest,
+        decisions: [{
+          decisionId: "concept-only",
+          outputConcern: "global",
+          statement: "Preserve the concept.",
+          sourceRefs: [{
+            sourceId: conceptSource.sourceId,
+            digest: conceptSource.digest
+          }]
+        }],
+        designSystemDraft: { name: "Concurrent draft" }
+      })).toMatchObject({ ok: true, planVersion: 1 });
+
+      const visualDelta = readAlignmentSemanticDelta(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
+        afterRevision: conceptDelta.currentRevision
+      });
+      if (!visualDelta.ok || !visualDelta.delta) {
+        throw new Error("missing visual delta");
+      }
+      const visualSource = visualDelta.delta.sources.find(
+        (source) => source.kind === "question"
+      )!;
+      expect(recordIncrementalDesignSystemPlan(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
+        idempotencyKey: "cross-section-plan-v1",
+        baseRevision: visualDelta.currentRevision,
+        section: visualDelta.delta.section,
+        sectionDigest: visualDelta.delta.sectionDigest,
+        decisions: [{
+          decisionId: "cross-section-decision",
+          outputConcern: "global",
+          statement: "Join concept and visual intent.",
+          sourceRefs: [
+            { sourceId: conceptSource.sourceId, digest: conceptSource.digest },
+            { sourceId: visualSource.sourceId, digest: visualSource.digest }
+          ]
+        }],
+        designSystemDraft: { name: "Cross-section draft" }
+      })).toMatchObject({ ok: true, planVersion: 2 });
+
+      expect(recordDesignerAnswer(projectPath, {
+        questionCardId: visualSource.sourceId,
+        finalAnswer: "Edited visual answer"
+      }).ok).toBe(true);
+      const editedVisual = readAlignmentSemanticDelta(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
+        afterRevision: visualDelta.currentRevision
+      });
+      if (!editedVisual.ok || !editedVisual.delta) {
+        throw new Error("missing edited visual delta");
+      }
+      const editedSource = editedVisual.delta.sources.find(
+        (source) => source.sourceId === visualSource.sourceId
+      )!;
+      expect(recordIncrementalDesignSystemPlan(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
+        idempotencyKey: "cross-section-plan-v2",
+        baseRevision: editedVisual.currentRevision,
+        section: editedVisual.delta.section,
+        sectionDigest: editedVisual.delta.sectionDigest,
+        decisions: [{
+          decisionId: "cross-section-decision",
+          outputConcern: "global",
+          statement: "Join concept and edited visual intent.",
+          sourceRefs: [
+            { sourceId: conceptSource.sourceId, digest: conceptSource.digest },
+            { sourceId: editedSource.sourceId, digest: editedSource.digest }
+          ]
+        }],
+        designSystemDraft: { name: "Updated cross-section draft" }
+      })).toMatchObject({ ok: true, planVersion: 3 });
+      expect(readIncrementalPlanningStatus(
+        projectPath,
+        prepared.attempt.id
+      )).toMatchObject({
+        ok: true,
+        staleDecisionIds: [],
+        validDecisionIds: expect.arrayContaining([
+          "concept-only",
+          "cross-section-decision"
+        ])
       });
     });
   });
@@ -713,7 +894,15 @@ describe("Alignment preparation Agent command", () => {
       expect(deleted).toMatchObject({
         ok: true,
         currentRevision: 6,
-        delta: { section: "design-concept" }
+        delta: {
+          section: "design-concept",
+          fromRevision: 6,
+          toRevision: 6,
+          changes: [expect.objectContaining({
+            sourceId: designer.record.id,
+            operation: "delete"
+          })]
+        }
       });
       if (!deleted.ok || !deleted.delta) throw new Error("missing delete delta");
       expect(deleted.delta.sources.some(

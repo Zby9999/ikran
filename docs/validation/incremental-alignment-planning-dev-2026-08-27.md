@@ -40,6 +40,8 @@ It does not prove the 30-second P50 or 90-second P95 real-Agent targets.
 
 - semantic revisions advance monotonically for final answers and designer
   annotation edits, deletes, and restores;
+- section deltas include per-section from/to cursors and persisted change
+  operations, including deletion tombstones;
 - a section becomes available only after all of its Question Cards have final
   answers;
 - one section delta carries stable source IDs and content digests;
@@ -53,6 +55,12 @@ It does not prove the 30-second P50 or 90-second P95 real-Agent targets.
   interruption, and resumes from backlog;
 - the development MCP contract enters, continues, and recovers the section loop
   without a frontend change.
+
+The one-process MCP vertical starts the source-backed dev Runtime, finalizes a
+prepared six-section Alignment, observes a designer-completed section, receives
+that delta, persists its plan, and remains in the same advertised call sequence
+until a second section delta arrives. It passed in 5.3 seconds; that duration is
+test setup and transport wall time, not a model-latency benchmark.
 
 ## Remaining real-Agent gate
 

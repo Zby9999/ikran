@@ -1,6 +1,6 @@
 # 51 — Alignment Semantic Revision and Section Delta Cursor
 
-Status: ready-for-agent
+Status: resolved
 
 ## User Story
 
@@ -66,3 +66,11 @@ Design System.
 ## Dependencies
 
 None.
+
+## Comments
+
+- 2026-08-28: Implemented in schema 44. Runtime persists monotonic semantic
+  revisions, per-section acknowledgement cursors, source digests, operation
+  records (including delete tombstones), bounded section snapshots, and an
+  atomic frozen revision/digest. Answer edits and both annotation kinds are
+  covered by Runtime tests and the dev MCP vertical.

@@ -49,8 +49,17 @@ export type AlignmentSemanticSource = {
 export type AlignmentSemanticDelta = {
   section: AlignmentSection;
   revision: number;
+  fromRevision: number;
+  toRevision: number;
   sectionDigest: string;
   sources: AlignmentSemanticSource[];
+  changes: Array<{
+    revision: number;
+    sourceKind: SemanticSourceKind;
+    sourceId: string;
+    digest: string;
+    operation: "upsert" | "delete";
+  }>;
 };
 
 type SemanticStateRow = {
@@ -121,6 +130,54 @@ function planOnDb(
      FROM alignment_incremental_plans
      WHERE alignment_attempt_id = ?`
   ).get(alignmentAttemptId) as PlanRow | undefined) ?? null;
+}
+
+function sectionCursorsOnDb(
+  db: DatabaseType,
+  alignmentAttemptId: string
+): Partial<Record<AlignmentSection, number>> {
+  const cursors: Partial<Record<AlignmentSection, number>> = {};
+  const rows = db.prepare(
+    `SELECT response_json
+     FROM alignment_incremental_plan_requests
+     WHERE alignment_attempt_id = ?
+     ORDER BY created_at ASC, idempotency_key ASC`
+  ).all(alignmentAttemptId) as Array<{ response_json: string }>;
+  for (const row of rows) {
+    const response = JSON.parse(row.response_json) as Record<string, unknown>;
+    if (
+      isSection(response.section) &&
+      Number.isInteger(response.acknowledgedRevision)
+    ) {
+      cursors[response.section] = Math.max(
+        cursors[response.section] ?? 0,
+        response.acknowledgedRevision as number
+      );
+    }
+  }
+  return cursors;
+}
+
+function draftSourceIds(value: unknown): string[] {
+  const refs: string[] = [];
+  const visit = (candidate: unknown): void => {
+    if (Array.isArray(candidate)) {
+      for (const item of candidate) visit(item);
+      return;
+    }
+    if (!candidate || typeof candidate !== "object") return;
+    for (const [key, nested] of Object.entries(candidate)) {
+      if (key === "sourceRefs" && Array.isArray(nested)) {
+        for (const ref of nested) {
+          if (typeof ref === "string") refs.push(ref);
+        }
+      } else {
+        visit(nested);
+      }
+    }
+  };
+  visit(value);
+  return [...new Set(refs)];
 }
 
 function currentSectionSourcesOnDb(
@@ -234,6 +291,20 @@ function currentSourcesByIdOnDb(
       currentSectionSourcesOnDb(db, alignmentAttemptId, section)
     ).map((source) => [source.sourceId, source])
   );
+}
+
+function latestSourceSectionOnDb(
+  db: DatabaseType,
+  alignmentAttemptId: string,
+  sourceId: string
+): AlignmentSection | null {
+  const row = db.prepare(
+    `SELECT section
+     FROM alignment_semantic_changes
+     WHERE alignment_attempt_id = ? AND source_id = ?
+     ORDER BY revision DESC LIMIT 1`
+  ).get(alignmentAttemptId, sourceId) as { section: string } | undefined;
+  return isSection(row?.section) ? row.section : null;
 }
 
 export function initializeAlignmentSemanticStateOnDb(
@@ -440,6 +511,9 @@ export function readAlignmentSemanticDelta(
         .flatMap((row) => isSection(row.section) ? [row.section] : [])
     );
     const plan = planOnDb(db, input.alignmentAttemptId);
+    const sectionCursors = plan
+      ? sectionCursorsOnDb(db, input.alignmentAttemptId)
+      : {};
     const acknowledgedSectionDigests = plan
       ? JSON.parse(plan.section_digests_json) as Partial<Record<AlignmentSection, string>>
       : {};
@@ -477,6 +551,31 @@ export function readAlignmentSemanticDelta(
        FROM alignment_semantic_changes
        WHERE alignment_attempt_id = ? AND section = ?`
     ).get(input.alignmentAttemptId, section) as { revision: number }).revision;
+    const sectionAfterRevision = sectionCursors[section] ?? afterRevision;
+    let changes = db.prepare(
+      `SELECT revision, source_kind, source_id, source_digest, operation
+       FROM alignment_semantic_changes
+       WHERE alignment_attempt_id = ? AND section = ? AND revision > ?
+       ORDER BY revision ASC, source_kind ASC, source_id ASC`
+    ).all(input.alignmentAttemptId, section, sectionAfterRevision) as Array<{
+      revision: number;
+      source_kind: SemanticSourceKind;
+      source_id: string;
+      source_digest: string;
+      operation: "upsert" | "delete";
+    }>;
+    // Compatibility for a plan written before per-section cursor metadata was
+    // introduced: redeliver the bounded section history rather than lose a
+    // digest mismatch behind a newer global cursor.
+    if (changes.length === 0 && acknowledgedSectionDigests[section]) {
+      changes = db.prepare(
+        `SELECT revision, source_kind, source_id, source_digest, operation
+         FROM alignment_semantic_changes
+         WHERE alignment_attempt_id = ? AND section = ?
+         ORDER BY revision ASC, source_kind ASC, source_id ASC`
+      ).all(input.alignmentAttemptId, section) as typeof changes;
+    }
+    const fromRevision = changes[0]?.revision ?? sectionRevision;
     return {
       ok: true,
       currentRevision: state.current_revision,
@@ -485,12 +584,21 @@ export function readAlignmentSemanticDelta(
       delta: {
         section,
         revision: sectionRevision,
+        fromRevision,
+        toRevision: sectionRevision,
         sectionDigest: currentSectionDigestOnDb(
           db,
           input.alignmentAttemptId,
           section
         ),
-        sources
+        sources,
+        changes: changes.map((change) => ({
+          revision: change.revision,
+          sourceKind: change.source_kind,
+          sourceId: change.source_id,
+          digest: change.source_digest,
+          operation: change.operation
+        }))
       }
     };
   } catch {
@@ -524,6 +632,7 @@ export function recordIncrementalDesignSystemPlan(
     section: string;
     sectionDigest: string;
     decisions: IncrementalPlanDecision[];
+    retireDecisionIds?: string[];
     designSystemDraft: unknown;
   }
 ):
@@ -544,6 +653,12 @@ export function recordIncrementalDesignSystemPlan(
     !/^[a-f0-9]{64}$/.test(input.sectionDigest) ||
     !Array.isArray(input.decisions) ||
     !input.decisions.every(validDecisionInput) ||
+    (input.retireDecisionIds !== undefined && (
+      !Array.isArray(input.retireDecisionIds) ||
+      !input.retireDecisionIds.every((id) =>
+        typeof id === "string" && id.trim().length > 0
+      )
+    )) ||
     !input.designSystemDraft || typeof input.designSystemDraft !== "object"
   ) {
     return { ok: false, reason: "invalid_incremental_plan" };
@@ -580,12 +695,12 @@ export function recordIncrementalDesignSystemPlan(
       db.exec("ROLLBACK");
       return { ok: false, reason: "planning_not_initialized" };
     }
-    if (input.baseRevision !== state.current_revision) {
+    if (input.baseRevision > state.current_revision) {
       db.exec("ROLLBACK");
       return {
         ok: false,
-        reason: "stale_semantic_revision",
-        details: { expected: state.current_revision, received: input.baseRevision }
+        reason: "future_semantic_revision",
+        details: { current: state.current_revision, received: input.baseRevision }
       };
     }
     if (!sectionIsReadyOnDb(db, input.alignmentAttemptId, input.section)) {
@@ -619,9 +734,22 @@ export function recordIncrementalDesignSystemPlan(
     const existingDecisions = existing
       ? JSON.parse(existing.decisions_json) as StoredPlanDecision[]
       : [];
+    const inputDecisionIds = input.decisions.map((decision) => decision.decisionId);
+    const retireDecisionIds = new Set(input.retireDecisionIds ?? []);
+    if (
+      new Set(inputDecisionIds).size !== inputDecisionIds.length ||
+      inputDecisionIds.some((id) => retireDecisionIds.has(id))
+    ) {
+      db.exec("ROLLBACK");
+      return { ok: false, reason: "conflicting_plan_decision_operation" };
+    }
+    const upsertDecisionIds = new Set(inputDecisionIds);
     const decisionIds = new Set<string>();
     const storedDecisions = [
-      ...existingDecisions.filter((decision) => decision.section !== input.section),
+      ...existingDecisions.filter((decision) =>
+        !upsertDecisionIds.has(decision.decisionId) &&
+        !retireDecisionIds.has(decision.decisionId)
+      ),
       ...input.decisions.map((decision) => ({ ...decision, section: input.section }))
     ];
     for (const decision of storedDecisions) {
@@ -635,12 +763,34 @@ export function recordIncrementalDesignSystemPlan(
       }
       decisionIds.add(decision.decisionId);
     }
+    const unresolvedStaleDecisionIds = storedDecisions.filter((decision) =>
+      decision.sourceRefs.some((source) =>
+        currentSources.get(source.sourceId)?.digest !== source.digest &&
+        latestSourceSectionOnDb(
+          db,
+          input.alignmentAttemptId,
+          source.sourceId
+        ) === input.section
+      )
+    ).map((decision) => decision.decisionId);
+    if (unresolvedStaleDecisionIds.length > 0) {
+      db.exec("ROLLBACK");
+      return {
+        ok: false,
+        reason: "unresolved_stale_plan_decision",
+        details: { decisionIds: unresolvedStaleDecisionIds }
+      };
+    }
     const sectionDigests = existing
       ? JSON.parse(existing.section_digests_json) as Partial<Record<AlignmentSection, string>>
       : {};
     sectionDigests[input.section] = input.sectionDigest;
     const now = new Date().toISOString();
     const planVersion = (existing?.plan_version ?? 0) + 1;
+    const processedRevision = Math.max(
+      existing?.processed_revision ?? 0,
+      input.baseRevision
+    );
     db.prepare(
       `INSERT INTO alignment_incremental_plans
          (alignment_attempt_id, plan_version, processed_revision,
@@ -657,16 +807,21 @@ export function recordIncrementalDesignSystemPlan(
     ).run(
       input.alignmentAttemptId,
       planVersion,
-      state.current_revision,
+      processedRevision,
       JSON.stringify(sectionDigests),
       JSON.stringify(storedDecisions),
       JSON.stringify(input.designSystemDraft),
       now,
       now
     );
+    const sectionCursors = sectionCursorsOnDb(db, input.alignmentAttemptId);
+    sectionCursors[input.section] = input.baseRevision;
     const response = {
       planVersion,
-      processedRevision: state.current_revision,
+      processedRevision,
+      section: input.section,
+      acknowledgedRevision: input.baseRevision,
+      sectionCursors,
       acknowledgedSections: SECTION_ORDER.filter((section) => sectionDigests[section]),
       decisions: input.decisions
     };
@@ -711,6 +866,7 @@ export function readIncrementalPlanningStatus(
       frozenRevision: number | null;
       planVersion: number;
       status: "active" | "paused" | "completed";
+      sectionCursors: Partial<Record<AlignmentSection, number>>;
       acknowledgedSections: AlignmentSection[];
       staleDecisionIds: string[];
       validDecisionIds: string[];
@@ -729,6 +885,9 @@ export function readIncrementalPlanningStatus(
       : [];
     const sectionDigests = plan
       ? JSON.parse(plan.section_digests_json) as Partial<Record<AlignmentSection, string>>
+      : {};
+    const sectionCursors = plan
+      ? sectionCursorsOnDb(db, alignmentAttemptId)
       : {};
     const currentSources = currentSourcesByIdOnDb(db, alignmentAttemptId);
     const staleDecisionIds = decisions.filter((decision) =>
@@ -765,7 +924,14 @@ export function readIncrementalPlanningStatus(
       frozenRevision: state.frozen_revision,
       planVersion: plan?.plan_version ?? 0,
       status: state.monitoring_status,
-      acknowledgedSections: SECTION_ORDER.filter((section) => sectionDigests[section]),
+      sectionCursors,
+      acknowledgedSections: SECTION_ORDER.filter((section) =>
+        sectionDigests[section] === currentSectionDigestOnDb(
+          db,
+          alignmentAttemptId,
+          section
+        )
+      ),
       staleDecisionIds,
       validDecisionIds: decisions
         .filter((decision) => !stale.has(decision.decisionId))
@@ -786,14 +952,28 @@ export function readIncrementalPlanningStatus(
 export function readCurrentIncrementalPlanningStatus(projectPath: string) {
   const db = openProjectDb(projectPath);
   let alignmentAttemptId: string | null = null;
+  let preparationCommandStatus: string | null = null;
   try {
     const workflow = db.prepare(
-      `SELECT current_alignment_attempt_id
-       FROM project_workflow WHERE singleton = 1`
-    ).get() as { current_alignment_attempt_id: string | null } | undefined;
+      `SELECT w.current_alignment_attempt_id,
+              (SELECT status
+               FROM agent_commands c
+               WHERE c.command_type = 'prepare_initial_design_system'
+                 AND c.alignment_attempt_id = w.current_alignment_attempt_id
+               ORDER BY c.created_at DESC, c.id DESC
+               LIMIT 1) AS preparation_command_status
+       FROM project_workflow w WHERE w.singleton = 1`
+    ).get() as {
+      current_alignment_attempt_id: string | null;
+      preparation_command_status: string | null;
+    } | undefined;
     alignmentAttemptId = workflow?.current_alignment_attempt_id ?? null;
+    preparationCommandStatus = workflow?.preparation_command_status ?? null;
   } finally {
     closeProjectDb(db);
+  }
+  if (preparationCommandStatus === "completed") {
+    return { ok: false as const, reason: "planning_not_active" as const };
   }
   return alignmentAttemptId
     ? readIncrementalPlanningStatus(projectPath, alignmentAttemptId)
@@ -857,11 +1037,27 @@ export function claimIncrementalPlanCommitInput(
         currentSources.get(source.sourceId)?.digest !== source.digest
       )
     ).map((decision) => decision.decisionId);
-    if (staleSections.length > 0 || staleDecisionIds.length > 0) {
+    const decisionSources = new Set(decisions.flatMap((decision) =>
+      decision.sourceRefs
+        .filter((source) => currentSources.get(source.sourceId)?.digest === source.digest)
+        .map((source) => source.sourceId)
+    ));
+    const unboundDraftSourceIds = draftSourceIds(
+      JSON.parse(plan.design_system_json) as unknown
+    ).filter((sourceId) => !decisionSources.has(sourceId));
+    if (
+      staleSections.length > 0 ||
+      staleDecisionIds.length > 0 ||
+      unboundDraftSourceIds.length > 0
+    ) {
       return {
         ok: false,
         reason: "incremental_plan_stale",
-        details: { staleSections, staleDecisionIds },
+        details: {
+          staleSections,
+          staleDecisionIds,
+          unboundDraftSourceIds
+        },
         fallback
       };
     }
@@ -1022,6 +1218,23 @@ export async function waitForAlignmentSemanticDelta(
       if (decision.done) {
         const current = read();
         if (!current.ok) finish({ ...current, delta: null });
+        else if (current.delta) {
+          finish({
+            ok: true,
+            reason: "delta_available",
+            currentRevision: current.currentRevision,
+            frozenRevision: current.frozenRevision,
+            delta: current.delta
+          });
+        } else if (current.frozenRevision !== null) {
+          finish({
+            ok: true,
+            reason: "alignment_completed",
+            currentRevision: current.currentRevision,
+            frozenRevision: current.frozenRevision,
+            delta: null
+          });
+        }
         else {
           finish({
             ok: true,

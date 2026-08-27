@@ -1,6 +1,6 @@
 # 53 — Atomic Finalize-to-Monitor Section Loop
 
-Status: ready-for-agent
+Status: resolved
 
 ## User Story
 
@@ -62,6 +62,14 @@ that portable MCP can reverse-wake an Agent host after its turn has ended.
   gaps; exact public names are not locked by this ticket.
 - Preserve transport cancellation and lease cleanup so an interrupted host does
   not leave an in-memory waiter pretending to be active.
+
+## Comments
+
+- 2026-08-28: The dev-only MCP contract combines finalize→monitor and
+  plan-write→next-monitor. Persisted SQLite state is rechecked after record-bus
+  hints and at the lease terminal boundary, so a concurrent delta or Complete
+  wins the timeout race. A real one-process MCP vertical executes finalize,
+  designer submissions, delta delivery, plan persistence, and the next delta.
 
 ## Dependencies
 
