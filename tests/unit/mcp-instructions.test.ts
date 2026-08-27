@@ -1,6 +1,6 @@
 // Issue 18: MCP instructions are the always-resident channel — behavioral
 // floor + routing pointers only. Flow contracts ship on demand (the Alignment
-// section_contract and the extraction source_contract ride their claim
+// section_contract and compact semantic context ride their claim
 // payloads; per-tool semantics live on tool descriptions) and must never be
 // restated here.
 
@@ -11,6 +11,7 @@ import { DECLARE_COMPONENT_LIVE_HEROES_DESCRIPTION } from "../../lib/mcp/rule-ca
 import {
   CLAUDE_MCP_INSTRUCTIONS,
   CLAUDE_MCP_TEXT_BUDGET,
+  conciseSuccessResult,
   failureResult,
   IKRAN_MCP_INSTRUCTIONS,
   resolveMcpInstructions,
@@ -41,7 +42,10 @@ function expectBehavioralFloor(text: string) {
   expect(text).toContain("claim_alignment_preparation");
   expect(text).toContain("section_contract");
   expect(text).toContain("claim_initial_design_system_preparation");
-  expect(text).toContain("source_contract");
+  expect(text).toContain("commit_initial_design_system_semantics");
+  expect(text).toContain("sourceRefs");
+  expect(text).toContain("Do not re-claim");
+  expect(text).not.toContain("extraction source_contract");
   expect(text).not.toContain("48 characters");
   expect(text).not.toContain("Layout good:");
   expect(text).not.toContain("entry_kind_file_ownership");
@@ -68,6 +72,53 @@ describe("MCP instructions channel split", () => {
     expect(resolveMcpInstructions({ IKRAN_MCP_HOST: "claude" })).toBe(
       CLAUDE_MCP_INSTRUCTIONS
     );
+  });
+
+  test("advertises the dev incremental loop and recovery tools only when opted in", () => {
+    const instructions = resolveMcpInstructions({
+      IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING: "1"
+    });
+    expect(instructions).toContain("finalize_alignment_preparation enters answer monitoring directly");
+    expect(instructions).toContain("record_incremental_initial_design_system_plan");
+    expect(instructions).toContain("resume_initial_design_system_planning");
+    expect(instructions).toContain("commit_incremental_initial_design_system_plan");
+
+    const names: string[] = [];
+    const mcp = {
+      registerTool(name: string) {
+        names.push(name);
+      }
+    };
+    const deps: RegisterIkranToolsDeps = {
+      ensureRuntime: async () => ({
+        host: "127.0.0.1",
+        port: 1,
+        token: "test",
+        url: "http://127.0.0.1:1/?session=test&view=workbench",
+        spawned: false
+      }),
+      discoverWorkingFolder: async () => ({ folder: null, source: "none", roots: [] }),
+      host: "127.0.0.1",
+      prod: false,
+      mcpEntryPath: "/tmp/ikran-mcp.mjs"
+    };
+    const previous = process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING;
+    process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING = "1";
+    try {
+      registerIkranTools(mcp as never, deps);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING;
+      } else {
+        process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING = previous;
+      }
+    }
+    expect(names).toEqual(expect.arrayContaining([
+      "read_alignment_semantic_delta",
+      "record_incremental_initial_design_system_plan",
+      "resume_initial_design_system_planning",
+      "commit_incremental_initial_design_system_plan"
+    ]));
   });
 
   test("serializes structured details into the model-visible failure text", () => {
@@ -105,6 +156,27 @@ describe("MCP instructions channel split", () => {
     expect(result.content[0]?.text).toBe(
       "wait_for_agent_command failed: state_unavailable"
     );
+  });
+
+  test("keeps fast-path success text concise without duplicating structured data", () => {
+    const result = conciseSuccessResult(
+      {
+        host: "127.0.0.1",
+        port: 3000,
+        token: "session-token",
+        url: "http://127.0.0.1:3000/?session=session-token",
+        spawned: false
+      },
+      { ok: true, sources: [{ ref: "Q01", statement: "large semantic input" }] },
+      "Claimed 1 compact Alignment source."
+    );
+    expect(result.content[0]?.text).toBe("Claimed 1 compact Alignment source.");
+    expect(result.content[0]?.text).not.toContain("large semantic input");
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      sources: [{ ref: "Q01" }],
+      session: "session-token"
+    });
   });
 });
 

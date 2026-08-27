@@ -42,6 +42,7 @@ import {
   ALIGNMENT_SECTIONS,
   type AlignmentSection
 } from "./design-intent-alignment";
+import { recordCurrentDesignerAnnotationSemanticChangeOnDb } from "./alignment-incremental-planning";
 import {
   asEvidenceBounds,
   getAnnotationNodeCandidates,
@@ -789,6 +790,14 @@ export function createRegionAnnotation(
         record.geometry_version,
         record.from_point ? 1 : 0
       );
+      if (record.author === "designer") {
+        recordCurrentDesignerAnnotationSemanticChangeOnDb(db, {
+          sourceId: record.id,
+          section: record.section,
+          statement: record.body,
+          now: record.created_at
+        });
+      }
       return logEventOnDb(db, "annotation_created", {
         annotation_id: record.id,
         surface_id: record.surface_id,
@@ -1027,6 +1036,13 @@ export function deleteRegionAnnotation(
            confirmations_json = excluded.confirmations_json,
            deleted_at = excluded.deleted_at`
       ).run(id, JSON.stringify(row), JSON.stringify(confirmations), deletedAt);
+      recordCurrentDesignerAnnotationSemanticChangeOnDb(db, {
+        sourceId: row.id,
+        section: row.section,
+        statement: row.body,
+        operation: "delete",
+        now: deletedAt
+      });
       db.prepare("DELETE FROM region_annotations WHERE id = ?").run(id);
       logEventOnDb(db, "annotation_deleted", { annotation_id: id });
       return { ok: true as const, id };
@@ -1143,6 +1159,11 @@ export function restoreRegionAnnotation(
           confirmation.created_at
         );
       }
+      recordCurrentDesignerAnnotationSemanticChangeOnDb(db, {
+        sourceId: row.id,
+        section: row.section,
+        statement: row.body
+      });
       db.prepare(
         `DELETE FROM region_annotation_delete_tombstones
          WHERE annotation_id = ?`
@@ -1200,8 +1221,8 @@ export function updateRegionAnnotationBody(
   try {
     const result = withProjectTransaction(projectPath, (db) => {
       const row = db
-        .prepare("SELECT id, author FROM region_annotations WHERE id = ?")
-        .get(id) as { id: string; author: string } | undefined;
+        .prepare("SELECT id, author, section FROM region_annotations WHERE id = ?")
+        .get(id) as { id: string; author: string; section: string | null } | undefined;
       if (!row) {
         return { ok: false as const, reason: "not_found" as const };
       }
@@ -1212,6 +1233,11 @@ export function updateRegionAnnotationBody(
         body,
         id
       );
+      recordCurrentDesignerAnnotationSemanticChangeOnDb(db, {
+        sourceId: id,
+        section: row.section,
+        statement: body
+      });
       logEventOnDb(db, "annotation_body_updated", {
         annotation_id: id,
         body

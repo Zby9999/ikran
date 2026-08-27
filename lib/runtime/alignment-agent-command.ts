@@ -10,6 +10,7 @@ import {
 import { logEventOnDb } from "./events";
 import { getAlignmentPreparationOnDb } from "./alignment-preparation";
 import { emitRecordEvent } from "./record-bus";
+import { initializeAlignmentSemanticStateOnDb } from "./alignment-incremental-planning";
 
 type CommandFailureReason =
   | "no_pending_alignment_command"
@@ -195,6 +196,7 @@ export function finalizeAlignmentPreparation(
         return { ok: false, reason: "coverage_incomplete" } as CommandFailure;
       }
       const now = new Date().toISOString();
+      initializeAlignmentSemanticStateOnDb(db, alignmentAttemptId, now);
       db.prepare(
         `UPDATE alignment_attempts
          SET status = 'answering', updated_at = ?

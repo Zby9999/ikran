@@ -232,7 +232,7 @@ export const recordArtifactWrittenInputShape = {
     })
     .optional()
     .describe(
-      "Exact same-run component provenance. modulePath must equal this declaration's path; Runtime never guesses from a filename or display name. On success code linking and shared Preview Registration are automatic."
+      "Exact same-run component provenance. modulePath must equal this declaration's path; Runtime never guesses from a filename or display name. On success code linking and a shared Next App Router or Vite React Preview Registration are automatic; package version changes do not select the adapter."
     )
 } as const;
 
@@ -726,6 +726,46 @@ export const createAlignmentQuestionCardInputSchema = z.object({
 export const finalizeAlignmentPreparationInputSchema = z.object({
   alignmentAttemptId: z.string()
 });
+
+const incrementalPlanSourceRefSchema = z.object({
+  sourceId: z.string(),
+  digest: z.string()
+}).strict();
+
+const incrementalPlanDecisionSchema = z.object({
+  decisionId: z.string(),
+  outputConcern: z.string(),
+  statement: z.string(),
+  sourceRefs: z.array(incrementalPlanSourceRefSchema)
+}).strict();
+
+export const readAlignmentSemanticDeltaInputSchema = z.object({
+  alignmentAttemptId: z.string(),
+  afterRevision: z.number().int().nonnegative().optional()
+}).strict();
+
+export const recordIncrementalDesignSystemPlanInputSchema = z.object({
+  alignmentAttemptId: z.string(),
+  idempotencyKey: z.string(),
+  baseRevision: z.number().int().nonnegative(),
+  section: z.enum([
+    "design-concept",
+    "visual-language",
+    "token",
+    "layout",
+    "component",
+    "interaction"
+  ]),
+  sectionDigest: z.string(),
+  decisions: z.array(incrementalPlanDecisionSchema),
+  designSystemDraft: z.record(z.string(), z.unknown())
+}).strict();
+
+export const commitIncrementalDesignSystemPlanInputSchema = z.object({
+  alignmentAttemptId: z.string(),
+  planVersion: z.number().int().positive(),
+  idempotencyKey: z.string()
+}).strict();
 
 const designSystemExtractionTargetSchema = z.object({
   artifactPath: z.string(),

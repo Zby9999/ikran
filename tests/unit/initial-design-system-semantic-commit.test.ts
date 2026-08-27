@@ -23,9 +23,16 @@ import {
   claimInitialDesignSystemPreparation
 } from "../../lib/runtime/initial-design-system-preparation";
 import {
+  claimInitialDesignSystemSemanticContext,
+  commitIncrementalInitialDesignSystemPlan,
   commitInitialDesignSystemSemantic,
   type CommitInitialDesignSystemSemanticInput
 } from "../../lib/runtime/initial-design-system-semantic-commit";
+import {
+  readAlignmentSemanticDelta,
+  readIncrementalPlanningStatus,
+  recordIncrementalDesignSystemPlan
+} from "../../lib/runtime/alignment-incremental-planning";
 import { setDesignLanguageDescription } from "../../lib/runtime/project-readiness";
 import { registerSeedReference } from "../../lib/runtime/seed-reference";
 
@@ -76,7 +83,7 @@ function completedAlignment() {
       }
     });
     if (!annotation.ok) throw new Error(annotation.reason);
-    for (let index = 0; index < 2; index += 1) {
+    for (let index = 0; index < 3; index += 1) {
       const question = createQuestionCard(projectPath, {
         alignmentAttemptId: prepared.attempt.id,
         idempotencyKey: `question-${section}-${index}`,
@@ -114,10 +121,18 @@ function completedAlignment() {
 
 function semanticInput(
   attemptId: string,
-  claimed: Extract<ReturnType<typeof claimInitialDesignSystemPreparation>, { ok: true }>
+  claimed: Extract<ReturnType<typeof claimInitialDesignSystemSemanticContext>, { ok: true }>
 ): CommitInitialDesignSystemSemanticInput {
   const source = (section: string) =>
-    claimed.question_cards.find((card) => card.section === section)!.id;
+    claimed.sources.find((record) => record.kind === "question" && record.section === section)!.ref;
+  const componentNames = [
+    "Project Showcase",
+    "Project Card",
+    "Filter Bar",
+    "Studio Header",
+    "Project Metadata",
+    "Contact Panel"
+  ];
   return {
     alignmentAttemptId: attemptId,
     idempotencyKey: "semantic-commit-v1",
@@ -126,19 +141,19 @@ function semanticInput(
       visualLanguage: {
         description: "深色背景承载强对比排版，并以少量高饱和色强调关键动作。",
         meaning: "冷静精密的数字工作室",
-        sourceRecordIds: [source("visual-language")]
+        sourceRefs: [source("visual-language")]
       },
       concepts: [{
         meaning: "克制强调",
         value: "高饱和色仅用于关键动作与当前状态。",
-        sourceRecordIds: [source("design-concept")]
+        sourceRefs: [source("design-concept")]
       }],
       tokens: {
         primitive: [{
           name: "fontFamily.display",
           domain: "typography",
           value: "Instrument Sans, sans-serif",
-          sourceRecordIds: [source("token")]
+          sourceRefs: [source("token")]
         }],
         semantic: [],
         component: []
@@ -146,17 +161,17 @@ function semanticInput(
       layoutRules: [{
         meaning: "宽阔留白",
         value: "使用宽阔留白和严格网格建立精密秩序。",
-        sourceRecordIds: [source("layout")]
+        sourceRefs: [source("layout")]
       }],
       interactionRules: [{
         meaning: "短促反馈",
         value: "交互反馈保持短促，只解释状态变化。",
-        sourceRecordIds: [source("interaction")]
+        sourceRefs: [source("interaction")]
       }],
-      components: [{
-        name: "Project Showcase",
-        description: "以高对比图像和精确元数据显示项目。",
-        sourceRecordIds: [source("component")],
+      components: componentNames.map((name) => ({
+        name,
+        description: `${name} 以高对比图像和精确元数据显示项目。`,
+        sourceRefs: [source("component")],
         props: [{ name: "title", type: "string" }],
         variants: [],
         stateMatrix: [{ state: "default", behavior: "Shows project metadata." }],
@@ -164,7 +179,7 @@ function semanticInput(
         tokenLinks: ["primitive.fontFamily.display"],
         codeLinks: [],
         group: "block"
-      }]
+      }))
     }
   };
 }
@@ -176,13 +191,101 @@ afterEach(() => {
 });
 
 describe("commitInitialDesignSystemSemantic", () => {
+  test("selects the existing preparation claim when no incremental plan exists", () => {
+    const fixture = completedAlignment();
+
+    expect(commitIncrementalInitialDesignSystemPlan(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      planVersion: 1,
+      idempotencyKey: "missing-plan-fallback"
+    })).toEqual({
+      ok: false,
+      reason: "incremental_plan_unavailable",
+      fallback: { tool: "claim_initial_design_system_preparation" }
+    });
+    expect(getProjectPhase(fixture.projectPath)).not.toBe("draft_design_system");
+  });
+
+  test("commits a caught-up frozen incremental plan without another semantic bundle", () => {
+    const fixture = completedAlignment();
+    const claimed = claimInitialDesignSystemSemanticContext(fixture.projectPath);
+    if (!claimed.ok) throw new Error(claimed.reason);
+    const designSystem = semanticInput(fixture.attemptId, claimed).designSystem;
+    const sectionPlanningMs: number[] = [];
+
+    for (let index = 0; index < ALIGNMENT_SECTIONS.length; index += 1) {
+      const sectionStartedAt = performance.now();
+      const delta = readAlignmentSemanticDelta(fixture.projectPath, {
+        alignmentAttemptId: fixture.attemptId,
+        afterRevision: 0
+      });
+      if (!delta.ok || !delta.delta) throw new Error("missing plan delta");
+      const source = delta.delta.sources[0];
+      const recorded = recordIncrementalDesignSystemPlan(fixture.projectPath, {
+        alignmentAttemptId: fixture.attemptId,
+        idempotencyKey: `frozen-plan-${index}`,
+        baseRevision: delta.currentRevision,
+        section: delta.delta.section,
+        sectionDigest: delta.delta.sectionDigest,
+        decisions: [{
+          decisionId: `frozen-decision-${index}`,
+          outputConcern: delta.delta.section,
+          statement: `Prepared ${delta.delta.section} semantics.`,
+          sourceRefs: [{ sourceId: source.sourceId, digest: source.digest }]
+        }],
+        designSystemDraft: designSystem
+      });
+      expect(recorded.ok).toBe(true);
+      sectionPlanningMs.push(performance.now() - sectionStartedAt);
+    }
+    const status = readIncrementalPlanningStatus(
+      fixture.projectPath,
+      fixture.attemptId
+    );
+    expect(status).toMatchObject({
+      ok: true,
+      acknowledgedSections: ALIGNMENT_SECTIONS,
+      staleDecisionIds: [],
+      nextAction: { tool: "commit_incremental_initial_design_system_plan" }
+    });
+    if (!status.ok) throw new Error(status.reason);
+
+    const commitStartedAt = performance.now();
+    const committed = commitIncrementalInitialDesignSystemPlan(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      planVersion: status.planVersion,
+      idempotencyKey: "commit-frozen-plan"
+    });
+    const commitElapsedMs = performance.now() - commitStartedAt;
+    expect(committed).toMatchObject({
+      ok: true,
+      draftReady: true,
+      projectPhase: "draft_design_system",
+      planVersion: status.planVersion,
+      frozenRevision: status.frozenRevision
+    });
+    expect(Math.max(...sectionPlanningMs)).toBeLessThan(500);
+    expect(commitElapsedMs).toBeLessThan(2_000);
+    if (process.env.IKRAN_BENCHMARK_OUTPUT === "1") {
+      console.info(JSON.stringify({
+        benchmark: "incremental-plan-runtime",
+        sections: sectionPlanningMs.length,
+        sectionPlanningMs: sectionPlanningMs.map((value) => Number(value.toFixed(1))),
+        maxSectionPlanningMs: Number(Math.max(...sectionPlanningMs).toFixed(1)),
+        planBackedCommitMs: Number(commitElapsedMs.toFixed(1))
+      }));
+    }
+  });
+
   test("projects one semantic bundle through the existing artifact, lineage, audit, and finalize gates", () => {
     const fixture = completedAlignment();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    const claimed = claimInitialDesignSystemSemanticContext(fixture.projectPath);
     if (!claimed.ok) throw new Error(claimed.reason);
     const input = semanticInput(fixture.attemptId, claimed);
 
+    const commitStartedAt = performance.now();
     const result = commitInitialDesignSystemSemantic(fixture.projectPath, input);
+    const commitElapsedMs = performance.now() - commitStartedAt;
 
     expect(result).toMatchObject({
       ok: true,
@@ -197,8 +300,26 @@ describe("commitInitialDesignSystemSemantic", () => {
         "layout",
         "interaction",
         "component:component-project-showcase"
-      ])
+      ]),
+      draftReady: true,
+      projectPhase: "draft_design_system"
     });
+    expect(result).not.toHaveProperty("result");
+    if (!result.ok) throw new Error(result.reason);
+    expect(commitElapsedMs).toBeLessThan(2_000);
+    expect(JSON.stringify(result).length).toBeLessThan(2_000);
+    if (process.env.IKRAN_BENCHMARK_OUTPUT === "1") {
+      console.info(JSON.stringify({
+        benchmark: "semantic-commit",
+        sources: claimed.sources.length,
+        components: input.designSystem.components.length,
+        artifacts: result.artifactPaths.length,
+        elapsedMs: Number(commitElapsedMs.toFixed(1)),
+        responseBytes: Buffer.byteLength(JSON.stringify(result), "utf8")
+      }));
+    }
+    expect(result.artifactPaths).toHaveLength(11);
+    expect(result.workUnitKeys).toHaveLength(10);
     expect(getProjectPhase(fixture.projectPath)).toBe("draft_design_system");
     const spec = JSON.parse(readFileSync(
       path.join(fixture.projectPath, "design-system/components/project-showcase.json"),
@@ -209,17 +330,18 @@ describe("commitInitialDesignSystemSemantic", () => {
       name: "Project Showcase",
       status: "candidate"
     });
+    expect(JSON.stringify(spec)).not.toContain('"Q01"');
 
     const repeated = commitInitialDesignSystemSemantic(fixture.projectPath, input);
     expect(repeated).toMatchObject({ ok: true, reused: true });
   });
 
-  test("rejects unknown source ids before writing projected artifacts", () => {
+  test("rejects unknown source refs before writing projected artifacts", () => {
     const fixture = completedAlignment();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    const claimed = claimInitialDesignSystemSemanticContext(fixture.projectPath);
     if (!claimed.ok) throw new Error(claimed.reason);
     const input = semanticInput(fixture.attemptId, claimed);
-    input.designSystem.visualLanguage.sourceRecordIds = ["missing-source"];
+    input.designSystem.visualLanguage.sourceRefs = ["missing-source"];
 
     expect(commitInitialDesignSystemSemantic(fixture.projectPath, input)).toMatchObject({
       ok: false,
@@ -230,7 +352,7 @@ describe("commitInitialDesignSystemSemantic", () => {
 
   test("validates the complete projection before writing any artifact", () => {
     const fixture = completedAlignment();
-    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    const claimed = claimInitialDesignSystemSemanticContext(fixture.projectPath);
     if (!claimed.ok) throw new Error(claimed.reason);
     const input = semanticInput(fixture.attemptId, claimed);
     input.designSystem.tokens.primitive[0]!.value = undefined;
@@ -244,5 +366,36 @@ describe("commitInitialDesignSystemSemantic", () => {
       existsSync(path.join(fixture.projectPath, "design-system/design-system.json"))
     ).toBe(false);
     expect(getProjectPhase(fixture.projectPath)).not.toBe("draft_design_system");
+  });
+
+  test("claims a Study Kit 5-scale compact context within the response budget", () => {
+    const fixture = completedAlignment();
+    const raw = claimInitialDesignSystemPreparation(fixture.projectPath);
+    const claimStartedAt = performance.now();
+    const compact = claimInitialDesignSystemSemanticContext(fixture.projectPath);
+    const claimElapsedMs = performance.now() - claimStartedAt;
+    if (!raw.ok || !compact.ok) throw new Error("claim failed");
+
+    const serialized = JSON.stringify(compact);
+    expect(compact.sources).toHaveLength(24);
+    expect(compact.sources[0]).toMatchObject({ ref: "Q01", kind: "question" });
+    expect(serialized.length).toBeLessThan(12_000);
+    expect(claimElapsedMs).toBeLessThan(500);
+    expect(serialized.length).toBeLessThan(JSON.stringify(raw).length / 2);
+    expect(serialized).not.toContain(raw.question_cards[0]!.id);
+    expect(serialized).not.toContain("source_contract");
+    expect(compact.nextAction).toMatchObject({
+      tool: "commit_initial_design_system_semantics",
+      sourceField: "sourceRefs"
+    });
+    if (process.env.IKRAN_BENCHMARK_OUTPUT === "1") {
+      console.info(JSON.stringify({
+        benchmark: "semantic-claim",
+        sources: compact.sources.length,
+        elapsedMs: Number(claimElapsedMs.toFixed(1)),
+        compactBytes: Buffer.byteLength(serialized, "utf8"),
+        rawBytes: Buffer.byteLength(JSON.stringify(raw), "utf8")
+      }));
+    }
   });
 });

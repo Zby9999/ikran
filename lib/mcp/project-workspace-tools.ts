@@ -16,6 +16,10 @@ import {
 } from "./shared";
 import { getProjectPhase } from "../runtime/project-phase";
 import { readAgentCommandWaitEligibility } from "../runtime/adaptive-agent-wait";
+import {
+  incrementalPlanningEnabled,
+  readCurrentIncrementalPlanningStatus
+} from "../runtime/alignment-incremental-planning";
 
 const OPEN_PROJECT_ACTION = {
   tool: "create_or_open_project"
@@ -26,6 +30,15 @@ const WAIT_FOR_COMMAND_DIRECTIVE =
 
 const NO_WAIT_DIRECTIVE =
   "No wait needed: there is no active Alignment handoff or Rule Update Review wait scope. Do NOT call `wait_for_agent_command`; end the turn when your work is done. Any command published after this turn remains durable for the next turn; this does not imply reverse activation.";
+
+const RESUME_INCREMENTAL_DIRECTIVE =
+  "Required next Agent action: resume the current hidden Alignment answer check with `resume_initial_design_system_planning`. Do not call `wait_for_agent_command`; the incremental resume tool restores the durable revision, plan, and unanswered backlog after interruption.";
+
+function incrementalPlanningStatus(projectPath: string) {
+  if (!incrementalPlanningEnabled()) return null;
+  const status = readCurrentIncrementalPlanningStatus(projectPath);
+  return status.ok ? status : null;
+}
 
 function waitArmFields(armWait: boolean): { wait_armed?: true } {
   return armWait ? { wait_armed: true } : {};
@@ -53,7 +66,10 @@ function isHostAuthoritativeWorkspace(
 
 function projectSuccessContent(
   text: string,
-  { armWait }: { armWait: boolean }
+  {
+    armWait,
+    resumeIncremental
+  }: { armWait: boolean; resumeIncremental?: boolean }
 ): Array<{
   type: "text";
   text: string;
@@ -61,7 +77,11 @@ function projectSuccessContent(
   return [
     {
       type: "text",
-      text: `${text}\n\n${armWait ? WAIT_FOR_COMMAND_DIRECTIVE : NO_WAIT_DIRECTIVE}`
+      text: `${text}\n\n${resumeIncremental
+        ? RESUME_INCREMENTAL_DIRECTIVE
+        : armWait
+          ? WAIT_FOR_COMMAND_DIRECTIVE
+          : NO_WAIT_DIRECTIVE}`
     }
   ];
 }
@@ -96,14 +116,18 @@ export function registerProjectWorkspaceTools(
       const binding = await resumeDiscoveredWorkspace();
       const baseText = `Ikran Workbench URL:\n${rt.url}\n\nLocal-only. This tool did not open a browser. Open the URL in this Agent host's embedded browser, then post that exact URL as a user-visible chat message before waiting so the designer can open it manually if it did not open automatically.`;
       const activeProject = requireActiveProjectCommand();
-      const armWait =
-        activeProject.ok &&
+      const incrementalStatus = activeProject.ok
+        ? incrementalPlanningStatus(activeProject.project.path)
+        : null;
+      const armWait = activeProject.ok && !incrementalStatus &&
         shouldArmWaitForCommand(activeProject.project.path);
       // Never set next_action to wait_for_agent_command here: that call blocks
       // the turn, so the Agent cannot open the returned URL.
       const nextAction = activeProject.ok ? null : OPEN_PROJECT_ACTION;
       const nextDirective = activeProject.ok
-        ? armWait
+        ? incrementalStatus
+          ? RESUME_INCREMENTAL_DIRECTIVE
+          : armWait
           ? WAIT_FOR_COMMAND_DIRECTIVE
           : NO_WAIT_DIRECTIVE
         : "Required next Agent actions: do not end the turn yet. Call `create_or_open_project` to bind the current workspace, then follow the wait guidance its response returns.";
@@ -132,6 +156,9 @@ export function registerProjectWorkspaceTools(
             ? { active_project: activeProject.project.path }
             : {}),
           ...waitArmFields(armWait),
+          ...(incrementalStatus
+            ? { incremental_planning: incrementalStatus }
+            : {}),
           ...(nextAction ? { next_action: nextAction } : {})
         }
       };
@@ -214,11 +241,12 @@ export function registerProjectWorkspaceTools(
 
         // No-arg + active project: return current binding (do not mismatch on cwd).
         if (!explicitPath && activePath) {
-          const armWait = shouldArmWaitForCommand(activePath);
+          const incrementalStatus = incrementalPlanningStatus(activePath);
+          const armWait = !incrementalStatus && shouldArmWaitForCommand(activePath);
           return {
             content: projectSuccessContent(
               `Ikran project: ${activePath}\nSession: ${rt.token}\nWorkbench URL: ${rt.url}`,
-              { armWait }
+              { armWait, resumeIncremental: incrementalStatus !== null }
             ),
             structuredContent: {
               ok: true,
@@ -228,7 +256,10 @@ export function registerProjectWorkspaceTools(
               project_phase: getProjectPhase(activePath),
               session: rt.token,
               workbench_url: rt.url,
-              ...waitArmFields(armWait)
+              ...waitArmFields(armWait),
+              ...(incrementalStatus
+                ? { incremental_planning: incrementalStatus }
+                : {})
             }
           };
         }
@@ -277,11 +308,12 @@ export function registerProjectWorkspaceTools(
         }
 
         if (activePath && projectPathsMatch(activePath, requestedPath)) {
-          const armWait = shouldArmWaitForCommand(activePath);
+          const incrementalStatus = incrementalPlanningStatus(activePath);
+          const armWait = !incrementalStatus && shouldArmWaitForCommand(activePath);
           return {
             content: projectSuccessContent(
               `Ikran project already open: ${activePath}\nSession: ${rt.token}\nWorkbench URL: ${rt.url}`,
-              { armWait }
+              { armWait, resumeIncremental: incrementalStatus !== null }
             ),
             structuredContent: {
               ok: true,
@@ -290,7 +322,10 @@ export function registerProjectWorkspaceTools(
               project_phase: getProjectPhase(activePath),
               session: rt.token,
               workbench_url: rt.url,
-              ...waitArmFields(armWait)
+              ...waitArmFields(armWait),
+              ...(incrementalStatus
+                ? { incremental_planning: incrementalStatus }
+                : {})
             }
           };
         }
@@ -362,11 +397,12 @@ export function registerProjectWorkspaceTools(
           };
         }
 
-        const armWait = shouldArmWaitForCommand(activeAfter);
+        const incrementalStatus = incrementalPlanningStatus(activeAfter);
+        const armWait = !incrementalStatus && shouldArmWaitForCommand(activeAfter);
         return {
           content: projectSuccessContent(
             `Ikran project bound: ${bind.config.path}\nEvents: ${bind.events.project_created}, ${bind.events.folder_selected}\nSession: ${rt.token}\nWorkbench URL: ${rt.url}`,
-            { armWait }
+            { armWait, resumeIncremental: incrementalStatus !== null }
           ),
           structuredContent: {
             ok: true,
@@ -376,7 +412,10 @@ export function registerProjectWorkspaceTools(
             project_phase: getProjectPhase(activeAfter),
             session: rt.token,
             workbench_url: rt.url,
-            ...waitArmFields(armWait)
+            ...waitArmFields(armWait),
+            ...(incrementalStatus
+              ? { incremental_planning: incrementalStatus }
+              : {})
           }
         };
       } catch (err) {

@@ -25,6 +25,8 @@ export type McpClientHandle = {
 };
 
 export type SpawnMcpOptions = {
+  /** Run the source-backed dev Runtime instead of requiring a stamped build. */
+  prod?: boolean;
   /** When set, client declares roots capability and answers roots/list. */
   rootsProvider?: () => McpRoot[];
   /** Extra env merged into the MCP child (after IKRAN_* defaults). */
@@ -100,17 +102,17 @@ export function killRecordedRuntime(stateDir: string): void {
 }
 
 /**
- * Spawn ikran-mcp.mjs (--prod) with an isolated IKRAN_STATE_DIR and the shared
- * e2e Next build. Optionally simulate MCP Roots via rootsProvider.
+ * Spawn ikran-mcp.mjs with an isolated IKRAN_STATE_DIR. Production mode uses
+ * the shared e2e Next build; tests may opt into the source-backed dev Runtime.
  */
 export async function spawnMcpClient(
   stateDir: string,
   options: SpawnMcpOptions = {}
 ): Promise<McpClientHandle> {
-  const { rootsProvider, env = {}, cwd } = options;
+  const { rootsProvider, env = {}, cwd, prod = true } = options;
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [MCP_BIN, "--prod"],
+    args: prod ? [MCP_BIN, "--prod"] : [MCP_BIN],
     cwd,
     env: {
       ...process.env,

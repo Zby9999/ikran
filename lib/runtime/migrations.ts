@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 43;
+export const CURRENT_SCHEMA_VERSION = 44;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -2042,6 +2042,57 @@ CREATE TABLE IF NOT EXISTS component_preview_exceptions (
 );
 CREATE INDEX IF NOT EXISTS idx_component_preview_exceptions_status
   ON component_preview_exceptions(status, updated_at);
+      `);
+    }
+  },
+  {
+    version: 44,
+    up(db) {
+      // Issues 51–55: durable Alignment semantic revisions and hidden,
+      // attempt-bound incremental Initial Design System planning.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS alignment_semantic_state (
+  alignment_attempt_id TEXT PRIMARY KEY REFERENCES alignment_attempts(id) ON DELETE RESTRICT,
+  current_revision INTEGER NOT NULL DEFAULT 0,
+  frozen_revision INTEGER,
+  frozen_digest TEXT,
+  monitoring_status TEXT NOT NULL DEFAULT 'paused'
+    CHECK (monitoring_status IN ('active', 'paused', 'completed')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS alignment_semantic_changes (
+  alignment_attempt_id TEXT NOT NULL REFERENCES alignment_attempts(id) ON DELETE RESTRICT,
+  revision INTEGER NOT NULL,
+  source_kind TEXT NOT NULL
+    CHECK (source_kind IN ('question', 'agent-annotation', 'designer-annotation')),
+  source_id TEXT NOT NULL,
+  section TEXT NOT NULL,
+  source_digest TEXT NOT NULL,
+  operation TEXT NOT NULL CHECK (operation IN ('upsert', 'delete')),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (alignment_attempt_id, revision, source_kind, source_id)
+);
+CREATE INDEX IF NOT EXISTS idx_alignment_semantic_changes_cursor
+  ON alignment_semantic_changes(alignment_attempt_id, revision, section);
+CREATE TABLE IF NOT EXISTS alignment_incremental_plans (
+  alignment_attempt_id TEXT PRIMARY KEY REFERENCES alignment_attempts(id) ON DELETE RESTRICT,
+  plan_version INTEGER NOT NULL DEFAULT 0,
+  processed_revision INTEGER NOT NULL DEFAULT 0,
+  section_digests_json TEXT NOT NULL DEFAULT '{}',
+  decisions_json TEXT NOT NULL DEFAULT '[]',
+  design_system_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS alignment_incremental_plan_requests (
+  alignment_attempt_id TEXT NOT NULL REFERENCES alignment_attempts(id) ON DELETE RESTRICT,
+  idempotency_key TEXT NOT NULL,
+  input_digest TEXT NOT NULL,
+  response_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (alignment_attempt_id, idempotency_key)
+);
       `);
     }
   }

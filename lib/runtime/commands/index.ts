@@ -144,6 +144,14 @@ export {
 } from "./alignment-agent-command";
 
 export {
+  readAlignmentSemanticDeltaCommand,
+  readCurrentIncrementalPlanningStatusCommand,
+  readIncrementalPlanningStatusCommand,
+  recordIncrementalDesignSystemPlanCommand,
+  waitForAlignmentSemanticDeltaCommand
+} from "./alignment-incremental-planning";
+
+export {
   claimInitialDesignSystemPreparationCommand,
   finalizeInitialDesignSystemPreparationCommand,
   recordDesignSystemExtractionAuditCommand,
@@ -229,6 +237,9 @@ export {
   createAgentAnnotationInputSchema,
   createAlignmentQuestionCardInputSchema,
   finalizeAlignmentPreparationInputSchema,
+  readAlignmentSemanticDeltaInputSchema,
+  recordIncrementalDesignSystemPlanInputSchema,
+  commitIncrementalDesignSystemPlanInputSchema,
   finalizeInitialDesignSystemPreparationInputSchema,
   recordDesignSystemExtractionAuditInputSchema,
   recordDesignSystemExtractionWorkUnitInputSchema,

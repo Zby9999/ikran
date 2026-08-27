@@ -85,14 +85,14 @@ describe("version-stamp helper", () => {
   });
 
   test("readSchemaVersion parses CURRENT_SCHEMA_VERSION from real migrations.ts", () => {
-    expect(readSchemaVersion(ROOT)).toBe(43);
+    expect(readSchemaVersion(ROOT)).toBe(44);
   });
 
   test("computeSourceStamp is stable for unchanged critical modules", () => {
     const a = computeSourceStamp(ROOT);
     const b = computeSourceStamp(ROOT);
     expect(a.stamp).toBe(b.stamp);
-    expect(a.schemaVersion).toBe(43);
+    expect(a.schemaVersion).toBe(44);
     expect(a.contentHash).toMatch(/^[a-f0-9]{16}$/);
     expect(a.stamp).toBe(`schema:${a.schemaVersion}|hash:${a.contentHash}`);
   });

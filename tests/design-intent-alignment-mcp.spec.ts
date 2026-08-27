@@ -15,7 +15,7 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
   const projectDir = mkdtempSync(path.join(tmpdir(), "ikran-alignment-project-"));
   let client: Client | null = null;
   try {
-    const handle = await spawnMcpClient(stateDir);
+    const handle = await spawnMcpClient(stateDir, { prod: false });
     client = handle.client;
     const advertisedTools = (await client.listTools()).tools;
     const names = advertisedTools.map((tool) => tool.name);
@@ -30,34 +30,32 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
         "read_design_intent_alignment",
         "wait_for_agent_command",
         "claim_initial_design_system_preparation",
-        "record_design_system_extraction_work_unit",
-        "record_design_system_extraction_audit",
-        "finalize_initial_design_system_preparation"
+        "commit_initial_design_system_semantics"
       ])
     );
     expect(names).not.toContain("complete_design_intent_alignment");
-    const workUnitTool = advertisedTools.find(
-      (tool) => tool.name === "record_design_system_extraction_work_unit"
+    expect(names).not.toContain("record_design_system_extraction_work_unit");
+    expect(names).not.toContain("record_design_system_extraction_audit");
+    expect(names).not.toContain("finalize_initial_design_system_preparation");
+    const commitTool = advertisedTools.find(
+      (tool) => tool.name === "commit_initial_design_system_semantics"
     );
-    expect(workUnitTool?.inputSchema).toMatchObject({
+    expect(commitTool?.inputSchema).toMatchObject({
       type: "object",
       properties: {
         alignmentAttemptId: { type: "string" },
         idempotencyKey: { type: "string" },
-        workUnit: expect.any(Object),
-        claims: { type: "array" }
+        designSystem: expect.any(Object)
       },
       required: expect.arrayContaining([
         "alignmentAttemptId",
         "idempotencyKey",
-        "workUnit",
-        "claims"
+        "designSystem"
       ])
     });
-    const advertisedWorkUnitSchema = JSON.stringify(workUnitTool?.inputSchema);
-    expect(advertisedWorkUnitSchema).toContain("componentEntryId");
-    expect(advertisedWorkUnitSchema).toContain("retire");
-    expect(advertisedWorkUnitSchema).toContain("mapped");
+    const advertisedCommitSchema = JSON.stringify(commitTool?.inputSchema);
+    expect(advertisedCommitSchema).toContain("sourceRefs");
+    expect(advertisedCommitSchema).not.toContain("sourceRecordIds");
 
     const opened = sc(await client.callTool({
       name: "create_or_open_project",
@@ -388,51 +386,19 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     }));
     expect(claimedInitialDesignSystem).toMatchObject({
       ok: true,
-      command: {
-        command_type: "prepare_initial_design_system",
-        status: "claimed"
+      commandStatus: "claimed",
+      alignmentAttemptId: attemptId,
+      designLanguageDescription: "A calm, precise product language",
+      nextAction: {
+        tool: "commit_initial_design_system_semantics",
+        sourceField: "sourceRefs"
       },
-      attempt: { id: attemptId, status: "completed" },
-      input_snapshot: {
-        data: {
-          design_language_description: "A calm, precise product language"
-        }
-      },
-      required_artifacts: expect.arrayContaining([
-        "design-system/token.json"
-      ])
     });
-    expect(
-      (claimedInitialDesignSystem.question_cards as unknown[])
-    ).toHaveLength(12);
-    const incompleteManifest = sc(await client.callTool({
-      name: "record_design_system_extraction_audit",
-      arguments: {
-        alignmentAttemptId: attemptId,
-        idempotencyKey: "incomplete-mcp-audit",
-        residualClaims: [
-          {
-            claimId: "only-first-card",
-            statement: "The first answered decision.",
-            sourceRecordIds: [firstCardId],
-            sourceExcerpts: ["同意"],
-            confidence: "confirmed",
-            outcome: "omitted",
-            reason: "Not reusable by itself.",
-            targets: []
-          }
-        ],
-        audit: {
-          status: "passed",
-          checkedClaimIds: ["only-first-card"],
-          issues: []
-        }
-      }
-    }));
-    expect(incompleteManifest).toMatchObject({
-      ok: false,
-      error: "invalid_audit"
-    });
+    const compactSources = claimedInitialDesignSystem.sources as Array<Record<string, unknown>>;
+    expect(compactSources).toHaveLength(18);
+    expect(compactSources[0]).toMatchObject({ ref: "Q01", kind: "question" });
+    expect(JSON.stringify(claimedInitialDesignSystem)).not.toContain(firstCardId);
+    expect(JSON.stringify(claimedInitialDesignSystem)).not.toContain("source_contract");
     sse.close();
   } finally {
     try {

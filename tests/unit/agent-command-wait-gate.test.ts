@@ -162,6 +162,66 @@ test("project response re-arms wait during Alignment answering", async () => {
   expectWaitArmedAfterOpen(await handler({}));
 });
 
+test("dev incremental checkpoint replaces generic wait with the durable resume action", async () => {
+  const projectPath = createProjectAtStage("alignment-answering");
+  const db = openProjectDb(projectPath);
+  try {
+    db.prepare(
+      `INSERT INTO alignment_input_snapshots (id, snapshot_json, created_at)
+       VALUES ('incremental-snapshot', '{}', '2026-08-27T00:00:00.000Z')`
+    ).run();
+    db.prepare(
+      `INSERT INTO alignment_attempts
+         (id, input_snapshot_id, status, created_at, updated_at)
+       VALUES ('incremental-attempt', 'incremental-snapshot', 'answering',
+               '2026-08-27T00:00:00.000Z', '2026-08-27T00:00:00.000Z')`
+    ).run();
+    db.prepare(
+      `UPDATE project_workflow
+       SET current_alignment_attempt_id = 'incremental-attempt'
+       WHERE singleton = 1`
+    ).run();
+    db.prepare(
+      `INSERT INTO alignment_semantic_state
+         (alignment_attempt_id, current_revision, monitoring_status,
+          created_at, updated_at)
+       VALUES ('incremental-attempt', 1, 'paused',
+               '2026-08-27T00:00:00.000Z', '2026-08-27T00:00:00.000Z')`
+    ).run();
+  } finally {
+    closeProjectDb(db);
+  }
+  const previous = process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING;
+  process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING = "1";
+  try {
+    const handler = registeredHandlers().get("create_or_open_project");
+    if (!handler) throw new Error("create_or_open_project not registered");
+    const response = await handler({});
+    expect(response.structuredContent).toMatchObject({
+      incremental_planning: {
+        alignmentAttemptId: "incremental-attempt",
+        currentRevision: 1,
+        processedRevision: 0,
+        status: "paused",
+        nextAction: { tool: "resume_initial_design_system_planning" }
+      }
+    });
+    expect(response.structuredContent.wait_armed).toBeUndefined();
+    expect(response.content[0].text).toContain(
+      "resume_initial_design_system_planning"
+    );
+    expect(response.content[0].text).not.toContain(
+      "Only after that, call `wait_for_agent_command`"
+    );
+  } finally {
+    if (previous === undefined) {
+      delete process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING;
+    } else {
+      process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING = previous;
+    }
+  }
+});
+
 test("post-Alignment project response and direct wait both fail closed without a lease", async () => {
   createProjectAtStage("initial-design-system-preparing");
   const handlers = registeredHandlers();

@@ -83,7 +83,10 @@ export function reportWorkbenchPresence(
   for (const listener of listeners().get(key) ?? []) listener(presence);
 }
 
-function subscribePresence(projectPath: string, listener: PresenceListener) {
+export function subscribeWorkbenchPresence(
+  projectPath: string,
+  listener: PresenceListener
+) {
   const key = path.resolve(projectPath);
   const set = listeners().get(key) ?? new Set<PresenceListener>();
   set.add(listener);
@@ -336,7 +339,7 @@ export async function waitForAgentCommand(
       }
       timer = setTimeout(schedule, Math.max(1, decision.remainingMs));
     };
-    const unsubscribePresence = subscribePresence(projectPath, (presence) => {
+    const unsubscribePresence = subscribeWorkbenchPresence(projectPath, (presence) => {
       const commandState = checkCommand();
       if (commandState !== "empty") return;
       if (checkEligibility() !== "eligible") return;

@@ -1180,7 +1180,7 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(43);
+        expect(CURRENT_SCHEMA_VERSION).toBe(44);
         expect(
           db.prepare("PRAGMA table_info(prototype_surfaces)").all()
         ).toEqual(
@@ -1210,6 +1210,10 @@ test.describe("PRAGMA user_version migration runner", () => {
             "component_preview_verification_work",
             "component_preview_orchestrations",
             "component_preview_exceptions",
+            "alignment_semantic_state",
+            "alignment_semantic_changes",
+            "alignment_incremental_plans",
+            "alignment_incremental_plan_requests",
             "design_intent_alignment",
             "agent_alignment_annotations",
             "alignment_question_cards",
@@ -1395,7 +1399,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       applyPendingMigrations(db, 36);
 
-      expect(userVersion(db)).toBe(43);
+      expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
       expect(
         db.prepare("SELECT kind, review_id FROM rule_update_proposals WHERE id = 'proposal-v36'").get()
       ).toEqual({ kind: "update", review_id: "review-v36" });
@@ -1439,7 +1443,7 @@ test.describe("PRAGMA user_version migration runner", () => {
         PRAGMA user_version = 33;
       `);
       applyPendingMigrations(db, 33);
-      expect(userVersion(db)).toBe(43);
+      expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
       expect(db.prepare("PRAGMA table_info(rule_update_proposal_revisions)").all()).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -1493,7 +1497,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       applyPendingMigrations(db, 31);
 
-      expect(userVersion(db)).toBe(43);
+      expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
       expect(
         db.prepare(
           `SELECT scope_kind, scope_id, alignment_attempt_id

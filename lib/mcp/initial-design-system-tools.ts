@@ -1,9 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
-  claimInitialDesignSystemPreparationCommand,
   finalizeInitialDesignSystemPreparationCommand,
   finalizeInitialDesignSystemPreparationInputSchema,
+  commitIncrementalDesignSystemPlanInputSchema,
   recordDesignSystemExtractionAuditCommand,
   recordDesignSystemExtractionAuditInputSchema,
   recordDesignSystemExtractionWorkUnitCommand,
@@ -11,10 +11,14 @@ import {
   requireActiveProjectCommand
 } from "../runtime/commands";
 import {
+  claimInitialDesignSystemSemanticContext,
+  commitIncrementalInitialDesignSystemPlan,
   commitInitialDesignSystemSemantic,
   commitInitialDesignSystemSemanticInputSchema
 } from "../runtime/initial-design-system-semantic-commit";
+import { incrementalPlanningEnabled } from "../runtime/alignment-incremental-planning";
 import {
+  conciseSuccessResult,
   failureResult,
   successResult,
   type RegisterIkranToolsDeps
@@ -35,11 +39,42 @@ export function registerInitialDesignSystemTools(
         };
   };
 
+  if (incrementalPlanningEnabled()) {
+    mcp.registerTool(
+      "commit_incremental_initial_design_system_plan",
+      {
+        description:
+          "Commit the caught-up hidden Incremental Plan against the Alignment's frozen revision. Takes only attempt id, exact plan version, and idempotency key; Runtime loads the persisted semantic draft, validates every section digest and dependency, then runs the normal artifact, lineage, audit, and Draft gates. On an unavailable or stale plan, follow the returned claim_initial_design_system_preparation fallback.",
+        inputSchema: commitIncrementalDesignSystemPlanInputSchema
+      },
+      async (args) => {
+        const ctx = await active("commit_incremental_initial_design_system_plan");
+        if (!ctx.ok) return ctx.result;
+        const result = commitIncrementalInitialDesignSystemPlan(
+          ctx.projectPath,
+          args
+        );
+        return result.ok
+          ? conciseSuccessResult(
+              ctx.rt,
+              result,
+              `Draft Design System ready from incremental plan v${result.planVersion}.`
+            )
+          : failureResult(
+              "commit_incremental_initial_design_system_plan",
+              result.reason,
+              ctx.rt,
+              "fallback" in result ? { fallback: result.fallback } : undefined
+            );
+      }
+    );
+  }
+
   mcp.registerTool(
     "commit_initial_design_system_semantics",
     {
       description:
-        "Submit the intelligent result of Alignment extraction once. Provide only semantic Design System decisions and the Alignment source record ids supporting each decision: visual language, principles, tokens, layout and interaction rules, and component contracts. Runtime deterministically derives stable ids and paths, source excerpts and confidence, Figma source captures, canonical JSON files, artifact declarations, extraction claims, work units, residual coverage, global audit, and finalization. This replaces the many mechanical artifact/work-unit/audit tool calls. Call after claim_initial_design_system_preparation and use that response's alignment attempt and source record ids.",
+        "Second and final call in the Initial Design System fast path. Submit one semantic Draft using the alignmentAttemptId and short Q/A/D sourceRefs returned by claim_initial_design_system_preparation. Runtime performs all deterministic ids, files, provenance, work units, audit, and finalization. Omit unsupported detail instead of re-claiming, inspecting legacy tools, querying SQLite, or re-extracting raw evidence.",
       inputSchema: commitInitialDesignSystemSemanticInputSchema
     },
     async (args) => {
@@ -47,7 +82,11 @@ export function registerInitialDesignSystemTools(
       if (!ctx.ok) return ctx.result;
       const result = commitInitialDesignSystemSemantic(ctx.projectPath, args);
       return result.ok
-        ? successResult(ctx.rt, result)
+        ? conciseSuccessResult(
+            ctx.rt,
+            result,
+            `Draft Design System ready: ${result.artifactPaths.length} artifacts, ${result.workUnitKeys.length} work units, ${result.claimCount} claims.`
+          )
         : failureResult(
             "commit_initial_design_system_semantics",
             result.reason,
@@ -68,14 +107,18 @@ export function registerInitialDesignSystemTools(
     "claim_initial_design_system_preparation",
     {
       description:
-        "Claim the current durable prepare_initial_design_system command. Returns the complete frozen Alignment context in one read: Design Language Description, Seed References and evidence versions, every Agent Annotation, answered Question card with answer source, and Designer Annotation, plus the source contract and resumable progress. Read and reason over the whole context, then call commit_initial_design_system_semantics once with only the extracted semantic decisions and their source record ids; do not perform section-by-section file or claim bookkeeping. Safe to retry after disconnect; a repeated claim returns the same frozen input and current recovery state. No arguments."
+        "First call in the two-call Initial Design System fast path. Returns a compact frozen semantic context with Design Language Description, Seed References, answered Question cards, and Annotations labeled by short Q/A/D refs. Read it once, make the semantic decisions, then call commit_initial_design_system_semantics once. Do not discover progressive extraction tools, query SQLite, or re-read raw positional evidence. Safe to retry only after a disconnect. No arguments."
     },
     async () => {
       const ctx = await active("claim_initial_design_system_preparation");
       if (!ctx.ok) return ctx.result;
-      const result = claimInitialDesignSystemPreparationCommand(ctx.projectPath);
+      const result = claimInitialDesignSystemSemanticContext(ctx.projectPath);
       return result.ok
-        ? successResult(ctx.rt, result)
+        ? conciseSuccessResult(
+            ctx.rt,
+            result,
+            `Claimed ${result.sources.length} compact Alignment sources. Use structuredContent once, then call commit_initial_design_system_semantics.`
+          )
         : failureResult(
             "claim_initial_design_system_preparation",
             result.reason,
@@ -83,6 +126,10 @@ export function registerInitialDesignSystemTools(
           );
     }
   );
+
+  if (process.env.IKRAN_ENABLE_LEGACY_DESIGN_SYSTEM_EXTRACTION !== "1") {
+    return;
+  }
 
   mcp.registerTool(
     "record_design_system_extraction_work_unit",

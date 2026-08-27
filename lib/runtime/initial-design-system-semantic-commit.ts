@@ -16,12 +16,13 @@ import {
   type DesignSystemExtractionWorkUnitDefinition
 } from "./initial-design-system-preparation";
 import { recordSourceArtifact } from "./source-artifact";
+import { claimIncrementalPlanCommitInput } from "./alignment-incremental-planning";
 
-const sourceIds = z.array(z.string().trim().min(1)).min(1);
+const sourceRefs = z.array(z.string().trim().min(1)).min(1);
 const semanticRule = z.object({
   meaning: z.string().trim().min(1),
   value: z.string().trim().min(1),
-  sourceRecordIds: sourceIds
+  sourceRefs
 }).strict();
 const semanticToken = z.object({
   name: z.string().trim().min(1),
@@ -30,7 +31,7 @@ const semanticToken = z.object({
     "border", "shadow", "opacity"
   ]),
   value: z.unknown(),
-  sourceRecordIds: sourceIds
+  sourceRefs
 }).strict();
 const componentProp = z.object({
   name: z.string().trim().min(1),
@@ -56,7 +57,7 @@ export const commitInitialDesignSystemSemanticInputSchema = z.object({
     visualLanguage: z.object({
       description: z.string().trim().min(1),
       meaning: z.string().trim().min(1),
-      sourceRecordIds: sourceIds
+      sourceRefs
     }).strict(),
     concepts: z.array(semanticRule).default([]),
     tokens: z.object({
@@ -69,7 +70,7 @@ export const commitInitialDesignSystemSemanticInputSchema = z.object({
     components: z.array(z.object({
       name: z.string().trim().min(1),
       description: z.string().trim().min(1),
-      sourceRecordIds: sourceIds,
+      sourceRefs,
       props: z.array(componentProp).default([]),
       variants: z.array(componentVariant).default([]),
       stateMatrix: z.array(componentState).default([]),
@@ -86,11 +87,116 @@ export type CommitInitialDesignSystemSemanticInput = z.infer<
 >;
 
 type SourceRecord = {
+  ref: string;
   id: string;
   excerpt: string;
   confidence: "confirmed" | "reasonable";
   anchorJson: string | null;
 };
+
+type ClaimedInitialDesignSystem = Extract<
+  ReturnType<typeof claimInitialDesignSystemPreparation>,
+  { ok: true }
+>;
+
+function numberedRef(prefix: "Q" | "A" | "D" | "S", index: number): string {
+  return `${prefix}${String(index + 1).padStart(2, "0")}`;
+}
+
+function indexedSourceRecords(
+  claimed: ClaimedInitialDesignSystem
+): SourceRecord[] {
+  return [
+    ...claimed.question_cards.map((card, index) => ({
+      ref: numberedRef("Q", index),
+      id: card.id,
+      excerpt: recordExcerpt(
+        card.final_answer ?? card.proposed_answer ?? card.observation
+      ),
+      confidence: "confirmed" as const,
+      anchorJson: JSON.stringify(card.anchor)
+    })),
+    ...claimed.annotations.map((annotation, index) => ({
+      ref: numberedRef("A", index),
+      id: annotation.id,
+      excerpt: recordExcerpt(annotation.body),
+      confidence: annotation.inference,
+      anchorJson: JSON.stringify(annotation.anchor)
+    })),
+    ...claimed.designer_annotations.map((annotation, index) => {
+      const raw = annotation as unknown as Record<string, unknown>;
+      return {
+        ref: numberedRef("D", index),
+        id: String(raw.id),
+        excerpt: recordExcerpt(raw.body),
+        confidence: "confirmed" as const,
+        anchorJson: null
+      };
+    })
+  ];
+}
+
+export function claimInitialDesignSystemSemanticContext(projectPath: string) {
+  const claimed = claimInitialDesignSystemPreparation(projectPath);
+  if (!claimed.ok) return claimed;
+
+  const sourceRefsById = new Map(
+    indexedSourceRecords(claimed).map((source) => [source.id, source.ref])
+  );
+  return {
+    ok: true as const,
+    reused: claimed.reused,
+    workflowStage: claimed.workflow.stage,
+    commandStatus: claimed.command.status,
+    alignmentAttemptId: claimed.attempt.id,
+    designLanguageDescription:
+      claimed.input_snapshot.data.design_language_description,
+    seedReferences: claimed.input_snapshot.data.seed_references.map(
+      (seed, index) => ({
+        ref: numberedRef("S", index),
+        frameName: seed.evidence_version.frame_name,
+        fileKey: seed.file_key,
+        nodeId: seed.node_id,
+        referenceNote: seed.reference_note
+      })
+    ),
+    sources: [
+      ...claimed.question_cards.map((card) => ({
+        ref: sourceRefsById.get(card.id)!,
+        kind: "question" as const,
+        section: card.section,
+        title: card.observation,
+        question: card.question,
+        answer: card.final_answer,
+        answerSource: card.answer_source
+      })),
+      ...claimed.annotations.map((annotation) => ({
+        ref: sourceRefsById.get(annotation.id)!,
+        kind: "agent-annotation" as const,
+        section: annotation.section,
+        title: annotation.title,
+        statement: annotation.body,
+        confidence: annotation.inference,
+        additionalInformation: annotation.additional_information
+      })),
+      ...claimed.designer_annotations.map((annotation) => {
+        const raw = annotation as unknown as Record<string, unknown>;
+        return {
+          ref: sourceRefsById.get(String(raw.id))!,
+          kind: "designer-annotation" as const,
+          section: raw.section ?? null,
+          statement: recordExcerpt(raw.body)
+        };
+      })
+    ],
+    nextAction: {
+      tool: "commit_initial_design_system_semantics",
+      sourceField: "sourceRefs",
+      instruction:
+        "Submit one semantic Draft using only the short Q/A/D refs above. Do not re-claim, inspect legacy extraction tools, read SQLite, or re-extract raw positional evidence. Omit unsupported detail instead of investigating outside this frozen semantic context."
+    }
+  };
+}
 
 type ArtifactProjection = {
   path: string;
@@ -125,6 +231,17 @@ type CommitFailure = {
   failedStage?: string;
 };
 
+type SemanticCommitSuccess = {
+  ok: true;
+  reused: boolean;
+  alignmentAttemptId: string;
+  artifactPaths: string[];
+  workUnitKeys: string[];
+  claimCount: number;
+  draftReady: true;
+  projectPhase: "draft_design_system";
+};
+
 function stableSlug(value: string): string {
   const slug = value
     .normalize("NFKD")
@@ -146,52 +263,39 @@ function recordExcerpt(value: unknown): string {
 }
 
 function sourceRecordsFromClaim(
-  claimed: Extract<ReturnType<typeof claimInitialDesignSystemPreparation>, { ok: true }>
+  claimed: ClaimedInitialDesignSystem
 ): Map<string, SourceRecord> {
   const records = new Map<string, SourceRecord>();
-  for (const card of claimed.question_cards) {
-    records.set(card.id, {
-      id: card.id,
-      excerpt: recordExcerpt(card.final_answer ?? card.proposed_answer ?? card.observation),
-      confidence: "confirmed",
-      anchorJson: JSON.stringify(card.anchor)
-    });
-  }
-  for (const annotation of claimed.annotations) {
-    records.set(annotation.id, {
-      id: annotation.id,
-      excerpt: recordExcerpt(annotation.body),
-      confidence: annotation.inference,
-      anchorJson: JSON.stringify(annotation.anchor)
-    });
-  }
-  for (const annotation of claimed.designer_annotations) {
-    const raw = annotation as unknown as Record<string, unknown>;
-    records.set(String(raw.id), {
-      id: String(raw.id),
-      excerpt: recordExcerpt(raw.body),
-      confidence: "confirmed",
-      anchorJson: null
-    });
+  for (const record of indexedSourceRecords(claimed)) {
+    records.set(record.ref, record);
+    // Accept durable ids during the dev transition, but only advertise short refs.
+    records.set(record.id, record);
   }
   return records;
+}
+
+function durableSourceIds(
+  refs: string[],
+  sources: Map<string, SourceRecord>
+): string[] {
+  return unique(refs.map((ref) => sources.get(ref)!.id));
 }
 
 function claimFor(input: {
   id: string;
   statement: string;
-  sourceRecordIds: string[];
+  sourceRefs: string[];
   sources: Map<string, SourceRecord>;
   targets: DesignSystemExtractionWorkUnitClaimInput["targets"];
   outcome?: "mapped" | "omitted";
   reason?: string;
 }): DesignSystemExtractionWorkUnitClaimInput {
-  const sourceRecordIds = unique(input.sourceRecordIds);
-  const sourceRecords = sourceRecordIds.map((id) => input.sources.get(id)!);
+  const refs = unique(input.sourceRefs);
+  const sourceRecords = refs.map((ref) => input.sources.get(ref)!);
   return {
     claimId: input.id,
     statement: input.statement,
-    sourceRecordIds,
+    sourceRecordIds: unique(sourceRecords.map((record) => record.id)),
     sourceExcerpts: sourceRecords.map((record) => record.excerpt),
     confidence: sourceRecords.some((record) => record.confidence === "reasonable")
       ? "reasonable"
@@ -205,13 +309,13 @@ function claimFor(input: {
 function fallbackOmissionClaim(input: {
   key: string;
   statement: string;
-  sourceId: string;
+  sourceRef: string;
   sources: Map<string, SourceRecord>;
 }): DesignSystemExtractionWorkUnitClaimInput {
   return claimFor({
     id: `semantic:${input.key}:empty`,
     statement: input.statement,
-    sourceRecordIds: [input.sourceId],
+    sourceRefs: [input.sourceRef],
     sources: input.sources,
     targets: [],
     outcome: "omitted",
@@ -230,11 +334,11 @@ function captureResolver(projectPath: string) {
     `SELECT superseded_by FROM figma_evidence_surfaces WHERE id = ?`
   );
   return {
-    derive(sourceRecordIds: string[], sources: Map<string, SourceRecord>) {
+    derive(sourceRefs: string[], sources: Map<string, SourceRecord>) {
       return deriveSourceCaptures({
         projectPath,
-        anchorJsons: sourceRecordIds
-          .map((id) => sources.get(id)?.anchorJson)
+        anchorJsons: sourceRefs
+          .map((ref) => sources.get(ref)?.anchorJson)
           .filter((value): value is string => typeof value === "string"),
         loadSurface: (id) => load.get(id) as never,
         staleOf: (id) => {
@@ -254,20 +358,20 @@ function projectSemanticBundle(
   input: CommitInitialDesignSystemSemanticInput,
   sources: Map<string, SourceRecord>
 ): SemanticCommitProjection | CommitFailure {
-  const allSourceIds = [
-    input.designSystem.visualLanguage.sourceRecordIds,
-    ...input.designSystem.concepts.map((item) => item.sourceRecordIds),
-    ...Object.values(input.designSystem.tokens).flat().map((item) => item.sourceRecordIds),
-    ...input.designSystem.layoutRules.map((item) => item.sourceRecordIds),
-    ...input.designSystem.interactionRules.map((item) => item.sourceRecordIds),
-    ...input.designSystem.components.map((item) => item.sourceRecordIds)
+  const allSourceRefs = [
+    input.designSystem.visualLanguage.sourceRefs,
+    ...input.designSystem.concepts.map((item) => item.sourceRefs),
+    ...Object.values(input.designSystem.tokens).flat().map((item) => item.sourceRefs),
+    ...input.designSystem.layoutRules.map((item) => item.sourceRefs),
+    ...input.designSystem.interactionRules.map((item) => item.sourceRefs),
+    ...input.designSystem.components.map((item) => item.sourceRefs)
   ].flat();
-  const unknownSourceIds = unique(allSourceIds).filter((id) => !sources.has(id));
-  if (unknownSourceIds.length > 0) {
-    return { ok: false, reason: "invalid_semantic_source", details: { sourceRecordIds: unknownSourceIds } };
+  const unknownSourceRefs = unique(allSourceRefs).filter((ref) => !sources.has(ref));
+  if (unknownSourceRefs.length > 0) {
+    return { ok: false, reason: "invalid_semantic_source", details: { sourceRefs: unknownSourceRefs } };
   }
-  const firstSourceId = sources.keys().next().value as string | undefined;
-  if (!firstSourceId) return { ok: false, reason: "alignment_source_empty" };
+  const firstSourceRef = sources.keys().next().value as string | undefined;
+  if (!firstSourceRef) return { ok: false, reason: "alignment_source_empty" };
 
   const ids = new Set<string>();
   const reserve = (kind: string, label: string) => {
@@ -311,19 +415,19 @@ function projectSemanticBundle(
     let componentSpecs: Array<{ entry: (typeof componentEntries)[number]; value: unknown }>;
     try {
       layoutRules = layoutEntries.map(({ item, id }) => {
-        const captures = resolver.derive(item.sourceRecordIds, sources);
+        const captures = resolver.derive(item.sourceRefs, sources);
         return {
           id,
           kind: "domain-rule",
           value: item.value,
           meaning: item.meaning,
           status: "candidate",
-          links: unique(item.sourceRecordIds),
+          links: durableSourceIds(item.sourceRefs, sources),
           ...(captures ? { sourceCaptures: captures } : {})
         };
       });
       componentSpecs = componentEntries.map((entry) => {
-        const captures = resolver.derive(entry.item.sourceRecordIds, sources);
+        const captures = resolver.derive(entry.item.sourceRefs, sources);
         return {
           entry,
           value: {
@@ -341,7 +445,7 @@ function projectSemanticBundle(
               ...(captures ? { sourceCaptures: captures } : {})
             },
             status: "candidate",
-            links: unique(entry.item.sourceRecordIds)
+            links: durableSourceIds(entry.item.sourceRefs, sources)
           }
         };
       });
@@ -354,8 +458,8 @@ function projectSemanticBundle(
         path: "design-system/design-system.json",
         artifactType: "design-system.json",
         relatedRecordIds: unique([
-          ...input.designSystem.visualLanguage.sourceRecordIds,
-          ...input.designSystem.concepts.flatMap((item) => item.sourceRecordIds)
+          ...durableSourceIds(input.designSystem.visualLanguage.sourceRefs, sources),
+          ...input.designSystem.concepts.flatMap((item) => durableSourceIds(item.sourceRefs, sources))
         ]),
         value: {
           name: input.designSystem.name,
@@ -365,97 +469,97 @@ function projectSemanticBundle(
             value: { description: input.designSystem.visualLanguage.description },
             meaning: input.designSystem.visualLanguage.meaning,
             status: "candidate",
-            links: unique(input.designSystem.visualLanguage.sourceRecordIds)
+            links: durableSourceIds(input.designSystem.visualLanguage.sourceRefs, sources)
           },
           concepts: conceptEntries.map(({ item, id }) => ({
             id, kind: "global-rule", value: item.value, meaning: item.meaning,
-            status: "candidate", links: unique(item.sourceRecordIds)
+            status: "candidate", links: durableSourceIds(item.sourceRefs, sources)
           }))
         }
       },
       {
         path: "design-system/token.json",
         artifactType: "token.json",
-        relatedRecordIds: unique(tokenEntries.flatMap(({ item }) => item.sourceRecordIds)),
+        relatedRecordIds: unique(tokenEntries.flatMap(({ item }) => durableSourceIds(item.sourceRefs, sources))),
         value: Object.fromEntries((["primitive", "semantic", "component"] as const).map((layer) => [
           layer,
           Object.fromEntries(input.designSystem.tokens[layer].map((item) => [item.name, {
             kind: "token", domain: item.domain, value: item.value,
-            status: "candidate", links: unique(item.sourceRecordIds)
+            status: "candidate", links: durableSourceIds(item.sourceRefs, sources)
           }]))
         ]))
       },
       {
         path: "design-system/component-list.json",
         artifactType: "component-list.json",
-        relatedRecordIds: unique(componentEntries.flatMap(({ item }) => item.sourceRecordIds)),
+        relatedRecordIds: unique(componentEntries.flatMap(({ item }) => durableSourceIds(item.sourceRefs, sources))),
         value: { components: componentEntries.map(({ item, inventoryId, specPath }) => ({
           id: inventoryId,
           value: { name: item.name, specPath: specPath.replace(/^design-system\//, "") },
           meaning: `${item.name} component`, status: "candidate",
-          links: unique(item.sourceRecordIds)
+          links: durableSourceIds(item.sourceRefs, sources)
         })) }
       },
       {
         path: "design-system/layout-rules.json",
         artifactType: "layout-rules.json",
-        relatedRecordIds: unique(input.designSystem.layoutRules.flatMap((item) => item.sourceRecordIds)),
+        relatedRecordIds: unique(input.designSystem.layoutRules.flatMap((item) => durableSourceIds(item.sourceRefs, sources))),
         value: { rules: layoutRules }
       },
       {
         path: "design-system/interaction-rules.json",
         artifactType: "interaction-rules.json",
-        relatedRecordIds: unique(input.designSystem.interactionRules.flatMap((item) => item.sourceRecordIds)),
+        relatedRecordIds: unique(input.designSystem.interactionRules.flatMap((item) => durableSourceIds(item.sourceRefs, sources))),
         value: { rules: interactionEntries.map(({ item, id }) => ({
           id, kind: "domain-rule", value: item.value, meaning: item.meaning,
-          status: "candidate", links: unique(item.sourceRecordIds)
+          status: "candidate", links: durableSourceIds(item.sourceRefs, sources)
         })) }
       },
       ...componentSpecs.map(({ entry, value }) => ({
         path: entry.specPath,
         artifactType: "component-spec" as const,
-        relatedRecordIds: unique(entry.item.sourceRecordIds),
+        relatedRecordIds: durableSourceIds(entry.item.sourceRefs, sources),
         value
       }))
     ];
 
     const globalClaims = [
       claimFor({ id: "semantic:global:visual-language", statement: input.designSystem.visualLanguage.description,
-        sourceRecordIds: input.designSystem.visualLanguage.sourceRecordIds, sources,
+        sourceRefs: input.designSystem.visualLanguage.sourceRefs, sources,
         targets: [{ artifactPath: "design-system/design-system.json", entryId: visualId }] }),
       ...conceptEntries.map(({ item, id }) => claimFor({ id: `semantic:global:${id}`, statement: item.value,
-        sourceRecordIds: item.sourceRecordIds, sources,
+        sourceRefs: item.sourceRefs, sources,
         targets: [{ artifactPath: "design-system/design-system.json", entryId: id }] }))
     ];
     const tokenClaims = tokenEntries.map(({ layer, item }) => claimFor({
       id: `semantic:tokens:${stableSlug(`${layer}-${item.name}`)}`,
       statement: `${layer} token ${item.name}`,
-      sourceRecordIds: item.sourceRecordIds, sources,
+      sourceRefs: item.sourceRefs, sources,
       targets: [{ artifactPath: "design-system/token.json", entryId: `${layer}.${item.name}` }]
     }));
     const layoutClaims = layoutEntries.map(({ item, id }) => claimFor({
       id: `semantic:layout:${id}`, statement: item.value,
-      sourceRecordIds: item.sourceRecordIds, sources,
+      sourceRefs: item.sourceRefs, sources,
       targets: [{ artifactPath: "design-system/layout-rules.json", entryId: id }]
     }));
     const interactionClaims = interactionEntries.map(({ item, id }) => claimFor({
       id: `semantic:interaction:${id}`, statement: item.value,
-      sourceRecordIds: item.sourceRecordIds, sources,
+      sourceRefs: item.sourceRefs, sources,
       targets: [{ artifactPath: "design-system/interaction-rules.json", entryId: id }]
     }));
     const workUnits: WorkUnitProjection[] = [
       { key: "global", definition: { kind: "global" }, claims: globalClaims },
       { key: "tokens", definition: { kind: "tokens", reviewedFoundationOwners: ["color", "typography", "material"] },
-        claims: tokenClaims.length ? tokenClaims : [fallbackOmissionClaim({ key: "tokens", statement: "No reusable foundation token was extracted.", sourceId: firstSourceId, sources })] },
+        claims: tokenClaims.length ? tokenClaims : [fallbackOmissionClaim({ key: "tokens", statement: "No reusable foundation token was extracted.", sourceRef: firstSourceRef, sources })] },
       { key: "layout", definition: { kind: "layout" },
-        claims: layoutClaims.length ? layoutClaims : [fallbackOmissionClaim({ key: "layout", statement: "No reusable layout rule was extracted.", sourceId: firstSourceId, sources })] },
+        claims: layoutClaims.length ? layoutClaims : [fallbackOmissionClaim({ key: "layout", statement: "No reusable layout rule was extracted.", sourceRef: firstSourceRef, sources })] },
       { key: "interaction", definition: { kind: "interaction" },
-        claims: interactionClaims.length ? interactionClaims : [fallbackOmissionClaim({ key: "interaction", statement: "No reusable interaction rule was extracted.", sourceId: firstSourceId, sources })] },
+        claims: interactionClaims.length ? interactionClaims : [fallbackOmissionClaim({ key: "interaction", statement: "No reusable interaction rule was extracted.", sourceRef: firstSourceRef, sources })] },
       ...componentEntries.map((entry) => {
         const mapped = claimFor({
           id: `semantic:component:${entry.inventoryId}`,
           statement: entry.item.description,
-          sourceRecordIds: entry.item.sourceRecordIds,
+          sourceRefs: entry.item.sourceRefs,
           sources,
           targets: [
             { artifactPath: "design-system/component-list.json", entryId: entry.inventoryId },
@@ -468,7 +572,7 @@ function projectSemanticBundle(
           .map((field) => claimFor({
             id: `semantic:component:${entry.inventoryId}:omitted-${field}`,
             statement: `No ${field} decision was extracted for ${entry.item.name}.`,
-            sourceRecordIds: entry.item.sourceRecordIds, sources,
+            sourceRefs: entry.item.sourceRefs, sources,
             targets: [{ artifactPath: entry.specPath, entryId: entry.specId, fieldPath: ["value", field] }],
             outcome: "omitted",
             reason: `Alignment did not establish a reusable ${field} decision.`
@@ -481,12 +585,13 @@ function projectSemanticBundle(
       })
     ];
     const consumed = new Set(workUnits.flatMap((unit) => unit.claims.flatMap((claim) => claim.sourceRecordIds)));
-    const residualClaims = [...sources.values()]
+    const residualClaims = unique([...sources.values()].map((record) => record.ref))
+      .map((ref) => sources.get(ref)!)
       .filter((record) => !consumed.has(record.id))
       .map((record) => claimFor({
         id: `semantic:residual:${stableSlug(record.id)}`,
         statement: record.excerpt,
-        sourceRecordIds: [record.id], sources, targets: [], outcome: "omitted",
+        sourceRefs: [record.ref], sources, targets: [], outcome: "omitted",
         reason: "No additional reusable Design System decision was extracted from this Alignment record."
       }));
     return {
@@ -584,15 +689,7 @@ function existingSemanticResponse(
 export function commitInitialDesignSystemSemantic(
   projectPath: string,
   rawInput: unknown
-): CommitFailure | {
-  ok: true;
-  reused: boolean;
-  alignmentAttemptId: string;
-  artifactPaths: string[];
-  workUnitKeys: string[];
-  claimCount: number;
-  result: Extract<ReturnType<typeof finalizeInitialDesignSystemPreparation>, { ok: true }>;
-} {
+): CommitFailure | SemanticCommitSuccess {
   const parsed = commitInitialDesignSystemSemanticInputSchema.safeParse(rawInput);
   if (!parsed.success) return { ok: false, reason: "invalid_semantic_bundle", details: parsed.error.flatten() };
   const input = parsed.data;
@@ -605,14 +702,7 @@ export function commitInitialDesignSystemSemantic(
   if (!existing.ok) return { ...existing, failedStage: "idempotency" };
   if (existing.response) {
     return {
-      ...(existing.response as unknown as {
-        ok: true;
-        alignmentAttemptId: string;
-        artifactPaths: string[];
-        workUnitKeys: string[];
-        claimCount: number;
-        result: Extract<ReturnType<typeof finalizeInitialDesignSystemPreparation>, { ok: true }>;
-      }),
+      ...(existing.response as unknown as Omit<SemanticCommitSuccess, "reused">),
       reused: true
     };
   }
@@ -684,7 +774,8 @@ export function commitInitialDesignSystemSemantic(
     artifactPaths: projection.artifacts.map((artifact) => artifact.path),
     workUnitKeys: projection.workUnits.map((unit) => unit.key),
     claimCount: projection.checkedClaimIds.length,
-    result: finalized
+    draftReady: true,
+    projectPhase: "draft_design_system"
   } as const;
   markSemanticRequest(projectPath, claimed.command.id, {
     idempotencyKey: input.idempotencyKey,
@@ -693,4 +784,46 @@ export function commitInitialDesignSystemSemantic(
     response: success
   });
   return success;
+}
+
+export function commitIncrementalInitialDesignSystemPlan(
+  projectPath: string,
+  rawInput: unknown
+):
+  | (SemanticCommitSuccess & { planVersion: number; frozenRevision: number })
+  | (CommitFailure & {
+      fallback?: { tool: "claim_initial_design_system_preparation" };
+    }) {
+  if (!rawInput || typeof rawInput !== "object") {
+    return { ok: false, reason: "invalid_incremental_plan_commit" };
+  }
+  const input = rawInput as Record<string, unknown>;
+  if (
+    typeof input.alignmentAttemptId !== "string" ||
+    !Number.isInteger(input.planVersion) ||
+    typeof input.idempotencyKey !== "string" ||
+    input.idempotencyKey.trim().length === 0
+  ) {
+    return { ok: false, reason: "invalid_incremental_plan_commit" };
+  }
+  const claimed = claimIncrementalPlanCommitInput(projectPath, {
+    alignmentAttemptId: input.alignmentAttemptId,
+    planVersion: input.planVersion as number
+  });
+  if (!claimed.ok) return claimed;
+  const committed = commitInitialDesignSystemSemantic(projectPath, {
+    alignmentAttemptId: input.alignmentAttemptId,
+    idempotencyKey: input.idempotencyKey,
+    designSystem: claimed.designSystem
+  });
+  return committed.ok
+    ? {
+        ...committed,
+        planVersion: claimed.planVersion,
+        frozenRevision: claimed.frozenRevision
+      }
+    : {
+        ...committed,
+        fallback: { tool: "claim_initial_design_system_preparation" }
+      };
 }

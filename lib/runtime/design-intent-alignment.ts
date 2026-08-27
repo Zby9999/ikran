@@ -16,6 +16,11 @@ import {
   DRAFT_FOUNDATION_TOKEN_DOMAINS,
   NON_FOUNDATION_TOKEN_DOMAIN_ROUTES
 } from "./draft-foundation-ownership";
+import {
+  alignmentSemanticSourceDigest,
+  freezeAlignmentSemanticRevisionOnDb,
+  recordAlignmentSemanticChangeOnDb
+} from "./alignment-incremental-planning";
 
 export const ALIGNMENT_SECTIONS = [
   "design-concept",
@@ -874,7 +879,27 @@ export function appendAgentAnnotationInformation(
       ).run(JSON.stringify(informationList), now, annotationId);
       const event = logEventOnDb(db, "agent_annotation_updated", { annotation_id: annotationId });
       const updated = db.prepare("SELECT * FROM agent_alignment_annotations WHERE id = ?").get(annotationId) as Record<string, unknown>;
-      return { ok: true as const, record: mapAnnotation(db, updated), event_id: event.event_id };
+      const mapped = mapAnnotation(db, updated);
+      if (mapped.alignment_attempt_id && mapped.section) {
+        const semanticSource = {
+          sourceId: mapped.id,
+          kind: "agent-annotation" as const,
+          section: mapped.section,
+          title: mapped.title,
+          statement: mapped.body,
+          confidence: mapped.inference,
+          additionalInformation: mapped.additional_information
+        };
+        recordAlignmentSemanticChangeOnDb(db, {
+          alignmentAttemptId: mapped.alignment_attempt_id,
+          sourceKind: "agent-annotation",
+          sourceId: mapped.id,
+          section: mapped.section,
+          sourceDigest: alignmentSemanticSourceDigest(semanticSource),
+          now
+        });
+      }
+      return { ok: true as const, record: mapped, event_id: event.event_id };
     });
     if (result.ok) emitRecordEvent({ kind: "alignment", action: "updated", id: annotationId, projectPath: path.resolve(projectPath) });
     return result;
@@ -921,13 +946,33 @@ export function recordDesignerAnswer(
          SET final_answer = ?, answer_source = ?, updated_at = ?
          WHERE id = ?`
       ).run(finalAnswer, answerSource, now, questionCardId);
+      const row = db.prepare(
+        "SELECT * FROM alignment_question_cards WHERE id = ?"
+      ).get(questionCardId) as Record<string, unknown>;
+      const updatedQuestion = mapQuestion(db, row);
+      const semanticSource = {
+        sourceId: questionCardId,
+        kind: "question" as const,
+        section: updatedQuestion.section,
+        title: updatedQuestion.observation,
+        question: updatedQuestion.question,
+        answer: finalAnswer,
+        answerSource
+      };
+      recordAlignmentSemanticChangeOnDb(db, {
+        alignmentAttemptId: preparation.current_attempt.id,
+        sourceKind: "question",
+        sourceId: questionCardId,
+        section: semanticSource.section,
+        sourceDigest: alignmentSemanticSourceDigest(semanticSource),
+        now
+      });
       const event = logEventOnDb(db, "designer_answer_submitted", {
         question_card_id: questionCardId,
         alignment_attempt_id: preparation.current_attempt.id,
         answer_source: answerSource
       });
-      const row = db.prepare("SELECT * FROM alignment_question_cards WHERE id = ?").get(questionCardId) as Record<string, unknown>;
-      return { ok: true as const, record: mapQuestion(db, row), event_id: event.event_id };
+      return { ok: true as const, record: updatedQuestion, event_id: event.event_id };
     });
     if (result.ok) emitRecordEvent({ kind: "alignment", action: "updated", id: questionCardId, projectPath: path.resolve(projectPath) });
     return result;
@@ -1201,6 +1246,14 @@ export function completeDesignIntentAlignment(
       );
       if (!coverageFor(cards).can_complete) return { ok: false, reason: "coverage_incomplete" } as Failure;
       const now = new Date().toISOString();
+      const frozenSemanticInput = freezeAlignmentSemanticRevisionOnDb(
+        db,
+        attempt.id,
+        now
+      );
+      if (!frozenSemanticInput) {
+        throw new Error("alignment_semantic_state_missing");
+      }
       db.prepare(
         "UPDATE design_intent_alignment SET status = 'completed', completed_at = ? WHERE singleton = 1"
       ).run(now);
@@ -1222,6 +1275,8 @@ export function completeDesignIntentAlignment(
         alignment_attempt_id: attempt.id,
         input_snapshot_id: attempt.input_snapshot_id,
         alignment_completed_at: now,
+        semantic_revision: frozenSemanticInput.revision,
+        semantic_digest: frozenSemanticInput.digest,
         question_cards: completedCards,
         initial_design_system_input: {
           input_snapshot: preparation.input_snapshot,

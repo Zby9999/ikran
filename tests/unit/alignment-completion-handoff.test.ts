@@ -28,6 +28,7 @@ import { recordEvidencePackage } from "../../lib/runtime/evidence-package";
 import { listEvents } from "../../lib/runtime/events";
 import { setDesignLanguageDescription } from "../../lib/runtime/project-readiness";
 import { registerSeedReference } from "../../lib/runtime/seed-reference";
+import { readAlignmentSemanticDelta } from "../../lib/runtime/alignment-incremental-planning";
 
 type Fixture = {
   projectPath: string;
@@ -227,6 +228,15 @@ describe("Alignment completion handoff", () => {
       )).toBe(true);
       expect(listEvents(fixture.projectPath, "design_intent_alignment_completed"))
         .toHaveLength(1);
+      expect(readAlignmentSemanticDelta(fixture.projectPath, {
+        alignmentAttemptId: fixture.attemptId,
+        afterRevision: 0
+      })).toMatchObject({
+        ok: true,
+        currentRevision: 14,
+        frozenRevision: 14,
+        frozenDigest: expect.stringMatching(/^[a-f0-9]{64}$/)
+      });
 
       expect(completeDesignIntentAlignment(fixture.projectPath)).toEqual({
         ok: false,
