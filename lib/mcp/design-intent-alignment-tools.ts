@@ -12,6 +12,7 @@ import {
   readAlignmentSemanticDeltaCommand,
   readAlignmentSemanticDeltaInputSchema,
   readCurrentIncrementalPlanningStatusCommand,
+  readIncrementalPlanningStatusCommand,
   recordIncrementalDesignSystemPlanCommand,
   recordIncrementalDesignSystemPlanInputSchema,
   waitForAlignmentSemanticDeltaCommand,
@@ -120,7 +121,7 @@ export function registerDesignIntentAlignmentTools(
     });
 
     mcp.registerTool("record_incremental_initial_design_system_plan", {
-      description: "Persist the Agent's semantic decisions for the returned ready section against its revision and exact sectionDigest. Runtime accepts an older global baseRevision when this section and every cited source digest are still current, so unrelated answers do not discard useful work. Decisions are stable-id upserts across sections; use retireDecisionIds to remove invalidated decisions. Every designSystemDraft sourceRefs value must use the durable sourceId returned in a delta and be backed by a current decision dependency. Send the cumulative hidden designSystemDraft, then this same call immediately monitors the next section. The plan is operational cache, not visible Draft or research export.",
+      description: "Persist the Agent's semantic decisions for the returned ready section against its revision and exact sectionDigest. Pass the exact basePlanVersion returned by the delta or checkpoint; a concurrent plan write fails with the latest checkpoint instead of overwriting cumulative work. Runtime accepts an older global baseRevision when this section and every cited source digest are still current, so unrelated answers do not discard useful work. Decisions are stable-id upserts across sections; use retireDecisionIds to remove invalidated decisions. Send cumulative draftBindings that map every semantic output path (for example /visualLanguage or /components/0) to the decisionId that authored it; every output sourceRefs value must be a current dependency of that exact decision. If a completed checkpoint reports only Draft binding gaps, reuse the baseRevision, section, and sectionDigest in nextAction.reconciliation with no decision changes. Send the cumulative hidden designSystemDraft, then this same call immediately monitors the next section. The plan is operational cache, not visible Draft or research export.",
       inputSchema: recordIncrementalDesignSystemPlanInputSchema
     }, async (args, extra) => {
       const ctx = await active("record_incremental_initial_design_system_plan");
@@ -130,11 +131,20 @@ export function registerDesignIntentAlignmentTools(
         args
       );
       if (!recorded.ok) {
+        const details = recorded.reason === "stale_incremental_plan_version"
+          ? {
+              ...recorded.details as Record<string, unknown>,
+              checkpoint: readIncrementalPlanningStatusCommand(
+                ctx.projectPath,
+                args.alignmentAttemptId
+              )
+            }
+          : recorded.details;
         return failureResult(
           "record_incremental_initial_design_system_plan",
           recorded.reason,
           ctx.rt,
-          recorded.details
+          details
         );
       }
       const monitoring = await waitForAlignmentSemanticDeltaCommand(
@@ -145,13 +155,19 @@ export function registerDesignIntentAlignmentTools(
           signal: extra.signal
         }
       );
+      const checkpoint = readIncrementalPlanningStatusCommand(
+        ctx.projectPath,
+        args.alignmentAttemptId
+      );
       return successResult(ctx.rt, {
         ...recorded,
+        checkpoint,
         incrementalPlanning: monitoring,
-        nextAction: monitoring.ok && monitoring.reason === "alignment_completed"
-          ? { tool: "commit_incremental_initial_design_system_plan" }
-          : monitoring.ok && monitoring.reason === "delta_available"
+        nextAction: monitoring.ok && monitoring.reason === "delta_available"
             ? { tool: "record_incremental_initial_design_system_plan" }
+          : monitoring.ok && monitoring.reason === "alignment_completed" &&
+              checkpoint.ok
+            ? checkpoint.nextAction
             : { tool: "resume_initial_design_system_planning" }
       });
     });
@@ -177,14 +193,19 @@ export function registerDesignIntentAlignmentTools(
           signal: extra.signal
         }
       );
+      const latestCheckpoint = readIncrementalPlanningStatusCommand(
+        ctx.projectPath,
+        status.alignmentAttemptId
+      );
       return successResult(ctx.rt, {
         ok: true,
-        checkpoint: status,
+        checkpoint: latestCheckpoint.ok ? latestCheckpoint : status,
         incrementalPlanning: monitoring,
-        nextAction: monitoring.ok && monitoring.reason === "alignment_completed"
-          ? { tool: "commit_incremental_initial_design_system_plan" }
-          : monitoring.ok && monitoring.reason === "delta_available"
+        nextAction: monitoring.ok && monitoring.reason === "delta_available"
             ? { tool: "record_incremental_initial_design_system_plan" }
+          : monitoring.ok && monitoring.reason === "alignment_completed" &&
+              latestCheckpoint.ok
+            ? latestCheckpoint.nextAction
             : { tool: "resume_initial_design_system_planning" }
       });
     });

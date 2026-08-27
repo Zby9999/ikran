@@ -24,10 +24,10 @@ reasoning, MCP transport, browser interaction, and designer answering time.
 
 | Measurement | Result | Automated gate |
 | --- | ---: | ---: |
-| Section read + plan persist, six samples | 3.5–4.4 ms | < 500 ms each |
-| Plan-backed semantic commit | 108.9 ms | < 2,000 ms |
-| Existing full semantic commit | 92.2 ms | < 2,000 ms |
-| Compact semantic claim | 2.3 ms | < 500 ms |
+| Section read + plan persist, six samples | 3.5–5.5 ms | < 500 ms each |
+| Plan-backed semantic commit | 107.1 ms | < 2,000 ms |
+| Existing full semantic commit | 101.2 ms | < 2,000 ms |
+| Compact semantic claim | 2.4 ms | < 500 ms |
 | Compact claim response | 5,537 bytes | < 12,000 bytes |
 | Original preparation response | 63,293 bytes | comparison only |
 
@@ -45,7 +45,13 @@ It does not prove the 30-second P50 or 90-second P95 real-Agent targets.
 - a section becomes available only after all of its Question Cards have final
   answers;
 - one section delta carries stable source IDs and content digests;
+- an unacknowledged section returns its own full change history even when a
+  different section has advanced the global revision;
 - changing a source invalidates only dependent plan decisions;
+- concurrent writes from one checkpoint are rejected by plan version instead
+  of overwriting a newer cumulative Draft;
+- every semantic Draft output path is bound to one current decision, and a
+  missing or mismatched binding is visible in the checkpoint before commit;
 - final Complete freezes the semantic revision and digest;
 - a fresh, complete plan commits through the existing semantic projection and
   Draft eligibility gates;
@@ -58,9 +64,10 @@ It does not prove the 30-second P50 or 90-second P95 real-Agent targets.
 
 The one-process MCP vertical starts the source-backed dev Runtime, finalizes a
 prepared six-section Alignment, observes a designer-completed section, receives
-that delta, persists its plan, and remains in the same advertised call sequence
-until a second section delta arrives. It passed in 5.3 seconds; that duration is
-test setup and transport wall time, not a model-latency benchmark.
+that delta, persists plans for two sections, then edits the first section and
+verifies that only its dependent decision becomes stale while the same loop
+returns the selective delta. It passed in 7.2 seconds; that duration is test
+setup and transport wall time, not a model-latency benchmark.
 
 ## Remaining real-Agent gate
 

@@ -196,6 +196,20 @@ function semanticInput(
   };
 }
 
+function semanticDraftBindings() {
+  return [
+    { path: "/visualLanguage", decisionId: "frozen-decision-1" },
+    { path: "/concepts/0", decisionId: "frozen-decision-0" },
+    { path: "/tokens/primitive/0", decisionId: "frozen-decision-2" },
+    { path: "/layoutRules/0", decisionId: "frozen-decision-3" },
+    { path: "/interactionRules/0", decisionId: "frozen-decision-5" },
+    ...Array.from({ length: 6 }, (_, index) => ({
+      path: `/components/${index}`,
+      decisionId: "frozen-decision-4"
+    }))
+  ];
+}
+
 afterEach(() => {
   for (const projectPath of projects.splice(0)) {
     rmSync(projectPath, { recursive: true, force: true });
@@ -245,6 +259,7 @@ describe("commitInitialDesignSystemSemantic", () => {
       const recorded = recordIncrementalDesignSystemPlan(fixture.projectPath, {
         alignmentAttemptId: fixture.attemptId,
         idempotencyKey: `frozen-plan-${index}`,
+        basePlanVersion: index,
         baseRevision: delta.currentRevision,
         section: delta.delta.section,
         sectionDigest: delta.delta.sectionDigest,
@@ -254,6 +269,7 @@ describe("commitInitialDesignSystemSemantic", () => {
           statement: `Prepared ${delta.delta.section} semantics.`,
           sourceRefs: [{ sourceId: source.sourceId, digest: source.digest }]
         }],
+        draftBindings: semanticDraftBindings(),
         designSystemDraft: designSystem
       });
       expect(recorded.ok).toBe(true);
@@ -274,10 +290,12 @@ describe("commitInitialDesignSystemSemantic", () => {
     if (!finalDelta) throw new Error("missing final delta");
     const finalSource = finalDelta.sources[0]!;
     const unboundDraft = structuredClone(designSystem);
-    unboundDraft.visualLanguage.sourceRefs = ["Q04"];
+    const borrowedComponentSource = fixture.firstQuestionBySection.component;
+    unboundDraft.visualLanguage.sourceRefs = [borrowedComponentSource];
     const unbound = recordIncrementalDesignSystemPlan(fixture.projectPath, {
       alignmentAttemptId: fixture.attemptId,
       idempotencyKey: "unbound-draft-source",
+      basePlanVersion: 6,
       baseRevision: status.currentRevision,
       section: finalDelta.section,
       sectionDigest: finalDelta.sectionDigest,
@@ -293,6 +311,22 @@ describe("commitInitialDesignSystemSemantic", () => {
       designSystemDraft: unboundDraft
     });
     expect(unbound).toMatchObject({ ok: true, planVersion: 7 });
+    expect(readIncrementalPlanningStatus(
+      fixture.projectPath,
+      fixture.attemptId
+    )).toMatchObject({
+      ok: true,
+      remainingReadySections: [],
+      invalidDraftBindingPaths: ["/visualLanguage"],
+      unboundDraftSourceIds: [borrowedComponentSource],
+      nextAction: {
+        tool: "record_incremental_initial_design_system_plan",
+        reconciliation: {
+          baseRevision: status.currentRevision,
+          section: "design-concept"
+        }
+      }
+    });
     expect(commitIncrementalInitialDesignSystemPlan(fixture.projectPath, {
       alignmentAttemptId: fixture.attemptId,
       planVersion: 7,
@@ -300,12 +334,16 @@ describe("commitInitialDesignSystemSemantic", () => {
     })).toMatchObject({
       ok: false,
       reason: "incremental_plan_stale",
-      details: { unboundDraftSourceIds: ["Q04"] },
+      details: {
+        invalidDraftBindingPaths: ["/visualLanguage"],
+        unboundDraftSourceIds: [borrowedComponentSource]
+      },
       fallback: { tool: "claim_initial_design_system_preparation" }
     });
     const rebound = recordIncrementalDesignSystemPlan(fixture.projectPath, {
       alignmentAttemptId: fixture.attemptId,
       idempotencyKey: "rebind-draft-source",
+      basePlanVersion: 7,
       baseRevision: status.currentRevision,
       section: finalDelta.section,
       sectionDigest: finalDelta.sectionDigest,
@@ -318,6 +356,7 @@ describe("commitInitialDesignSystemSemantic", () => {
           digest: finalSource.digest
         }]
       }],
+      draftBindings: semanticDraftBindings(),
       designSystemDraft: designSystem
     });
     expect(rebound).toMatchObject({ ok: true, planVersion: 8 });

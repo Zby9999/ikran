@@ -69,7 +69,9 @@ Blocked by: 53 — Atomic Finalize-to-Monitor Section Loop.
 
 - 2026-08-28: Persisted checkpoints now expose attempt, global and per-section
   cursors, plan version, current/valid/stale decisions, cumulative Draft, frozen
-  state, and one next action. Cancellation pauses without acknowledging input;
-  resume re-reads durable backlog. Reopening an active project advertises the
-  direct resume tool instead of generic Agent-command wait, and stops doing so
-  after the preparation command completes.
+  state, ready-but-unacknowledged sections, Draft binding gaps, and one next
+  action. Cancellation pauses without acknowledging input; resume re-reads the
+  durable per-section backlog. Reopening an active project advertises the direct
+  resume tool instead of generic Agent-command wait, and stops doing so after
+  the preparation command completes. A stale plan-version write fails with the
+  latest checkpoint instead of replacing newer cumulative work.

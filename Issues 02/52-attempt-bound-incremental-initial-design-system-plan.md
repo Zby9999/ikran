@@ -75,4 +75,8 @@ Blocked by: 51 — Alignment Semantic Revision and Section Delta Cursor.
   per-section cursors, selective invalidation, and cumulative hidden Draft
   state. Unrelated concurrent answer revisions no longer discard a still-fresh
   section analysis; cross-section decisions can be repaired from the section
-  whose edited source invalidated them.
+  whose edited source invalidated them. Each semantic Draft output path is
+  explicitly bound to its authoring decision, preventing an unrelated decision
+  that cites the same source from making stale output appear valid. Plan writes
+  also compare `basePlanVersion` inside the write transaction, so two analyses
+  from one checkpoint cannot silently overwrite cumulative Draft work.

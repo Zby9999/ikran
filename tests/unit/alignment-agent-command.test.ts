@@ -450,6 +450,7 @@ describe("Alignment preparation Agent command", () => {
       const recorded = recordIncrementalDesignSystemPlan(projectPath, {
         alignmentAttemptId: prepared.attempt.id,
         idempotencyKey: "design-concept-plan-v1",
+        basePlanVersion: 0,
         baseRevision: delta.currentRevision,
         section: delta.delta.section,
         sectionDigest: delta.delta.sectionDigest,
@@ -488,6 +489,7 @@ describe("Alignment preparation Agent command", () => {
       expect(recordIncrementalDesignSystemPlan(projectPath, {
         alignmentAttemptId: prepared.attempt.id,
         idempotencyKey: "design-concept-plan-v1",
+        basePlanVersion: 0,
         baseRevision: delta.currentRevision,
         section: delta.delta.section,
         sectionDigest: delta.delta.sectionDigest,
@@ -526,6 +528,7 @@ describe("Alignment preparation Agent command", () => {
       expect(recordIncrementalDesignSystemPlan(projectPath, {
         alignmentAttemptId: prepared.attempt.id,
         idempotencyKey: "design-concept-plan-retire-stale",
+        basePlanVersion: 1,
         baseRevision: editedDelta.currentRevision,
         section: editedDelta.delta.section,
         sectionDigest: editedDelta.delta.sectionDigest,
@@ -603,6 +606,7 @@ describe("Alignment preparation Agent command", () => {
       expect(recordIncrementalDesignSystemPlan(projectPath, {
         alignmentAttemptId: prepared.attempt.id,
         idempotencyKey: "concurrent-concept-plan",
+        basePlanVersion: 0,
         baseRevision: conceptDelta.currentRevision,
         section: conceptDelta.delta.section,
         sectionDigest: conceptDelta.delta.sectionDigest,
@@ -630,7 +634,31 @@ describe("Alignment preparation Agent command", () => {
       )!;
       expect(recordIncrementalDesignSystemPlan(projectPath, {
         alignmentAttemptId: prepared.attempt.id,
+        idempotencyKey: "stale-cross-section-plan",
+        basePlanVersion: 0,
+        baseRevision: visualDelta.currentRevision,
+        section: visualDelta.delta.section,
+        sectionDigest: visualDelta.delta.sectionDigest,
+        decisions: [{
+          decisionId: "stale-visual",
+          outputConcern: "visual-language",
+          statement: "This write started from the empty plan.",
+          sourceRefs: [{
+            sourceId: visualSource.sourceId,
+            digest: visualSource.digest
+          }]
+        }],
+        draftBindings: [],
+        designSystemDraft: { name: "Stale cumulative draft" }
+      })).toMatchObject({
+        ok: false,
+        reason: "stale_incremental_plan_version",
+        details: { expected: 1, received: 0 }
+      });
+      expect(recordIncrementalDesignSystemPlan(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
         idempotencyKey: "cross-section-plan-v1",
+        basePlanVersion: 1,
         baseRevision: visualDelta.currentRevision,
         section: visualDelta.delta.section,
         sectionDigest: visualDelta.delta.sectionDigest,
@@ -663,6 +691,7 @@ describe("Alignment preparation Agent command", () => {
       expect(recordIncrementalDesignSystemPlan(projectPath, {
         alignmentAttemptId: prepared.attempt.id,
         idempotencyKey: "cross-section-plan-v2",
+        basePlanVersion: 2,
         baseRevision: editedVisual.currentRevision,
         section: editedVisual.delta.section,
         sectionDigest: editedVisual.delta.sectionDigest,
@@ -687,6 +716,94 @@ describe("Alignment preparation Agent command", () => {
           "concept-only",
           "cross-section-decision"
         ])
+      });
+    });
+  });
+
+  test("returns the full section history when another section advanced the global cursor", () => {
+    withPreparedProject((projectPath, prepared, anchor) => {
+      claimAlignmentPreparationCommand(projectPath);
+      const cardsBySection = new Map<string, string[]>();
+      for (const section of ALIGNMENT_SECTIONS) {
+        expect(createAgentAnnotation(projectPath, {
+          alignmentAttemptId: prepared.attempt.id,
+          idempotencyKey: `cursor-${section}-hypothesis`,
+          section,
+          inference: "reasonable",
+          title: "Section Hypothesis",
+          body: `The ${section} choices appear intentional.`,
+          anchor
+        }).ok).toBe(true);
+        for (let index = 1; index <= 2; index += 1) {
+          const created = createQuestionCard(projectPath, {
+            alignmentAttemptId: prepared.attempt.id,
+            idempotencyKey: `cursor-${section}-${index}`,
+            section,
+            observation: `${section} ${index}`,
+            question: `Question ${index} for ${section}?`,
+            proposedAnswer: `Proposed answer ${index}`,
+            anchor
+          });
+          if (!created.ok) throw new Error(created.reason);
+          cardsBySection.set(section, [
+            ...(cardsBySection.get(section) ?? []),
+            created.record.id
+          ]);
+        }
+      }
+      expect(finalizeAlignmentPreparation(projectPath, prepared.attempt.id).ok)
+        .toBe(true);
+
+      // Visual-language becomes ready first at revisions 2–3. Concept then
+      // becomes ready at revisions 4–5 and is selected first by section order.
+      for (const questionCardId of cardsBySection.get("visual-language")!) {
+        expect(recordDesignerAnswer(projectPath, {
+          questionCardId,
+          finalAnswer: "Visual answer"
+        }).ok).toBe(true);
+      }
+      for (const questionCardId of cardsBySection.get("design-concept")!) {
+        expect(recordDesignerAnswer(projectPath, {
+          questionCardId,
+          finalAnswer: "Concept answer"
+        }).ok).toBe(true);
+      }
+      const concept = readAlignmentSemanticDelta(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
+        afterRevision: 0
+      });
+      if (!concept.ok || !concept.delta) throw new Error("missing concept delta");
+      const source = concept.delta.sources[0]!;
+      expect(recordIncrementalDesignSystemPlan(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
+        idempotencyKey: "cursor-concept-plan",
+        basePlanVersion: 0,
+        baseRevision: concept.currentRevision,
+        section: concept.delta.section,
+        sectionDigest: concept.delta.sectionDigest,
+        decisions: [{
+          decisionId: "cursor-concept",
+          outputConcern: "global",
+          statement: "Preserve concept.",
+          sourceRefs: [{ sourceId: source.sourceId, digest: source.digest }]
+        }],
+        designSystemDraft: { name: "Cursor draft" }
+      }).ok).toBe(true);
+
+      const visual = readAlignmentSemanticDelta(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
+        afterRevision: concept.currentRevision
+      });
+      expect(visual).toMatchObject({
+        ok: true,
+        delta: {
+          section: "visual-language",
+          fromRevision: 1,
+          changes: expect.arrayContaining([
+            expect.objectContaining({ revision: 2, operation: "upsert" }),
+            expect.objectContaining({ revision: 3, operation: "upsert" })
+          ])
+        }
       });
     });
   });
@@ -752,6 +869,7 @@ describe("Alignment preparation Agent command", () => {
             expect(recordIncrementalDesignSystemPlan(projectPath, {
               alignmentAttemptId: prepared.attempt.id,
               idempotencyKey: "monitor-ack-design-concept",
+              basePlanVersion: 0,
               baseRevision: available.currentRevision,
               section: available.delta.section,
               sectionDigest: available.delta.sectionDigest,

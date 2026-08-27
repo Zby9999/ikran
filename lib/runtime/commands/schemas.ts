@@ -739,6 +739,11 @@ const incrementalPlanDecisionSchema = z.object({
   sourceRefs: z.array(incrementalPlanSourceRefSchema)
 }).strict();
 
+const incrementalPlanDraftBindingSchema = z.object({
+  path: z.string().startsWith("/"),
+  decisionId: z.string().min(1)
+}).strict();
+
 export const readAlignmentSemanticDeltaInputSchema = z.object({
   alignmentAttemptId: z.string(),
   afterRevision: z.number().int().nonnegative().optional()
@@ -747,6 +752,7 @@ export const readAlignmentSemanticDeltaInputSchema = z.object({
 export const recordIncrementalDesignSystemPlanInputSchema = z.object({
   alignmentAttemptId: z.string(),
   idempotencyKey: z.string(),
+  basePlanVersion: z.number().int().nonnegative(),
   baseRevision: z.number().int().nonnegative(),
   section: z.enum([
     "design-concept",
@@ -759,6 +765,7 @@ export const recordIncrementalDesignSystemPlanInputSchema = z.object({
   sectionDigest: z.string(),
   decisions: z.array(incrementalPlanDecisionSchema),
   retireDecisionIds: z.array(z.string()).optional(),
+  draftBindings: z.array(incrementalPlanDraftBindingSchema),
   designSystemDraft: z.record(z.string(), z.unknown())
 }).strict();
 

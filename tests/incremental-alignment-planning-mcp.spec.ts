@@ -127,6 +127,7 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
     });
     const delta = (finalized.incrementalPlanning as {
       currentRevision: number;
+      planVersion: number;
       delta: {
         section: string;
         sectionDigest: string;
@@ -139,6 +140,7 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
       arguments: {
         alignmentAttemptId: prepared.attempt.id,
         idempotencyKey: "mcp-plan-design-concept",
+        basePlanVersion: delta.planVersion,
         baseRevision: delta.currentRevision,
         section: delta.delta.section,
         sectionDigest: delta.delta.sectionDigest,
@@ -148,6 +150,7 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
           statement: "Preserve the confirmed concept.",
           sourceRefs: [{ sourceId: source.sourceId, digest: source.digest }]
         }],
+        draftBindings: [],
         designSystemDraft: { name: "Incremental MCP draft" }
       }
     });
@@ -172,7 +175,8 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
         ok: true
       });
     }
-    expect(sc(await planCall)).toMatchObject({
+    const conceptPlanned = sc(await planCall);
+    expect(conceptPlanned).toMatchObject({
       ok: true,
       planVersion: 1,
       incrementalPlanning: {
@@ -180,6 +184,103 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
         delta: { section: "visual-language" }
       },
       nextAction: { tool: "record_incremental_initial_design_system_plan" }
+    });
+    const visualDelta = (conceptPlanned.incrementalPlanning as {
+      currentRevision: number;
+      planVersion: number;
+      delta: {
+        section: string;
+        sectionDigest: string;
+        sources: Array<{ sourceId: string; digest: string }>;
+      };
+    });
+    const visualSource = visualDelta.delta.sources[0]!;
+    expect(sc(await handle.client.callTool({
+      name: "record_incremental_initial_design_system_plan",
+      arguments: {
+        alignmentAttemptId: prepared.attempt.id,
+        idempotencyKey: "mcp-stale-plan-write",
+        basePlanVersion: 0,
+        baseRevision: visualDelta.currentRevision,
+        section: visualDelta.delta.section,
+        sectionDigest: visualDelta.delta.sectionDigest,
+        decisions: [{
+          decisionId: "mcp-stale-visual",
+          outputConcern: "visual-language",
+          statement: "This stale write must not replace the cumulative plan.",
+          sourceRefs: [{
+            sourceId: visualSource.sourceId,
+            digest: visualSource.digest
+          }]
+        }],
+        draftBindings: [],
+        designSystemDraft: { name: "Stale MCP draft" }
+      }
+    }))).toMatchObject({
+      ok: false,
+      error: "stale_incremental_plan_version",
+      details: {
+        expected: 1,
+        received: 0,
+        checkpoint: {
+          ok: true,
+          planVersion: 1,
+          designSystemDraft: { name: "Incremental MCP draft" }
+        }
+      }
+    });
+    const visualPlanCall = handle.client.callTool({
+      name: "record_incremental_initial_design_system_plan",
+      arguments: {
+        alignmentAttemptId: prepared.attempt.id,
+        idempotencyKey: "mcp-plan-visual-language",
+        basePlanVersion: visualDelta.planVersion,
+        baseRevision: visualDelta.currentRevision,
+        section: visualDelta.delta.section,
+        sectionDigest: visualDelta.delta.sectionDigest,
+        decisions: [{
+          decisionId: "mcp-visual",
+          outputConcern: "visual-language",
+          statement: "Preserve the confirmed visual language.",
+          sourceRefs: [{
+            sourceId: visualSource.sourceId,
+            digest: visualSource.digest
+          }]
+        }],
+        draftBindings: [],
+        designSystemDraft: { name: "Incremental MCP draft" }
+      }
+    });
+    for (let index = 0; index < 100; index += 1) {
+      const status = readIncrementalPlanningStatus(
+        projectPath,
+        prepared.attempt.id
+      );
+      if (status.ok && status.planVersion === 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(recordDesignerAnswer(projectPath, {
+      questionCardId: source.sourceId,
+      finalAnswer: "Edited concept after visual planning"
+    }).ok).toBe(true);
+    expect(sc(await visualPlanCall)).toMatchObject({
+      ok: true,
+      planVersion: 2,
+      incrementalPlanning: {
+        reason: "delta_available",
+        delta: { section: "design-concept" }
+      },
+      nextAction: { tool: "record_incremental_initial_design_system_plan" }
+    });
+    expect(readIncrementalPlanningStatus(
+      projectPath,
+      prepared.attempt.id
+    )).toMatchObject({
+      ok: true,
+      planVersion: 2,
+      staleDecisionIds: ["mcp-concept"],
+      validDecisionIds: ["mcp-visual"],
+      remainingReadySections: ["design-concept"]
     });
   } finally {
     try {

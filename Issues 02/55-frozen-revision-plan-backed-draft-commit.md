@@ -66,11 +66,12 @@ committed.
 ## Comments
 
 - 2026-08-28: Complete freezes revision/digest atomically. The plan-backed
-  commit verifies every current section digest, decision dependency, and Draft
-  source reference before reusing the existing semantic projection, artifact,
-  lineage, audit, and Draft gates. Missing/stale/unbound plans return the named
-  full-analysis fallback and cannot advance phase. Section-bound designer
-  annotations are immutable after Complete.
+  commit verifies every current section digest, decision dependency, and the
+  explicit decision binding of every Draft output path before reusing the
+  existing semantic projection, artifact, lineage, audit, and Draft gates.
+  Missing/stale/unbound plans return the named full-analysis fallback and cannot
+  advance phase. Section-bound designer annotations are immutable after
+  Complete.
 
 ## Dependencies
 

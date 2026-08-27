@@ -379,10 +379,10 @@ and generates derived artifacts. File writes normally happen via the Agent
 host; Runtime learns of them by declaration, not by mediating the write. Two
 sanctioned exceptions exist: (1) the Initial Design System semantic commit in
 ADR 0006, where the Agent authors one evidence-linked semantic bundle and
-Runtime atomically projects its deterministic JSON, lineage, work units, and
-audit; and (2) the 09A candidate → formalized approval/edit write-back
-(decision 5), where Runtime keeps the DB row and source file in lockstep for a
-single Browser operation.
+Runtime projects its deterministic JSON, lineage, work units, and audit through
+one idempotent, phase-gated, resumable operation; and (2) the 09A candidate →
+formalized approval/edit write-back (decision 5), where Runtime keeps the DB row
+and source file in lockstep for a single Browser operation.
 _Avoid_: log, register, commit
 
 ## Source-of-truth split
