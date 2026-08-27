@@ -280,7 +280,7 @@ still excluding `Attempts/`, `.scratch/`, `workflow/`, `Design issue/`,
 Release maintainers build the three deterministic archives with:
 
 ```bash
-npm run release:build -- --version v0.1.0-alpha.12
+npm run release:build -- --version v0.1.0-alpha.13
 ```
 
 Before a Draft Release is created, the full gate rebuilds all archives,
@@ -288,7 +288,7 @@ verifies their checksum and embedded manifest, extracts them with traversal and
 symlink defenses, then exercises each clean-download profile:
 
 ```bash
-npm run release:gate -- --version v0.1.0-alpha.12
+npm run release:gate -- --version v0.1.0-alpha.13
 ```
 
 The Product gate performs an omitted-dev install and drives the extracted MCP
