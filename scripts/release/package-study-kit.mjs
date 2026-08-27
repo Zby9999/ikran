@@ -286,7 +286,7 @@ function sanitizeNextBuild(destination, source) {
     }
   }
 
-  for (const file of walkFiles(nextRoot)) {
+  for (const file of walkFiles(nextRoot, { symlinkBoundaryRoot: destination })) {
     const before = fs.readFileSync(file);
     let text = before.toString("utf8");
     let changed = false;
@@ -298,7 +298,7 @@ function sanitizeNextBuild(destination, source) {
     if (changed) fs.writeFileSync(file, text, "utf8");
   }
 
-  for (const file of walkFiles(nextRoot)) {
+  for (const file of walkFiles(nextRoot, { symlinkBoundaryRoot: destination })) {
     const content = fs.readFileSync(file);
     for (const localRoot of localRoots) {
       if (content.includes(Buffer.from(localRoot))) {
@@ -682,7 +682,7 @@ function pluginReadme() {
   return `# Ikran — Codex Study Kit build\n\nThis Codex-only plugin is bundled with a preloaded Ikran Study Kit. It contains the production Runtime, Workbench, MCP tools, and Ikran skills.\n\nInstall it through the Study Kit marketplace at .agents/plugins/marketplace.json. The bundled workspaces already contain their Figma reference evidence, so no Figma credential is required for the study flow.\n`;
 }
 
-function walkFiles(root) {
+function walkFiles(root, { symlinkBoundaryRoot = root } = {}) {
   const files = [];
   const visit = (directory) => {
     const entries = fs.readdirSync(directory, { withFileTypes: true })
@@ -694,7 +694,11 @@ function walkFiles(root) {
       else if (entry.isSymbolicLink()) {
         const target = fs.readlinkSync(full);
         const resolved = path.resolve(path.dirname(full), target);
-        if (path.isAbsolute(target) || !resolved.startsWith(`${root}${path.sep}`)) {
+        if (
+          path.isAbsolute(target) ||
+          (resolved !== symlinkBoundaryRoot &&
+            !resolved.startsWith(`${symlinkBoundaryRoot}${path.sep}`))
+        ) {
           fail(`Symlink escapes package root: ${slash(path.relative(root, full))}`);
         }
       }
