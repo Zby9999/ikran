@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -226,5 +226,23 @@ describe("commitInitialDesignSystemSemantic", () => {
       reason: "invalid_semantic_source",
       failedStage: "projection"
     });
+  });
+
+  test("validates the complete projection before writing any artifact", () => {
+    const fixture = completedAlignment();
+    const claimed = claimInitialDesignSystemPreparation(fixture.projectPath);
+    if (!claimed.ok) throw new Error(claimed.reason);
+    const input = semanticInput(fixture.attemptId, claimed);
+    input.designSystem.tokens.primitive[0]!.value = undefined;
+
+    expect(commitInitialDesignSystemSemantic(fixture.projectPath, input)).toMatchObject({
+      ok: false,
+      reason: "invalid_projected_artifact",
+      failedStage: "projection"
+    });
+    expect(
+      existsSync(path.join(fixture.projectPath, "design-system/design-system.json"))
+    ).toBe(false);
+    expect(getProjectPhase(fixture.projectPath)).not.toBe("draft_design_system");
   });
 });

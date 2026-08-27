@@ -2,6 +2,7 @@ import { statSync } from "node:fs";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
+  activateExistingProjectCommand,
   bindProjectCommand,
   createOrOpenProjectInputShape,
   getProjectStateCommand,
@@ -9,7 +10,10 @@ import {
   requireActiveProjectCommand,
   setupWorkspaceInputShape
 } from "../runtime/commands";
-import { type RegisterIkranToolsDeps } from "./shared";
+import {
+  type DiscoveredWorkingFolder,
+  type RegisterIkranToolsDeps
+} from "./shared";
 import { getProjectPhase } from "../runtime/project-phase";
 import { readAgentCommandWaitEligibility } from "../runtime/adaptive-agent-wait";
 
@@ -38,6 +42,15 @@ function shouldArmWaitForCommand(projectPath: string): boolean {
   return eligibility.ok && eligibility.eligible;
 }
 
+function isHostAuthoritativeWorkspace(
+  discovered: DiscoveredWorkingFolder
+): discovered is DiscoveredWorkingFolder & { folder: string } {
+  return (
+    typeof discovered.folder === "string" &&
+    (discovered.source === "env" || discovered.source === "roots")
+  );
+}
+
 function projectSuccessContent(
   text: string,
   { armWait }: { armWait: boolean }
@@ -60,6 +73,15 @@ export function registerProjectWorkspaceTools(
   const { ensureRuntime, discoverWorkingFolder, host, prod, mcpEntryPath } =
     deps;
 
+  const resumeDiscoveredWorkspace = async () => {
+    const discovered = await discoverWorkingFolder();
+    if (!isHostAuthoritativeWorkspace(discovered)) {
+      return { discovered, activation: null };
+    }
+    const activation = await activateExistingProjectCommand(discovered.folder);
+    return { discovered, activation };
+  };
+
   mcp.registerTool(
     "open_workbench",
     {
@@ -68,6 +90,10 @@ export function registerProjectWorkspaceTools(
     },
     async () => {
       const rt = await ensureRuntime();
+      // The installed plugin process runs from its cache directory, so the
+      // current MCP Roots/IKRAN_CWD — not a persisted global pointer — decide
+      // which already-initialized project this host task resumes.
+      const binding = await resumeDiscoveredWorkspace();
       const baseText = `Ikran Workbench URL:\n${rt.url}\n\nLocal-only. This tool did not open a browser. Open the URL in this Agent host's embedded browser, then post that exact URL as a user-visible chat message before waiting so the designer can open it manually if it did not open automatically.`;
       const activeProject = requireActiveProjectCommand();
       const armWait =
@@ -94,6 +120,17 @@ export function registerProjectWorkspaceTools(
           port: rt.port,
           session: rt.token,
           reused: !rt.spawned,
+          workspace_folder: binding.discovered.folder,
+          workspace_source: binding.discovered.source,
+          workspace_binding:
+            binding.activation?.ok === true
+              ? binding.activation.changed
+                ? "resumed"
+                : "matched"
+              : binding.activation?.reason ?? "not_attempted",
+          ...(activeProject.ok
+            ? { active_project: activeProject.project.path }
+            : {}),
           ...waitArmFields(armWait),
           ...(nextAction ? { next_action: nextAction } : {})
         }
@@ -118,9 +155,62 @@ export function registerProjectWorkspaceTools(
             ? path.resolve(args.path)
             : null;
 
+        const binding = explicitPath
+          ? null
+          : await resumeDiscoveredWorkspace();
         const state = await getProjectStateCommand();
         const activeProject = state.project;
         const activePath = activeProject ? activeProject.path : null;
+
+        if (
+          !explicitPath &&
+          binding &&
+          isHostAuthoritativeWorkspace(binding.discovered) &&
+          binding.activation?.ok === false &&
+          binding.activation.reason === "invalid_project_config"
+        ) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `The current workspace has an invalid Ikran project config: ${binding.discovered.folder}. Refusing to reuse another project's Runtime binding.`
+              }
+            ],
+            structuredContent: {
+              ok: false,
+              error: "invalid_project_config",
+              expected: binding.discovered.folder,
+              active: activePath,
+              session: rt.token,
+              workbench_url: rt.url
+            }
+          };
+        }
+
+        if (
+          !explicitPath &&
+          activePath &&
+          binding &&
+          isHostAuthoritativeWorkspace(binding.discovered) &&
+          binding.activation?.ok === false
+        ) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `workspace_project_mismatch: the Agent host workspace is "${binding.discovered.folder}", but it is not an initialized Ikran project and the Runtime is bound to "${activePath}". Refusing to expose the other project.`
+              }
+            ],
+            structuredContent: {
+              ok: false,
+              error: "workspace_project_mismatch",
+              expected: binding.discovered.folder,
+              active: activePath,
+              session: rt.token,
+              workbench_url: rt.url
+            }
+          };
+        }
 
         // No-arg + active project: return current binding (do not mismatch on cwd).
         if (!explicitPath && activePath) {
@@ -145,7 +235,7 @@ export function registerProjectWorkspaceTools(
 
         const discovered = explicitPath
           ? null
-          : await discoverWorkingFolder();
+          : binding?.discovered ?? (await discoverWorkingFolder());
         const requestedPath = explicitPath ?? discovered?.folder ?? null;
 
         if (!requestedPath) {

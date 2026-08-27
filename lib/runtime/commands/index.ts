@@ -4,6 +4,7 @@ export {
   getProjectStateCommand,
   requireActiveProjectCommand,
   bindProjectCommand,
+  activateExistingProjectCommand,
   projectPathsMatch
 } from "./project";
 

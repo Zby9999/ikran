@@ -276,3 +276,71 @@ describe("getActiveProjectState — does not redirect via tampered path", () => 
     expect(existsSync(path.join(folder, ".ikran", "config.json"))).toBe(true);
   });
 });
+
+describe("activateExistingProjectFolder — host-authoritative resume", () => {
+  test("switches the disposable pointer to another valid existing project", async () => {
+    const stateDir = tempDir("ikran-activate-state-");
+    const folderA = tempDir("ikran-activate-a-");
+    const folderB = tempDir("ikran-activate-b-");
+    const now = "2026-08-27T00:00:00.000Z";
+    writeConfig(folderA, {
+      path: folderA,
+      name: path.basename(folderA),
+      created_at: now,
+      updated_at: now
+    });
+    writeConfig(folderB, {
+      path: folderB,
+      name: path.basename(folderB),
+      created_at: now,
+      updated_at: now
+    });
+    writeFileSync(
+      path.join(stateDir, "runtime-state.json"),
+      JSON.stringify({ active_project: folderA, last_updated: now }),
+      "utf8"
+    );
+
+    const { activateExistingProjectFolder, getActiveProjectState } =
+      await loadProjectModule(stateDir);
+    const result = await activateExistingProjectFolder(folderB);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changed).toBe(true);
+    expect(result.previous).toBe(folderA);
+    expect(result.config.path).toBe(folderB);
+    expect(getActiveProjectState()).toMatchObject({
+      ok: true,
+      project: { path: folderB }
+    });
+  });
+
+  test(
+    "reconstructs portable Study Kit config only when a project DB exists",
+    async () => {
+      const stateDir = tempDir("ikran-activate-kit-state-");
+      const portable = tempDir("ikran-activate-kit-");
+      const arbitrary = tempDir("ikran-activate-empty-");
+      mkdirSync(path.join(portable, ".ikran"), { recursive: true });
+      writeFileSync(path.join(portable, ".ikran", "ikran.db"), "", "utf8");
+
+      const { activateExistingProjectFolder, getActiveProjectState } =
+        await loadProjectModule(stateDir);
+      const missing = await activateExistingProjectFolder(arbitrary);
+      expect(missing).toEqual({ ok: false, reason: "missing_project_config" });
+      expect(existsSync(path.join(arbitrary, ".ikran"))).toBe(false);
+
+      const resumed = await activateExistingProjectFolder(portable);
+      expect(resumed.ok).toBe(true);
+      if (!resumed.ok) return;
+      expect(resumed.bootstrapped).toBe(true);
+      expect(existsSync(path.join(portable, ".ikran", "config.json"))).toBe(
+        true
+      );
+      expect(getActiveProjectState()).toMatchObject({
+        ok: true,
+        project: { path: portable }
+      });
+    }
+  );
+});

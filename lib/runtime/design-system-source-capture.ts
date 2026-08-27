@@ -118,11 +118,6 @@ function deriveOne(
     nodeRect: locator.nodeRect,
     locatorCrop: locator.crop,
     origin: "source",
-    codeLinks: null,
-    codeDigest: null,
-    harnessPath: null,
-    previewUrl: null,
-    surfaceReadiness: null,
     surfaceStale: false
   };
 }

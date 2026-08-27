@@ -31,7 +31,10 @@ import { getArtifactsDir, getProjectDbPath } from "../../lib/runtime/paths";
 import { registerSeedReference } from "../../lib/runtime/seed-reference";
 import { recordEvidencePackage } from "../../lib/runtime/evidence-package";
 import { codeCaptureDigest } from "../../lib/runtime/code-capture-digest";
-import { collectDesignSystemEntryRows } from "../../lib/runtime/design-system-ingest";
+import {
+  collectDesignSystemEntryRows,
+  mergeEntrySourceCaptures
+} from "../../lib/runtime/design-system-ingest";
 import { createRegionAnnotation } from "../../lib/runtime/region-annotation";
 import {
   subscribeRecordEvents,
@@ -92,6 +95,33 @@ test("component-spec ingest merges legacy top-level source captures with nested 
   });
 
   expect(rows[0]!.source_captures).toEqual([sourceCapture, codeCapture]);
+});
+
+test("source captures from distinct nodes sharing one frame artifact remain distinct", () => {
+  const framePath = "evidence/screenshots/home-frame.png";
+  const logo = {
+    nodeId: "10:1",
+    nodeName: "Brand mark",
+    artifactPath: framePath,
+    capturedAt: "2026-08-26T00:00:00.000Z",
+    surfaceId: "surface-home",
+    origin: "source",
+    locatorCrop: { x: 0.05, y: 0.02, width: 0.2, height: 0.1 }
+  };
+  const metric = {
+    nodeId: "10:2",
+    nodeName: "Metric",
+    artifactPath: framePath,
+    capturedAt: "2026-08-26T00:00:00.000Z",
+    surfaceId: "surface-home",
+    origin: "source",
+    locatorCrop: { x: 0.45, y: 0.25, width: 0.25, height: 0.12 }
+  };
+
+  expect(mergeEntrySourceCaptures([logo, metric], undefined)).toEqual([
+    logo,
+    metric
+  ]);
 });
 
 function writeProjectFile(dir: string, rel: string, content: unknown) {
@@ -255,6 +285,53 @@ test("prose layout rules round-trip body verbatim with structured captures", () 
         stale: false
       })
     ]);
+  });
+});
+
+test("Runtime view preserves locatorCrop for stored full-frame source captures", () => {
+  withTempProject((dir) => {
+    seedEvidenceCards(dir);
+    writeProjectFile(dir, "design-system/captures/article-frame.png", "png");
+    writeProjectFile(dir, "design-system/layout-rules.json", {
+      rules: [
+        {
+          id: "layout.article-frame",
+          value: "Keep the article frame centered.",
+          meaning: "Article frame",
+          status: "candidate",
+          links: ["card-accepted"],
+          sourceCaptures: [
+            {
+              nodeId: "10:2",
+              nodeName: "Article frame",
+              artifactPath: "design-system/captures/article-frame.png",
+              capturedAt: "2026-08-26T00:00:00.000Z",
+              surfaceId: "surface-home",
+              origin: "source",
+              nodeRect: { x: 0.2, y: 0.3, width: 0.4, height: 0.2 },
+              locatorCrop: { x: 0.1, y: 0.2, width: 0.6, height: 0.4 }
+            }
+          ]
+        }
+      ]
+    });
+    expect(
+      declareFile(
+        dir,
+        "design-system/layout-rules.json",
+        "layout-rules.json",
+        ["card-accepted"]
+      ).ok
+    ).toBe(true);
+
+    const result = getDesignSystemView(dir);
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.view.layout[0]?.captures?.[0]?.locatorCrop).toEqual({
+      x: 0.1,
+      y: 0.2,
+      width: 0.6,
+      height: 0.4
+    });
   });
 });
 

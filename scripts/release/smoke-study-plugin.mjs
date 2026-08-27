@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const HASHED_EXTERNAL_PATTERN = /require\(["']([^"']+-[a-f0-9]{12,})["']\)/g;
 
@@ -57,13 +58,21 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
   let workbenchUrl;
 
   try {
+    // Match the packaged Study Kit contract: the portable workspace retains
+    // its DB, while machine-specific config.json is intentionally omitted.
+    const projectStateDir = path.join(projectDir, ".ikran");
+    fs.mkdirSync(projectStateDir, { recursive: true });
+    fs.writeFileSync(path.join(projectStateDir, "ikran.db"), "");
+
     transport = new StdioClientTransport({
       command: process.execPath,
       args: [mcpBin, "--prod"],
-      cwd: projectDir,
+      // Match an installed plugin: the process runs from the plugin cache,
+      // while MCP Roots identify the user's task workspace.
+      cwd: pluginRoot,
       env: {
         ...process.env,
-        IKRAN_CWD: projectDir,
+        IKRAN_CWD: "",
         IKRAN_STATE_DIR: stateDir,
         IKRAN_HOST: "127.0.0.1",
         IKRAN_IDLE_SHUTDOWN_MS: "5000",
@@ -74,8 +83,16 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
     });
     client = new Client(
       { name: "ikran-study-plugin-smoke", version: "0.1.0" },
-      { capabilities: {} }
+      { capabilities: { roots: {} } }
     );
+    client.setRequestHandler(ListRootsRequestSchema, async () => ({
+      roots: [
+        {
+          uri: pathToFileURL(projectDir).href,
+          name: "ikran-study-workspace"
+        }
+      ]
+    }));
     await within(client.connect(transport), timeoutMs, "MCP connection");
     const opened = await within(
       client.callTool({ name: "open_workbench", arguments: {} }),
@@ -83,7 +100,25 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
       "open_workbench"
     );
     workbenchUrl = resultUrl(opened);
-    await callToolOk(client, "create_or_open_project", { path: projectDir }, timeoutMs);
+    if (
+      opened?.structuredContent?.workspace_binding !== "resumed" ||
+      opened?.structuredContent?.active_project !== projectDir
+    ) {
+      throw new Error(
+        `open_workbench did not resume the portable Roots project: ${JSON.stringify(opened?.structuredContent ?? opened)}`
+      );
+    }
+    const projectBinding = await callToolOk(
+      client,
+      "create_or_open_project",
+      {},
+      timeoutMs
+    );
+    if (projectBinding?.project?.path !== projectDir) {
+      throw new Error(
+        `Packaged MCP bound the wrong Roots project: ${JSON.stringify(projectBinding)}`
+      );
+    }
 
     const parsed = new URL(workbenchUrl);
     const session = parsed.searchParams.get("session");

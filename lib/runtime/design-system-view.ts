@@ -154,19 +154,19 @@ export interface DesignSystemLayoutCapture {
   locatorCrop?: LayoutCaptureNodeRect | null;
   origin: DesignSystemCaptureOrigin;
   /** Code-backed captures only: the code files this capture froze and their
-   * content digest at capture time; both null for source captures. */
-  codeLinks: string[] | null;
-  codeDigest: string | null;
+   * content digest at capture time; absent or null for source captures. */
+  codeLinks?: string[] | null;
+  codeDigest?: string | null;
   /** Live hero (Issue 33): the Agent-declared harness route in the prototype
    * app that mounts this component standalone (`?state=<name>` contract);
-   * null when no live render was declared. */
-  harnessPath: string | null;
+   * absent or null when no live render was declared. */
+  harnessPath?: string | null;
   /** Code captures with a linked prototype surface, decorated live from
    * prototype_surfaces: the preview origin the hero builds the harness URL
-   * from, and the surface's current readiness / staleness. All null/false
-   * for source captures and for code captures whose surface row is gone. */
-  previewUrl: string | null;
-  surfaceReadiness: DesignSystemCaptureSurfaceReadiness | null;
+   * from, and the surface's current readiness / staleness. Absent or
+   * null/false for source captures and code captures whose surface is gone. */
+  previewUrl?: string | null;
+  surfaceReadiness?: DesignSystemCaptureSurfaceReadiness | null;
   surfaceStale: boolean;
 }
 
@@ -318,8 +318,11 @@ function nonEmptyString(value: unknown): value is string {
 
 /** Defensive nodeRect read: declaration schema enforces the shape, but a
  * legacy or hand-edited DB row may carry anything — degrade to null. */
-function nodeRectOfItem(item: Record<string, unknown>): LayoutCaptureNodeRect | null {
-  const rect = item.nodeRect;
+function captureRectOfItem(
+  item: Record<string, unknown>,
+  field: "nodeRect" | "locatorCrop"
+): LayoutCaptureNodeRect | null {
+  const rect = item[field];
   if (!isPlainObject(rect)) return null;
   const { x, y, width, height } = rect;
   if (
@@ -392,6 +395,7 @@ function capturesOfRaw(
         : surfaceId !== null
           ? staleOf(surfaceId)
           : false;
+    const locatorCrop = captureRectOfItem(item, "locatorCrop");
     captures.push({
       nodeId: nonEmptyString(item.nodeId) ? item.nodeId : null,
       nodeName: item.nodeName,
@@ -399,7 +403,8 @@ function capturesOfRaw(
       capturedAt: item.capturedAt,
       surfaceId,
       stale,
-      nodeRect: nodeRectOfItem(item),
+      nodeRect: captureRectOfItem(item, "nodeRect"),
+      ...(locatorCrop ? { locatorCrop } : {}),
       origin,
       codeLinks,
       codeDigest,

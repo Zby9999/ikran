@@ -205,8 +205,11 @@ export function stripSourceCaptures(
  * Component specs in early real projects can contain both a legacy envelope
  * `sourceCaptures` array (usually Figma/source evidence) and the current
  * `value.sourceCaptures` array (where Issue 32 wrote generated captures).
- * Treat both as one logical collection. Artifact path is the stable identity;
- * a later declaration wins without moving the capture's original position.
+ * Treat both as one logical collection. A code capture keeps artifact path as
+ * its stable identity. Source captures can legitimately point at different
+ * nodes inside the same full-frame screenshot, so their source surface/node
+ * locator is part of the identity. A later declaration of the same logical
+ * capture wins without moving its original position.
  */
 export function mergeEntrySourceCaptures(
   envelope: unknown,
@@ -218,15 +221,33 @@ export function mergeEntrySourceCaptures(
     ...(Array.isArray(envelope) ? envelope : []),
     ...(Array.isArray(nested) ? nested : [])
   ]) {
-    const key =
-      isPlainObject(capture) &&
-      typeof capture.artifactPath === "string" &&
-      capture.artifactPath.trim().length > 0
-        ? `artifact:${capture.artifactPath.trim()}`
-        : `anonymous:${anonymous++}:${JSON.stringify(capture)}`;
+    const key = captureIdentity(capture) ??
+      `anonymous:${anonymous++}:${JSON.stringify(capture)}`;
     merged.set(key, capture);
   }
   return [...merged.values()];
+}
+
+function captureIdentity(capture: unknown): string | null {
+  if (!isPlainObject(capture)) return null;
+  const artifactPath =
+    typeof capture.artifactPath === "string"
+      ? capture.artifactPath.trim()
+      : "";
+  if (!artifactPath) return null;
+  if (capture.origin === "code") return `code:${artifactPath}`;
+
+  const surfaceId =
+    typeof capture.surfaceId === "string" && capture.surfaceId.trim()
+      ? capture.surfaceId.trim()
+      : artifactPath;
+  const nodeId =
+    typeof capture.nodeId === "string" ? capture.nodeId.trim() : "";
+  if (nodeId) return `source:${surfaceId}:node:${nodeId}`;
+  if (isPlainObject(capture.locatorCrop)) {
+    return `source:${surfaceId}:crop:${JSON.stringify(capture.locatorCrop)}`;
+  }
+  return `source:${artifactPath}`;
 }
 
 /**

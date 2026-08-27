@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { closeProjectDb, openProjectDb, withProjectTransaction } from "./db";
 import { deriveSourceCaptures } from "./design-system-source-capture";
+import { validateDesignSystemJson } from "./design-system-schema";
 import {
   claimInitialDesignSystemPreparation,
   finalizeInitialDesignSystemPreparation,
@@ -623,6 +624,20 @@ export function commitInitialDesignSystemSemantic(
   const sources = sourceRecordsFromClaim(claimed);
   const projection = projectSemanticBundle(projectPath, input, sources);
   if ("ok" in projection) return { ...projection, failedStage: "projection" };
+  for (const artifact of projection.artifacts) {
+    const validation = validateDesignSystemJson(
+      artifact.artifactType,
+      artifact.value
+    );
+    if (!validation.ok) {
+      return {
+        ok: false,
+        reason: "invalid_projected_artifact",
+        details: { path: artifact.path, validation },
+        failedStage: "projection"
+      };
+    }
+  }
   const request = markSemanticRequest(projectPath, claimed.command.id, {
     idempotencyKey: input.idempotencyKey, digest, status: "in-progress"
   });

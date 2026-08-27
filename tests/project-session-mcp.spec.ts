@@ -12,7 +12,14 @@
 // (SHARED_BUILD_DIR) in --prod mode so the first call is fast (global-setup
 // builds once).
 
-import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -298,6 +305,78 @@ test.describe("Ikran Issue 02/02 — create_or_open_project MCP tool", () => {
         killRecordedRuntime(stateDir);
         rmSync(stateDir, { recursive: true, force: true });
         rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
+
+  test(
+    "a new MCP Roots workspace resumes its portable project instead of exposing the previous active project",
+    async () => {
+      test.setTimeout(150_000);
+
+      const stateDir = mkdtempSync(path.join(tmpdir(), "ikran-mcp-root-rebind-"));
+      const dirA = mkdtempSync(path.join(tmpdir(), "ikran-root-rebind-a-"));
+      const dirB = mkdtempSync(path.join(tmpdir(), "ikran-root-rebind-b-"));
+      let clientA: Client | null = null;
+      let clientB: Client | null = null;
+      try {
+        const handleA = await spawnMcpClient(stateDir, {
+          rootsProvider: () => [
+            { uri: pathToFileURL(dirA).href, name: "workspace-a" }
+          ]
+        });
+        clientA = handleA.client;
+        const createdA = await clientA.callTool({
+          name: "create_or_open_project",
+          arguments: {}
+        });
+        expect(sc(createdA).ok).toBe(true);
+
+        // Study Kit packaging keeps the DB but removes machine-specific
+        // config.json. Reproduce that portable checkpoint for workspace B.
+        mkdirSync(path.join(dirB, ".ikran"), { recursive: true });
+        copyFileSync(
+          path.join(dirA, ".ikran", "ikran.db"),
+          path.join(dirB, ".ikran", "ikran.db")
+        );
+
+        const handleB = await spawnMcpClient(stateDir, {
+          rootsProvider: () => [
+            { uri: pathToFileURL(dirB).href, name: "workspace-b" }
+          ]
+        });
+        clientB = handleB.client;
+        const openedB = await clientB.callTool({
+          name: "open_workbench",
+          arguments: {}
+        });
+        const openedSc = sc(openedB);
+        expect(openedSc.workspace_source).toBe("roots");
+        expect(openedSc.workspace_binding).toBe("resumed");
+        expect(samePath(String(openedSc.workspace_folder), dirB)).toBe(true);
+        expect(samePath(String(openedSc.active_project), dirB)).toBe(true);
+
+        const workbenchUrl = new URL(String(openedSc.url));
+        const response = await fetch(new URL("/api/project", workbenchUrl), {
+          headers: {
+            "x-ikran-session": workbenchUrl.searchParams.get("session") ?? ""
+          }
+        });
+        expect(response.ok).toBe(true);
+        const body = (await response.json()) as { project?: { path?: string } };
+        expect(samePath(body.project?.path ?? "", dirB)).toBe(true);
+        expect(existsSync(path.join(dirB, ".ikran", "config.json"))).toBe(true);
+      } finally {
+        try {
+          await clientB?.close();
+        } catch {}
+        try {
+          await clientA?.close();
+        } catch {}
+        killRecordedRuntime(stateDir);
+        rmSync(stateDir, { recursive: true, force: true });
+        rmSync(dirA, { recursive: true, force: true });
+        rmSync(dirB, { recursive: true, force: true });
       }
     }
   );

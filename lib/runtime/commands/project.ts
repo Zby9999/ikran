@@ -1,6 +1,7 @@
 // Shared project commands — single source for HTTP + MCP.
 
 import {
+  activateExistingProjectFolder,
   bindProjectFolder,
   getActiveProjectState,
   projectPathsMatch,
@@ -53,6 +54,10 @@ export async function bindProjectCommand(
   folderPath: string
 ): Promise<BindResponse> {
   return bindProjectFolder(folderPath);
+}
+
+export async function activateExistingProjectCommand(folderPath: string) {
+  return activateExistingProjectFolder(folderPath);
 }
 
 export { projectPathsMatch };

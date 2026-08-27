@@ -4,13 +4,15 @@
 import { spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync } from "node:fs";
 import { connect } from "node:net";
-import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveRuntimeSocketPath } from "../lib/runtime/runtime-socket-path.mjs";
+import { resolveRuntimeStateDir } from "../lib/runtime/runtime-state-dir.mjs";
 
 const argv = process.argv.slice(2);
-const stateDir = process.env.IKRAN_STATE_DIR || path.join(homedir(), ".ikran");
-const socketPath = path.join(stateDir, "runtime-mcp.sock");
+const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const stateDir = resolveRuntimeStateDir({ appDir });
+const socketPath = resolveRuntimeSocketPath(stateDir);
 const runtimeBin = path.join(path.dirname(fileURLToPath(import.meta.url)), "ikran-runtime.mjs");
 
 function tryConnect() {
@@ -30,7 +32,7 @@ try {
   const logFd = openSync(logPath, "a", 0o600);
   const child = spawn(process.execPath, [runtimeBin, ...argv], {
     cwd: process.cwd(),
-    env: process.env,
+    env: { ...process.env, IKRAN_STATE_DIR: stateDir },
     detached: true,
     stdio: ["ignore", "ignore", logFd]
   });

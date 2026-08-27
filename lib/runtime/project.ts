@@ -25,6 +25,7 @@ import {
   getExportDir,
   getIkranDir,
   getProjectConfigPath,
+  getProjectDbPath,
   RUNTIME_STATE_DIR,
   RUNTIME_STATE_FILE
 } from "./paths";
@@ -47,9 +48,16 @@ export interface ValidationResult {
   ok: true;
 }
 
+export type ProjectFolderValidationReason =
+  | "missing_path"
+  | "invalid_path"
+  | "not_a_directory"
+  | "path_not_found"
+  | "not_accessible";
+
 export interface ValidationError {
   ok: false;
-  reason: string;
+  reason: ProjectFolderValidationReason;
 }
 
 export type ValidationResponse = ValidationResult | ValidationError;
@@ -105,6 +113,22 @@ export interface BindError {
 
 export type BindResponse = BindResult | BindError;
 
+export type ActivateExistingProjectResponse =
+  | {
+      ok: true;
+      config: ProjectConfig;
+      previous: string | null;
+      changed: boolean;
+      bootstrapped: boolean;
+    }
+  | {
+      ok: false;
+      reason:
+        | ProjectFolderValidationReason
+        | "missing_project_config"
+        | "invalid_project_config";
+    };
+
 /**
  * Cross-process exclusive lock for bind check-and-set.
  *
@@ -145,6 +169,58 @@ export async function withProjectBindLock<T>(
 
 export async function bindProjectFolder(folderPath: string): Promise<BindResponse> {
   return withProjectBindLock(() => bindProjectFolderLocked(folderPath));
+}
+
+/**
+ * Resume an already-initialized project selected by the Agent host workspace.
+ *
+ * This is intentionally narrower than bindProjectFolder: it never initializes
+ * an arbitrary folder, never accepts a malformed config, and only reconstructs
+ * config.json when a portable project DB already exists. It then moves the
+ * Runtime's disposable active-project pointer. MCP Roots/IKRAN_CWD prove that a
+ * newly opened host task belongs to this existing Ikran project.
+ */
+export async function activateExistingProjectFolder(
+  folderPath: string
+): Promise<ActivateExistingProjectResponse> {
+  return withProjectBindLock(async () => {
+    const validation = await validateProjectFolder(folderPath);
+    if (!validation.ok) return validation;
+
+    const resolved = path.resolve(folderPath);
+    const configPath = getProjectConfigPath(resolved);
+    let config = loadProjectConfig(resolved);
+    let bootstrapped = false;
+    if (existsSync(configPath) && !config) {
+      return { ok: false, reason: "invalid_project_config" };
+    }
+    if (!config) {
+      // Portable Study Kits intentionally omit machine-specific config.json,
+      // but retain the project database. Reconstruct only that known existing
+      // project shape; never auto-initialize an arbitrary workspace.
+      if (!existsSync(getProjectDbPath(resolved))) {
+        return { ok: false, reason: "missing_project_config" };
+      }
+      const now = new Date().toISOString();
+      mkdirSync(getIkranDir(resolved), { recursive: true });
+      mkdirSync(getArtifactsDir(resolved), { recursive: true });
+      mkdirSync(getExportDir(resolved), { recursive: true });
+      config = {
+        path: resolved,
+        name: path.basename(resolved),
+        created_at: now,
+        updated_at: now
+      };
+      writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+      initializeProjectDb(resolved);
+      bootstrapped = true;
+    }
+
+    const previous = getActiveProject();
+    const changed = !previous || !projectPathsMatch(previous, config.path);
+    if (changed) setActiveProject(config.path);
+    return { ok: true, config, previous, changed, bootstrapped };
+  });
 }
 
 async function bindProjectFolderLocked(folderPath: string): Promise<BindResponse> {

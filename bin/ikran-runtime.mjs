@@ -2,9 +2,8 @@
 import "tsx";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { chmodSync, existsSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
-import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -15,6 +14,11 @@ import {
 } from "../lib/runtime/runtime-endpoint.mjs";
 import { importTsxModule } from "../lib/runtime/tsx-module-interop.mjs";
 import { assertProdBuildMatchesSource } from "../lib/runtime/version-stamp.mjs";
+import {
+  readIkranPackageVersion,
+  resolveRuntimeStateDir
+} from "../lib/runtime/runtime-state-dir.mjs";
+import { resolveRuntimeSocketPath } from "../lib/runtime/runtime-socket-path.mjs";
 
 const argv = process.argv.slice(2);
 const prod = argv.includes("--prod");
@@ -26,17 +30,12 @@ const host = option("--host", process.env.IKRAN_HOST || "127.0.0.1");
 const requestedPort = Number(option("--port", process.env.IKRAN_PORT || ""));
 const port = Number.isFinite(requestedPort) && requestedPort > 0 ? requestedPort : undefined;
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const packageVersion = (() => {
-  const manifest = JSON.parse(
-    readFileSync(path.join(appDir, "package.json"), "utf8")
-  );
-  if (typeof manifest.version !== "string" || manifest.version.length === 0) {
-    throw new Error("Ikran package version is missing.");
-  }
-  return manifest.version;
-})();
-const stateDir = process.env.IKRAN_STATE_DIR || path.join(homedir(), ".ikran");
-const socketPath = path.join(stateDir, "runtime-mcp.sock");
+const packageVersion = readIkranPackageVersion(appDir);
+const stateDir = resolveRuntimeStateDir({ appDir });
+// Runtime modules read this during dynamic import. Make the resolved default
+// explicit so the HTTP command kernel and the socket/endpoint share one state.
+process.env.IKRAN_STATE_DIR = stateDir;
+const socketPath = resolveRuntimeSocketPath(stateDir);
 const nextDistDir = process.env.IKRAN_NEXT_DIST_DIR || undefined;
 if (!existsSync(path.join(appDir, "app"))) process.exit(1);
 if (prod) assertProdBuildMatchesSource({ appDir, prod, nextDistDir });

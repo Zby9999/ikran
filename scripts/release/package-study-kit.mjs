@@ -11,6 +11,7 @@ import { DatabaseSync } from "node:sqlite";
 import { buildStudyRuntime, findNativeMachO } from "./build-study-runtime.mjs";
 import { clearPrefilledAlignmentAnswers } from "./study-kit-database.mjs";
 import { smokeStudyPlugin } from "./smoke-study-plugin.mjs";
+import { studyKitStartHere } from "./study-kit-start-here.mjs";
 import {
   assertProdBuildMatchesSource,
   writeVersionStamp
@@ -108,7 +109,10 @@ try {
     workspaces: packagedWorkspaces
   };
   writeJson(path.join(staging, "STUDY-KIT-MANIFEST.json"), manifest);
-  writeText(path.join(staging, "START-HERE.md"), startHere(packageName, packagedWorkspaces));
+  writeText(
+    path.join(staging, "START-HERE.md"),
+    studyKitStartHere(packageName, packagedWorkspaces)
+  );
 
   const privacy = scanPackage(staging, {
     forbiddenLiterals: [
@@ -254,8 +258,6 @@ function copyCodexPlugin(source, destination, version) {
   };
   writeJson(path.join(destination, ".codex-plugin", "plugin.json"), manifest);
   writeText(path.join(destination, "README.md"), pluginReadme());
-  patchPortableRuntimeSocket(path.join(destination, "bin", "ikran-mcp.mjs"), "mcp");
-  patchPortableRuntimeSocket(path.join(destination, "bin", "ikran-runtime.mjs"), "runtime");
   const studyRuntime = buildStudyRuntime({ sourceRoot: source, destinationRoot: destination });
   writeVersionStamp(destination);
   sanitizeNextBuild(destination, source);
@@ -318,68 +320,6 @@ function readPluginVersion(source) {
     fail(`Plugin package.json has an invalid version: ${String(version)}`);
   }
   return version;
-}
-
-function patchPortableRuntimeSocket(file, kind) {
-  let source = fs.readFileSync(file, "utf8");
-  if (kind === "mcp") {
-    source = replaceExactlyOnce(
-      source,
-      'import { spawn } from "node:child_process";',
-      'import { spawn } from "node:child_process";\nimport { createHash } from "node:crypto";',
-      file
-    );
-    source = replaceExactlyOnce(
-      source,
-      'import { homedir } from "node:os";',
-      'import { homedir, tmpdir } from "node:os";',
-      file
-    );
-  } else {
-    source = replaceExactlyOnce(
-      source,
-      'import "tsx";',
-      'import "tsx";\nimport { createHash } from "node:crypto";',
-      file
-    );
-    source = replaceExactlyOnce(
-      source,
-      'import { homedir } from "node:os";',
-      'import { homedir, tmpdir } from "node:os";',
-      file
-    );
-  }
-
-  source = replaceExactlyOnce(
-    source,
-    'const socketPath = path.join(stateDir, "runtime-mcp.sock");',
-    `const socketPath = resolveRuntimeSocketPath(stateDir);
-
-function resolveRuntimeSocketPath(stateDirectory) {
-  const workspaceSocket = path.join(stateDirectory, "runtime-mcp.sock");
-  if (process.platform === "win32" || Buffer.byteLength(workspaceSocket) < 100) {
-    return workspaceSocket;
-  }
-  const digest = createHash("sha256")
-    .update(path.resolve(stateDirectory))
-    .digest("hex")
-    .slice(0, 24);
-  const privateTempSocket = path.join(tmpdir(), \`ikran-\${digest}.sock\`);
-  if (Buffer.byteLength(privateTempSocket) < 100) return privateTempSocket;
-  const uid = typeof process.getuid === "function" ? process.getuid() : "user";
-  return \`/tmp/ikran-\${uid}-\${digest}.sock\`;
-}`,
-    file
-  );
-  fs.writeFileSync(file, source, "utf8");
-}
-
-function replaceExactlyOnce(source, before, after, file) {
-  const first = source.indexOf(before);
-  if (first < 0 || source.indexOf(before, first + before.length) >= 0) {
-    fail(`Expected exactly one portable-socket patch target in ${file}: ${before}`);
-  }
-  return source.slice(0, first) + after + source.slice(first + before.length);
 }
 
 function packageWorkspace(source, destination, label, relativePath) {
@@ -662,19 +602,6 @@ function criticalChecksums(root, manifest) {
     relativePath,
     digest: sha256(path.join(root, relativePath))
   }));
-}
-
-function startHere(packageName, workspaces) {
-  const single = workspaces.length === 1;
-  const title = single ? `Ikran Study Kit ${workspaces[0].id.slice(-1)} — Codex` : "Ikran Study Kit — Codex";
-  const workspaceInstruction = single
-    ? `3. Start a **new Codex task** from the package's only workspace: \`${workspaces[0].path}\`.`
-    : `3. Start a **new Codex task** from exactly one assigned workspace:\n${workspaces.map((workspace) => `   - \`${workspace.path}\``).join("\n")}`;
-  const setupAudience = single ? "Participant setup" : "Researcher setup";
-  const workspaceDescription = single
-    ? "one preloaded study workspace"
-    : `${workspaces.length} preloaded, independent study workspaces`;
-  return `# ${title}\n\nThis package contains one Codex plugin and ${workspaceDescription}.\n\n## ${setupAudience}\n\n1. Keep this extracted folder intact.\n2. Ask Codex to install the bundled plugin, or run:\n\n   \`\`\`bash\n   codex plugin marketplace add <PATH_TO_${packageName}>\n   codex plugin add ikran@ikran-study-kit\n   \`\`\`\n\n${workspaceInstruction}\n4. Ask: \`打开 Ikran，并继续当前 Alignment。\`\n\nThe workspace already contains its Figma reference, evidence screenshot, positional nodes, and unanswered Alignment cards. Question answer fields are intentionally blank; no proposed answers are prefilled. A Figma Connection is not required. Do not refresh or replace the reference during the study.\n\nThe workspace is frozen before Draft Design System generation.\n`;
 }
 
 function workspaceReadme() {

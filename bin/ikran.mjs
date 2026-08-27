@@ -6,13 +6,13 @@
 import { spawn } from "node:child_process";
 import http from "node:http";
 import { closeSync, existsSync, mkdirSync, openSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   probeRuntimeAlive,
   readRuntimeEndpoint
 } from "../lib/runtime/runtime-endpoint.mjs";
+import { resolveRuntimeStateDir } from "../lib/runtime/runtime-state-dir.mjs";
 
 const argv = process.argv.slice(2);
 const command = ["status", "stop", "restart"].includes(argv[0]) ? argv.shift() : "start";
@@ -74,7 +74,7 @@ try {
   console.error(`[ikran] Project folder "${projectFolder}" does not exist or is not a directory.`);
   process.exit(1);
 }
-const stateDir = process.env.IKRAN_STATE_DIR || path.join(homedir(), ".ikran");
+const stateDir = resolveRuntimeStateDir({ appDir });
 
 function requestRuntimeStop(endpoint) {
   return new Promise((resolve, reject) => {
@@ -146,7 +146,11 @@ if (!endpoint) {
   if (port) runtimeArgs.push("--port", String(port));
   const child = spawn(process.execPath, runtimeArgs, {
     cwd: appDir,
-    env: { ...process.env, IKRAN_CWD: projectFolder },
+    env: {
+      ...process.env,
+      IKRAN_CWD: projectFolder,
+      IKRAN_STATE_DIR: stateDir
+    },
     detached: true,
     stdio: ["ignore", "ignore", logFd]
   });
