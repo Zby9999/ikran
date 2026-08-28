@@ -275,7 +275,7 @@ test("design_system_formal only claims a reconciliation completed after the late
 test("design_system_formal rejects a reconciliation from a different Prototype run", () => {
   withProject((projectPath) => {
     setPhase(projectPath, "draft_design_system");
-    expect(confirmDraftDesignSystem(projectPath)).toMatchObject({
+    expect(confirmDraftDesignSystem(projectPath, "I reviewed the Draft.")).toMatchObject({
       ok: true,
       phase: "prototype_validation"
     });

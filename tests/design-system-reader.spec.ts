@@ -135,6 +135,10 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         }))).toMatchObject({ ok: true, record: { status: "answered" } });
       }
     }
+    expect(await staged.finalization).toMatchObject({
+      ok: true,
+      incrementalPlanning: { reason: "delta_available" }
+    });
     const completeResponse = await patchAlignment(workbenchUrl, token, {
       action: "complete"
     });

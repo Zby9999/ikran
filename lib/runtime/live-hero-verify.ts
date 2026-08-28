@@ -131,15 +131,40 @@ function playwrightVerifyPage(page: PlaywrightPageLike): LiveHeroVerifyPage {
       }, url);
       try {
         await page.waitForFunction(
-          (expected: string) => {
+          (input: { expected: string; maxWidth: number; maxExtent: number }) => {
             const w = window as unknown as {
-              __ikranReports?: Array<{ href?: unknown }>;
+              __ikranReports?: Array<{
+                href?: unknown;
+                x?: unknown;
+                y?: unknown;
+                width?: unknown;
+                height?: unknown;
+              }>;
             };
             return (w.__ikranReports ?? []).some(
-              (report) => report.href === expected
+              (report) =>
+                report.href === input.expected &&
+                typeof report.x === "number" &&
+                Number.isFinite(report.x) &&
+                typeof report.y === "number" &&
+                Number.isFinite(report.y) &&
+                typeof report.width === "number" &&
+                Number.isFinite(report.width) &&
+                typeof report.height === "number" &&
+                Number.isFinite(report.height) &&
+                report.x >= 0 &&
+                report.y >= 0 &&
+                report.width > 0 &&
+                report.height > 0 &&
+                report.x + report.width <= input.maxWidth &&
+                report.y + report.height <= input.maxExtent
             );
           },
-          url,
+          {
+            expected: url,
+            maxWidth: PROTOTYPE_PRESENTATION_VIEWPORT_WIDTH,
+            maxExtent: LIVE_HERO_MAX_REPORTED_EXTENT
+          },
           { timeout: timeoutMs }
         );
       } catch {
@@ -153,7 +178,7 @@ function playwrightVerifyPage(page: PlaywrightPageLike): LiveHeroVerifyPage {
           (report) => report.href === expected
         );
       }, url)) as Array<Record<string, unknown>>;
-      return reports[0] ?? null;
+      return firstValidLiveHeroReport(reports, url);
     }
   };
 }
@@ -237,6 +262,21 @@ function toValidBounds(value: unknown): LiveHeroVerifyBounds | null {
     return null;
   }
   return { x, y, width, height };
+}
+
+/** Select the first report for this exact navigation that already has usable
+ * geometry. React/Vite can emit a ResizeObserver notification for the empty
+ * mount before the component commit; that transient 0x0 report is not a
+ * terminal component failure. */
+export function firstValidLiveHeroReport(
+  reports: readonly unknown[],
+  expectedHref: string
+): Record<string, unknown> | null {
+  for (const report of reports) {
+    if (!isPlainObject(report) || report.href !== expectedHref) continue;
+    if (toValidBounds(report) !== null) return report;
+  }
+  return null;
 }
 
 type LiveHeroDeclaration = {
@@ -499,7 +539,7 @@ export async function verifyComponentLiveHeroes(
         { state: "default", url: baseUrl },
         ...target.stateNames.map((state) => ({
           state,
-          url: `${baseUrl}?state=${encodeURIComponent(state)}`
+          url: `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}state=${encodeURIComponent(state)}`
         }))
       ].filter(({ state }) =>
         input.states === undefined ? true : input.states.includes(state)

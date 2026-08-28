@@ -94,6 +94,7 @@ const TYPOGRAPHY_ROLE_WRITING_STYLE = {
   ],
   rules: [
     "Represent every reusable type style as one complete composite token; keep atomic typography tokens as referenced construction facts.",
+    "Give each role one scalar fontSize and one stable job; never bundle a scale or step collection into one role token.",
     "Semantic and component layer tokens use the token identity for the stable role name and write value.usedFor as one sentence about usage context, function, or design intent.",
     "Do not repeat the role name with only size, role, or token appended.",
     "Do not invent usage or missing font fields; preserve unsupported facts as explicit gaps."
@@ -289,7 +290,7 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
     primitive:
       "Primitive tokens carry construction facts only and write neither meaning nor a usage field.",
     typography:
-      "Semantic and component typography tokens may write one non-empty value.usedFor sentence in the designer's source language.",
+      "Each semantic/component typography role has one scalar fontSize, at least one other supported style field, and one non-empty value.usedFor sentence in the designer's source language; scales and step collections stay atomic primitives.",
     other_domains:
       "Semantic and component tokens outside typography may write one non-empty value.usage sentence in the designer's source language.",
     fail_closed:
@@ -2110,7 +2111,8 @@ function finalizeFromBlockers(
 
 export function finalizeInitialDesignSystemPreparation(
   projectPath: string,
-  alignmentAttemptId: string
+  alignmentAttemptId: string,
+  commandPayloadPatch?: Record<string, unknown>
 ) {
   try {
     const result = withProjectTransaction(projectPath, (db) => {
@@ -2636,11 +2638,28 @@ export function finalizeInitialDesignSystemPreparation(
       if (independentFailure) return independentFailure;
 
       const now = new Date().toISOString();
-      db.prepare(
-        `UPDATE agent_commands
-         SET status = 'completed', completed_at = ?, updated_at = ?
-         WHERE id = ? AND status = 'claimed'`
-      ).run(now, now, command.id);
+      if (commandPayloadPatch) {
+        const payloadRow = db.prepare(
+          "SELECT payload_json FROM agent_commands WHERE id = ?"
+        ).get(command.id) as { payload_json: string };
+        const payload = JSON.parse(payloadRow.payload_json) as Record<string, unknown>;
+        db.prepare(
+          `UPDATE agent_commands
+           SET status = 'completed', payload_json = ?, completed_at = ?, updated_at = ?
+           WHERE id = ? AND status = 'claimed'`
+        ).run(
+          JSON.stringify({ ...payload, ...commandPayloadPatch }),
+          now,
+          now,
+          command.id
+        );
+      } else {
+        db.prepare(
+          `UPDATE agent_commands
+           SET status = 'completed', completed_at = ?, updated_at = ?
+           WHERE id = ? AND status = 'claimed'`
+        ).run(now, now, command.id);
+      }
       const event = logEventOnDb(
         db,
         "initial_design_system_preparation_completed",

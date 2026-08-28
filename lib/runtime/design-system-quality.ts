@@ -63,7 +63,19 @@ function isCompositeTypographyRole(entry: DesignSystemEntryRowInput): boolean {
   const fields = Object.keys(entry.value).filter((key) =>
     TYPOGRAPHY_STYLE_FIELDS.has(key)
   );
-  return fields.some((field) => field !== "fontFamily");
+  const unknownFields = Object.keys(entry.value).filter((key) =>
+    !TYPOGRAPHY_STYLE_FIELDS.has(key) && key !== "usedFor"
+  );
+  const usedFor = entry.value.usedFor;
+  return (
+    unknownFields.length === 0 &&
+    fields.includes("fontSize") &&
+    fields.some((field) => field !== "fontSize") &&
+    entry.value.fontSize !== null &&
+    !Array.isArray(entry.value.fontSize) &&
+    typeof usedFor === "string" &&
+    usedFor.trim().length > 0
+  );
 }
 
 function semanticWords(value: string): string[] {

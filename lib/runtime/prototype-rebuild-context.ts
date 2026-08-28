@@ -41,8 +41,30 @@ export const PROTOTYPE_PREVIEW_CONTRACT = Object.freeze({
   repair: {
     error: "preview_not_ready",
     retryIdentity: "same runId and surfaceKey"
+  },
+  componentPreview: {
+    supportedAdapters: ["next-app-router", "vite-react"],
+    adapterSelection: "runtime-detected from prototype structure and package metadata",
+    styles: {
+      componentImports: "loaded normally",
+      viteEntryCss: "direct CSS imports from the index.html module entry are included automatically"
+    },
+    versionPolicy: "framework package version changes do not select an adapter",
+    recipeRules: {
+      entryId: "use the exact entryId from component_preview_targets",
+      stateArgs:
+        "keys must come from allowedStateNames; omit stateArgs for alternative examples not declared by the Design System contract"
+    },
+    completionGate: "before Prototype confirmation every code-linked candidate component must be registered for live verification or retain a resolved Open Gap; formalization additionally requires verification"
   }
 } as const);
+
+export type PrototypeComponentPreviewTarget = {
+  entryId: string;
+  name: string;
+  sourceArtifactPath: string;
+  allowedStateNames: string[];
+};
 
 export type PrototypeRebuildSeed = {
   seedReferenceId: string;
@@ -62,6 +84,7 @@ export type PrototypeRebuildContextResult =
       ok: true;
       design_system_version: string;
       seeds: PrototypeRebuildSeed[];
+      component_preview_targets: PrototypeComponentPreviewTarget[];
       rebuild_contract: string;
       preview_contract: typeof PROTOTYPE_PREVIEW_CONTRACT;
     }
@@ -111,10 +134,50 @@ export function getPrototypeRebuildContext(
             }
           : null
     }));
+    const componentPreviewTargets = (
+      db.prepare(
+        `SELECT entry_id, name, source_artifact_path, value_json
+         FROM design_system_entries
+         WHERE file_kind = 'component-spec' AND status = 'candidate'
+         ORDER BY position ASC, entry_id ASC`
+      ).all() as Array<{
+        entry_id: string;
+        name: string | null;
+        source_artifact_path: string;
+        value_json: string;
+      }>
+    ).map((row) => {
+      let allowedStateNames: string[] = [];
+      try {
+        const value = JSON.parse(row.value_json) as {
+          stateMatrix?: Array<{ state?: unknown }>;
+        };
+        const seen = new Set<string>();
+        for (const item of value.stateMatrix ?? []) {
+          if (typeof item?.state !== "string") continue;
+          const state = item.state.trim();
+          if (!state || state.toLowerCase() === "default" || seen.has(state)) {
+            continue;
+          }
+          seen.add(state);
+        }
+        allowedStateNames = [...seen];
+      } catch {
+        // Malformed entries are rejected by ingestion; expose no state recipe
+        // rather than teaching the Agent to guess one.
+      }
+      return {
+        entryId: row.entry_id,
+        name: row.name ?? row.entry_id,
+        sourceArtifactPath: row.source_artifact_path,
+        allowedStateNames
+      };
+    });
     return {
       ok: true,
       design_system_version: designSystemVersionOnDb(db),
       seeds,
+      component_preview_targets: componentPreviewTargets,
       rebuild_contract: PROTOTYPE_REBUILD_CONTRACT,
       preview_contract: PROTOTYPE_PREVIEW_CONTRACT
     };

@@ -92,8 +92,7 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
 
     handle = await spawnMcpClient(stateDir, {
       prod: false,
-      cwd: projectPath,
-      env: { IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING: "1" }
+      cwd: projectPath
     });
     expect(sc(await handle.client.callTool({
       name: "create_or_open_project",
@@ -123,6 +122,8 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
     const finalized = sc(await finalizeCall);
     expect(finalized).toMatchObject({
       ok: true,
+      continuationRequired: true,
+      terminalBoundary: "draft_design_system_review",
       incrementalPlanning: {
         reason: "delta_available",
         delta: { section: "design-concept" }
@@ -182,6 +183,8 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
     const conceptPlanned = sc(await planCall);
     expect(conceptPlanned).toMatchObject({
       ok: true,
+      continuationRequired: true,
+      terminalBoundary: "draft_design_system_review",
       planVersion: 1,
       incrementalPlanning: {
         reason: "delta_available",

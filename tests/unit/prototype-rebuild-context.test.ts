@@ -145,7 +145,107 @@ test("returns seeds, design-system version, and the rebuild contract", async () 
     repair: {
       error: "preview_not_ready",
       retryIdentity: "same runId and surfaceKey"
+    },
+    componentPreview: {
+      supportedAdapters: ["next-app-router", "vite-react"],
+      adapterSelection: "runtime-detected from prototype structure and package metadata",
+      styles: {
+        componentImports: "loaded normally",
+        viteEntryCss: "direct CSS imports from the index.html module entry are included automatically"
+      },
+      versionPolicy: "framework package version changes do not select an adapter",
+      recipeRules: {
+        entryId: "use the exact entryId from component_preview_targets",
+        stateArgs:
+          "keys must come from allowedStateNames; omit stateArgs for alternative examples not declared by the Design System contract"
+      },
+      completionGate: "before Prototype confirmation every code-linked candidate component must be registered for live verification or retain a resolved Open Gap; formalization additionally requires verification"
     }
   });
   expect(JSON.stringify(result)).not.toContain("figd_ok_secret_never_return");
+});
+
+test("returns exact component Preview identities and only contract-declared states", async () => {
+  const captured = await addSeedReference(dir, {
+    figmaSeedReference:
+      "https://www.figma.com/design/AbCdEf/Checkout?node-id=1-2",
+    initiator: "agent"
+  });
+  expect(captured.ok).toBe(true);
+  const db = openProjectDb(dir);
+  try {
+    const now = "2026-08-28T00:00:00.000Z";
+    const insert = db.prepare(
+      `INSERT INTO design_system_entries
+       (id, source_artifact_path, file_kind, section, entry_id, name,
+        value_json, meaning, status, links_json, source_captures_json,
+        position, created_at, updated_at)
+       VALUES (?, ?, 'component-spec', 'components.spec', ?, ?, ?, ?,
+               'candidate', '[]', '[]', ?, ?, ?)`
+    );
+    insert.run(
+      "row-text-link",
+      "design-system/components/text-link.json",
+      "component-spec-textlink",
+      "Text Link",
+      JSON.stringify({
+        description: "Text Link",
+        props: [],
+        variants: [],
+        stateMatrix: [],
+        guidelines: [],
+        tokenLinks: [],
+        codeLinks: []
+      }),
+      "Text Link",
+      0,
+      now,
+      now
+    );
+    insert.run(
+      "row-navigation",
+      "design-system/components/navigation.json",
+      "component-spec-navigation",
+      "Navigation",
+      JSON.stringify({
+        description: "Navigation",
+        props: [],
+        variants: [],
+        stateMatrix: [{ state: "expanded" }, { state: "default" }],
+        guidelines: [],
+        tokenLinks: [],
+        codeLinks: []
+      }),
+      "Navigation",
+      1,
+      now,
+      now
+    );
+  } finally {
+    closeProjectDb(db);
+  }
+  setPhase("prototype_validation");
+
+  const result = getPrototypeRebuildContext(dir);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.component_preview_targets).toEqual([
+    {
+      entryId: "component-spec-textlink",
+      name: "Text Link",
+      sourceArtifactPath: "design-system/components/text-link.json",
+      allowedStateNames: []
+    },
+    {
+      entryId: "component-spec-navigation",
+      name: "Navigation",
+      sourceArtifactPath: "design-system/components/navigation.json",
+      allowedStateNames: ["expanded"]
+    }
+  ]);
+  expect(result.preview_contract.componentPreview.recipeRules).toEqual({
+    entryId: "use the exact entryId from component_preview_targets",
+    stateArgs:
+      "keys must come from allowedStateNames; omit stateArgs for alternative examples not declared by the Design System contract"
+  });
 });

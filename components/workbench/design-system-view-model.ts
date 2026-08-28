@@ -634,7 +634,7 @@ export function componentHeroLiveUrl(
   if (liveHero.previewUrl === null) return null;
   const base = `${liveHero.previewUrl}${liveHero.harnessPath}`;
   if (state === null || state.trim().toLowerCase() === "default") return base;
-  return `${base}?state=${encodeURIComponent(state)}`;
+  return `${base}${base.includes("?") ? "&" : "?"}state=${encodeURIComponent(state)}`;
 }
 
 /** One-way sizing message emitted by a standalone component harness. The

@@ -206,15 +206,14 @@ export function getAlignmentPreparation(
 }
 
 /**
- * Stages in which a designer Workbench action can still enqueue a durable
- * Agent command: Next phase → prepare_design_intent_alignment, Complete →
- * prepare_initial_design_system. Outside this window no durable command will
- * ever arrive, so re-arming wait_for_agent_command is a guaranteed idle hang.
+ * Stages in which Alignment preparation can still enqueue the durable command
+ * that advances the active Agent turn. Alignment answering is deliberately
+ * excluded: answer changes advance the semantic revision consumed through
+ * resume_initial_design_system_planning, not the generic command queue.
  */
 export const DESIGNER_HANDOFF_STAGES: ReadonlySet<WorkflowStage> = new Set([
   "seed-reference-registration",
-  "alignment-preparing",
-  "alignment-answering"
+  "alignment-preparing"
 ]);
 
 export function getProjectWorkflowStage(projectPath: string): WorkflowStage {

@@ -74,14 +74,15 @@ describe("MCP instructions channel split", () => {
     );
   });
 
-  test("advertises the dev incremental loop and recovery tools only when opted in", () => {
-    const instructions = resolveMcpInstructions({
-      IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING: "1"
-    });
+  test("advertises the incremental loop and recovery tools by default", () => {
+    const instructions = resolveMcpInstructions({});
     expect(instructions).toContain("finalize_alignment_preparation enters answer monitoring directly");
     expect(instructions).toContain("record_incremental_initial_design_system_plan");
     expect(instructions).toContain("resume_initial_design_system_planning");
     expect(instructions).toContain("commit_incremental_initial_design_system_plan");
+    expect(instructions).toContain("continuationRequired=true");
+    expect(instructions).toContain("do not end the turn");
+    expect(instructions).toContain("After Draft creation stop for visible designer review");
 
     const names: string[] = [];
     const mcp = {
@@ -102,17 +103,7 @@ describe("MCP instructions channel split", () => {
       prod: false,
       mcpEntryPath: "/tmp/ikran-mcp.mjs"
     };
-    const previous = process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING;
-    process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING = "1";
-    try {
-      registerIkranTools(mcp as never, deps);
-    } finally {
-      if (previous === undefined) {
-        delete process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING;
-      } else {
-        process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING = previous;
-      }
-    }
+    registerIkranTools(mcp as never, deps);
     expect(names).toEqual(expect.arrayContaining([
       "read_alignment_semantic_delta",
       "record_incremental_initial_design_system_plan",
@@ -231,5 +222,17 @@ describe("Claude Code MCP text budget", () => {
         tool.name
       ).toBeLessThanOrEqual(CLAUDE_MCP_TEXT_BUDGET);
     }
+    expect(descriptions.find(
+      (tool) => tool.name === "commit_initial_design_system_semantics"
+    )?.description).toContain("one scalar fontSize");
+    expect(descriptions.find(
+      (tool) => tool.name === "record_incremental_initial_design_system_plan"
+    )?.description).toContain("one scalar fontSize");
+    expect(descriptions.find(
+      (tool) => tool.name === "resume_initial_design_system_planning"
+    )?.description).toContain("continuationRequired=true");
+    expect(descriptions.find(
+      (tool) => tool.name === "record_incremental_initial_design_system_plan"
+    )?.description).toContain("do not end the turn");
   });
 });

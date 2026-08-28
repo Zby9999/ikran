@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
 
+import { semanticDraftValidationIssues } from "./initial-design-system-semantic-schema";
+
 import { closeProjectDb, openProjectDb } from "./db";
 import {
   applyPresenceToLease,
@@ -19,12 +21,6 @@ const SECTION_ORDER = [
   "component",
   "interaction"
 ] as const;
-
-export function incrementalPlanningEnabled(
-  env: Record<string, string | undefined> = process.env
-): boolean {
-  return env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING === "1";
-}
 
 type AlignmentSection = (typeof SECTION_ORDER)[number];
 type SemanticSourceKind =
@@ -212,6 +208,16 @@ function draftUnits(value: unknown): Array<{ path: string; sourceIds: string[] }
   addArray("/layoutRules", root.layoutRules);
   addArray("/interactionRules", root.interactionRules);
   addArray("/components", root.components);
+  addArray("/foundationRules", root.foundationRules);
+  addArray("/categoryOmissions", root.categoryOmissions);
+  if (Array.isArray(root.sourceOmissions)) {
+    root.sourceOmissions.forEach((candidate, index) => {
+      if (!candidate || typeof candidate !== "object") return;
+      const sourceRef = (candidate as Record<string, unknown>).sourceRef;
+      if (typeof sourceRef !== "string") return;
+      units.push({ path: `/sourceOmissions/${index}`, sourceIds: [sourceRef] });
+    });
+  }
   return units;
 }
 
@@ -222,6 +228,9 @@ function draftDependencyState(
   currentSources: Map<string, AlignmentSemanticSource>
 ) {
   const units = draftUnits(draft);
+  const accountedSourceIds = new Set(
+    units.flatMap((unit) => unit.sourceIds)
+  );
   const unitsByPath = new Map(units.map((unit) => [unit.path, unit]));
   const bindingsByPath = new Map<string, IncrementalPlanDraftBinding[]>();
   for (const binding of bindings) {
@@ -268,7 +277,10 @@ function draftDependencyState(
   return {
     unboundDraftPaths: [...new Set(unboundDraftPaths)].sort(),
     invalidDraftBindingPaths: [...new Set(invalidDraftBindingPaths)].sort(),
-    unboundDraftSourceIds: [...unboundDraftSourceIds].sort()
+    unboundDraftSourceIds: [...unboundDraftSourceIds].sort(),
+    unaccountedDraftSourceIds: [...currentSources.keys()]
+      .filter((sourceId) => !accountedSourceIds.has(sourceId))
+      .sort()
   };
 }
 
@@ -1012,6 +1024,8 @@ export function readIncrementalPlanningStatus(
       unboundDraftPaths: string[];
       invalidDraftBindingPaths: string[];
       unboundDraftSourceIds: string[];
+      unaccountedDraftSourceIds: string[];
+      invalidSemanticDraft: Array<{ path: string; message: string }>;
       nextAction: {
         tool: string;
         reconciliation?: {
@@ -1067,9 +1081,14 @@ export function readIncrementalPlanningStatus(
         section
       )
     );
+    const invalidSemanticDraft = allSectionsAcknowledged
+      ? semanticDraftValidationIssues(storedDraft.draft)
+      : [];
     const hasDraftDependencyGap =
       dependencyState.unboundDraftPaths.length > 0 ||
-      dependencyState.invalidDraftBindingPaths.length > 0;
+      dependencyState.invalidDraftBindingPaths.length > 0 ||
+      dependencyState.unaccountedDraftSourceIds.length > 0 ||
+      invalidSemanticDraft.length > 0;
     const needsFrozenDraftReconciliation = state.frozen_revision !== null &&
       allSectionsAcknowledged && hasDraftDependencyGap;
     const nextTool = remainingReadySections.length > 0 ||
@@ -1108,6 +1127,7 @@ export function readIncrementalPlanningStatus(
       designSystemDraft: storedDraft.draft,
       draftBindings: storedDraft.bindings,
       ...dependencyState,
+      invalidSemanticDraft,
       nextAction: {
         tool: nextTool,
         ...(reconciliationSection
@@ -1227,11 +1247,14 @@ export function claimIncrementalPlanCommitInput(
       decisions,
       currentSources
     );
+    const invalidSemanticDraft = semanticDraftValidationIssues(storedDraft.draft);
     if (
       staleSections.length > 0 ||
       staleDecisionIds.length > 0 ||
       dependencyState.unboundDraftPaths.length > 0 ||
-      dependencyState.invalidDraftBindingPaths.length > 0
+      dependencyState.invalidDraftBindingPaths.length > 0 ||
+      dependencyState.unaccountedDraftSourceIds.length > 0 ||
+      invalidSemanticDraft.length > 0
     ) {
       return {
         ok: false,
@@ -1239,7 +1262,8 @@ export function claimIncrementalPlanCommitInput(
         details: {
           staleSections,
           staleDecisionIds,
-          ...dependencyState
+          ...dependencyState,
+          invalidSemanticDraft
         },
         fallback
       };

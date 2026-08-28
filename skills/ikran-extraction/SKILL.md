@@ -8,7 +8,7 @@ description: Extract an evidence-grounded Ikran Draft Design System when fulfill
 Build the Draft Design System as a minimum sufficient compression of reusable
 decisions, not a transcription of the six Alignment sections.
 
-## Mandatory two-call fast path
+## Mandatory fast path
 
 For a `prepare_initial_design_system` command:
 
@@ -17,8 +17,9 @@ For a `prepare_initial_design_system` command:
    references.
 3. Make the semantic decisions below without further discovery or evidence
    collection.
-4. Call `commit_initial_design_system_semantics` exactly once, citing those
-   short refs in each `sourceRefs` field.
+4. Assemble one complete semantic bundle, including explicit source and empty-
+   category dispositions, then call `commit_initial_design_system_semantics`,
+   citing the short refs in every `sourceRefs` field.
 
 Do not re-claim, enumerate legacy extraction tools, query SQLite, inspect
 Runtime files, or re-extract raw positional/Figma evidence. The Alignment has
@@ -27,7 +28,9 @@ a detail, omit it; do not investigate outside the frozen context.
 
 The Runtime owns stable ids and paths, canonical JSON, source excerpts,
 confidence, captures, artifact declarations, work units, residual coverage,
-the global audit, and finalization. Never reproduce that bookkeeping.
+the global audit, and finalization. The Agent still owns every semantic
+decision and omission; never ask Runtime to infer one. Never reproduce Runtime
+bookkeeping.
 
 ## Evidence is not ownership
 
@@ -37,8 +40,9 @@ the decision's meaning, even when evidence crosses several Alignment sections.
 
 Several sources may support one decision. Give each decision one narrow owner;
 other artifacts link to that owner instead of restating it. Do not create an
-entry merely to account for every source: Runtime records unused sources as
-explicit residual omissions.
+entry merely to account for every source. Instead, account for every unused
+source explicitly in `sourceOmissions`, with a narrow evidence-grounded reason.
+Runtime must not silently omit uncited Alignment evidence.
 
 ## Semantic pass
 
@@ -57,10 +61,10 @@ Classify what the evidence establishes:
 - **Reusable** — explicit intent or repeated evidence establishes wider scope.
 - **Candidate** — useful for reconstruction but supported by one surface or a
   reasonable inference. This is the normal Draft default.
-- **Local / unsupported** — omit it from the semantic bundle; Runtime preserves
-  residual lineage.
-- **Conflict** — do not average incompatible sources; omit the unresolved rule
-  or express only the shared supported boundary.
+- **Local / unsupported** — do not promote it into a reusable entry; record its
+  disposition in `sourceOmissions`.
+- **Conflict** — do not average incompatible sources; express only the shared
+  supported boundary or record the unresolved sources in `sourceOmissions`.
 
 Never widen a claim beyond its refs. The Runtime creates a Draft of candidate
 entries; later governance decides formalization.
@@ -90,7 +94,9 @@ breakpoints and responsive composition to Layout. Route duration, easing, and
 state feedback to Interaction or the affected Component.
 
 Routing is complete when every mapped or gap decision has exactly one semantic
-owner and no entry repeats a decision owned elsewhere.
+owner, every source is either consumed or explicitly omitted, and no entry
+repeats a decision owned elsewhere. If a whole output category is empty, add
+exactly one `categoryOmissions` entry for it; do not fabricate a placeholder.
 
 ## Foundation owners
 
@@ -101,7 +107,10 @@ that as storage, not semantics, and keep their meanings distinct.
 
 Separate construction values from roles and rules. A palette alone is not a
 Color system: map supported values to the jobs they perform, while keeping
-scope and exceptions explicit.
+scope and exceptions explicit. Preserve every distinct evidence-backed color
+primitive rather than collapsing a palette to one representative value. Put
+reusable color relationships and usage constraints in `foundationRules` with
+`domain: "color"`; token names or descriptions are not a substitute for rules.
 
 ### Typography
 
@@ -112,8 +121,15 @@ Preserve both layers:
 2. composite roles — the supported combinations used for body, display,
    metadata, actions, or other named jobs.
 
-When the context establishes construction facts but not role mapping, preserve
-only the supported facts rather than inventing composite roles.
+Store construction facts as atomic primitive tokens. Store each supported
+semantic or component role as one composite token whose value contains the
+combined typography properties, exactly one scalar `fontSize`, and a `usedFor`
+that names one stable job. A scale or step collection is evidence for atomic
+construction facts, not one omnibus role; create separate roles only where the
+context supports their distinct jobs. Never put a composite typography object
+in the primitive layer. When the context
+establishes construction facts but not role mapping, preserve only the
+supported atomic facts rather than inventing composite roles.
 
 ### Material
 
@@ -127,11 +143,25 @@ Before the single commit, make one quick semantic check:
 
 - every entry has direct `sourceRefs`;
 - each decision has one owner;
+- every Alignment source is consumed or explicitly listed in
+  `sourceOmissions`;
+- every empty output category has exactly one `categoryOmissions` entry and no
+  non-empty category does;
+- evidence-backed color primitives, semantic roles, and color
+  `foundationRules` remain distinct;
+- typography construction facts are atomic primitives, while supported roles
+  are separate composite semantic/component tokens with one scalar `fontSize`
+  and one stable job in `usedFor`;
 - component-local decisions were not promoted to a global foundation;
 - unsupported fields are omitted rather than invented;
 - duplicate wording has been compressed.
 
-Then submit the complete semantic bundle once. A successful commit means the
-Draft is ready; stop extraction and return control to the designer. If Runtime
-returns a validation error, repair only the named field and retry the same
-idempotent commit—do not restart discovery.
+Then submit the complete semantic bundle. A successful commit means only that
+the Draft is ready for review. Stop extraction and return control to the
+designer; do not call `confirm_draft_design_system`, start Prototype, or infer
+approval from silence or from earlier answers. Continue only after the
+designer explicitly reviews the current Draft and confirms it in a later turn.
+
+If Runtime returns a validation or write error, repair only the named semantic
+field and retry with a new idempotency key. Reuse an idempotency key only to
+replay the exact same completed request; do not restart discovery.

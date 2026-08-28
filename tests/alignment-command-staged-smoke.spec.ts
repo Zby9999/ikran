@@ -214,12 +214,9 @@ test("07G staged one-process Agent command handoff survives abandon and restart"
       }
     }
 
-    expect(sc(await client.callTool({
+    const finalizeCall = client.callTool({
       name: "finalize_alignment_preparation",
       arguments: { alignmentAttemptId: secondAttemptId }
-    }))).toMatchObject({
-      ok: true,
-      workflow: { stage: "alignment-answering" }
     });
 
     // No reload: this transition is projected through the live SSE connection.
@@ -256,20 +253,24 @@ test("07G staged one-process Agent command handoff survives abandon and restart"
         }
       }))).toMatchObject({ ok: true });
     }
+    expect(sc(await finalizeCall)).toMatchObject({
+      ok: true,
+      workflow: { stage: "alignment-answering" },
+      incrementalPlanning: { reason: "delta_available" }
+    });
 
-    // Complete advances Runtime immediately and wakes the same still-active waiter.
-    const completionWait = client.callTool(
-      { name: "wait_for_agent_command", arguments: {} },
-      undefined,
-      { timeout: 20_000 }
-    );
+    // Complete advances Runtime immediately. Generic wait is not active during
+    // Alignment answering, but the newly queued command still returns first.
     await stageNavigation.hover();
     await page.getByRole("button", { name: "Complete alignment" }).click();
     await expect(workbench).toHaveAttribute(
       "data-alignment-workflow-stage",
       "initial-design-system-preparing"
     );
-    expect(sc(await completionWait)).toMatchObject({
+    expect(sc(await client.callTool({
+      name: "wait_for_agent_command",
+      arguments: {}
+    }))).toMatchObject({
       reason: "command_available",
       command: {
         command_type: "prepare_initial_design_system",

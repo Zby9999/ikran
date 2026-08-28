@@ -183,6 +183,10 @@ test("09A design system browser: declare → render → approve write-back", asy
         }))).toMatchObject({ ok: true, record: { status: "answered" } });
       }
     }
+    expect(await staged.finalization).toMatchObject({
+      ok: true,
+      incrementalPlanning: { reason: "delta_available" }
+    });
 
     const completeResponse = await patchAlignment(workbenchUrl, token, {
       action: "complete"

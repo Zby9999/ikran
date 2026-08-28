@@ -25,3 +25,9 @@ later Agent turn, using adaptive waiting when that turn remains available.
 Host-specific activation is an investigated capability rather than an assumed
 MVP guarantee; compatible adapters may be added incrementally without changing
 the Runtime-owned command or workflow semantics.
+
+Adaptive command waiting is not the transport for Alignment answers. During
+Alignment answering, Runtime persists semantic revisions and the Agent resumes
+the incremental planning checkpoint directly. A generic command wait in that
+stage fails closed and returns `resume_initial_design_system_planning`; durable
+queued commands and an explicit Rule Update Review scope still take priority.

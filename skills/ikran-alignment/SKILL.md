@@ -14,6 +14,27 @@ Follow it directly. This Skill governs the semantic judgment that the Runtime
 cannot validate: what is worth asserting, what is worth asking, and which
 questions have the highest information value.
 
+## Answer monitoring continuation
+
+After preparation, Alignment answer monitoring is one continuous Agent turn,
+not a one-shot status check. Every successful finalize, record, or resume result
+with `continuationRequired: true` is a binding continuation contract:
+
+1. Execute the returned `nextAction` immediately.
+2. When a ready section is returned, update the cumulative Incremental Plan and
+   call `record_incremental_initial_design_system_plan`.
+3. When no section is ready and Alignment is still open, call
+   `resume_initial_design_system_planning` again.
+4. When Alignment is completed, consume the final checkpoint and call
+   `commit_incremental_initial_design_system_plan` rather than reporting that
+   Alignment is merely complete.
+
+Do not send a final response, status summary, or generic wait call while
+`continuationRequired` is true. The first normal human-review boundary is a
+successful Draft commit with `continuationRequired: false` and
+`terminalBoundary: draft_design_system_review`. Stop there until the designer
+explicitly confirms the visible Draft; only then may Prototype begin.
+
 ## Decision gaps
 
 A **decision gap** is an uncertainty whose answer would change a reusable design

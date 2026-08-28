@@ -62,8 +62,16 @@ export type PhaseCommandSuccess = {
   event_id: string;
 };
 
+export type ComponentPreviewOutcomeFailure = {
+  ok: false;
+  reason: "component_preview_outcome_required";
+  phase: ProjectPhase;
+  preview_entry_ids: string[];
+};
+
 export type FormalizeFailure =
   | PhaseGateFailure
+  | ComponentPreviewOutcomeFailure
   | { ok: false; reason: "empty_modification_review" }
   | {
       ok: false;
@@ -124,6 +132,8 @@ export type FormalizeFailure =
 export type PhaseCommandResult =
   | PhaseCommandSuccess
   | PhaseGateFailure
+  | ComponentPreviewOutcomeFailure
+  | { ok: false; reason: "explicit_designer_confirmation_required" }
   | { ok: false; reason: "db_error" };
 
 const ABANDONABLE: ReadonlySet<ProjectPhase> = new Set([
@@ -366,15 +376,57 @@ function transitionPhase(
 }
 
 export function confirmDraftDesignSystem(
-  projectPath: string
+  projectPath: string,
+  designerConfirmation: string
 ): PhaseCommandResult {
+  if (
+    typeof designerConfirmation !== "string" ||
+    designerConfirmation.trim().length === 0
+  ) {
+    return { ok: false, reason: "explicit_designer_confirmation_required" };
+  }
   return transitionPhase(
     projectPath,
     "draft_design_system",
     "prototype_validation",
     "project_phase_confirmed",
-    "confirm_draft_design_system"
+    "confirm_draft_design_system",
+    () => ({ designer_confirmation: designerConfirmation.trim() })
   );
+}
+
+function componentPreviewOutcomeBlockersOnDb(
+  db: DatabaseType
+): string[] {
+  return (
+    db.prepare(
+      `SELECT entry.entry_id
+       FROM design_system_entries entry
+       WHERE entry.file_kind = 'component-spec'
+         AND entry.status = 'candidate'
+         AND json_type(entry.value_json, '$.codeLinks') = 'array'
+         AND json_array_length(entry.value_json, '$.codeLinks') > 0
+         AND NOT EXISTS (
+           SELECT 1 FROM component_preview_registrations registration
+           WHERE registration.entry_id = entry.entry_id
+             AND EXISTS (
+               SELECT 1 FROM json_each(entry.value_json, '$.codeLinks') code_link
+               WHERE code_link.value = registration.module_path
+             )
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM component_preview_exceptions exception
+           WHERE exception.entry_id = entry.entry_id
+             AND exception.status = 'resolved'
+             AND json_extract(exception.disposition_json, '$.disposition') = 'retain_open_gap'
+             AND EXISTS (
+               SELECT 1 FROM json_each(entry.value_json, '$.codeLinks') code_link
+               WHERE code_link.value = exception.module_path
+             )
+         )
+       ORDER BY entry.entry_id`
+    ).all() as Array<{ entry_id: string }>
+  ).map((row) => row.entry_id);
 }
 
 export function confirmPrototype(projectPath: string): PhaseCommandResult {
@@ -382,6 +434,29 @@ export function confirmPrototype(projectPath: string): PhaseCommandResult {
   // From ready_for_new_design: a new-design-run prototype confirmed so the
   // Design System can be formalized again (v2, v3, …) — Issue 15's
   // success-recursion re-entry into design_system_formal.
+  const gate = requireProjectPhase(projectPath, [
+    "prototype_validation",
+    "ready_for_new_design"
+  ]);
+  if (!gate.ok) return gate;
+  try {
+    const db = openProjectDb(projectPath);
+    try {
+      const blockers = componentPreviewOutcomeBlockersOnDb(db);
+      if (blockers.length > 0) {
+        return {
+          ok: false,
+          reason: "component_preview_outcome_required",
+          phase: gate.phase,
+          preview_entry_ids: blockers
+        };
+      }
+    } finally {
+      closeProjectDb(db);
+    }
+  } catch {
+    return { ok: false, reason: "db_error" };
+  }
   return transitionPhase(
     projectPath,
     ["prototype_validation", "ready_for_new_design"],
@@ -575,6 +650,15 @@ export function formalizeDesignSystem(
           reason: "unreviewed_feedback",
           phase: current,
           unreviewed_feedback_count: unreviewed
+        };
+      }
+      const previewOutcomeBlockers = componentPreviewOutcomeBlockersOnDb(db);
+      if (previewOutcomeBlockers.length > 0) {
+        return {
+          ok: false,
+          reason: "component_preview_outcome_required",
+          phase: current,
+          preview_entry_ids: previewOutcomeBlockers
         };
       }
       const verificationBlockers = db

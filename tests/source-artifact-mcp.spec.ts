@@ -185,6 +185,18 @@ test("design-system token.json declaration links an answered card and ingests", 
       ok: true,
       record: { status: "answered" }
     });
+    const companionCard = staged.cards["design-concept"][1];
+    expect(structuredContent(await client.callTool({
+      name: "record_designer_answer",
+      arguments: {
+        questionCardId: companionCard.id,
+        answer: { kind: "option", optionId: companionCard.optionId }
+      }
+    }))).toMatchObject({ ok: true, record: { status: "answered" } });
+    expect(await staged.finalization).toMatchObject({
+      ok: true,
+      incrementalPlanning: { reason: "delta_available" }
+    });
     const cardId = stagedCard.id;
 
     // A schema-valid token.json: one candidate linked to the answered card,
@@ -504,6 +516,18 @@ test("formalized entry without a designer-edited link is rejected at ingest", as
     }))).toMatchObject({
       ok: true,
       record: { status: "answered" }
+    });
+    const companionCard = staged.cards["design-concept"][1];
+    expect(structuredContent(await client.callTool({
+      name: "record_designer_answer",
+      arguments: {
+        questionCardId: companionCard.id,
+        answer: { kind: "option", optionId: companionCard.optionId }
+      }
+    }))).toMatchObject({ ok: true, record: { status: "answered" } });
+    expect(await staged.finalization).toMatchObject({
+      ok: true,
+      incrementalPlanning: { reason: "delta_available" }
     });
     const cardId = stagedCard.id;
 

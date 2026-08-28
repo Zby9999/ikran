@@ -26,11 +26,14 @@ export type StagedAlignment = {
   annotationIds: Record<string, string>;
   /** Section → the two proposed cards (id + proposed answer text). */
   cards: Record<string, StagedCard[]>;
+  /** Active finalize-to-monitor call; resolves when the first section is ready. */
+  finalization: Promise<Record<string, unknown>>;
 };
 
 /**
- * Claim → annotate → propose → finalize. Throws on any failed tool call so a
- * broken staging step fails the spec at its real cause, not downstream.
+ * Claim → annotate → propose → start finalize monitoring. Returns after the
+ * public read surface confirms answering, while finalization remains active
+ * until the caller finishes the first section.
  */
 export async function stageAlignmentAnswering(
   client: Client,
@@ -117,14 +120,27 @@ export async function stageAlignmentAnswering(
     }
   }
 
-  const finalized = structuredContent(await client.callTool({
+  const finalization = client.callTool({
     name: "finalize_alignment_preparation",
     arguments: { alignmentAttemptId: attemptId }
-  }));
-  if (finalized.ok !== true) {
-    throw new Error(
-      `finalize_alignment_preparation failed: ${JSON.stringify(finalized)}`
-    );
+  }).then((result) => structuredContent(result));
+  let answering = false;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const read = structuredContent(await client.callTool({
+      name: "read_design_intent_alignment",
+      arguments: {}
+    }));
+    const stage = (read.preparation as {
+      workflow?: { stage?: string };
+    } | undefined)?.workflow?.stage;
+    if (stage === "alignment-answering") {
+      answering = true;
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  return { attemptId, annotationIds, cards };
+  if (!answering) {
+    throw new Error("finalize_alignment_preparation did not enter answering");
+  }
+  return { attemptId, annotationIds, cards, finalization };
 }

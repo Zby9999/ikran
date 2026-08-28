@@ -367,7 +367,7 @@ test("the real command chain reaches eligibility without forged events", () => {
     insertSeedReference(projectPath);
     // v1: draft → prototype validation → formal → formalized.
     setPhase(projectPath, "draft_design_system");
-    expect(confirmDraftDesignSystem(projectPath)).toMatchObject({ ok: true });
+    expect(confirmDraftDesignSystem(projectPath, "I reviewed the Draft.")).toMatchObject({ ok: true });
     expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
     completeRuleUpdateReview(projectPath, "export-review-v1");
     expect(formalizeDesignSystem(projectPath, [], "reviewed")).toMatchObject({

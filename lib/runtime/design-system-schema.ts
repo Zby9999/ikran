@@ -462,11 +462,11 @@ function aliasTargetOf(
   return { ok: true, alias: value.alias };
 }
 
-function validateTokenUsageField(
+export function validateTokenUsageField(
   value: unknown,
   layer: TokenLayer,
   domain: unknown,
-  ctx: Record<string, unknown>
+  ctx: Record<string, unknown> = {}
 ): DesignSystemSchemaError | null {
   if (!isPlainObject(value)) return null;
   const usageField = domain === "typography" ? "usedFor" : "usage";
@@ -933,13 +933,24 @@ export function isCaptureBearingArtifactPath(artifactPath: string): boolean {
 
 /** Harness path contract (Issue 33): a same-origin relative route inside the
  * prototype app — leading slash, no scheme/authority ("//host"), no parent
- * traversal, no query/fragment (the hero appends `?state=` itself), no
- * backslashes. Shared by the live-hero declaration gate, legacy capture
- * compatibility, and the view's defensive parse. */
+ * traversal, no fragment or backslashes. Runtime-owned shared adapters may
+ * carry exactly one `registrationId` query parameter; the hero preserves it
+ * while adding `state`. Shared by the live-hero declaration gate, legacy
+ * capture compatibility, and the view's defensive parse. */
 export function isCaptureHarnessPath(value: string): boolean {
   if (!value.startsWith("/") || value.startsWith("//")) return false;
   if (value.includes("..")) return false;
-  if (/[?#\\]/.test(value)) return false;
+  if (/[#\\]/.test(value)) return false;
+  const question = value.indexOf("?");
+  if (question >= 0) {
+    if (value.indexOf("?", question + 1) >= 0) return false;
+    const params = new URLSearchParams(value.slice(question + 1));
+    if (
+      [...params.keys()].length !== 1 ||
+      !params.has("registrationId") ||
+      (params.get("registrationId") ?? "").trim().length === 0
+    ) return false;
+  }
   return true;
 }
 

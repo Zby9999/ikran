@@ -123,7 +123,9 @@ export type AgentCommandWaitEligibility =
       eligible: false;
       stage: WorkflowStage;
       seed_reference_count: number;
-      reason: "outside_designer_handoff";
+      reason:
+        | "outside_designer_handoff"
+        | "incremental_alignment_planning";
     }
   | { ok: false; reason: "state_unavailable" };
 
@@ -154,6 +156,15 @@ export function readAgentCommandWaitEligibility(
         stage,
         seed_reference_count: seedReferenceCount,
         wait_scope: activeRuleUpdateReview.scope
+      };
+    }
+    if (stage === "alignment-answering") {
+      return {
+        ok: true,
+        eligible: false,
+        stage,
+        seed_reference_count: seedReferenceCount,
+        reason: "incremental_alignment_planning"
       };
     }
     if (!DESIGNER_HANDOFF_STAGES.has(stage)) {
@@ -189,7 +200,10 @@ export type WaitForAgentCommandResult =
       reason: "not_applicable";
       command: null;
       stage: WorkflowStage;
-      not_applicable_reason: "outside_designer_handoff";
+      not_applicable_reason:
+        | "outside_designer_handoff"
+        | "incremental_alignment_planning";
+      next_action?: { tool: "resume_initial_design_system_planning" };
     }
   | {
       ok: false;
@@ -211,6 +225,28 @@ export function findEarliestPendingAgentCommand(
         created_at: command.created_at
       }
     : null;
+}
+
+function notApplicableWaitResult(
+  eligibility: Extract<
+    AgentCommandWaitEligibility,
+    { ok: true; eligible: false }
+  >
+): WaitForAgentCommandResult {
+  return {
+    ok: true,
+    reason: "not_applicable",
+    command: null,
+    stage: eligibility.stage,
+    not_applicable_reason: eligibility.reason,
+    ...(eligibility.reason === "incremental_alignment_planning"
+      ? {
+          next_action: {
+            tool: "resume_initial_design_system_planning" as const
+          }
+        }
+      : {})
+  };
 }
 
 export async function waitForAgentCommand(
@@ -256,13 +292,7 @@ export async function waitForAgentCommand(
     if (immediateCommandReadFailed) {
       return { ok: false, reason: "command_read_failed", command: null };
     }
-    return {
-      ok: true,
-      reason: "not_applicable",
-      command: null,
-      stage: initialEligibility.stage,
-      not_applicable_reason: initialEligibility.reason
-    };
+    return notApplicableWaitResult(initialEligibility);
   }
   const now = options.now ?? Date.now;
   const windowMs = options.windowMs ?? ADAPTIVE_WAIT_WINDOW_MS;
@@ -312,13 +342,7 @@ export async function waitForAgentCommand(
         return "failed";
       }
       if (!eligibility.eligible) {
-        finish({
-          ok: true,
-          reason: "not_applicable",
-          command: null,
-          stage: eligibility.stage,
-          not_applicable_reason: eligibility.reason
-        });
+        finish(notApplicableWaitResult(eligibility));
         return "not_applicable";
       }
       return "eligible";

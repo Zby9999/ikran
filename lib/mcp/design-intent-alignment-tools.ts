@@ -27,7 +27,11 @@ import {
 } from "../runtime/commands";
 import { failureResult, successResult, type RegisterIkranToolsDeps } from "./shared";
 import { waitForAgentCommand } from "../runtime/adaptive-agent-wait";
-import { incrementalPlanningEnabled } from "../runtime/alignment-incremental-planning";
+
+const ALIGNMENT_CONTINUATION = {
+  continuationRequired: true as const,
+  terminalBoundary: "draft_design_system_review" as const
+};
 
 export function registerDesignIntentAlignmentTools(
   mcp: McpServer,
@@ -38,10 +42,8 @@ export function registerDesignIntentAlignmentTools(
     const project = requireActiveProjectCommand();
     return project.ok ? { ok: true as const, rt, projectPath: project.project.path } : { ok: false as const, result: failureResult(tool, project.reason, rt) };
   };
-  const incremental = incrementalPlanningEnabled();
-
   mcp.registerTool("wait_for_agent_command", {
-    description: "Wait for the next scoped durable Ikran Agent command. Call this only after the Workbench URL is open in the host browser — this call blocks the turn and cannot open the page. A pending command always returns immediately in durable queue order, including in a later Agent turn. With no pending command, Runtime starts the adaptive three-minute lease only during the Alignment designer handoff — including first-open seed-reference-registration with zero Seed References — or while one explicit Rule Update Review wait scope is active. A post-Alignment project phase alone is not eligible. Outside those scopes it immediately returns not_applicable; unreadable state fails closed with state_unavailable. While eligible, visible and focused Workbench interaction, unsubmitted edits, or submitted semantic activity can renew the lease; background connection/heartbeat cannot. Cancellation, idle, page close, or transport loss never advances workflow or consumes a later command. This active-turn wait does not provide MCP reverse activation. No arguments."
+    description: "Wait for the next scoped durable Ikran Agent command. Call this only after the Workbench URL is open in the host browser — this call blocks the turn and cannot open the page. A pending command always returns immediately in durable queue order, including in a later Agent turn. With no pending command, Runtime starts the adaptive three-minute lease only during Alignment preparation — including first-open seed-reference-registration with zero Seed References — or while one explicit Rule Update Review wait scope is active. Alignment answering uses resume_initial_design_system_planning instead and immediately returns not_applicable here. A post-Alignment project phase alone is not eligible. Outside those scopes it immediately returns not_applicable; unreadable state fails closed with state_unavailable. While eligible, visible and focused Workbench interaction, unsubmitted edits, or submitted semantic activity can renew the lease; background connection/heartbeat cannot. Cancellation, idle, page close, or transport loss never advances workflow or consumes a later command. This active-turn wait does not provide MCP reverse activation. No arguments."
   }, async (extra) => {
     const ctx = await active("wait_for_agent_command");
     if (!ctx.ok) return ctx.result;
@@ -75,9 +77,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("finalize_alignment_preparation", {
-    description: incremental
-      ? "Finish Question Card preparation and atomically enter hidden section-level answer monitoring in the same active tool call. Do not call wait_for_agent_command after this succeeds. Each returned ready section must be analyzed once, then persisted with record_incremental_initial_design_system_plan, which immediately monitors the next section. Safe to retry with the same alignmentAttemptId after interruption."
-      : "Explicitly finish the claimed Alignment preparation attempt only after every one of the six sections contains at least one gray Agent Annotation followed by 2–5 valid colored Question cards, each with the variable answer choices required by the claim's section_contract. Both card kinds are mandatory in each section. Atomically completes the durable Agent command and moves the same attempt from preparing to answering. Safe to retry with the same alignmentAttemptId.",
+    description: "Finish Question Card preparation and atomically enter hidden section-level answer monitoring in the same active tool call. Do not call wait_for_agent_command after this succeeds. Every success before Draft review returns continuationRequired=true: execute nextAction immediately and do not end the turn. Each returned ready section must be analyzed once, then persisted with record_incremental_initial_design_system_plan, which immediately monitors the next section. Safe to retry with the same alignmentAttemptId after interruption.",
     inputSchema: finalizeAlignmentPreparationInputSchema
   }, async (args, extra) => {
     const ctx = await active("finalize_alignment_preparation");
@@ -89,7 +89,6 @@ export function registerDesignIntentAlignmentTools(
     if (!result.ok) {
       return failureResult("finalize_alignment_preparation", result.reason, ctx.rt);
     }
-    if (!incremental) return successResult(ctx.rt, result);
     const monitoring = await waitForAlignmentSemanticDeltaCommand(
       ctx.projectPath,
       {
@@ -100,6 +99,7 @@ export function registerDesignIntentAlignmentTools(
     );
     return successResult(ctx.rt, {
       ...result,
+      ...ALIGNMENT_CONTINUATION,
       incrementalPlanning: monitoring,
       nextAction: monitoring.ok && monitoring.reason === "delta_available"
         ? { tool: "record_incremental_initial_design_system_plan" }
@@ -107,8 +107,7 @@ export function registerDesignIntentAlignmentTools(
     });
   });
 
-  if (incremental) {
-    mcp.registerTool("read_alignment_semantic_delta", {
+  mcp.registerTool("read_alignment_semantic_delta", {
       description: "Read the next ready Alignment section whose durable semantic digest differs from the persisted Incremental Plan. Returns only that section's current Question answers and Annotations with stable source ids and digests; it never returns the complete Alignment snapshot.",
       inputSchema: readAlignmentSemanticDeltaInputSchema
     }, async (args) => {
@@ -118,10 +117,10 @@ export function registerDesignIntentAlignmentTools(
       return result.ok
         ? successResult(ctx.rt, result)
         : failureResult("read_alignment_semantic_delta", result.reason, ctx.rt);
-    });
+  });
 
-    mcp.registerTool("record_incremental_initial_design_system_plan", {
-      description: "Persist the Agent's semantic decisions for the returned ready section against its revision and exact sectionDigest. Pass the exact basePlanVersion returned by the delta or checkpoint; a concurrent plan write fails with the latest checkpoint instead of overwriting cumulative work. Runtime accepts an older global baseRevision when this section and every cited source digest are still current, so unrelated answers do not discard useful work. Decisions are stable-id upserts across sections; use retireDecisionIds to remove invalidated decisions. Send cumulative draftBindings that map every semantic output path (for example /visualLanguage or /components/0) to the decisionId that authored it; every output sourceRefs value must be a current dependency of that exact decision. If a completed checkpoint reports only Draft binding gaps, reuse the baseRevision, section, and sectionDigest in nextAction.reconciliation with no decision changes. Send the cumulative hidden designSystemDraft, then this same call immediately monitors the next section. The plan is operational cache, not visible Draft or research export.",
+  mcp.registerTool("record_incremental_initial_design_system_plan", {
+      description: "Persist the Agent's semantic decisions for the returned ready section against its revision and exact sectionDigest. Pass the exact basePlanVersion returned by the delta or checkpoint; a concurrent plan write fails with the latest checkpoint instead of overwriting cumulative work. Runtime accepts an older global baseRevision when this section and every cited source digest are still current, so unrelated answers do not discard useful work. Decisions are stable-id upserts across sections; use retireDecisionIds to remove invalidated decisions. Send cumulative draftBindings for every semantic output and omission path (for example /visualLanguage, /foundationRules/0, /components/0, /categoryOmissions/0, /sourceOmissions/0); every cited source must be a current dependency of that exact decision. The cumulative designSystemDraft must ultimately include name, explicit disposition of every source and empty category, evidence-backed color roles/foundationRules, and semantic/component typography roles with one scalar fontSize, at least one other style field, one stable job, and usedFor; never bundle a scale or step collection. A completed checkpoint with binding or invalidSemanticDraft gaps is not commit-ready: reuse nextAction.reconciliation to repair it. Every success returns continuationRequired=true: execute nextAction immediately and do not end the turn until Draft review. The plan is operational cache, not visible Draft or research export.",
       inputSchema: recordIncrementalDesignSystemPlanInputSchema
     }, async (args, extra) => {
       const ctx = await active("record_incremental_initial_design_system_plan");
@@ -161,6 +160,7 @@ export function registerDesignIntentAlignmentTools(
       );
       return successResult(ctx.rt, {
         ...recorded,
+        ...ALIGNMENT_CONTINUATION,
         checkpoint,
         incrementalPlanning: monitoring,
         nextAction: monitoring.ok && monitoring.reason === "delta_available"
@@ -170,10 +170,10 @@ export function registerDesignIntentAlignmentTools(
             ? checkpoint.nextAction
             : { tool: "resume_initial_design_system_planning" }
       });
-    });
+  });
 
-    mcp.registerTool("resume_initial_design_system_planning", {
-      description: "Resume hidden section-level Alignment answer checking after cancellation, disconnect, or a later Agent turn. No internal ids are required: Runtime restores the current attempt, plan version, acknowledged cursor, stale decisions, and durable backlog. Use this for the user instruction ‘打开 Ikran，恢复当前 Alignment 的答案检查。’ No arguments."
+  mcp.registerTool("resume_initial_design_system_planning", {
+      description: "Resume hidden section-level Alignment answer checking after cancellation, disconnect, or a later Agent turn. No internal ids are required: Runtime restores the current attempt, plan version, acknowledged cursor, stale decisions, and durable backlog. Every success before Draft review returns continuationRequired=true: execute nextAction immediately and do not end the turn. Use this for the user instruction ‘打开 Ikran，恢复当前 Alignment 的答案检查。’ No arguments."
     }, async (extra) => {
       const ctx = await active("resume_initial_design_system_planning");
       if (!ctx.ok) return ctx.result;
@@ -199,6 +199,7 @@ export function registerDesignIntentAlignmentTools(
       );
       return successResult(ctx.rt, {
         ok: true,
+        ...ALIGNMENT_CONTINUATION,
         checkpoint: latestCheckpoint.ok ? latestCheckpoint : status,
         incrementalPlanning: monitoring,
         nextAction: monitoring.ok && monitoring.reason === "delta_available"
@@ -208,8 +209,7 @@ export function registerDesignIntentAlignmentTools(
             ? latestCheckpoint.nextAction
             : { tool: "resume_initial_design_system_planning" }
       });
-    });
-  }
+  });
 
   mcp.registerTool("create_agent_annotation", {
     description: "Create an attempt-bound, section-bound, idempotent gray Agent Annotation with a short non-empty title and a meaningful confirmed observation or reasonable assumption body. Section ordering, output language, and evidence anchor modes follow the claim's section_contract. At least one gray Agent Annotation is mandatory in every section before Alignment preparation can finish.",

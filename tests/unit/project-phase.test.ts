@@ -149,7 +149,7 @@ test("happy path advances seed → draft → prototype → formal → ready_for_
     // Extraction completion lands the project in draft_design_system.
     setPhase(projectPath, "draft_design_system");
 
-    expect(confirmDraftDesignSystem(projectPath)).toMatchObject({
+    expect(confirmDraftDesignSystem(projectPath, "I reviewed the Draft; start the Prototype.")).toMatchObject({
       ok: true,
       phase: "prototype_validation"
     });
@@ -189,6 +189,42 @@ test("formalize requires a Rule Update review after Prototype confirmation even 
       phase: "design_system_formal"
     });
     expect(listEvents(projectPath, "design_system_formalized")).toEqual([]);
+  });
+});
+
+test("Prototype confirmation blocks code-linked candidates without a terminal Preview outcome", () => {
+  withProject((projectPath) => {
+    setPhase(projectPath, "prototype_validation");
+    const entryId = insertSpecCandidateEntry(projectPath, "Button", {
+      codeLinks: ["prototype/components/Button.tsx"]
+    });
+
+    expect(confirmPrototype(projectPath)).toEqual({
+      ok: false,
+      reason: "component_preview_outcome_required",
+      phase: "prototype_validation",
+      preview_entry_ids: [entryId]
+    });
+    expect(getProjectPhase(projectPath)).toBe("prototype_validation");
+  });
+});
+
+test("formalize blocks code-linked candidates when no Preview registration exists", () => {
+  withProject((projectPath) => {
+    setPhase(projectPath, "prototype_validation");
+    expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
+    completeEmptyRuleUpdateReview(projectPath, "missing-preview-outcome");
+    const entryId = insertSpecCandidateEntry(projectPath, "Button", {
+      codeLinks: ["prototype/components/Button.tsx"]
+    });
+
+    expect(formalizeDesignSystem(projectPath, [], REVIEW)).toEqual({
+      ok: false,
+      reason: "component_preview_outcome_required",
+      phase: "design_system_formal",
+      preview_entry_ids: [entryId]
+    });
+    expect(getProjectPhase(projectPath)).toBe("design_system_formal");
   });
 });
 
@@ -444,7 +480,7 @@ test("a Rule Update review from before the latest Prototype confirmation cannot 
 
 test("out-of-order phase declarations are rejected with current phase", () => {
   withProject((projectPath) => {
-    expect(confirmDraftDesignSystem(projectPath)).toEqual({
+    expect(confirmDraftDesignSystem(projectPath, "I reviewed the Draft.")).toEqual({
       ok: false,
       reason: "phase_gate",
       phase: "seed"
@@ -474,6 +510,31 @@ test("out-of-order phase declarations are rejected with current phase", () => {
     });
     expect(listEvents(projectPath, "project_phase_confirmed")).toEqual([]);
     expect(listEvents(projectPath, "design_system_formalized")).toEqual([]);
+  });
+});
+
+test("draft confirmation requires an explicit designer statement and records it", () => {
+  withProject((projectPath) => {
+    setPhase(projectPath, "draft_design_system");
+    expect(confirmDraftDesignSystem(projectPath, "   ")).toEqual({
+      ok: false,
+      reason: "explicit_designer_confirmation_required"
+    });
+    expect(getProjectPhase(projectPath)).toBe("draft_design_system");
+
+    const confirmation = "I reviewed the visible Draft and want to start the Prototype.";
+    expect(confirmDraftDesignSystem(projectPath, confirmation)).toMatchObject({
+      ok: true,
+      phase: "prototype_validation"
+    });
+    expect(listEvents(projectPath, "project_phase_confirmed")).toEqual([
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          command: "confirm_draft_design_system",
+          designer_confirmation: confirmation
+        })
+      })
+    ]);
   });
 });
 
@@ -702,6 +763,36 @@ function insertSpecCandidateEntry(
   return entryId;
 }
 
+function retainPreviewOpenGap(projectPath: string, entryId: string): void {
+  const now = "2026-08-06T00:00:00.000Z";
+  const db = new DatabaseSync(getProjectDbPath(projectPath));
+  try {
+    const row = db.prepare(
+      `SELECT json_extract(value_json, '$.codeLinks[0]') AS module_path
+       FROM design_system_entries WHERE entry_id = ?`
+    ).get(entryId) as { module_path: string };
+    db.prepare(
+      `INSERT INTO component_preview_exceptions
+       (id, dedupe_key, run_id, entry_id, module_path, kind, status,
+        packet_json, exception_digest, disposition_json,
+        disposition_event_id, created_at, updated_at, resolved_at)
+       VALUES (?, ?, 'fixture-run', ?, ?,
+               'missing_evidence', 'resolved', '{}', 'fixture-digest',
+               '{"disposition":"retain_open_gap"}', 'fixture-event', ?, ?, ?)`
+    ).run(
+      `gap-${entryId}`,
+      `gap-key-${entryId}`,
+      entryId,
+      row.module_path,
+      now,
+      now,
+      now
+    );
+  } finally {
+    db.close();
+  }
+}
+
 const SPEC_CAPTURE = {
   nodeName: "Button / Primary",
   artifactPath: "design-system/captures/button-primary.png",
@@ -726,7 +817,7 @@ test("confirm_prototype re-enters design_system_formal from ready_for_new_design
   withProject((projectPath) => {
     // Walk the full v1 chain first.
     setPhase(projectPath, "draft_design_system");
-    confirmDraftDesignSystem(projectPath);
+    confirmDraftDesignSystem(projectPath, "I reviewed the Draft.");
     confirmPrototype(projectPath);
     completeEmptyRuleUpdateReview(projectPath, "recursion-v1");
     expect(formalizeDesignSystem(projectPath, [], REVIEW)).toMatchObject({ ok: true });
@@ -974,6 +1065,7 @@ test("formalize hints at promoted entries that still only have sourceCaptures (I
       codeLinks: ["prototypes/components/Card.tsx"],
       captures: [SPEC_CAPTURE]
     });
+    retainPreviewOpenGap(projectPath, codeBacked);
     const noEvidence = insertSpecCandidateEntry(projectPath, "Badge");
     expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
     completeEmptyRuleUpdateReview(projectPath, "capture-hints");
@@ -1000,6 +1092,7 @@ test("formalize returns no backfill hints when promoted entries have code links 
     const codeBacked = insertSpecCandidateEntry(projectPath, "Card", {
       codeLinks: ["prototypes/components/Card.tsx"]
     });
+    retainPreviewOpenGap(projectPath, codeBacked);
     expect(confirmPrototype(projectPath)).toMatchObject({ ok: true });
     completeEmptyRuleUpdateReview(projectPath, "no-backfill-hints-v1");
 

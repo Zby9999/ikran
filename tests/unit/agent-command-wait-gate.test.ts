@@ -154,15 +154,17 @@ test("open_workbench does not send the Agent into wait before the Workbench URL 
   expectWaitArmedAfterOpen(response);
 });
 
-test("project response re-arms wait during Alignment answering", async () => {
+test("project response does not arm generic wait during Alignment answering", async () => {
   createProjectAtStage("alignment-answering");
   const handler = registeredHandlers().get("create_or_open_project");
   if (!handler) throw new Error("create_or_open_project not registered");
 
-  expectWaitArmedAfterOpen(await handler({}));
+  const response = await handler({});
+  expect(response.structuredContent.wait_armed).toBeUndefined();
+  expect(response.content[0].text).toContain("No wait needed");
 });
 
-test("dev incremental checkpoint replaces generic wait with the durable resume action", async () => {
+test("incremental checkpoint replaces generic wait with the durable resume action", async () => {
   const projectPath = createProjectAtStage("alignment-answering");
   const db = openProjectDb(projectPath);
   try {
@@ -191,35 +193,37 @@ test("dev incremental checkpoint replaces generic wait with the durable resume a
   } finally {
     closeProjectDb(db);
   }
-  const previous = process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING;
-  process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING = "1";
-  try {
-    const handler = registeredHandlers().get("create_or_open_project");
-    if (!handler) throw new Error("create_or_open_project not registered");
-    const response = await handler({});
-    expect(response.structuredContent).toMatchObject({
-      incremental_planning: {
-        alignmentAttemptId: "incremental-attempt",
-        currentRevision: 1,
-        processedRevision: 0,
-        status: "paused",
-        nextAction: { tool: "resume_initial_design_system_planning" }
-      }
-    });
-    expect(response.structuredContent.wait_armed).toBeUndefined();
-    expect(response.content[0].text).toContain(
-      "resume_initial_design_system_planning"
-    );
-    expect(response.content[0].text).not.toContain(
-      "Only after that, call `wait_for_agent_command`"
-    );
-  } finally {
-    if (previous === undefined) {
-      delete process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING;
-    } else {
-      process.env.IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING = previous;
+  const handlers = registeredHandlers();
+  const openProject = handlers.get("create_or_open_project");
+  const wait = handlers.get("wait_for_agent_command");
+  if (!openProject || !wait) throw new Error("wait gate tools not registered");
+  const response = await openProject({});
+  expect(response.structuredContent).toMatchObject({
+    incremental_planning: {
+      alignmentAttemptId: "incremental-attempt",
+      currentRevision: 1,
+      processedRevision: 0,
+      status: "paused",
+      nextAction: { tool: "resume_initial_design_system_planning" }
     }
-  }
+  });
+  expect(response.structuredContent.wait_armed).toBeUndefined();
+  expect(response.content[0].text).toContain(
+    "resume_initial_design_system_planning"
+  );
+  expect(response.content[0].text).not.toContain(
+    "Only after that, call `wait_for_agent_command`"
+  );
+
+  const waitResponse = await wait({ signal: new AbortController().signal });
+  expect(waitResponse.structuredContent).toMatchObject({
+    ok: true,
+    reason: "not_applicable",
+    command: null,
+    stage: "alignment-answering",
+    not_applicable_reason: "incremental_alignment_planning",
+    next_action: { tool: "resume_initial_design_system_planning" }
+  });
 });
 
 test("post-Alignment project response and direct wait both fail closed without a lease", async () => {

@@ -85,3 +85,12 @@ a plugin or make the incremental path the production default.
   edited-answer, interrupted/resumed, and absent-Agent runs plus P50/P95 timing
   are still required, so this ticket intentionally remains `ready-for-human`
   and no plugin is packaged or released.
+- 2026-08-28: The product owner approved the cutover as a determined behavior
+  before the timing gate was complete. The environment opt-in is removed from
+  current code: incremental tools and instructions are now always available,
+  Alignment answering resumes through the semantic checkpoint, and generic
+  `wait_for_agent_command` fails closed there with the resume action. The
+  missing opt-in in the full-chain dev plugin was the reproduced cause of the
+  failed recovery. Real-Agent timing and resilience evidence above remain open,
+  so this issue stays `ready-for-human`; this decision does not itself publish
+  the production plugin.

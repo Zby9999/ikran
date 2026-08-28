@@ -4,6 +4,13 @@ This document records deterministic Runtime/MCP validation for the development-o
 incremental planning path. It is not real-Agent timing evidence and is not a
 production cutover recommendation.
 
+> Cutover note — 2026-08-28: the product owner subsequently approved this path
+> as the default. Current code no longer has an environment opt-in: the
+> incremental tools and resident instructions are always present, and generic
+> Agent-command wait fails closed during Alignment answering with
+> `resume_initial_design_system_planning`. The experiment boundary below is
+> retained as historical context for the measurements.
+
 ## Experiment boundary
 
 - Opt in with `IKRAN_ENABLE_INCREMENTAL_DESIGN_SYSTEM_PLANNING=1`.
@@ -69,11 +76,12 @@ verifies that only its dependent decision becomes stale while the same loop
 returns the selective delta. It passed in 7.2 seconds; that duration is test
 setup and transport wall time, not a model-latency benchmark.
 
-## Remaining real-Agent gate
+## Remaining real-Agent validation
 
-Before production cutover, run an isolated realistic fixture with a real Agent:
+Run an isolated realistic fixture with a real Agent to complete the evidence:
 normal completion, edited answer, interrupted/resumed monitoring, and completion
 while the Agent is absent. Record answer-to-delta, delta-to-plan, final
 Complete-to-final-delta, semantic commit, Draft-visible, total, P50, and P95.
-Until that evidence exists, keep Issue 56 at `ready-for-human` and do not package
-or publish this path.
+Until that evidence exists, keep Issue 56 at `ready-for-human`. Packaging the
+isolated full-chain development plugin for this validation is allowed; publishing
+the production plugin remains a separate action.

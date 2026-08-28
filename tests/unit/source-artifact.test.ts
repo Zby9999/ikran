@@ -244,6 +244,19 @@ test.describe("recordSourceArtifact (record path)", () => {
             }
           },
           semantic: {
+            "typography.allRoles": {
+              kind: "token",
+              value: {
+                fontFamily: "Instrument Sans",
+                fontSizeSteps: ["16px", "24px", "64px"],
+                fontWeight: 400,
+                lineHeight: 1,
+                usedFor: "All body, title, and display roles."
+              },
+              status: "candidate",
+              links: ["card-1"],
+              domain: "typography"
+            },
             "typography.heroStatement": {
               kind: "token",
               value: {

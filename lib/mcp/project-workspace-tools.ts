@@ -16,10 +16,7 @@ import {
 } from "./shared";
 import { getProjectPhase } from "../runtime/project-phase";
 import { readAgentCommandWaitEligibility } from "../runtime/adaptive-agent-wait";
-import {
-  incrementalPlanningEnabled,
-  readCurrentIncrementalPlanningStatus
-} from "../runtime/alignment-incremental-planning";
+import { readCurrentIncrementalPlanningStatus } from "../runtime/alignment-incremental-planning";
 
 const OPEN_PROJECT_ACTION = {
   tool: "create_or_open_project"
@@ -35,7 +32,6 @@ const RESUME_INCREMENTAL_DIRECTIVE =
   "Required next Agent action: resume the current hidden Alignment answer check with `resume_initial_design_system_planning`. Do not call `wait_for_agent_command`; the incremental resume tool restores the durable revision, plan, and unanswered backlog after interruption.";
 
 function incrementalPlanningStatus(projectPath: string) {
-  if (!incrementalPlanningEnabled()) return null;
   const status = readCurrentIncrementalPlanningStatus(projectPath);
   return status.ok ? status : null;
 }
@@ -45,10 +41,10 @@ function waitArmFields(armWait: boolean): { wait_armed?: true } {
 }
 
 /**
- * Arm only for a domain-owned designer handoff: Alignment stages including
- * first-open seed-reference-registration with zero seeds, or one explicitly
- * active Rule Update Review. Merely reaching a post-Alignment project phase
- * never creates a wait lease.
+ * Arm only for Alignment preparation, including first-open
+ * seed-reference-registration with zero seeds, or one explicitly active Rule
+ * Update Review. Alignment answering uses the incremental semantic monitor;
+ * merely reaching a later project phase never creates a wait lease.
  */
 function shouldArmWaitForCommand(projectPath: string): boolean {
   const eligibility = readAgentCommandWaitEligibility(projectPath);
@@ -106,7 +102,7 @@ export function registerProjectWorkspaceTools(
     "open_workbench",
     {
       description:
-        "Start or reuse the local Ikran Runtime HTTP surface and return a localhost Workbench URL. This tool does not open a host browser. After it returns, open that URL in this Agent host's embedded browser (or any local browser), then post that exact URL as a user-visible chat message so the designer can open it manually if it did not open automatically, before calling wait_for_agent_command — wait is a blocking call and cannot open the page. Whether wait is later required is decided per response: the result re-arms wait_for_agent_command for the Alignment designer handoff (including first-open seed-reference-registration with zero seeds) or an explicitly active Rule Update Review wait scope; a post-Alignment phase alone never arms it. When it says no wait is needed, do not call wait_for_agent_command and end the turn. The URL is local-only and is not a public/remote link. Active seed capture is Runtime-owned (ADR 0003): ensure Figma Connection via the Workbench gate, then use add_seed_reference (same command as Workbench paste). Do not orchestrate host Figma screenshots for ingestion."
+        "Start or reuse the local Ikran Runtime HTTP surface and return a localhost Workbench URL. This tool does not open a host browser. After it returns, open that URL in this Agent host's embedded browser (or any local browser), then post that exact URL as a user-visible chat message so the designer can open it manually if it did not open automatically, before calling wait_for_agent_command — wait is a blocking call and cannot open the page. Whether wait is later required is decided per response: the result re-arms wait_for_agent_command for Alignment preparation (including first-open seed-reference-registration with zero seeds) or an explicitly active Rule Update Review wait scope. Alignment answering instead returns resume_initial_design_system_planning; a later project phase alone never arms generic wait. When it says no wait is needed, do not call wait_for_agent_command and end the turn. The URL is local-only and is not a public/remote link. Active seed capture is Runtime-owned (ADR 0003): ensure Figma Connection via the Workbench gate, then use add_seed_reference (same command as Workbench paste). Do not orchestrate host Figma screenshots for ingestion."
     },
     async () => {
       const rt = await ensureRuntime();
@@ -169,7 +165,7 @@ export function registerProjectWorkspaceTools(
     "create_or_open_project",
     {
       description:
-        "Bind or open the Ikran project for a local folder and initialize its `.ikran/` state (SQLite, event log, config). With a `path`: CREATE the project there if no project is bound, OPEN it idempotently if that project is already bound, or FAIL CLOSED with `project_mismatch` if the Runtime is bound to a DIFFERENT project (single-project-single-flow — do not silently switch; to change projects, restart Ikran with the new folder as the working folder). With no `path`: if a project is already bound, return that active project + session + workbench_url (discovered cwd is NOT treated as a bind target); otherwise bind/open the working folder discovered from IKRAN_CWD env, then MCP Roots, then process.cwd(); if none is discoverable and no project is bound, returns `no_working_folder` (then pass { path } explicitly — your shell's `pwd` gives the workspace). This tool does not open a host browser. Open the returned Workbench URL in this Agent host's embedded browser before calling wait_for_agent_command — wait is a blocking call and cannot open the page. Whether wait is later required is decided per response: the result re-arms wait_for_agent_command for the Alignment designer handoff (including first-open seed-reference-registration with zero seeds) or an explicitly active Rule Update Review wait scope; a post-Alignment phase alone never arms it. When it says no wait is needed, do not call wait_for_agent_command and end the turn. Always returns the active project, the startup session token, the Workbench URL, and the current project phase so the caller can confirm it is operating on the same project/session as the Workbench HTTP API. All research source-of-truth changes go through Ikran tools.",
+        "Bind or open the Ikran project for a local folder and initialize its `.ikran/` state (SQLite, event log, config). With a `path`: CREATE the project there if no project is bound, OPEN it idempotently if that project is already bound, or FAIL CLOSED with `project_mismatch` if the Runtime is bound to a DIFFERENT project (single-project-single-flow — do not silently switch; to change projects, restart Ikran with the new folder as the working folder). With no `path`: if a project is already bound, return that active project + session + workbench_url (discovered cwd is NOT treated as a bind target); otherwise bind/open the working folder discovered from IKRAN_CWD env, then MCP Roots, then process.cwd(); if none is discoverable and no project is bound, returns `no_working_folder` (then pass { path } explicitly — your shell's `pwd` gives the workspace). This tool does not open a host browser. Open the returned Workbench URL in this Agent host's embedded browser before calling wait_for_agent_command — wait is a blocking call and cannot open the page. Whether wait is later required is decided per response: the result re-arms wait_for_agent_command for Alignment preparation (including first-open seed-reference-registration with zero seeds) or an explicitly active Rule Update Review wait scope. Alignment answering instead returns resume_initial_design_system_planning; a later project phase alone never arms generic wait. When it says no wait is needed, do not call wait_for_agent_command and end the turn. Always returns the active project, the startup session token, the Workbench URL, and the current project phase so the caller can confirm it is operating on the same project/session as the Workbench HTTP API. All research source-of-truth changes go through Ikran tools.",
       inputSchema: createOrOpenProjectInputShape
     },
     async (args) => {

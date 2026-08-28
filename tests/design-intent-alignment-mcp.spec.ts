@@ -55,6 +55,10 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     });
     const advertisedCommitSchema = JSON.stringify(commitTool?.inputSchema);
     expect(advertisedCommitSchema).toContain("sourceRefs");
+    expect(advertisedCommitSchema).toContain("foundationRules");
+    expect(advertisedCommitSchema).toContain("categoryOmissions");
+    expect(advertisedCommitSchema).toContain("sourceOmissions");
+    expect(advertisedCommitSchema).toContain("usedFor");
     expect(advertisedCommitSchema).not.toContain("sourceRecordIds");
     const answerTool = advertisedTools.find(
       (tool) => tool.name === "record_designer_answer"
@@ -72,6 +76,14 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     expect(advertisedAnswerSchema).toContain("optionId");
     expect(advertisedAnswerSchema).toContain("custom");
     expect(advertisedAnswerSchema).toContain("exactly one");
+    const confirmDraftTool = advertisedTools.find(
+      (tool) => tool.name === "confirm_draft_design_system"
+    );
+    expect(confirmDraftTool?.inputSchema).toMatchObject({
+      type: "object",
+      required: ["designerConfirmation"]
+    });
+    expect(confirmDraftTool?.description).toContain("Never call automatically");
 
     const opened = sc(await client.callTool({
       name: "create_or_open_project",
@@ -303,15 +315,9 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     expect(answeredResponse.status).toBe(409);
 
     const finalizedEvent = sse.waitForRecord();
-    const finalized = sc(await client.callTool({
+    const finalizeCall = client.callTool({
       name: "finalize_alignment_preparation",
       arguments: { alignmentAttemptId: attemptId }
-    }));
-    expect(finalized).toMatchObject({
-      ok: true,
-      workflow: { stage: "alignment-answering" },
-      attempt: { status: "answering" },
-      command: { status: "completed" }
     });
     await expect(finalizedEvent).resolves.toMatchObject({
       kind: "alignment",
@@ -391,6 +397,14 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
         id: proposed.id
       });
     }
+    const finalized = sc(await finalizeCall);
+    expect(finalized).toMatchObject({
+      ok: true,
+      workflow: { stage: "alignment-answering" },
+      attempt: { status: "answering" },
+      command: { status: "completed" },
+      incrementalPlanning: { reason: "delta_available" }
+    });
 
     const completedEvent = sse.waitForRecord();
     const completeResponse = await fetch(
@@ -433,10 +447,29 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
         alignment_attempt_id: attemptId
       }
     });
-    const claimedInitialDesignSystem = sc(await client.callTool({
+    const claimedInitialDesignSystemResult = await client.callTool({
       name: "claim_initial_design_system_preparation",
       arguments: {}
-    }));
+    });
+    const rawClaimContent = (
+      claimedInitialDesignSystemResult as { content?: unknown }
+    ).content;
+    const modelVisibleClaim = Array.isArray(rawClaimContent)
+      ? rawClaimContent.find((item): item is { type: "text"; text: string } =>
+          item !== null &&
+          typeof item === "object" &&
+          (item as { type?: unknown }).type === "text" &&
+          typeof (item as { text?: unknown }).text === "string"
+        )
+      : undefined;
+    expect(modelVisibleClaim).toMatchObject({ type: "text" });
+    if (modelVisibleClaim?.type !== "text") {
+      throw new Error("claim response omitted model-visible text");
+    }
+    expect(modelVisibleClaim.text).toContain('"ref":"Q01"');
+    expect(modelVisibleClaim.text).toContain('"section":"visual-language"');
+    expect(modelVisibleClaim.text).toContain('"statement":');
+    const claimedInitialDesignSystem = sc(claimedInitialDesignSystemResult);
     expect(claimedInitialDesignSystem).toMatchObject({
       ok: true,
       commandStatus: "claimed",

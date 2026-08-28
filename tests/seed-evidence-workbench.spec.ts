@@ -781,7 +781,6 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       return JSON.parse(response.body).question_cards[0].final_answer;
     }).toBe("Designer-approved final answer");
 
-    const waiting = waitForAgentCommand(folder, { windowMs: 5_000 });
     await page.getByRole("navigation", {
       name: "Design intent alignment stages"
     }).hover();
@@ -794,7 +793,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       "data-agent-command-status",
       "pending"
     );
-    await expect(waiting).resolves.toMatchObject({
+    await expect(waitForAgentCommand(folder)).resolves.toMatchObject({
       reason: "command_available",
       command: {
         command_type: "prepare_initial_design_system",

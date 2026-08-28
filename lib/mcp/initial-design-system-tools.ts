@@ -16,7 +16,6 @@ import {
   commitInitialDesignSystemSemantic,
   commitInitialDesignSystemSemanticInputSchema
 } from "../runtime/initial-design-system-semantic-commit";
-import { incrementalPlanningEnabled } from "../runtime/alignment-incremental-planning";
 import {
   conciseSuccessResult,
   failureResult,
@@ -39,42 +38,40 @@ export function registerInitialDesignSystemTools(
         };
   };
 
-  if (incrementalPlanningEnabled()) {
-    mcp.registerTool(
-      "commit_incremental_initial_design_system_plan",
-      {
-        description:
-          "Commit the caught-up hidden Incremental Plan against the Alignment's frozen revision. Takes only attempt id, exact plan version, and idempotency key; Runtime loads the persisted semantic draft, validates every section digest and dependency, then runs the normal artifact, lineage, audit, and Draft gates. On an unavailable or stale plan, follow the returned claim_initial_design_system_preparation fallback.",
-        inputSchema: commitIncrementalDesignSystemPlanInputSchema
-      },
-      async (args) => {
-        const ctx = await active("commit_incremental_initial_design_system_plan");
-        if (!ctx.ok) return ctx.result;
-        const result = commitIncrementalInitialDesignSystemPlan(
-          ctx.projectPath,
-          args
-        );
-        return result.ok
-          ? conciseSuccessResult(
-              ctx.rt,
-              result,
-              `Draft Design System ready from incremental plan v${result.planVersion}.`
-            )
-          : failureResult(
-              "commit_incremental_initial_design_system_plan",
-              result.reason,
-              ctx.rt,
-              "fallback" in result ? { fallback: result.fallback } : undefined
-            );
-      }
-    );
-  }
+  mcp.registerTool(
+    "commit_incremental_initial_design_system_plan",
+    {
+      description:
+        "Commit the caught-up hidden Incremental Plan against the Alignment's frozen revision. Takes only attempt id, exact plan version, and idempotency key; Runtime loads the persisted semantic draft, validates its complete final schema, every section digest, every output/omission dependency, then runs the artifact, lineage, audit, and Draft gates. On a semantic Draft reconciliation result, repair the plan instead of pretending the fast path succeeded. On an unavailable or stale plan, follow the returned claim_initial_design_system_preparation fallback.",
+      inputSchema: commitIncrementalDesignSystemPlanInputSchema
+    },
+    async (args) => {
+      const ctx = await active("commit_incremental_initial_design_system_plan");
+      if (!ctx.ok) return ctx.result;
+      const result = commitIncrementalInitialDesignSystemPlan(
+        ctx.projectPath,
+        args
+      );
+      return result.ok
+        ? conciseSuccessResult(
+            ctx.rt,
+            result,
+            `Draft Design System ready from incremental plan v${result.planVersion}.`
+          )
+        : failureResult(
+            "commit_incremental_initial_design_system_plan",
+            result.reason,
+            ctx.rt,
+            "fallback" in result ? { fallback: result.fallback } : undefined
+          );
+    }
+  );
 
   mcp.registerTool(
     "commit_initial_design_system_semantics",
     {
       description:
-        "Second and final call in the Initial Design System fast path. Submit one semantic Draft using the alignmentAttemptId and short Q/A/D sourceRefs returned by claim_initial_design_system_preparation. Runtime performs all deterministic ids, files, provenance, work units, audit, and finalization. Omit unsupported detail instead of re-claiming, inspecting legacy tools, querying SQLite, or re-extracting raw evidence.",
+        "Second and final call in the Initial Design System fast path. Submit one semantic Draft using the alignmentAttemptId and short Q/A/D refs returned by claim_initial_design_system_preparation. Every frozen source must be mapped or receive an explicit Agent-authored sourceOmission; every empty tokens/layout/interaction/components category needs an evidence-linked categoryOmission. Preserve evidence-backed color primitives, semantic roles, and foundationRules. Keep typography facts atomic in primitive; each supported semantic/component role needs one scalar fontSize, at least one other style field, one stable job, and a distinct usedFor—never bundle a scale or step collection. Runtime validates complete coverage, projects deterministic files/provenance/work units/audit, and supports corrected retry with a new key after a failed commit. Do not re-claim, inspect legacy tools, query SQLite, or re-extract raw evidence.",
       inputSchema: commitInitialDesignSystemSemanticInputSchema
     },
     async (args) => {
@@ -114,11 +111,7 @@ export function registerInitialDesignSystemTools(
       if (!ctx.ok) return ctx.result;
       const result = claimInitialDesignSystemSemanticContext(ctx.projectPath);
       return result.ok
-        ? conciseSuccessResult(
-            ctx.rt,
-            result,
-            `Claimed ${result.sources.length} compact Alignment sources. Use structuredContent once, then call commit_initial_design_system_semantics.`
-          )
+        ? successResult(ctx.rt, result)
         : failureResult(
             "claim_initial_design_system_preparation",
             result.reason,

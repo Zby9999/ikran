@@ -90,7 +90,10 @@ _Avoid_: reverse prompt injection, MCP wake-up, headless replacement Agent
 An active Agent turn waiting for the next explicit Agent command while
 Workbench presence indicates that the designer is still engaged. Presence may
 extend the wait, but it never substitutes for the designer action that advances
-the workflow.
+the workflow. It applies to Alignment preparation and an active Rule Update
+Review. Alignment answering uses the durable semantic revision and
+`resume_initial_design_system_planning`; calling generic wait there fails
+closed with that recovery action.
 _Avoid_: infinite wait, idle-triggered progression, Agent host activation
 
 **Rule Update Review**:

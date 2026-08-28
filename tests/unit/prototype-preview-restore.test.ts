@@ -170,7 +170,7 @@ function enterPrototypeValidation(projectPath: string): void {
   } finally {
     db.close();
   }
-  const confirmed = confirmDraftDesignSystem(projectPath);
+  const confirmed = confirmDraftDesignSystem(projectPath, "I reviewed the Draft.");
   if (!confirmed.ok) throw new Error(JSON.stringify(confirmed));
 }
 

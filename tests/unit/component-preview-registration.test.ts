@@ -41,16 +41,44 @@ function write(dir: string, relative: string, body: string): void {
   writeFileSync(absolute, body);
 }
 
-function fixture(options: { linked?: boolean } = {}): string {
+function fixture(options: {
+  linked?: boolean;
+  framework?: "next" | "vite" | "unsupported";
+} = {}): string {
   const dir = mkdtempSync(path.join(tmpdir(), "ikran-preview-registration-"));
   projects.push(dir);
   initializeProjectDb(dir);
-  write(
-    dir,
-    "prototype/package.json",
-    JSON.stringify({ dependencies: { next: "15.0.0", react: "19.0.0" } })
-  );
-  write(dir, "prototype/app/page.tsx", "export default function Page() { return null; }");
+  const framework = options.framework ?? "next";
+  if (framework === "next") {
+    write(
+      dir,
+      "prototype/package.json",
+      JSON.stringify({ dependencies: { next: "15.0.0", react: "19.0.0" } })
+    );
+    write(dir, "prototype/app/page.tsx", "export default function Page() { return null; }");
+  } else if (framework === "vite") {
+    write(
+      dir,
+      "prototype/package.json",
+      JSON.stringify({
+        dependencies: { react: "18.3.1", "react-dom": "18.3.1" },
+        devDependencies: { vite: "5.4.11" }
+      })
+    );
+    write(
+      dir,
+      "prototype/index.html",
+      '<div id="root"></div><script type="module" src="/src/main.jsx"></script>'
+    );
+    write(dir, "prototype/src/main.jsx", 'import "./styles.css";\n');
+    write(dir, "prototype/src/styles.css", "body { color: rgb(10 20 30); }\n");
+  } else {
+    write(
+      dir,
+      "prototype/package.json",
+      JSON.stringify({ dependencies: { react: "18.3.1" } })
+    );
+  }
   write(
     dir,
     "prototype/components/TextLink.tsx",
@@ -221,6 +249,74 @@ test("registers exact exports into one shared Storybook-free adapter", () => {
   });
   expect(icon?.liveHero).toMatchObject({
     harnessPath: `${SHARED_COMPONENT_PREVIEW_ROUTE}/${second.registration.id}`
+  });
+});
+
+test("registers Vite React exports into one shared adapter and carries entry CSS", () => {
+  const dir = fixture({ linked: false, framework: "vite" });
+  setAutomaticComponentPreviewOrchestrationHostForTests({ schedule: () => undefined });
+  const declaration = {
+    path: "prototype/components/TextLink.tsx",
+    artifactType: "code",
+    semanticPurpose: "Text Link implementation",
+    componentPreview: {
+      runId: "run-1",
+      surfaceId: "surface-1",
+      entryId: "component.text-link",
+      modulePath: "prototype/components/TextLink.tsx",
+      exportName: "TextLink",
+      semanticImpact: "none" as const,
+      defaultArgs: { label: "Read details" },
+      stateArgs: {}
+    }
+  };
+
+  const result = recordArtifactWrittenCommand(dir, declaration);
+  expect(result, JSON.stringify(result)).toMatchObject({
+    ok: true,
+    component_preview: {
+      ok: true,
+      registration: {
+        adapter_artifact_path: "prototype/ikran-component-preview.html",
+        manifest_artifact_path: "prototype/src/ikran/component-preview-registry.jsx",
+        adapter_route: expect.stringMatching(
+          /^\/ikran-component-preview\.html\?registrationId=preview-/
+        )
+      }
+    }
+  });
+  const html = readFileSync(
+    path.join(dir, "prototype/ikran-component-preview.html"),
+    "utf8"
+  );
+  const registry = readFileSync(
+    path.join(dir, "prototype/src/ikran/component-preview-registry.jsx"),
+    "utf8"
+  );
+  expect(html).toContain("createRoot");
+  expect(html).toContain("registrationId");
+  expect(registry).toContain('import "../styles.css";');
+  expect(registry).toContain("TextLink as IkranComponent");
+  expect(html + registry).not.toContain("@storybook");
+});
+
+test("unsupported adapters report detected capabilities and actionable remediation", () => {
+  const dir = fixture({ framework: "unsupported" });
+  expect(registerComponentPreview(dir, {
+    runId: "run-1",
+    surfaceId: "surface-1",
+    entryId: "component.text-link",
+    modulePath: "prototype/components/TextLink.tsx",
+    exportName: "TextLink"
+  })).toMatchObject({
+    ok: false,
+    reason: "unsupported_preview_adapter",
+    details: {
+      detected: { framework: "react", packageManagerMetadataFound: true },
+      supportedAdapters: ["next-app-router", "vite-react"],
+      versionChangesWillNotHelp: true,
+      remediation: expect.any(String)
+    }
   });
 });
 

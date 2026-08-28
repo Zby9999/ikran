@@ -1486,6 +1486,18 @@ describe("componentHeroLiveUrl (Issue 33)", () => {
       "http://127.0.0.1:4401/__ikran/component/button?state=default-hover"
     );
   });
+
+  test("preserves adapter identity query parameters when changing state", () => {
+    const hero = liveHero({
+      harnessPath: "/ikran-component-preview.html?registrationId=preview-123"
+    });
+    expect(componentHeroLiveUrl(hero, null)).toBe(
+      "http://127.0.0.1:4401/ikran-component-preview.html?registrationId=preview-123"
+    );
+    expect(componentHeroLiveUrl(hero, "hover")).toBe(
+      "http://127.0.0.1:4401/ikran-component-preview.html?registrationId=preview-123&state=hover"
+    );
+  });
 });
 
 describe("heroLiveTimeoutDecision (state-level failure, B3)", () => {

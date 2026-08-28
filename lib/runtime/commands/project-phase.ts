@@ -28,9 +28,10 @@ export function requireProjectPhaseCommand(
 }
 
 export function confirmDraftDesignSystemCommand(
-  projectPath: string
+  projectPath: string,
+  designerConfirmation: string
 ): PhaseCommandResult {
-  return confirmDraftDesignSystem(projectPath);
+  return confirmDraftDesignSystem(projectPath, designerConfirmation);
 }
 
 export function confirmPrototypeCommand(

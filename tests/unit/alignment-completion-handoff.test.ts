@@ -361,15 +361,22 @@ END;
     }
   });
 
-  test("an already-running adaptive waiter receives the next-stage command", async () => {
+  test("Alignment answering exits generic wait while a later queued command still wins", async () => {
     const fixture = createAnsweringFixture();
     try {
-      const waiting = waitForAgentCommand(fixture.projectPath, {
+      await expect(waitForAgentCommand(fixture.projectPath, {
         windowMs: 1_000
+      })).resolves.toMatchObject({
+        reason: "not_applicable",
+        command: null,
+        stage: "alignment-answering",
+        not_applicable_reason: "incremental_alignment_planning",
+        next_action: { tool: "resume_initial_design_system_planning" }
       });
+
       const completed = completeDesignIntentAlignment(fixture.projectPath);
       expect(completed.ok).toBe(true);
-      await expect(waiting).resolves.toMatchObject({
+      await expect(waitForAgentCommand(fixture.projectPath)).resolves.toMatchObject({
         reason: "command_available",
         command: {
           command_type: "prepare_initial_design_system",

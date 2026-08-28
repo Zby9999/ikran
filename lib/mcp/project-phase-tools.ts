@@ -19,6 +19,12 @@ import {
 
 const emptyInputSchema = z.object({});
 
+const confirmDraftInputSchema = z.object({
+  designerConfirmation: z.string().trim().min(1).describe(
+    "The designer's explicit current-turn confirmation that they have reviewed the visible Draft Design System and want Prototype work to begin. Quote or faithfully preserve their wording; never infer this from Alignment completion or Draft creation."
+  )
+}).strict();
+
 const timingInputSchema = z.object({
   sessionId: z
     .string()
@@ -51,6 +57,7 @@ function phaseFailure(
     source_warnings?: unknown[];
     source_issues?: unknown[];
     verification_entry_ids?: string[];
+    preview_entry_ids?: string[];
   },
   rt: Awaited<ReturnType<RegisterIkranToolsDeps["ensureRuntime"]>>
 ) {
@@ -70,6 +77,9 @@ function phaseFailure(
       : {}),
     ...(result.verification_entry_ids !== undefined
       ? { verification_entry_ids: result.verification_entry_ids }
+      : {}),
+    ...(result.preview_entry_ids !== undefined
+      ? { preview_entry_ids: result.preview_entry_ids }
       : {})
   });
 }
@@ -109,16 +119,19 @@ export function registerProjectPhaseTools(
     "confirm_draft_design_system",
     {
       description:
-        "Declare that the designer finished auditing the Draft Design System. Advances project phase from draft_design_system to prototype_validation and unlocks the first Prototype. After advancing, call get_prototype_rebuild_context to obtain the reconstruction context before writing the first prototype. Rejected out of order.",
-      inputSchema: emptyInputSchema
+        "Use only after the designer explicitly says they reviewed the visible Draft Design System and wants Prototype work to begin. Never call automatically after Draft creation, never infer approval from silence or Alignment completion, and never fabricate designerConfirmation. Records that confirmation, advances from draft_design_system to prototype_validation, then unlocks get_prototype_rebuild_context. Rejected without explicit confirmation or out of order.",
+      inputSchema: confirmDraftInputSchema
     },
-    async () => {
+    async (args) => {
       const rt = await ensureRuntime();
       const active = requireActiveProjectCommand();
       if (!active.ok) {
         return failureResult("confirm_draft_design_system", active.reason, rt);
       }
-      const result = confirmDraftDesignSystemCommand(active.project.path);
+      const result = confirmDraftDesignSystemCommand(
+        active.project.path,
+        args.designerConfirmation
+      );
       return result.ok
         ? successResult(rt, result)
         : phaseFailure("confirm_draft_design_system", result, rt);
@@ -129,7 +142,7 @@ export function registerProjectPhaseTools(
     "confirm_prototype",
     {
       description:
-        "Declare that the designer confirmed Prototype modifications and audit. Component implementations must already be declared through record_artifact_written.componentPreview; Runtime owns code linking, the shared live Preview, verification cache, and internal Verified Candidate. Then reconcile the frozen conversation, complete claim_consolidate_review, resolve only emitted component Preview exceptions, wait for automatic verification eligibility, and formalize. Do not run the legacy per-component harness/backfill/declaration/verification chain. Rejected out of order.",
+        "Declare that the designer confirmed Prototype modifications and audit. Every code-linked Candidate component must already have a Runtime Preview registration from record_artifact_written.componentPreview or a resolved retain_open_gap exception; compatibility code-link backfill alone cannot satisfy this gate. Runtime owns code linking, the shared live Preview, verification cache, and internal Verified Candidate. Then reconcile the frozen conversation, complete claim_consolidate_review, resolve only emitted component Preview exceptions, wait for automatic verification eligibility, and formalize. Do not run the legacy per-component harness/backfill/declaration/verification chain. Rejected out of order.",
       inputSchema: emptyInputSchema
     },
     async () => {

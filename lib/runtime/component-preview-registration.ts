@@ -168,26 +168,34 @@ function exportedNames(source: string, fileName: string): Set<string> {
   return names;
 }
 
-function adapterPaths(
-  projectPath: string,
-  prototypeRoot: string
-): { adapter: string; manifest: string } | null {
-  const candidates = ["app", "src/app"];
-  const appRoot = candidates.find((candidate) =>
-    existsSync(path.join(projectPath, prototypeRoot, candidate))
-  );
-  if (!appRoot) return null;
-  const base = path.join(
-    prototypeRoot,
-    appRoot,
-    "ikran",
-    "component-preview"
-  );
-  return {
-    adapter: path.join(base, "[registrationId]", "page.tsx"),
-    manifest: path.join(base, "registry.tsx")
-  };
+export const SUPPORTED_COMPONENT_PREVIEW_ADAPTERS = [
+  "next-app-router",
+  "vite-react"
+] as const;
+
+type PreviewAdapterId = (typeof SUPPORTED_COMPONENT_PREVIEW_ADAPTERS)[number];
+
+type PreviewAdapterPaths = { adapter: string; manifest: string };
+
+interface PreviewAdapter {
+  id: PreviewAdapterId;
+  paths: PreviewAdapterPaths;
+  route(registrationId: string): string;
+  adapterSource: string;
+  manifestSource(rows: readonly DbRegistration[]): string;
 }
+
+type UnsupportedPreviewAdapterDetails = {
+  detected: {
+    framework: "next" | "vite" | "react" | "unknown";
+    packageManagerMetadataFound: boolean;
+    appRouterDirectoryFound: boolean;
+    viteHtmlEntryFound: boolean;
+  };
+  supportedAdapters: readonly PreviewAdapterId[];
+  versionChangesWillNotHelp: true;
+  remediation: string;
+};
 
 function importPath(fromFile: string, modulePath: string): string {
   let relative = path.relative(path.dirname(fromFile), modulePath);
@@ -195,21 +203,29 @@ function importPath(fromFile: string, modulePath: string): string {
   return relative.startsWith(".") ? relative : `./${relative}`;
 }
 
-function manifestSource(rows: readonly DbRegistration[]): string {
-  const imports = rows.map((row, index) => {
+function componentImports(rows: readonly DbRegistration[]): string[] {
+  return rows.map((row, index) => {
     const source = JSON.stringify(importPath(row.manifest_artifact_path, row.module_path));
     return row.export_name === "default"
       ? `import IkranComponent${index} from ${source};`
       : `import { ${row.export_name} as IkranComponent${index} } from ${source};`;
   });
-  const entries = rows.map(
+}
+
+function registryEntries(rows: readonly DbRegistration[]): string[] {
+  return rows.map(
     (row, index) =>
       `  ${JSON.stringify(row.id)}: { Component: IkranComponent${index}, defaultArgs: ${row.default_args_json}, stateArgs: ${row.state_args_json} }`
   );
+}
+
+function nextManifestSource(rows: readonly DbRegistration[]): string {
+  const imports = componentImports(rows);
+  const entries = registryEntries(rows);
   return `"use client";\n\n${imports.join("\n")}\n\nexport const ikranComponentPreviewRegistry = {\n${entries.join(",\n")}\n} as const;\n`;
 }
 
-const ADAPTER_SOURCE = `"use client";
+const NEXT_ADAPTER_SOURCE = `"use client";
 
 import { createElement, useEffect, useRef } from "react";
 import { useParams, useSearchParams } from "next/navigation";
@@ -246,6 +262,199 @@ export default function IkranComponentPreview() {
   </div>;
 }
 `;
+
+const VITE_ADAPTER_SOURCE = `<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>html, body { margin: 0; overflow: hidden; } #ikran-root { display: inline-block; }</style>
+  </head>
+  <body>
+    <div id="ikran-root"></div>
+    <script type="module">
+      import React from "react";
+      import { createRoot } from "react-dom/client";
+      import { ikranComponentPreviewRegistry } from "/src/ikran/component-preview-registry.jsx";
+
+      const registrationId = new URL(window.location.href).searchParams.get("registrationId");
+      const state = new URL(window.location.href).searchParams.get("state") ?? "default";
+      const registration = registrationId ? ikranComponentPreviewRegistry[registrationId] : null;
+      const mount = document.getElementById("ikran-root");
+      if (!registration || !mount) {
+        document.body.innerHTML = '<div data-ikran-preview-error="registration-not-found"></div>';
+      } else {
+        mount.dataset.ikranComponentRoot = "";
+        const stateArgs = registration.stateArgs[state] ?? {};
+        createRoot(mount).render(React.createElement(registration.Component, {
+          ...registration.defaultArgs,
+          ...stateArgs
+        }));
+        const report = () => {
+          const rect = mount.getBoundingClientRect();
+          window.parent.postMessage({
+            type: "ikran:component-size", version: 2, href: window.location.href,
+            x: rect.left, y: rect.top,
+            width: Math.max(mount.scrollWidth, rect.width),
+            height: Math.max(mount.scrollHeight, rect.height)
+          }, "*");
+        };
+        new ResizeObserver(report).observe(mount);
+        requestAnimationFrame(report);
+        window.addEventListener("resize", report);
+      }
+    </script>
+  </body>
+</html>
+`;
+
+function readPackageMetadata(
+  projectPath: string,
+  prototypeRoot: string
+): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(
+      readFileSync(path.join(projectPath, prototypeRoot, "package.json"), "utf8")
+    ) as unknown;
+    return plainObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function packageNames(metadata: Record<string, unknown> | null): Set<string> {
+  const names = new Set<string>();
+  for (const field of ["dependencies", "devDependencies"]) {
+    const value = metadata?.[field];
+    if (!plainObject(value)) continue;
+    for (const name of Object.keys(value)) names.add(name);
+  }
+  return names;
+}
+
+function directViteEntryCssImports(
+  projectPath: string,
+  prototypeRoot: string,
+  manifestPath: string
+): string[] {
+  try {
+    const html = readFileSync(
+      path.join(projectPath, prototypeRoot, "index.html"),
+      "utf8"
+    );
+    const moduleScript = [...html.matchAll(/<script\b[^>]*>/gi)]
+      .map((match) => match[0])
+      .find((tag) => /\btype=["']module["']/i.test(tag));
+    const entryMatch = moduleScript?.match(/\bsrc=["']([^"']+)["']/i);
+    if (!entryMatch) return [];
+    const entryPath = entryMatch[1]!.split(/[?#]/, 1)[0]!;
+    if (/^(?:https?:)?\/\//i.test(entryPath) || entryPath.includes("..")) return [];
+    const entryRelative = path.join(prototypeRoot, entryPath.replace(/^\//, ""));
+    const entryAbsolute = path.join(projectPath, entryRelative);
+    const source = readFileSync(entryAbsolute, "utf8");
+    const cssImports = new Set<string>();
+    const importPattern = /(?:import\s+(?:[^"']+?\s+from\s+)?|import\s*)["']([^"']+\.css(?:[?#][^"']*)?)["']/g;
+    for (const match of source.matchAll(importPattern)) {
+      const specifier = match[1]!.split(/[?#]/, 1)[0]!;
+      if (!specifier.startsWith(".")) continue;
+      const absolute = path.resolve(path.dirname(entryAbsolute), specifier);
+      const rootAbsolute = path.resolve(projectPath, prototypeRoot);
+      if (
+        (absolute === rootAbsolute || absolute.startsWith(`${rootAbsolute}${path.sep}`)) &&
+        existsSync(absolute)
+      ) {
+        cssImports.add(importPath(manifestPath, path.relative(projectPath, absolute)));
+      }
+    }
+    return [...cssImports].sort();
+  } catch {
+    return [];
+  }
+}
+
+function resolvePreviewAdapter(
+  projectPath: string,
+  prototypeRoot: string
+): { ok: true; adapter: PreviewAdapter } | { ok: false; details: UnsupportedPreviewAdapterDetails } {
+  const metadata = readPackageMetadata(projectPath, prototypeRoot);
+  const packages = packageNames(metadata);
+  const appRoot = ["app", "src/app"].find((candidate) =>
+    existsSync(path.join(projectPath, prototypeRoot, candidate))
+  );
+  const viteHtmlEntryFound = existsSync(
+    path.join(projectPath, prototypeRoot, "index.html")
+  );
+  if (appRoot && packages.has("next")) {
+    const base = path.join(prototypeRoot, appRoot, "ikran", "component-preview");
+    const paths = {
+      adapter: path.join(base, "[registrationId]", "page.tsx"),
+      manifest: path.join(base, "registry.tsx")
+    };
+    return {
+      ok: true,
+      adapter: {
+        id: "next-app-router",
+        paths,
+        route: (registrationId) => `${SHARED_COMPONENT_PREVIEW_ROUTE}/${registrationId}`,
+        adapterSource: NEXT_ADAPTER_SOURCE,
+        manifestSource: nextManifestSource
+      }
+    };
+  }
+  if (
+    viteHtmlEntryFound &&
+    packages.has("vite") &&
+    packages.has("react") &&
+    packages.has("react-dom")
+  ) {
+    const paths = {
+      adapter: path.join(prototypeRoot, "ikran-component-preview.html"),
+      manifest: path.join(prototypeRoot, "src", "ikran", "component-preview-registry.jsx")
+    };
+    return {
+      ok: true,
+      adapter: {
+        id: "vite-react",
+        paths,
+        route: (registrationId) =>
+          `/ikran-component-preview.html?registrationId=${encodeURIComponent(registrationId)}`,
+        adapterSource: VITE_ADAPTER_SOURCE,
+        manifestSource: (rows) => {
+          const styles = directViteEntryCssImports(
+            projectPath,
+            prototypeRoot,
+            paths.manifest
+          ).map((source) => `import ${JSON.stringify(source)};`);
+          const imports = componentImports(rows);
+          const entries = registryEntries(rows);
+          return `${[...styles, ...imports].join("\n")}\n\nexport const ikranComponentPreviewRegistry = {\n${entries.join(",\n")}\n};\n`;
+        }
+      }
+    };
+  }
+  const framework = packages.has("next")
+    ? "next"
+    : packages.has("vite")
+      ? "vite"
+      : packages.has("react")
+        ? "react"
+        : "unknown";
+  return {
+    ok: false,
+    details: {
+      detected: {
+        framework,
+        packageManagerMetadataFound: metadata !== null,
+        appRouterDirectoryFound: appRoot !== undefined,
+        viteHtmlEntryFound
+      },
+      supportedAdapters: SUPPORTED_COMPONENT_PREVIEW_ADAPTERS,
+      versionChangesWillNotHelp: true,
+      remediation:
+        "Use a Next App Router prototype, or a Vite React prototype with package.json (vite/react/react-dom) and index.html. Do not change package versions to select an adapter."
+    }
+  };
+}
 
 function runtimeArtifactOnDb(
   db: ReturnType<typeof openProjectDb>,
@@ -375,8 +584,13 @@ export function validateComponentPreviewDeclaration(
     modulePath !== prototypeRoot &&
     !modulePath.startsWith(`${prototypeRoot}${path.sep}`)
   ) return { ok: false, reason: "artifact_path_escape" };
-  if (!adapterPaths(projectPath, prototypeRoot)) {
-    return { ok: false, reason: "unsupported_preview_adapter" };
+  const adapter = resolvePreviewAdapter(projectPath, prototypeRoot);
+  if (!adapter.ok) {
+    return {
+      ok: false,
+      reason: "unsupported_preview_adapter",
+      details: adapter.details
+    };
   }
   return { ok: true };
 }
@@ -472,8 +686,16 @@ export function registerComponentPreview(
   ) {
     return { ok: false, reason: "artifact_path_escape" };
   }
-  const paths = adapterPaths(projectPath, prototypeRoot);
-  if (!paths) return { ok: false, reason: "unsupported_preview_adapter" };
+  const resolvedAdapter = resolvePreviewAdapter(projectPath, prototypeRoot);
+  if (!resolvedAdapter.ok) {
+    return {
+      ok: false,
+      reason: "unsupported_preview_adapter",
+      details: resolvedAdapter.details
+    };
+  }
+  const previewAdapter = resolvedAdapter.adapter;
+  const paths = previewAdapter.paths;
   const id = `preview-${digest({ runId, entryId: entry!.entry_id }).slice(0, 20)}`;
   const defaultArgs = input.defaultArgs ?? {};
   const stateArgs = input.stateArgs ?? {};
@@ -491,7 +713,7 @@ export function registerComponentPreview(
     prototype_root: prototypeRoot,
     adapter_artifact_path: paths.adapter,
     manifest_artifact_path: paths.manifest,
-    adapter_route: `${SHARED_COMPONENT_PREVIEW_ROUTE}/${id}`,
+    adapter_route: previewAdapter.route(id),
     registration_digest: registrationDigest
   };
   const idempotentDb = openProjectDb(projectPath);
@@ -556,8 +778,9 @@ export function registerComponentPreview(
     const adapterAbsolute = path.join(projectPath, paths.adapter);
     const manifestAbsolute = path.join(projectPath, paths.manifest);
     mkdirSync(path.dirname(adapterAbsolute), { recursive: true });
-    writeFileSync(adapterAbsolute, ADAPTER_SOURCE, "utf8");
-    writeFileSync(manifestAbsolute, manifestSource(allRows), "utf8");
+    mkdirSync(path.dirname(manifestAbsolute), { recursive: true });
+    writeFileSync(adapterAbsolute, previewAdapter.adapterSource, "utf8");
+    writeFileSync(manifestAbsolute, previewAdapter.manifestSource(allRows), "utf8");
     const now = new Date().toISOString();
     withProjectTransaction(projectPath, (writeDb) => {
       runtimeArtifactOnDb(writeDb, paths.adapter, now);
@@ -622,6 +845,7 @@ export function registerComponentPreview(
     module_path: modulePath,
     export_name: exportName,
     registration_digest: registrationDigest,
+    adapter_id: previewAdapter.id,
     adapter_route: row.adapter_route
   });
   return {

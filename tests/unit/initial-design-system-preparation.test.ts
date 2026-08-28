@@ -1498,6 +1498,8 @@ describe("Initial Design System preparation", () => {
 
     const typography = contract.typography_role_writing_style;
     expect(typography.rules.join(" ")).toContain("complete composite");
+    expect(typography.rules.join(" ")).toContain("one scalar fontSize");
+    expect(typography.rules.join(" ")).toContain("scale or step collection");
     expect(typography.examples.bad.value.usedFor).toBe(
       "Connect call-to-action heading size role."
     );

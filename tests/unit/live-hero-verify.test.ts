@@ -12,6 +12,7 @@ import { afterEach, expect, test } from "vitest";
 import { initializeProjectDb } from "../../lib/runtime/db";
 import { declareComponentLiveHeroes } from "../../lib/runtime/design-system-live-hero";
 import {
+  firstValidLiveHeroReport,
   verifyComponentLiveHeroes,
   type LiveHeroVerifyBrowser,
   type LiveHeroVerifyDeps
@@ -44,7 +45,10 @@ function writeProjectFile(dir: string, relative: string, content: string) {
 /** Mirrors the design-system-live-hero fixture: one formalized component
  * spec with codeLinks, declared code + harness artifacts, and a ready
  * prototype surface. */
-function seed(dir: string, options?: { stateMatrix?: unknown[] }) {
+function seed(
+  dir: string,
+  options?: { stateMatrix?: unknown[]; harnessPath?: string }
+) {
   const specPath = "design-system/components/button.json";
   const codePath = "prototype/components/Button.tsx";
   const harnessArtifactPath =
@@ -127,7 +131,7 @@ function seed(dir: string, options?: { stateMatrix?: unknown[] }) {
     {
       entryId: "component.button",
       surfaceId: "surface-1",
-      harnessPath: "/__ikran/component/button",
+      harnessPath: options?.harnessPath ?? "/__ikran/component/button",
       harnessArtifactPath
     }
   ]);
@@ -142,6 +146,19 @@ const VALID_REPORT = {
   width: 120,
   height: 40
 };
+
+test("a transient zero-size report does not win over the first valid geometry", () => {
+  const href = "http://127.0.0.1:4300/ikran-component-preview.html?registrationId=text";
+  expect(
+    firstValidLiveHeroReport(
+      [
+        { href, x: 0, y: 0, width: 0, height: 0 },
+        { href, x: 0, y: 0, width: 84, height: 24 }
+      ],
+      href
+    )
+  ).toEqual({ href, x: 0, y: 0, width: 84, height: 24 });
+});
 
 type Script = Record<
   string,
@@ -204,6 +221,25 @@ test("verifies default and declared states; a 'default' state is not loaded twic
   expect(entry.results.every((r) => r.ok)).toBe(true);
   // No request was made for the state literally named "default".
   expect(navigations).toEqual([BASE_URL, `${BASE_URL}?state=hover`]);
+});
+
+test("preserves shared-adapter registration identity while verifying states", async () => {
+  const dir = projectDir();
+  const base = `${BASE_URL}?registrationId=preview-123`;
+  const hover = `${base}&state=hover`;
+  seed(dir, { harnessPath: "/__ikran/component/button?registrationId=preview-123" });
+  const navigations: string[] = [];
+  const result = await verifyComponentLiveHeroes(
+    dir,
+    {},
+    fakeDeps({
+      [base]: { report: { ...VALID_REPORT, href: base } },
+      [hover]: { report: { ...VALID_REPORT, href: hover } }
+    }, navigations)
+  );
+
+  expect(result).toMatchObject({ ok: true, all_passed: true });
+  expect(navigations).toEqual([base, hover]);
 });
 
 test("a dev-server 500 surfaces as http_error without a browser navigation", async () => {
