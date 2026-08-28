@@ -98,6 +98,9 @@ describe("Workbench motion contract", () => {
     expect(alignment).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.questionCard,[\s\S]*\.annotationCard[\s\S]*transition: none/
     );
+    expect(alignment).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.answerChoice:active:not\(:disabled\),[\s\S]*\.customAnswerTrigger:active:not\(:disabled\)[\s\S]*transform: none/
+    );
     expect(workbench).toContain("@keyframes workbench-loading-pulse");
     expect(workbench).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.small-icon-button__spinner[\s\S]*\.seed-ref-frame__refresh-spinner[\s\S]*\.seed-ref-frame__awaiting-spinner[\s\S]*workbench-loading-pulse/

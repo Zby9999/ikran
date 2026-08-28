@@ -461,6 +461,15 @@ describe("AlignmentQuestionCard", () => {
       /\.answerChoice\s*,\s*\.customAnswerTrigger\s*{[^}]*background:\s*var\(--alignment-raised\)/s
     );
     expect(css).toMatch(
+      /\.answerChoice\s*,\s*\.customAnswerTrigger\s*{[^}]*background-color 120ms ease,[^}]*transform 120ms var\(--motion-ease-out\)/s
+    );
+    expect(css).toMatch(
+      /@media \(hover: hover\) and \(pointer: fine\)[\s\S]*?\.answerChoice:hover:not\(:disabled\),[\s\S]*?\.customAnswerTrigger:hover:not\(:disabled\)[\s\S]*?var\(--alignment-accent\) 8%/s
+    );
+    expect(css).toMatch(
+      /\.answerChoice:active:not\(:disabled\),\s*\.customAnswerTrigger:active:not\(:disabled\)\s*{[^}]*transform:\s*scale\(0\.97\)/s
+    );
+    expect(css).toMatch(
       /\.customAnswerEditor\s*{[^}]*background:\s*var\(--alignment-raised\)/s
     );
     expect(css).not.toMatch(/\.answerEditor\s*{/s);

@@ -226,6 +226,9 @@
   text-align: left;
   overflow-wrap: anywhere;
   cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    transform 120ms var(--motion-ease-out);
 }
 
 .customAnswerTrigger {
@@ -234,6 +237,22 @@
 
 .answerChoice[data-selected="true"] {
   box-shadow: inset 0 0 0 1px var(--alignment-submit);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .answerChoice:hover:not(:disabled),
+  .customAnswerTrigger:hover:not(:disabled) {
+    background-color: color-mix(
+      in srgb,
+      var(--alignment-raised),
+      var(--alignment-accent) 8%
+    );
+  }
+}
+
+.answerChoice:active:not(:disabled),
+.customAnswerTrigger:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .answerChoice:focus-visible,
@@ -390,4 +409,13 @@
     transition: none;
   }
 
+  .answerChoice,
+  .customAnswerTrigger {
+    transition: background-color 120ms ease;
+  }
+
+  .answerChoice:active:not(:disabled),
+  .customAnswerTrigger:active:not(:disabled) {
+    transform: none;
+  }
 }
