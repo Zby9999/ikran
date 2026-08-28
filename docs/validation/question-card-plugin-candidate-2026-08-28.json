@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 1,
+  "snapshotName": "question-card-full-chain-plugin-candidate-2026-08-28",
+  "capturedAt": "2026-08-28T11:36:00.000Z",
+  "source": {
+    "branch": "codex/question-card-answer-options",
+    "featureCommit": "a1ff7fa4a2c27a798a880fee9b5d843722291afe",
+    "baseCommit": "da0d7683f3e1f3dc7fbc0fc0a6fad5cbb766a239",
+    "repositoryPluginVersion": "0.1.0-alpha.16",
+    "validatedDevelopmentPluginVersion": "0.1.0-dev.4+codex.20260828191150",
+    "capabilityScope": [
+      "alignment",
+      "extraction",
+      "prototype",
+      "governance"
+    ]
+  },
+  "runtime": {
+    "databaseSchemaVersion": 45,
+    "workflowStage": "alignment-answering",
+    "alignmentStatus": "answering",
+    "currentAttemptId": "2f1bb753-1180-4717-a2f2-1aedd82e297b",
+    "abandonedLegacyAttemptId": "01b01f67-e9bd-49b0-9c6d-0f3b8e66b75c",
+    "questionCount": 16,
+    "optionCount": 49,
+    "selectedOptionCount": 0,
+    "finalAnswerCount": 0,
+    "sectionQuestionCounts": {
+      "design-concept": 2,
+      "visual-language": 2,
+      "token": 3,
+      "layout": 3,
+      "component": 3,
+      "interaction": 3
+    }
+  },
+  "evidence": {
+    "seedReferenceId": "919a10a8-5c1f-48f9-abf0-8bf436622c68",
+    "evidenceSurfaceId": "585c1555-2515-4145-ba3d-d3884c9fb067",
+    "sha256": "9755fdf80df6e630ea5ff35d60f2552b87d6dcad9d4c2eade248eeb3ea676656"
+  },
+  "coldBackup": {
+    "location": "/Users/bingyizhang/Desktop/Ikran Draft Fast Path Dev Test/snapshots/question-card-plugin-candidate-2026-08-28",
+    "databaseFile": "ikran-question-card-candidate.db",
+    "databaseSha256": "f5221f3bff2a72f0accd5f4eb9f4b5182d5636cc98230b819b79e39a57fa6099",
+    "containsRuntimeSessionData": false
+  },
+  "annotations": [
+    {
+      "section": "design-concept",
+      "title": "理性品牌表达",
+      "inference": "confirmed",
+      "body": "页面以清晰的信息层级、克制的黑白界面和大尺度品牌图形共同建立理性、直接且专业可信的工作室形象。"
+    },
+    {
+      "section": "visual-language",
+      "title": "克制界面承载鲜明作品",
+      "inference": "confirmed",
+      "body": "界面自身几乎只使用黑、白与中性灰，鲜明的绿色、紫色和摄影色彩被集中在项目图像中；几何标识、超大数字与紧凑文字共同形成高辨识度的视觉节奏。"
+    },
+    {
+      "section": "token",
+      "title": "紧凑字号层级",
+      "inference": "confirmed",
+      "body": "Instrument Sans 通过 16、20、24、30、37、64 与 105 像素等明显字号差异、紧凑行高和负字距建立层级，字重变化相对有限。"
+    },
+    {
+      "section": "token",
+      "title": "黑白灰界面角色",
+      "inference": "confirmed",
+      "body": "白色承担背景，黑色承担主要文字与结构线，#767676 灰用于项目标签、说明和文字链接；高饱和色被限制在作品图像内。"
+    },
+    {
+      "section": "token",
+      "title": "留白与细线节奏",
+      "inference": "confirmed",
+      "body": "页面以 15 像素外侧内边距、20–50 像素组内间距、127–150 像素章节级留白及细黑分隔线形成层级，没有圆角、阴影或封闭卡片。"
+    },
+    {
+      "section": "layout",
+      "title": "稳定网格中的不对称",
+      "inference": "confirmed",
+      "body": "全页由统一外侧边距与横向对齐线组织；项目说明、数据区和页脚采用受控的不对称分栏，并通过大留白维持视觉重心。"
+    },
+    {
+      "section": "component",
+      "title": "重复内容形成组件候选",
+      "inference": "confirmed",
+      "body": "两个项目条目复用相同的三图带、项目元信息、正文和箭头链接结构；三个数据项也复用大数字、说明文字和分隔线的组合。"
+    },
+    {
+      "section": "interaction",
+      "title": "静态画面仅给出入口线索",
+      "inference": "confirmed",
+      "body": "画面通过顶部导航、文字链接和方向箭头表达可操作性，但没有展示悬停、键盘焦点、当前状态、图片浏览方式或加载与错误反馈。"
+    }
+  ],
+  "questions": [
+    {
+      "section": "design-concept",
+      "title": "品牌表达范围",
+      "question": "放大的品牌图形与数字应在哪些页面范围内承担核心表达？",
+      "options": [
+        "跨所有页面复用，作为持续的核心品牌母题",
+        "只用于首页与关键叙事节点，其余页面保持克制",
+        "小尺度标识跨页常驻，放大表达只出现在关键节点"
+      ]
+    },
+    {
+      "section": "design-concept",
+      "title": "作品主导关系",
+      "question": "作品内容与工作室自身的界面语言之间，应采用哪种视觉主导关系？",
+      "options": [
+        "作品内容始终主导，界面语言只建立秩序与可信度",
+        "两者保持相近的视觉权重，共同构成品牌表达",
+        "按页面类型切换：作品页内容主导，品牌与联系页界面语言更突出"
+      ]
+    },
+    {
+      "section": "visual-language",
+      "title": "色彩分工",
+      "question": "鲜明色彩与界面中性色应如何分工？",
+      "options": [
+        "鲜明色彩只来自项目内容，界面始终保持黑白灰",
+        "界面可按项目吸取其代表色，形成页面级主题",
+        "界面保持中性，但为关键状态与操作保留固定品牌强调色"
+      ]
+    },
+    {
+      "section": "visual-language",
+      "title": "标识尺度",
+      "question": "成组几何标识应采用怎样的尺度规则？",
+      "options": [
+        "可随页面构图自由缩放",
+        "只保留头部与页脚两种固定尺度",
+        "使用少量预定义尺度，按展示场景切换"
+      ]
+    },
+    {
+      "section": "token",
+      "title": "中性灰语义",
+      "question": "#767676 应如何承担次要信息与轻量操作的语义？",
+      "options": [
+        "统一用于标签、说明与轻量链接",
+        "为标签、说明和链接拆分不同的语义灰阶",
+        "标签与说明共用中性灰，链接与交互状态使用独立 token"
+      ]
+    },
+    {
+      "section": "token",
+      "title": "字号角色",
+      "question": "16–105px 的字号组合应如何系统化？",
+      "options": [
+        "固化为完整的语义字号角色",
+        "只保留比例关系，允许各页面按内容调整",
+        "固定正文与信息层级，展示字号允许在限定范围内变化"
+      ]
+    },
+    {
+      "section": "token",
+      "title": "间距节奏",
+      "question": "15–50px 的紧凑间距与 127–150px 的大留白应如何进入系统？",
+      "options": [
+        "分别定义为组内与章节级的两档节奏",
+        "拆成更细的间距 token，并映射到组件与版块语义",
+        "只保留比例原则，不固化为严格 token"
+      ]
+    },
+    {
+      "section": "layout",
+      "title": "窄屏顺序",
+      "question": "窄屏改为单列时，页面内容顺序应如何处理？",
+      "options": [
+        "沿用桌面的文档顺序，确保阅读关系稳定",
+        "按移动端任务优先级重新排序",
+        "项目核心内容保持原顺序，只调整页脚与联系信息的优先级"
+      ]
+    },
+    {
+      "section": "layout",
+      "title": "图片响应策略",
+      "question": "窄屏时，三图项目带应采用哪种响应策略？",
+      "options": [
+        "按断点从三列重排为两列、再到单列",
+        "保留横向图带，通过横向浏览查看其余图片",
+        "平板重排为两列，手机保留横向图带"
+      ]
+    },
+    {
+      "section": "layout",
+      "title": "分栏网格",
+      "question": "页面中的半栏分配应采用怎样的网格规则？",
+      "options": [
+        "作为稳定规则，项目说明、数据和页脚共享相同比例",
+        "按各区域内容采用不同列宽",
+        "共享基础网格，但允许少量预定义比例变体"
+      ]
+    },
+    {
+      "section": "component",
+      "title": "项目条目边界",
+      "question": "项目条目的组件边界应如何划分？",
+      "options": [
+        "三图带、项目元信息、正文和入口构成一个完整组件",
+        "各部分都是可独立组合的子组件",
+        "以项目条目为容器，内部模块可按内容选择性组合"
+      ]
+    },
+    {
+      "section": "component",
+      "title": "文字链接模型",
+      "question": "“See Project →”与“About →”应如何建模？",
+      "options": [
+        "作为同一文字链接组件，通过字号与语境形成变体",
+        "分成项目入口与页面入口两个独立组件",
+        "共用交互与图标规则，但使用不同的语义变体"
+      ]
+    },
+    {
+      "section": "component",
+      "title": "数据项组成",
+      "question": "大数字、说明和分隔线应如何组成数据项？",
+      "options": [
+        "三者作为一个完整数据项组件复用",
+        "数字与说明属于数据项，分隔线由父级列表管理",
+        "分隔线作为可选子元素，由数据项密度决定"
+      ]
+    },
+    {
+      "section": "interaction",
+      "title": "图片带浏览",
+      "question": "若窄屏保留横向图片带，应采用哪种主要浏览方式？",
+      "options": [
+        "原生横向滚动并配合吸附",
+        "支持拖拽的连续浏览",
+        "使用箭头或圆点的离散翻页",
+        "不适用：窄屏应改为响应式重排"
+      ]
+    },
+    {
+      "section": "interaction",
+      "title": "交互状态关系",
+      "question": "导航与文字链接的交互状态应采用怎样的系统关系？",
+      "options": [
+        "悬停、键盘焦点和当前页共用一套最小化提示语言",
+        "共用基础提示，但焦点环与当前页状态保持明确区分",
+        "三种状态分别设计，各自使用最清晰的反馈"
+      ]
+    },
+    {
+      "section": "interaction",
+      "title": "导航滚动行为",
+      "question": "长页面顶部导航应采用怎样的滚动行为？",
+      "options": [
+        "随页面内容自然滚走",
+        "始终固定在视口顶部",
+        "向下滚动时隐藏，向上滚动时重新出现"
+      ]
+    }
+  ],
+  "packagingBoundary": {
+    "includeFromRepository": [
+      ".codex-plugin/plugin.json",
+      "bin/ikran-mcp.mjs",
+      "skills/ikran-alignment",
+      "skills/ikran-extraction",
+      "skills/ikran-prototype",
+      "skills/ikran-governance"
+    ],
+    "excludeFromPlugin": [
+      "runtime-endpoint.json",
+      "runtime-state.json",
+      "runtime.log",
+      "workbench-layout.json",
+      "localhost session URLs",
+      "installed plugin cache",
+      "machine-absolute development .mcp.json"
+    ]
+  },
+  "verification": {
+    "pluginCreatorValidation": "passed",
+    "npmRunCheck": "passed",
+    "unitTests": 1422,
+    "e2eTests": 86
+  }
+}
