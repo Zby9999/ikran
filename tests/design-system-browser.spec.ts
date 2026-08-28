@@ -159,7 +159,10 @@ test("09A design system browser: declare → render → approve write-back", asy
     for (const cardId of [designerEditedCardId, tokenDesignerEditedCardId]) {
       const answered = await patchAlignment(workbenchUrl, token, {
         action: "record-designer-answer",
-        input: { questionCardId: cardId, finalAnswer: "设计师改写后的回答" }
+        input: {
+          questionCardId: cardId,
+          answer: { kind: "custom", text: "设计师改写后的回答" }
+        }
       });
       expect(answered.status).toBe(200);
     }
@@ -173,7 +176,10 @@ test("09A design system browser: declare → render → approve write-back", asy
         }
         expect(structuredContent(await client.callTool({
           name: "record_designer_answer",
-          arguments: { questionCardId: card.id, finalAnswer: card.answer }
+          arguments: {
+            questionCardId: card.id,
+            answer: { kind: "option", optionId: card.optionId }
+          }
         }))).toMatchObject({ ok: true, record: { status: "answered" } });
       }
     }

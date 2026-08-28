@@ -54,7 +54,7 @@ Ikran workbench 提供：
 - tldraw 画布。
 - stage tabs。
 - 左侧 question list。
-- Question card（可含 Agent `proposed_answer`；设计师填写或接受后形成 final answer）。
+- Question card（包含至少两个、数量可变的 Agent answer choices，并允许设计师自定义输入；显式提交后形成 final answer）。
 - Figma Evidence Surface。
 - Prototype Evidence Surface，使用 live iframe preview。
 - Region Annotation custom shape。
@@ -180,9 +180,9 @@ Ikran 的核心不变量：
 15. 作为设计师，我想让种子对齐按 Design Concept、Visual language、Token、Layout、Component 和 Interaction 六部分进行，以便覆盖对设计结果影响最大的意图维度。
 16. 作为设计师，我想让每个阶段包含二到五张 Question card，以便流程有足够深度但不过载。
 17. 作为设计师，我想让所有 Question card 都必须有非空 final answer，以便 seed extraction 没有遗漏的对齐维度；空问题与空答案被拒绝，可填“同意/对”。
-18. 作为设计师，我想在 Question card 上看到 Agent `proposed_answer` 并输入或接受最终答案，以便研究数据有明确的设计师结论与 answer source。
+18. 作为设计师，我想在 Question card 上从至少两个、数量可变的 Agent answer choices 中选择，或输入自定义答案，以便快速回答且研究数据保留明确的结论与 answer source。
 19. 作为设计师，我想在 Agent host chat 中进行开放澄清，以便复杂讨论不挤进卡片 UI。
-20. 作为设计师，我想让 Question card 记录 Agent observation、Agent question、conversation thread、proposed answer、final answer 与 answer source，以便后续能审计对齐过程。
+20. 作为设计师，我想让 Question card 记录 Agent observation、Agent question、conversation thread、ordered answer choices、selected choice、final answer 与 answer source，以便后续能审计对齐过程。
 21. 作为设计师，我想选择 Question card 时自动聚焦对应证据锚点，以便我在视觉上下文中回答。
 22. 作为设计师，我想让 Figma Evidence Surface 在种子提取完成后可以隐藏和重新显示，以便工作区不会长期被历史证据占满。
 23. 作为设计师，我想在种子提取后查看设计系统浏览器，以便理解 Agent 提取出的设计语言。
@@ -276,8 +276,8 @@ Ikran 的核心不变量：
 - `get_seed_reference_context`：返回 Seed Reference、current positional evidence 与 source identity，供 Agent 决定是否继续调用宿主 Figma MCP。
 - `get_annotation_node_candidates`：根据 Figma annotation 的 raw semantic rect 返回确定性排序的 node candidates；不自动确认 `primaryNodeId`。
 - `create_annotation`：创建锚定到 captured Evidence Surface/version 的 Annotation；target union 支持 whole Surface、明确 Figma node 与 free Region，Region 持久化 raw semantic rect。
-- `create_question_card`：创建带观察、问题、可选 `proposed_answer`、anchor 和阶段信息的 Question card。
-- `record_designer_answer`：记录卡片上的 final answer 与 answer source。
+- `create_question_card`：创建带观察、问题、至少两个且数量可变的 ordered answer choices、anchor 和阶段信息的 Question card；Runtime 为选项分配稳定 identity。
+- `record_designer_answer`：以明确的 option identity 或 custom text 意图记录卡片上的 final answer、selected choice 与 answer source。
 - `record_artifact_written`：Agent 写 source artifact 后声明路径、类型、语义目的和关联记录。
 - `record_preview`：声明或更新 prototype preview/run，并创建 **Prototype** Evidence Surface。
 - `reconcile_designer_conversation`：设计师确认完成或发起 Rule Update 后，提交带稳定消息边界的完整 transcript snapshot 与 decision ledger；Runtime 校验 designer-message provenance 并原子生成 feedback batch，幂等重放不重复写入。
@@ -361,13 +361,15 @@ Ikran 的核心不变量：
 - Alignment preparation 必须逐部分生成两类卡片：每部分先生成至少一张表达该部分 Agent 已确认观察或合理假设的灰色 Agent Annotation，再生成该部分 2–5 张彩色 Question card，然后才推进到下一部分；任何部分缺少任一类都不能进入回答阶段。
 - 两类卡片都与当前 Alignment attempt 及所属部分绑定，一张 Annotation 不得跨部分复用。灰色 Agent Annotation 与彩色 Question card 使用相同的三种 evidence anchor：特定 node/region、整个 Frame surface、复用元素的 focus-target-set。
 - Agent Annotation 是 preparation gate，但不计入 Question coverage，也不需要设计师回答。
-- Agent 可在 Question card 上提供 `proposed_answer`。
-- `proposed_answer` 仅预填编辑器，不代表已回答，也不计入阶段 coverage。
-- 设计师必须逐卡点击发送确认答案，即使不修改默认回答。
+- Agent 必须为每张新 Question card 提供至少两个简短、互有意义区分的 answer choices；问题合理需要时可提供更多，不设任意固定上限。Agent 不创建「Other」，自定义入口由 Workbench 统一提供。
+- Answer choices 仅是可选答案，不代表已回答，也不计入阶段 coverage。
+- 设计师可点击任意 Agent choice 立即提交，也可通过「Add your answer…」输入自定义答案；Enter 提交，Shift+Enter 换行。
 - Answer source：
-  - 未修改预填答案被逐卡发送确认 → Agent 提议 / 设计师接受。
-  - 设计师编辑后的答案 → designer edited。
-- 只有非空 `final_answer` 计入 coverage；仍为空或仅有 proposed answer 均阻止继续，全局 `Complete` 不自动接受预填。
+  - 选择任意 Agent choice → Agent 提议 / 设计师接受。
+  - 自定义输入 → designer edited，即使其文本恰好等于某个 choice label。
+- Runtime 根据明确的 option/custom 意图推导 final answer 与 answer source，不以字符串相等推断来源。
+- Complete card 可重新展开全部 choices；当前选择会被标记，自定义答案会重新进入预填输入状态，设计师可重选或修改。
+- 只有非空 `final_answer` 计入 coverage；仍为空或仅显示 choices 均阻止继续，全局 `Complete` 不自动选择任何选项。
 - 禁止空问题与空 final answer；允许填「同意/对」等非空短答。
 - 卡片状态仍以 unanswered / answered 为主；开放澄清留在 Agent host chat。
 
@@ -474,8 +476,8 @@ Workbench paste + MCP client
 - tldraw shape 能投影 canvas record，shape id 不成为语义事实源。
 - Region Annotation 必须包含 surface anchor；raw semantic rect 持久化，display padding 在投影层重算。
 - Alignment preparation 的六部分必须各自先包含至少一张灰色 Agent Annotation，再包含 2–5 张彩色 Question card；两类记录都绑定当前 attempt 与所属部分，缺少任一类不得进入 answering。
-- Question card 必须包含 anchor、Agent observation、Agent question；允许 `proposed_answer`，但它只用于预填且不计入 coverage；逐卡显式发送后的 final answer 非空；answer source 可区分。
-- 所有 Question card 经逐卡发送确认并成为 answered 后才允许 seed extraction 继续；全局 `Complete` 不自动接受 proposed answer。
+- Question card 必须包含 anchor、Agent observation、Agent question 与至少两个 ordered answer choices；合理时 choices 可更多且不设固定上限；仅显式提交的 choice 或 custom text 形成非空 final answer 并计入 coverage。
+- 所有 Question card 经逐卡显式提交并成为 answered 后才允许 seed extraction 继续；Complete card 可重开修改，全局 `Complete` 不自动接受任何 choice。
 - `record_artifact_written` 后 Runtime 记录事件、校验 source artifact，并生成 derived artifact。
 - 未声明 source artifact、失败/草稿/取消/Open Gap/canvas layout 不进入 research export。
 - Preview readiness 能反映到 Workbench。

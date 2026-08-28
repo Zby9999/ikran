@@ -288,12 +288,13 @@ _Avoid_: box, selection, comment
 
 **Question card**:
 A canvas record carrying an agent observation, an agent question, a
-conversation thread, an optional Agent **proposed answer**, a **final answer**,
-and an **answer source**. The designer types or accepts the final answer on the
-card; open clarification happens in the Agent host's chat pane. Empty questions
-and empty final answers are rejected; short non-empty answers such as “同意/对”
-are allowed. A proposed answer is only an editor prefill: the designer must
-explicitly submit every card before it is answered or contributes to coverage.
+conversation thread, ordered Agent **answer choices**, a **final answer**, and
+an **answer source**. A new Question card has at least two concise choices and
+may have more when the question reasonably benefits from them; the Workbench
+also provides one custom-answer entry. A choice or custom answer becomes final
+only after the designer explicitly submits it. Empty questions and empty final
+answers are rejected; short non-empty answers such as “同意/对” are allowed.
+Completed cards may be reopened and revised, producing a new semantic revision.
 _Avoid_: answer card (use Question card), card (used loosely)
 
 **Agent Annotation / Question card preparation pair**:
@@ -306,16 +307,19 @@ and Question cards are attempt- and section-bound. An Agent must not hide an ass
 inside a question or present genuine uncertainty as an asserted annotation.
 Agent Annotations do not count as answered questions or question coverage.
 
-**Proposed answer / final answer / answer source**:
-- **Proposed answer**: optional Agent-prefilled answer on the Question card. It
-  does not answer the card and never contributes to coverage by itself.
+**Answer choice / final answer / answer source**:
+- **Answer choice**: one ordered, Runtime-identified answer prepared by the
+  Agent. Choices do not answer the card and never contribute to coverage by
+  themselves. The Agent does not create an “Other” choice; custom entry is
+  Workbench-owned.
 - **Final answer**: the non-empty, explicitly submitted answer that satisfies
   the alignment gate.
-- **Answer source**: how the final answer was established — for example Agent
-  proposed / designer accepted (the designer submits an unmodified prefill)
-  versus designer edited. Empty or merely proposed answers block completion;
-  global Complete never promotes proposed answers.
-_Avoid_: treating proposed and final as the same field without source
+- **Answer source**: how the final answer was established. Selecting any Agent
+  choice means Agent proposed / designer accepted; custom text means designer
+  edited, even if that text equals a choice label. Runtime derives source from
+  explicit answer intent, not text equality. Empty or merely visible choices
+  block completion; global Complete never auto-selects a choice.
+_Avoid_: inferring answer source by comparing display strings
 
 **Canvas record**:
 A Runtime-owned source-of-truth record projected onto the canvas — Evidence

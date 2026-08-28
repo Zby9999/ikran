@@ -70,6 +70,7 @@ import {
 import { ExclusiveDialogProvider } from "./exclusive-dialog-context";
 import { ExclusiveDialogController } from "./exclusive-dialog-controller";
 import type { AlignmentAnswerMutationResult } from "./alignment-cards";
+import type { AnswerSubmission } from "@/components/runtime/alignment-answer-contract";
 import { AlignmentTargetShapeUtil } from "./alignment-target-shape";
 import { AlignmentConnectorShapeUtil } from "./alignment-connector-shape";
 import { AlignmentProjectionSync } from "./projection/alignment-projection-sync";
@@ -198,7 +199,7 @@ export function WorkbenchCanvas({
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   onRecordDesignerAnswer?: (
     questionCardId: string,
-    finalAnswer: string
+    submission: AnswerSubmission
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   onAppendAgentAnnotationInformation?: (
     annotationId: string,
@@ -358,7 +359,7 @@ function AlignmentActionsBridge({
 }: PropsWithChildren<{
   onRecordDesignerAnswer?: (
     id: string,
-    answer: string
+    submission: AnswerSubmission
   ) => Promise<AlignmentAnswerMutationResult>;
   onAppendAgentAnnotationInformation?: (
     id: string,
@@ -368,8 +369,8 @@ function AlignmentActionsBridge({
   const focusMode = useWorkbenchFocusMode();
   return (
     <AlignmentCardProjectionProvider
-      onSubmitAnswer={(id, answer) =>
-        onRecordDesignerAnswer?.(id, answer) ??
+      onSubmitAnswer={(id, submission) =>
+        onRecordDesignerAnswer?.(id, submission) ??
         Promise.resolve({
           ok: false as const,
           error: "record_designer_answer_unavailable"

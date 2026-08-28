@@ -236,6 +236,7 @@ export {
   appendAgentAnnotationInformationInputSchema,
   createAgentAnnotationInputSchema,
   createAlignmentQuestionCardInputSchema,
+  designerAnswerIntentSchema,
   finalizeAlignmentPreparationInputSchema,
   readAlignmentSemanticDeltaInputSchema,
   recordIncrementalDesignSystemPlanInputSchema,
@@ -244,6 +245,7 @@ export {
   recordDesignSystemExtractionAuditInputSchema,
   recordDesignSystemExtractionWorkUnitInputSchema,
   recordDesignerAnswerInputSchema,
+  recordDesignerAnswerToolInputSchema,
   updateAlignmentQuestionAnchorInputSchema,
   updateAlignmentQuestionTitleInputSchema
 } from "./schemas";

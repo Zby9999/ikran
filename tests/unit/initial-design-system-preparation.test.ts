@@ -123,7 +123,10 @@ function createCompletedAlignmentFixture(
         section,
         observation: `${section} ${index}`,
         question: `Confirm ${section} decision ${index}?`,
-        proposedAnswer,
+        answerOptions: [
+          proposedAnswer,
+          `Use an alternative ${section} decision ${index}.`
+        ],
         anchor: {
           kind: "single",
           target: {
@@ -145,12 +148,15 @@ function createCompletedAlignmentFixture(
   for (const [index, questionId] of questionIds.entries()) {
     const answer = recordDesignerAnswer(projectPath, {
       questionCardId: questionId,
-      finalAnswer:
-        options.golden && index === 4
-          ? "Use Instrument Sans, retain the 16–105 px scale and negative display tracking, and preserve six gray steps."
-          : options.golden && index === 8
-            ? "CTA is a concise label plus arrow text link; do not introduce a filled button."
-            : `Confirmed answer ${index + 1}.`
+      answer: {
+        kind: "custom",
+        text:
+          options.golden && index === 4
+            ? "Use Instrument Sans, retain the 16–105 px scale and negative display tracking, and preserve six gray steps."
+            : options.golden && index === 8
+              ? "CTA is a concise label plus arrow text link; do not introduce a filled button."
+              : `Confirmed answer ${index + 1}.`
+      }
     });
     if (!answer.ok) throw new Error(answer.reason);
   }

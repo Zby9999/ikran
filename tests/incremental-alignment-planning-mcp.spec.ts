@@ -69,13 +69,17 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
         anchor
       }).ok).toBe(true);
       for (let index = 0; index < 2; index += 1) {
+        const proposedAnswer = `Confirm ${section} ${index + 1}.`;
         const card = createQuestionCard(projectPath, {
           alignmentAttemptId: prepared.attempt.id,
           idempotencyKey: `mcp-${section}-${index}`,
           section,
           observation: `${section} ${index + 1}`,
           question: `Confirm ${section} ${index + 1}?`,
-          proposedAnswer: `Confirm ${section} ${index + 1}.`,
+          answerOptions: [
+            proposedAnswer,
+            `Revise ${section} ${index + 1}.`
+          ],
           anchor
         });
         if (!card.ok) throw new Error(card.reason);
@@ -113,7 +117,7 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
     for (const questionCardId of cardsBySection.get("design-concept")!) {
       expect(recordDesignerAnswer(projectPath, {
         questionCardId,
-        finalAnswer: "Confirmed concept"
+        answer: { kind: "custom", text: "Confirmed concept" }
       }).ok).toBe(true);
     }
     const finalized = sc(await finalizeCall);
@@ -169,7 +173,7 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
     for (const questionCardId of cardsBySection.get("visual-language")!) {
       const answer = recordDesignerAnswer(projectPath, {
         questionCardId,
-        finalAnswer: "Confirmed visual language"
+        answer: { kind: "custom", text: "Confirmed visual language" }
       });
       expect(answer, answer.ok ? undefined : answer.reason).toMatchObject({
         ok: true
@@ -261,7 +265,10 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
     }
     expect(recordDesignerAnswer(projectPath, {
       questionCardId: source.sourceId,
-      finalAnswer: "Edited concept after visual planning"
+      answer: {
+        kind: "custom",
+        text: "Edited concept after visual planning"
+      }
     }).ok).toBe(true);
     expect(sc(await visualPlanCall)).toMatchObject({
       ok: true,

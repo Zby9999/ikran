@@ -10,6 +10,7 @@ import type { WorkbenchLayoutDocument } from "@/lib/runtime/workbench-layout-sha
 import { emptyWorkbenchLayout } from "@/lib/runtime/workbench-layout-shared";
 import type { NormalizedRect } from "@/components/workbench/region-annotation-geometry";
 import type { DesignIntentAlignmentSnapshot } from "@/lib/runtime/design-intent-alignment";
+import type { AnswerSubmission } from "./alignment-answer-contract";
 
 export type RuntimeHeartbeatEvent = {
   type: "heartbeat";
@@ -822,11 +823,17 @@ export function createWorkbenchDataClient(
     return { ok: true };
   };
 
-  const recordDesignerAnswer = (questionCardId: string, finalAnswer: string) =>
+  const recordDesignerAnswer = (
+    questionCardId: string,
+    submission: AnswerSubmission
+  ) =>
     patchAlignment(
       {
         action: "record-designer-answer",
-        input: { questionCardId, finalAnswer }
+        input:
+          submission.kind === "legacy"
+            ? { questionCardId, finalAnswer: submission.text }
+            : { questionCardId, answer: submission }
       },
       "record_designer_answer_failed"
     );

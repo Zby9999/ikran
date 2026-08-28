@@ -21,6 +21,7 @@ import {
   type RuntimeMutationResult,
   type WorkbenchRuntimeSnapshot
 } from "./runtime-client";
+import type { AnswerSubmission } from "./alignment-answer-contract";
 
 export { createWorkbenchDataClient } from "./runtime-client";
 
@@ -491,10 +492,13 @@ export function useWorkbenchRuntime(session: string) {
   );
 
   const recordDesignerAnswer = useCallback(
-    async (questionCardId: string, finalAnswer: string): Promise<MutationResult> => {
+    async (
+      questionCardId: string,
+      submission: AnswerSubmission
+    ): Promise<MutationResult> => {
       const client = clientRef.current;
       if (!client) return { ok: false, error: "runtime_client_unavailable" };
-      return client.recordDesignerAnswer(questionCardId, finalAnswer);
+      return client.recordDesignerAnswer(questionCardId, submission);
     },
     []
   );

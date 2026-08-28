@@ -64,7 +64,10 @@ function cardInput(context: { attemptId: string; seedId: string; surfaceId: stri
     section,
     observation: `${section} ${index}`,
     question: `Question ${index} for ${section}?`,
-    proposedAnswer: `Proposal ${index}`,
+    answerOptions: [
+      `Proposal ${index}`,
+      `Alternative ${index}`
+    ],
     anchor: {
       kind: "single",
       target: {
@@ -135,7 +138,7 @@ describe("Alignment attempt abandonment", () => {
         .toEqual({ ok: false, reason: "stale_alignment_attempt" });
       expect(recordDesignerAnswer(context.projectPath, {
         questionCardId: oldCard.ok ? oldCard.record.id : "",
-        finalAnswer: "Must not write"
+        answer: { kind: "custom", text: "Must not write" }
       })).toEqual({ ok: false, reason: "stale_alignment_attempt" });
       expect(updateQuestionCardTitle(context.projectPath, {
         questionCardId: oldCard.ok ? oldCard.record.id : "",
@@ -173,7 +176,7 @@ describe("Alignment attempt abandonment", () => {
       expect(finalizeAlignmentPreparation(context.projectPath, context.attemptId).ok).toBe(true);
       expect(recordDesignerAnswer(context.projectPath, {
         questionCardId: firstCardId,
-        finalAnswer: "Auditable answer"
+        answer: { kind: "custom", text: "Auditable answer" }
       }).ok).toBe(true);
       expect(abandonCurrentAlignmentAttempt(context.projectPath).ok).toBe(true);
       expect(getDesignIntentAlignment(context.projectPath).question_cards).toEqual([]);
@@ -203,9 +206,11 @@ describe("Alignment attempt abandonment", () => {
       finalizeAlignmentPreparation(context.projectPath, context.attemptId);
       const answering = getDesignIntentAlignment(context.projectPath);
       for (const card of answering.question_cards) {
+        const optionId = card.answer_options?.[0]?.id;
+        if (!optionId) throw new Error("missing first answer option");
         expect(recordDesignerAnswer(context.projectPath, {
           questionCardId: card.id,
-          finalAnswer: card.proposed_answer
+          answer: { kind: "option", optionId }
         }).ok).toBe(true);
       }
       expect(completeDesignIntentAlignment(context.projectPath).ok).toBe(true);

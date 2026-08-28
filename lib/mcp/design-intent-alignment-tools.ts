@@ -18,7 +18,7 @@ import {
   waitForAlignmentSemanticDeltaCommand,
   readDesignIntentAlignmentCommand,
   recordDesignerAnswerCommand,
-  recordDesignerAnswerInputSchema,
+  recordDesignerAnswerToolInputSchema,
   updateAlignmentQuestionAnchorCommand,
   updateAlignmentQuestionAnchorInputSchema,
   updateAlignmentQuestionTitleCommand,
@@ -65,7 +65,7 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("create_alignment_question_card", {
-    description: "Create one Runtime-owned Design Intent Alignment Question card for the claimed current attempt. Pass the alignmentAttemptId returned by claim_alignment_preparation and a stable idempotencyKey for this semantic question. The evidence anchor must belong to that attempt's immutable snapshot. Section ordering, question title format, output language, per-section question counts, the proposedAnswer requirement, and evidence target modes are defined by that claim's section_contract — follow it; Runtime rejects violations.",
+    description: "Create one Runtime-owned Design Intent Alignment Question card for the claimed current attempt. Pass the alignmentAttemptId returned by claim_alignment_preparation, a stable idempotencyKey, and ordered answerOptions. The evidence anchor must belong to that attempt's immutable snapshot. Section ordering, question title format, output language, per-section question counts, variable answer-choice contract, and evidence target modes are defined only by that claim's section_contract — follow it; Runtime rejects violations.",
     inputSchema: createAlignmentQuestionCardInputSchema
   }, async (args) => {
     const ctx = await active("create_alignment_question_card");
@@ -77,7 +77,7 @@ export function registerDesignIntentAlignmentTools(
   mcp.registerTool("finalize_alignment_preparation", {
     description: incremental
       ? "Finish Question Card preparation and atomically enter hidden section-level answer monitoring in the same active tool call. Do not call wait_for_agent_command after this succeeds. Each returned ready section must be analyzed once, then persisted with record_incremental_initial_design_system_plan, which immediately monitors the next section. Safe to retry with the same alignmentAttemptId after interruption."
-      : "Explicitly finish the claimed Alignment preparation attempt only after every one of the six sections contains at least one gray Agent Annotation followed by 2–5 valid colored Question cards with proposed answers. Both card kinds are mandatory in each section. Atomically completes the durable Agent command and moves the same attempt from preparing to answering. Safe to retry with the same alignmentAttemptId.",
+      : "Explicitly finish the claimed Alignment preparation attempt only after every one of the six sections contains at least one gray Agent Annotation followed by 2–5 valid colored Question cards, each with the variable answer choices required by the claim's section_contract. Both card kinds are mandatory in each section. Atomically completes the durable Agent command and moves the same attempt from preparing to answering. Safe to retry with the same alignmentAttemptId.",
     inputSchema: finalizeAlignmentPreparationInputSchema
   }, async (args, extra) => {
     const ctx = await active("finalize_alignment_preparation");
@@ -232,8 +232,8 @@ export function registerDesignIntentAlignmentTools(
   });
 
   mcp.registerTool("record_designer_answer", {
-    description: "Persist an explicit non-empty designer confirmation for a Question card. Submitting the unchanged proposed answer records agent-proposed-designer-accepted; submitting an edited answer records designer-edited. A proposed answer alone never counts toward Alignment coverage.",
-    inputSchema: recordDesignerAnswerInputSchema
+    description: "Persist explicit designer answer intent for a Question card. Send answer.kind=option with the owning card's stable optionId; Runtime derives canonical text and agent-proposed-designer-accepted provenance. Send answer.kind=custom with non-empty text for designer-edited provenance, even when the text equals an Agent choice. finalAnswer is deprecated and accepted only for persisted legacy cards without answer options.",
+    inputSchema: recordDesignerAnswerToolInputSchema
   }, async (args) => {
     const ctx = await active("record_designer_answer");
     if (!ctx.ok) return ctx.result;

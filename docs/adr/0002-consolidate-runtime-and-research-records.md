@@ -13,7 +13,7 @@ ADR 0001 完成了产品转向：Ikran 不再 spawn 无头 CLI Agent，而是作
 - Seed 曾短暂存在 Workbench UI 写入口与 Agent tool 的双路径。
 - 产品路径上仍残留 AgentAdapter、`/api/tasks`、fake Agent connection、mock product families 的历史表述。
 - Evidence / event 持久化曾出现 record 与 audit 非同事务、JSONL 与 SQLite 角色不清的表述。
-- Annotation display padding、Question proposed answer、成功研究导出门槛等研究契约尚未在 Active 标准中写清。
+- Annotation display padding、Question answer-choice provenance、成功研究导出门槛等研究契约尚未在 Active 标准中写清。
 
 需要一次架构收口：保留 ADR 0001 的产品方向，把 Runtime 拓扑与研究事实契约同步为当前唯一标准（`IKRAN-MVP-PRD.zh-CN.md`），并明确历史 Issues/ADR 原文不被改写成「当时已是现状」。
 
@@ -65,12 +65,15 @@ ADR 0001 完成了产品转向：Ikran 不再 spawn 无头 CLI Agent，而是作
 - Design Intent Alignment 的 Agent Annotation 与当前 attempt 及所属部分绑定并支持幂等重试。进入 answering 前，六部分必须各自先包含至少一张表达该部分已确认观察或合理假设的灰色 Agent Annotation，再包含该部分 2–5 张彩色 Question card；缺少任一类均不得 finalize。
 - Agent Annotation 不计入 Question coverage；Agent 不得把已有假设伪装成问题，也不得把真实疑问伪装成已确认判断。
 
-### 8. Question proposed / final answer 与逐卡确认
+### 8. Question answer choices / final answer 与逐卡确认
 
-- Question card 允许 Agent `proposed_answer`。
-- `proposed_answer` 只用于预填编辑器，不代表已回答，也不计入阶段 coverage。
-- 设计师必须逐卡点击发送：未修改预填 → Agent 提议 / 设计师接受；编辑后 → designer edited。
-- 只有非空 `final_answer` 计入 coverage；全局 `Complete` 不会自动接受或提升 proposed answer。
+- 每张新 Question card 由 Agent 提供至少两个 ordered answer choices；问题合理需要时可更多，不设任意固定上限，也不生成「Other」。Runtime 为 choices 分配卡片内稳定 identity。
+- Choices 只提供回答路径，不代表已回答，也不计入阶段 coverage；Workbench 另提供 custom answer 入口。
+- 设计师点击任意 Agent choice 即显式提交并记为 Agent 提议 / 设计师接受；custom text 记为 designer edited。
+- 提交契约明确区分 option identity 与 custom text，Runtime 不通过字符串相等推断 provenance。
+- Complete card 可重新展开并重选；每次成功修改追加 Alignment semantic revision，而不覆写其来源语义。
+- 只有非空 `final_answer` 计入 coverage；全局 `Complete` 不会自动选择或提升任何 choice。
+- 旧 `proposed_answer` 记录在兼容期仍可读取，不会被补造第二个 choice 或误判为已回答；新 preparation 不再使用单一预填答案作为契约。
 - 禁止空问题与空 final answer；可填「同意/对」。
 
 ### 9. 成功研究导出

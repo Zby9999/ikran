@@ -40,6 +40,7 @@ import {
   ALIGNMENT_CARD_TYPE,
   type AlignmentCardShape
 } from "../alignment-card-shape";
+import { alignmentCardLaneFootprintHeight } from "./alignment-projection";
 import {
   isSeedReferenceProjectionShape,
   seedReferenceMetaMatchesSurfaceId
@@ -53,6 +54,35 @@ import type { RegionAnnotationRecord } from "@/lib/runtime/region-annotation";
 
 /** User Annotation green (Figma 670:891) — card border + dashed connector. */
 const DESIGNER_ANNOTATION_GREEN = "#19d122";
+
+type AlignmentLaneSyncScheduler = (callback: () => void) => void;
+
+/**
+ * Alignment height and position updates are separate store records in the same
+ * geometry turn. Defer and coalesce annotation reflow so it reads only the
+ * settled lane instead of briefly rendering a mixed new-height/old-position
+ * state.
+ */
+export function createDeferredAlignmentLaneSync(
+  run: () => void,
+  schedule: AlignmentLaneSyncScheduler = queueMicrotask
+) {
+  let pending = false;
+  let active = true;
+  return {
+    request() {
+      if (!active || pending) return;
+      pending = true;
+      schedule(() => {
+        pending = false;
+        if (active) run();
+      });
+    },
+    cancel() {
+      active = false;
+    }
+  };
+}
 
 /**
  * 07 alignment question cards dock in the same side lanes as designer
@@ -77,7 +107,13 @@ function collectAlignmentLaneOccupied(
     if (!parent) continue;
     const laneKey = `${String(parent.id)}:${card.props.placement}`;
     const list = occupied.get(laneKey) ?? [];
-    list.push({ y: card.y, h: card.props.h });
+    list.push({
+      y: card.y,
+      h: alignmentCardLaneFootprintHeight(
+        card.props.cardKind,
+        card.props.h
+      )
+    });
     occupied.set(laneKey, list);
   }
   return occupied;
@@ -405,18 +441,24 @@ export function DesignerAnnotationCardSync({
         ([from, to]) => isCard(from) || isCard(to)
       );
     };
+    const deferred = createDeferredAlignmentLaneSync(() =>
+      syncDesignerAnnotationCardShapes(
+        editor,
+        annotationsRef.current,
+        stageRef.current
+      )
+    );
     const unsub = editor.store.listen(
       (entry) => {
         if (!touchesAlignmentCard(entry.changes)) return;
-        syncDesignerAnnotationCardShapes(
-          editor,
-          annotationsRef.current,
-          stageRef.current
-        );
+        deferred.request();
       },
       { source: "all", scope: "document" }
     );
-    return () => unsub();
+    return () => {
+      deferred.cancel();
+      unsub();
+    };
   }, [editor]);
 
   return null;

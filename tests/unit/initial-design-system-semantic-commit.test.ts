@@ -85,13 +85,17 @@ function completedAlignment() {
     });
     if (!annotation.ok) throw new Error(annotation.reason);
     for (let index = 0; index < 3; index += 1) {
+      const proposedAnswer = `Confirmed ${section} decision ${index + 1}.`;
       const question = createQuestionCard(projectPath, {
         alignmentAttemptId: prepared.attempt.id,
         idempotencyKey: `question-${section}-${index}`,
         section,
         observation: `${section} ${index + 1}`,
         question: `Confirm ${section} decision ${index + 1}?`,
-        proposedAnswer: `Confirmed ${section} decision ${index + 1}.`,
+        answerOptions: [
+          proposedAnswer,
+          `Revise ${section} decision ${index + 1}.`
+        ],
         anchor: {
           kind: "single",
           target: {
@@ -111,7 +115,10 @@ function completedAlignment() {
   for (const question of questions) {
     const answer = recordDesignerAnswer(projectPath, {
       questionCardId: question.id,
-      finalAnswer: `Designer confirmed ${question.section}.`
+      answer: {
+        kind: "custom",
+        text: `Designer confirmed ${question.section}.`
+      }
     });
     if (!answer.ok) throw new Error(answer.reason);
   }

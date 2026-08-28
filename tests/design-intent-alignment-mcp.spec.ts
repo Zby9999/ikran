@@ -56,6 +56,22 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     const advertisedCommitSchema = JSON.stringify(commitTool?.inputSchema);
     expect(advertisedCommitSchema).toContain("sourceRefs");
     expect(advertisedCommitSchema).not.toContain("sourceRecordIds");
+    const answerTool = advertisedTools.find(
+      (tool) => tool.name === "record_designer_answer"
+    );
+    expect(answerTool?.inputSchema).toMatchObject({
+      type: "object",
+      properties: {
+        questionCardId: { type: "string" },
+        answer: expect.any(Object),
+        finalAnswer: { type: "string" }
+      },
+      required: ["questionCardId"]
+    });
+    const advertisedAnswerSchema = JSON.stringify(answerTool?.inputSchema);
+    expect(advertisedAnswerSchema).toContain("optionId");
+    expect(advertisedAnswerSchema).toContain("custom");
+    expect(advertisedAnswerSchema).toContain("exactly one");
 
     const opened = sc(await client.callTool({
       name: "create_or_open_project",
@@ -119,7 +135,7 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
         section: "design-concept",
         observation: "Calm Hierarchy",
         question: "Should the hierarchy remain calm?",
-        proposedAnswer: "Yes.",
+        answerOptions: ["Yes, keep it calm.", "No, increase contrast."],
         anchor: {
           kind: "single",
           target: {
@@ -163,7 +179,11 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
       action: "created"
     });
     let firstCardId = "";
-    const proposedCards: Array<{ id: string; answer: string }> = [];
+    const proposedCards: Array<{
+      id: string;
+      answer: string;
+      optionId: string;
+    }> = [];
     for (const section of [
       "design-concept",
       "visual-language",
@@ -202,6 +222,11 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
       for (let index = 1; index <= 2; index += 1) {
         const recordEvent = sse.waitForRecord();
         const proposedAnswer = `Proposed answer ${index}`;
+        const answerOptions = [
+          proposedAnswer,
+          `Alternative ${index} for ${section}`,
+          ...(index === 2 ? [`Contextual option for ${section}`] : [])
+        ];
         const created = sc(await client.callTool({
           name: "create_alignment_question_card",
           arguments: {
@@ -210,7 +235,7 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
             section,
             observation: `${section} ${index}`,
             question: `Question ${index} for ${section}?`,
-            proposedAnswer,
+            answerOptions,
             anchor: {
               kind: "single",
               target: {
@@ -223,8 +248,18 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
           }
         }));
         expect(created.ok).toBe(true);
-        const cardId = String((created.record as { id: string }).id);
-        proposedCards.push({ id: cardId, answer: proposedAnswer });
+        const createdRecord = created.record as {
+          id: string;
+          answer_options: Array<{ id: string; text: string }>;
+        };
+        const cardId = String(createdRecord.id);
+        expect(createdRecord.answer_options.map((option) => option.text))
+          .toEqual(answerOptions);
+        proposedCards.push({
+          id: cardId,
+          answer: proposedAnswer,
+          optionId: createdRecord.answer_options[0].id
+        });
         if (!firstCardId) firstCardId = cardId;
         await expect(recordEvent).resolves.toMatchObject({
           kind: "alignment",
@@ -258,7 +293,10 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
         },
         body: JSON.stringify({
           action: "record-designer-answer",
-          input: { questionCardId: firstCardId, finalAnswer: "同意" }
+          input: {
+            questionCardId: firstCardId,
+            answer: { kind: "custom", text: "同意" }
+          }
         })
       }
     );
@@ -292,7 +330,10 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
         },
         body: JSON.stringify({
           action: "record-designer-answer",
-          input: { questionCardId: firstCardId, finalAnswer: "同意" }
+          input: {
+            questionCardId: firstCardId,
+            answer: { kind: "custom", text: "同意" }
+          }
         })
       }
     );
@@ -317,18 +358,30 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     expect((read.preparation as { workflow: { stage: string } }).workflow.stage)
       .toBe("alignment-answering");
 
+    expect(sc(await client.callTool({
+      name: "record_designer_answer",
+      arguments: {
+        questionCardId: proposedCards[1].id,
+        answer: {
+          kind: "option",
+          optionId: proposedCards[0].optionId
+        }
+      }
+    }))).toMatchObject({ ok: false, error: "invalid_answer_option" });
+
     for (const proposed of proposedCards.slice(1)) {
       const proposedEvent = sse.waitForRecord();
       expect(sc(await client.callTool({
         name: "record_designer_answer",
         arguments: {
           questionCardId: proposed.id,
-          finalAnswer: proposed.answer
+          answer: { kind: "option", optionId: proposed.optionId }
         }
       }))).toMatchObject({
         ok: true,
         record: {
           answer_source: "agent-proposed-designer-accepted",
+          selected_option_id: proposed.optionId,
           status: "answered"
         }
       });

@@ -62,7 +62,10 @@ export const ALIGNMENT_SECTION_CONTRACT = {
     agent_annotations_min: 1,
     question_cards_min: ALIGNMENT_SECTION_QUESTION_MIN,
     question_cards_max: ALIGNMENT_SECTION_QUESTION_MAX,
-    question_proposed_answer: "required-non-empty-before-finalize"
+    answer_options_min_per_question: 2,
+    answer_options_max_per_question: null,
+    answer_options:
+      "Prepare at least two concise, meaningful, mutually distinguishable choices for every Question. Add more whenever they improve the decision; Runtime imposes no fixed maximum. Do not add an Other choice because Workbench owns custom-answer entry."
   },
   token_foundations: {
     owners: DRAFT_FOUNDATION_OWNERS,
@@ -85,7 +88,7 @@ export const ALIGNMENT_SECTION_CONTRACT = {
     }
   },
   output_language:
-    "Write Question titles, questions, proposed answers, and Agent Annotation titles and bodies in the language of the designer's source text. If the designer writes Chinese in chat, Design Language Description, Reference Notes, or Designer Annotations, write Chinese. Do not follow Figma canvas copy or this contract's English. Proper nouns and node labels may stay in their original script.",
+    "Write Question titles, questions, answer choices, and Agent Annotation titles and bodies in the language of the designer's source text. If the designer writes Chinese in chat, Design Language Description, Reference Notes, or Designer Annotations, write Chinese. Do not follow Figma canvas copy or this contract's English. Proper nouns and node labels may stay in their original script.",
   evidence_target_modes: {
     "node/region":
       "One specific element or component — prefer the exact positional node when available; use a free region only when no exact node represents the target. Rendered with an Annotation and horizontal connector.",
@@ -96,8 +99,8 @@ export const ALIGNMENT_SECTION_CONTRACT = {
   },
   designer_annotations:
     "designer_annotations are the designer's own section-bound intent input and part of this Alignment: read them before writing answers or summaries for a section, treat them as designer direction, and never contradict them, restate them as your own, or count them as Agent cards or coverage.",
-  proposed_answers:
-    "Proposed answers only prefill the editor and never count as answered or as coverage; the designer must explicitly submit every Question card.",
+  answering:
+    "Agent answer choices are preparation input, never answers or coverage. The designer must explicitly submit either one stable option id or custom text for every Question card.",
   judgment: [
     "State a meaningful confirmed observation or reasonable assumption openly in the Agent Annotation; do not hide assumptions inside questions.",
     "Do not turn genuine uncertainty into an asserted annotation.",
@@ -155,6 +158,15 @@ export type AnswerSource =
   | "designer-edited"
   | "agent-proposed-designer-accepted";
 
+export type AnswerOptionRecord = {
+  id: string;
+  text: string;
+};
+
+export type DesignerAnswerIntent =
+  | { kind: "option"; optionId: string }
+  | { kind: "custom"; text: string };
+
 export type NormalizedMaskRect = {
   x: number;
   y: number;
@@ -209,8 +221,10 @@ export type QuestionCardRecord = {
   observation: string;
   question: string;
   proposed_answer: string | null;
+  answer_options: AnswerOptionRecord[] | null;
   final_answer: string | null;
   answer_source: AnswerSource | null;
+  selected_option_id: string | null;
   status: "unanswered" | "answered";
   anchor: AlignmentAnchor;
   created_at: string;
@@ -235,6 +249,10 @@ type FailureReason =
   | "section_card_limit"
   | "section_annotation_required"
   | "section_questions_already_started"
+  | "invalid_answer_options"
+  | "invalid_answer_payload"
+  | "invalid_answer_option"
+  | "legacy_final_answer_not_allowed"
   | "empty_final_answer"
   | "not_found"
   | "coverage_incomplete"
@@ -251,6 +269,47 @@ function text(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeAnswerOptionTexts(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length < 2) return null;
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of value) {
+    const option = text(candidate);
+    if (!option || seen.has(option)) return null;
+    seen.add(option);
+    normalized.push(option);
+  }
+  return normalized;
+}
+
+function answerOptionsForCard(
+  cardId: string,
+  optionTexts: readonly string[]
+): AnswerOptionRecord[] {
+  return optionTexts.map((optionText, index) => ({
+    id: `${cardId}:option:${index + 1}`,
+    text: optionText
+  }));
+}
+
+function parsePersistedAnswerOptions(value: unknown): AnswerOptionRecord[] | null {
+  if (typeof value !== "string") return null;
+  const parsed = JSON.parse(value) as unknown;
+  if (!Array.isArray(parsed)) {
+    throw new Error("invalid persisted answer options");
+  }
+  return parsed.map((candidate) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      throw new Error("invalid persisted answer option");
+    }
+    const row = candidate as Record<string, unknown>;
+    const id = text(row.id);
+    const optionText = text(row.text);
+    if (!id || !optionText) throw new Error("invalid persisted answer option");
+    return { id, text: optionText };
+  });
 }
 
 function isSection(value: unknown): value is AlignmentSection {
@@ -479,8 +538,13 @@ function mapQuestion(db: DatabaseType, row: Record<string, unknown>): QuestionCa
     observation: String(row.observation),
     question: String(row.question),
     proposed_answer: typeof row.proposed_answer === "string" ? row.proposed_answer : null,
+    answer_options: parsePersistedAnswerOptions(row.answer_options_json),
     final_answer: finalAnswer,
     answer_source: typeof row.answer_source === "string" ? row.answer_source as AnswerSource : null,
+    selected_option_id:
+      typeof row.selected_option_id === "string"
+        ? row.selected_option_id
+        : null,
     status: finalAnswer ? "answered" : "unanswered",
     anchor: resolved.anchor,
     created_at: String(row.created_at),
@@ -533,6 +597,8 @@ export function createQuestionCard(
     section?: unknown;
     observation?: unknown;
     question?: unknown;
+    answerOptions?: unknown;
+    /** Deprecated input retained for source compatibility; new cards require answerOptions. */
     proposedAnswer?: unknown;
     anchor?: unknown;
   }
@@ -558,8 +624,12 @@ export function createQuestionCard(
   }
   const alignmentAttemptId = text(input.alignmentAttemptId);
   const idempotencyKey = text(input.idempotencyKey);
-  const proposedAnswer = input.proposedAnswer === undefined ? null : text(input.proposedAnswer);
+  const answerOptionTexts = normalizeAnswerOptionTexts(input.answerOptions);
+  if (!answerOptionTexts) {
+    return { ok: false, reason: "invalid_answer_options" };
+  }
   const id = randomUUID();
+  const answerOptions = answerOptionsForCard(id, answerOptionTexts);
   const now = new Date().toISOString();
   try {
     const result = withProjectTransaction(projectPath, (db) => {
@@ -653,13 +723,27 @@ export function createQuestionCard(
         `INSERT INTO alignment_question_cards
          (id, section, observation, question, proposed_answer, final_answer,
           answer_source, anchor_json, created_at, updated_at,
-          alignment_attempt_id, agent_idempotency_key)
-         VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)`
-      ).run(id, section, observation, question, proposedAnswer, JSON.stringify(anchor.anchor), now, now, alignmentAttemptId, idempotencyKey);
+          alignment_attempt_id, agent_idempotency_key, answer_options_json,
+          selected_option_id)
+         VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, NULL)`
+      ).run(
+        id,
+        section,
+        observation,
+        question,
+        null,
+        JSON.stringify(anchor.anchor),
+        now,
+        now,
+        alignmentAttemptId,
+        idempotencyKey,
+        JSON.stringify(answerOptions)
+      );
       const event = logEventOnDb(db, "question_card_created", {
         question_card_id: id,
         alignment_attempt_id: alignmentAttemptId,
-        section
+        section,
+        answer_option_count: answerOptions.length
       });
       const row = db.prepare("SELECT * FROM alignment_question_cards WHERE id = ?").get(id) as Record<string, unknown>;
       return { ok: true as const, reused: false, record: mapQuestion(db, row), event_id: event.event_id };
@@ -910,12 +994,46 @@ export function appendAgentAnnotationInformation(
 
 export function recordDesignerAnswer(
   projectPath: string,
-  input: { questionCardId?: unknown; finalAnswer?: unknown }
+  input: {
+    questionCardId?: unknown;
+    answer?: unknown;
+    /** Deprecated compatibility payload for persisted legacy cards only. */
+    finalAnswer?: unknown;
+  }
 ): { ok: true; record: QuestionCardRecord; event_id: string } | Failure {
   const questionCardId = text(input?.questionCardId);
   if (!questionCardId) return { ok: false, reason: "not_found" };
-  const finalAnswer = text(input.finalAnswer);
-  if (!finalAnswer) return { ok: false, reason: "empty_final_answer" };
+  const hasExplicitAnswer = input.answer !== undefined;
+  const hasLegacyFinalAnswer = input.finalAnswer !== undefined;
+  if (hasExplicitAnswer === hasLegacyFinalAnswer) {
+    return { ok: false, reason: "invalid_answer_payload" };
+  }
+  let answerIntent: DesignerAnswerIntent | null = null;
+  let legacyFinalAnswer: string | null = null;
+  if (hasExplicitAnswer) {
+    if (!input.answer || typeof input.answer !== "object" || Array.isArray(input.answer)) {
+      return { ok: false, reason: "invalid_answer_payload" };
+    }
+    const answer = input.answer as Record<string, unknown>;
+    if (answer.kind === "option") {
+      const optionId = text(answer.optionId);
+      if (!optionId) return { ok: false, reason: "invalid_answer_option" };
+      answerIntent = { kind: "option", optionId };
+    } else if (answer.kind === "custom") {
+      const customText = text(answer.text);
+      if (!customText) return { ok: false, reason: "empty_final_answer" };
+      answerIntent = { kind: "custom", text: customText };
+    } else {
+      return { ok: false, reason: "invalid_answer_payload" };
+    }
+  } else {
+    legacyFinalAnswer = text(input.finalAnswer);
+    if (!legacyFinalAnswer) {
+      return { ok: false, reason: "empty_final_answer" };
+    }
+  }
+  const answerKind: "option" | "custom" | "legacy" =
+    legacyFinalAnswer !== null ? "legacy" : answerIntent?.kind ?? "custom";
   try {
     const result = withProjectTransaction(projectPath, (db) => {
       if (alignmentIsCompleted(db)) return { ok: false, reason: "alignment_completed" } as Failure;
@@ -927,25 +1045,65 @@ export function recordDesignerAnswer(
         return { ok: false, reason: "alignment_not_answering" } as Failure;
       }
       const existing = db.prepare(
-        "SELECT alignment_attempt_id, proposed_answer FROM alignment_question_cards WHERE id = ?"
+        `SELECT alignment_attempt_id, proposed_answer, answer_options_json
+         FROM alignment_question_cards WHERE id = ?`
       ).get(questionCardId) as {
         alignment_attempt_id: string | null;
         proposed_answer: string | null;
+        answer_options_json: string | null;
       } | undefined;
       if (!existing) return { ok: false, reason: "not_found" } as Failure;
       if (existing.alignment_attempt_id !== preparation.current_attempt.id) {
         return { ok: false, reason: "stale_alignment_attempt" } as Failure;
       }
-      const answerSource: AnswerSource =
-        text(existing.proposed_answer) === finalAnswer
-          ? "agent-proposed-designer-accepted"
-          : "designer-edited";
+      const answerOptions = parsePersistedAnswerOptions(
+        existing.answer_options_json
+      );
+      let finalAnswer: string;
+      let answerSource: AnswerSource;
+      let selectedOptionId: string | null = null;
+      if (answerOptions) {
+        if (legacyFinalAnswer !== null) {
+          return {
+            ok: false,
+            reason: "legacy_final_answer_not_allowed"
+          } as Failure;
+        }
+        if (answerIntent?.kind === "option") {
+          const option = answerOptions.find(
+            (candidate) => candidate.id === answerIntent.optionId
+          );
+          if (!option) {
+            return { ok: false, reason: "invalid_answer_option" } as Failure;
+          }
+          finalAnswer = option.text;
+          answerSource = "agent-proposed-designer-accepted";
+          selectedOptionId = option.id;
+        } else if (answerIntent?.kind === "custom") {
+          finalAnswer = answerIntent.text;
+          answerSource = "designer-edited";
+        } else {
+          return { ok: false, reason: "invalid_answer_payload" } as Failure;
+        }
+      } else if (answerIntent?.kind === "option") {
+        return { ok: false, reason: "invalid_answer_option" } as Failure;
+      } else if (answerIntent?.kind === "custom") {
+        finalAnswer = answerIntent.text;
+        answerSource = "designer-edited";
+      } else {
+        finalAnswer = legacyFinalAnswer!;
+        answerSource =
+          text(existing.proposed_answer) === finalAnswer
+            ? "agent-proposed-designer-accepted"
+            : "designer-edited";
+      }
       const now = new Date().toISOString();
       db.prepare(
         `UPDATE alignment_question_cards
-         SET final_answer = ?, answer_source = ?, updated_at = ?
+         SET final_answer = ?, answer_source = ?, selected_option_id = ?,
+             updated_at = ?
          WHERE id = ?`
-      ).run(finalAnswer, answerSource, now, questionCardId);
+      ).run(finalAnswer, answerSource, selectedOptionId, now, questionCardId);
       const row = db.prepare(
         "SELECT * FROM alignment_question_cards WHERE id = ?"
       ).get(questionCardId) as Record<string, unknown>;
@@ -957,7 +1115,8 @@ export function recordDesignerAnswer(
         title: updatedQuestion.observation,
         question: updatedQuestion.question,
         answer: finalAnswer,
-        answerSource
+        answerSource,
+        selectedOptionId
       };
       recordAlignmentSemanticChangeOnDb(db, {
         alignmentAttemptId: preparation.current_attempt.id,
@@ -970,7 +1129,10 @@ export function recordDesignerAnswer(
       const event = logEventOnDb(db, "designer_answer_submitted", {
         question_card_id: questionCardId,
         alignment_attempt_id: preparation.current_attempt.id,
-        answer_source: answerSource
+        final_answer: finalAnswer,
+        answer_source: answerSource,
+        answer_kind: answerKind,
+        selected_option_id: selectedOptionId
       });
       return { ok: true as const, record: updatedQuestion, event_id: event.event_id };
     });

@@ -41,6 +41,7 @@ export type AlignmentSemanticSource = {
   question?: string;
   answer?: string;
   answerSource?: string;
+  selectedOptionId?: string | null;
   statement?: string;
   confidence?: string;
   additionalInformation?: string[];
@@ -277,7 +278,8 @@ function currentSectionSourcesOnDb(
   section: AlignmentSection
 ): AlignmentSemanticSource[] {
   const questions = (db.prepare(
-    `SELECT id, section, observation, question, final_answer, answer_source
+    `SELECT id, section, observation, question, final_answer, answer_source,
+            selected_option_id
      FROM alignment_question_cards
      WHERE alignment_attempt_id = ? AND section = ?
        AND final_answer IS NOT NULL AND TRIM(final_answer) <> ''
@@ -289,6 +291,7 @@ function currentSectionSourcesOnDb(
     question: string;
     final_answer: string;
     answer_source: string;
+    selected_option_id: string | null;
   }>).map((row) => {
     const value = {
       sourceId: row.id,
@@ -297,7 +300,8 @@ function currentSectionSourcesOnDb(
       title: row.observation,
       question: row.question,
       answer: row.final_answer,
-      answerSource: row.answer_source
+      answerSource: row.answer_source,
+      selectedOptionId: row.selected_option_id
     };
     return { ...value, digest: sourceDigest(value) };
   });

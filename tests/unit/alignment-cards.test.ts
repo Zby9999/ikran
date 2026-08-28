@@ -8,11 +8,17 @@ import {
   ALIGNMENT_CARD_SEED_GAP_PX,
   AlignmentQuestionCard,
   activateAlignmentQuestionCard,
+  alignmentSubmissionForCustomText,
+  customAnswerDraftOnActivation,
   endAlignmentCardFocusPreview,
   hugAlignmentAnswerTextarea,
   previewAlignmentQuestionFocus,
+  resolveAlignmentAnswerDisplay,
+  restoreAlignmentQuestionHeaderFocus,
+  shouldSubmitAlignmentCustomAnswer,
   stopAlignmentCardPointer,
-  submitAlignmentQuestionAnswer
+  submitAlignmentQuestionAnswer,
+  submitAlignmentQuestionOption
 } from "../../components/workbench/alignment-cards";
 
 const question = {
@@ -30,18 +36,20 @@ describe("AlignmentQuestionCard", () => {
 
     await expect(
       submitAlignmentQuestionAnswer(
-        "Use the editorial reference.",
+        { kind: "custom", text: "Use the editorial reference." },
         onSubmitAnswer,
         onSubmitted
       )
     ).resolves.toBe(true);
 
-    expect(onSubmitAnswer).toHaveBeenCalledWith(
-      "Use the editorial reference."
-    );
-    expect(onSubmitted).toHaveBeenCalledWith(
-      "Use the editorial reference."
-    );
+    expect(onSubmitAnswer).toHaveBeenCalledWith({
+      kind: "custom",
+      text: "Use the editorial reference."
+    });
+    expect(onSubmitted).toHaveBeenCalledWith({
+      kind: "custom",
+      text: "Use the editorial reference."
+    });
   });
 
   test("keeps the editor open when answer persistence fails", async () => {
@@ -49,13 +57,114 @@ describe("AlignmentQuestionCard", () => {
 
     await expect(
       submitAlignmentQuestionAnswer(
-        "Keep editing.",
+        { kind: "custom", text: "Keep editing." },
         vi.fn().mockResolvedValue({ ok: false, error: "save_failed" }),
         onSubmitted
       )
     ).resolves.toBe(false);
 
     expect(onSubmitted).not.toHaveBeenCalled();
+  });
+
+  test("submits a prepared choice by stable identity", async () => {
+    const onSubmitAnswer = vi.fn().mockResolvedValue({ ok: true });
+    const onSubmitted = vi.fn();
+    const option = { id: "fluid", text: "Use a fluid inset token." };
+
+    await expect(
+      submitAlignmentQuestionOption(option, onSubmitAnswer, onSubmitted)
+    ).resolves.toBe(true);
+
+    expect(onSubmitAnswer).toHaveBeenCalledWith({
+      kind: "option",
+      optionId: "fluid"
+    });
+    expect(onSubmitted).toHaveBeenCalledWith(option);
+  });
+
+  test("uses Enter for custom submission and preserves Shift+Enter newlines", () => {
+    expect(
+      shouldSubmitAlignmentCustomAnswer({
+        key: "Enter",
+        shiftKey: false,
+        isComposing: false
+      })
+    ).toBe(true);
+    expect(
+      shouldSubmitAlignmentCustomAnswer({
+        key: "Enter",
+        shiftKey: true,
+        isComposing: false
+      })
+    ).toBe(false);
+    expect(
+      shouldSubmitAlignmentCustomAnswer({
+        key: "Enter",
+        shiftKey: false,
+        isComposing: true
+      })
+    ).toBe(false);
+    expect(
+      shouldSubmitAlignmentCustomAnswer({
+        key: "a",
+        shiftKey: false,
+        isComposing: false
+      })
+    ).toBe(false);
+  });
+
+  test("starts a blank custom draft after an Agent option was selected", () => {
+    expect(
+      customAnswerDraftOnActivation(
+        "question-1:option:2",
+        "Use the selected Agent option."
+      )
+    ).toBe("");
+
+    expect(
+      customAnswerDraftOnActivation(
+        "",
+        "Keep my previously submitted custom answer."
+      )
+    ).toBe("Keep my previously submitted custom answer.");
+  });
+
+  test("shows a successful local revision before the Runtime snapshot catches up", () => {
+    expect(
+      resolveAlignmentAnswerDisplay({
+        savedAnswer: "First Agent choice",
+        selectedOptionId: "option-1",
+        submittedAnswer: "Second Agent choice",
+        submittedOptionId: "option-2"
+      })
+    ).toEqual({ answer: "Second Agent choice", selectedOptionId: "option-2" });
+
+    expect(
+      resolveAlignmentAnswerDisplay({
+        savedAnswer: "First Agent choice",
+        selectedOptionId: "option-1",
+        submittedAnswer: "My own answer",
+        submittedOptionId: ""
+      })
+    ).toEqual({ answer: "My own answer", selectedOptionId: "" });
+
+    expect(
+      resolveAlignmentAnswerDisplay({
+        savedAnswer: "My own answer",
+        selectedOptionId: undefined,
+        submittedAnswer: "First Agent choice",
+        submittedOptionId: "option-1"
+      })
+    ).toEqual({ answer: "First Agent choice", selectedOptionId: "option-1" });
+  });
+
+  test("keeps legacy cards on the compatibility payload while modern cards use custom intent", () => {
+    expect(alignmentSubmissionForCustomText([], "Keep the legacy proposal"))
+      .toEqual({ kind: "legacy", text: "Keep the legacy proposal" });
+    expect(alignmentSubmissionForCustomText([
+      { id: "keep", text: "Keep it" },
+      { id: "change", text: "Change it" }
+    ], "Keep it")).toEqual({ kind: "custom", text: "Keep it" });
   });
 
   test("isolates pointer gestures from the tldraw canvas", () => {
@@ -89,6 +198,14 @@ describe("AlignmentQuestionCard", () => {
     );
 
     expect(textarea.style.height).toBe("95px");
+  });
+
+  test("restores focus to the collapsed question without scrolling the canvas", () => {
+    const focus = vi.fn();
+
+    restoreAlignmentQuestionHeaderFocus({ focus });
+
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
   });
 
   test("hover previews focus mode without opening the answer editor", () => {
@@ -146,7 +263,10 @@ describe("AlignmentQuestionCard", () => {
       createElement(AlignmentQuestionCard, {
         ...question,
         expanded: false,
-        proposedAnswer: "Keep the inset on desktop.",
+        answerOptions: [
+          { id: "keep", text: "Keep the inset on desktop." },
+          { id: "reduce", text: "Reduce the inset on compact screens." }
+        ],
         answerSource: "agent-proposed-designer-accepted",
         onExpandedChange: vi.fn(),
         onSubmitAnswer: vi.fn()
@@ -156,7 +276,7 @@ describe("AlignmentQuestionCard", () => {
     expect(html).toContain('data-status="unanswered"');
     expect(html).toContain('data-expanded="false"');
     expect(html).not.toContain("Checkout frame · node 44:120");
-    expect(html).toContain("5.");
+    expect(html).not.toContain(">5.</span>");
     expect(html.match(/Font issue/g)).toHaveLength(1);
     expect(html).toContain('data-slot="question-copy"');
     expect(html.indexOf("Font issue")).toBeGreaterThan(
@@ -169,14 +289,13 @@ describe("AlignmentQuestionCard", () => {
     expect(html).toContain(question.question);
     expect(html).not.toContain("agent-proposed-designer-accepted");
     expect(html).not.toContain("Answer source");
-    expect(html).toContain('aria-hidden="true"');
-    expect(html).toContain('data-open="false"');
-    expect(html).toContain("inert");
-    expect(html).toContain('tabindex="-1"');
-    expect(html).toContain("textarea");
+    expect(html).not.toContain("Keep the inset on desktop.");
+    expect(html).not.toContain("Reduce the inset on compact screens.");
+    expect(html).not.toContain("Add your answer");
+    expect(html).not.toContain("textarea");
   });
 
-  test("prefills the expanded editor from the proposed answer", () => {
+  test("prefills a legacy expanded editor without restoring the removed send block", () => {
     const html = renderToStaticMarkup(
       createElement(AlignmentQuestionCard, {
         ...question,
@@ -188,38 +307,79 @@ describe("AlignmentQuestionCard", () => {
     );
 
     expect(html).toContain('data-expanded="true"');
-    expect(html).toContain('aria-hidden="false"');
-    expect(html).toContain('data-open="true"');
     expect(html).toContain('aria-label="Answer question 5"');
     expect(html).toContain(">Keep the inset on desktop.</textarea>");
-    expect(html).toContain("<svg");
-    expect(html).not.toContain(">↑<");
+    expect(html).not.toContain('aria-label="Submit answer 5"');
+    expect(html).not.toContain("<svg");
   });
 
-  test("keeps projected preparation questions visible but read-only", () => {
+  test("opens every prepared choice followed by the custom-answer entry", () => {
+    const html = renderToStaticMarkup(
+      createElement(AlignmentQuestionCard, {
+        ...question,
+        expanded: true,
+        answerOptions: [
+          { id: "keep", text: "Keep the 20px inset." },
+          { id: "reduce", text: "Use 12px on compact screens." },
+          { id: "fluid", text: "Use a fluid inset token." }
+        ],
+        onExpandedChange: vi.fn(),
+        onSubmitAnswer: vi.fn()
+      })
+    );
+
+    expect(html).toContain('aria-label="Choose Keep the 20px inset."');
+    expect(html).toContain('aria-label="Choose Use 12px on compact screens."');
+    expect(html).toContain('aria-label="Choose Use a fluid inset token."');
+    expect(html.indexOf("Keep the 20px inset.")).toBeLessThan(
+      html.indexOf("Use 12px on compact screens.")
+    );
+    expect(html.indexOf("Use 12px on compact screens.")).toBeLessThan(
+      html.indexOf("Use a fluid inset token.")
+    );
+    expect(html).toContain('aria-label="Add your answer"');
+    expect(html.indexOf("Use a fluid inset token.")).toBeLessThan(
+      html.indexOf('aria-label="Add your answer"')
+    );
+    expect(html).not.toContain("textarea");
+  });
+
+  test("keeps projected preparation questions understandable but non-actionable", () => {
     const html = renderToStaticMarkup(
       createElement(AlignmentQuestionCard, {
         ...question,
         expanded: true,
         readOnly: true,
-        proposedAnswer: "Keep the inset on desktop.",
+        answerOptions: [
+          { id: "keep", text: "Keep the inset on desktop." },
+          { id: "change", text: "Change the inset." }
+        ],
         onExpandedChange: vi.fn(),
         onSubmitAnswer: vi.fn()
       })
     );
 
     expect(html).toContain('data-read-only="true"');
-    expect(html).toMatch(/<textarea[^>]*disabled=""/);
-    expect(html).toMatch(/aria-label="Submit answer 5"[^>]*disabled=""/);
+    expect(html).toMatch(/aria-label="Open question 5 editor"[^>]*disabled=""/);
+    expect(html).toMatch(/aria-label="Choose Keep the inset on desktop\."[^>]*disabled=""/);
+    expect(html).toMatch(/aria-label="Add your answer"[^>]*disabled=""/);
+    expect(html).toContain("aria-describedby=");
+    expect(html).not.toContain("<textarea");
   });
 
   test("shows a final answer while keeping an answered card editable", () => {
+    const answerOptions = [
+      { id: "keep", text: "Keep the 20px inset." },
+      { id: "reduce", text: "Use 12px on compact screens." }
+    ];
     const collapsed = renderToStaticMarkup(
       createElement(AlignmentQuestionCard, {
         ...question,
         expanded: false,
-        finalAnswer: "Use 20px until the compact breakpoint.",
-        answerSource: "designer-edited",
+        answerOptions,
+        selectedOptionId: "keep",
+        finalAnswer: "Keep the 20px inset.",
+        answerSource: "agent-proposed-designer-accepted",
         onExpandedChange: vi.fn(),
         onSubmitAnswer: vi.fn()
       })
@@ -228,6 +388,35 @@ describe("AlignmentQuestionCard", () => {
       createElement(AlignmentQuestionCard, {
         ...question,
         expanded: true,
+        answerOptions,
+        selectedOptionId: "keep",
+        finalAnswer: "Keep the 20px inset.",
+        answerSource: "agent-proposed-designer-accepted",
+        onExpandedChange: vi.fn(),
+        onSubmitAnswer: vi.fn()
+      })
+    );
+
+    expect(collapsed).toContain('data-status="answered"');
+    expect(collapsed).toContain('data-slot="complete-answer"');
+    expect(collapsed).toContain("Keep the 20px inset.");
+    expect(collapsed).not.toContain("Use 12px on compact screens.");
+    expect(expanded).toContain('aria-label="Choose Keep the 20px inset."');
+    expect(expanded).toContain('data-selected="true"');
+    expect(expanded).toContain("Use 12px on compact screens.");
+    expect(expanded).not.toContain("textarea");
+    expect(expanded).not.toContain("designer-edited");
+  });
+
+  test("reopens a completed custom answer as a prefilled growing textarea", () => {
+    const html = renderToStaticMarkup(
+      createElement(AlignmentQuestionCard, {
+        ...question,
+        expanded: true,
+        answerOptions: [
+          { id: "keep", text: "Keep the 20px inset." },
+          { id: "reduce", text: "Use 12px on compact screens." }
+        ],
         finalAnswer: "Use 20px until the compact breakpoint.",
         answerSource: "designer-edited",
         onExpandedChange: vi.fn(),
@@ -235,10 +424,10 @@ describe("AlignmentQuestionCard", () => {
       })
     );
 
-    expect(collapsed).toContain('data-status="answered"');
-    expect(collapsed).toContain("Use 20px until the compact breakpoint.");
-    expect(expanded).toContain("textarea");
-    expect(expanded).not.toContain("designer-edited");
+    expect(html).toContain('aria-label="Answer question 5"');
+    expect(html).toContain(">Use 20px until the compact breakpoint.</textarea>");
+    expect(html).not.toContain('placeholder="Add your answer..."');
+    expect(html).toContain('data-custom-active="true"');
   });
 
   test("locks the Figma card geometry into the isolated stylesheet", () => {
@@ -247,15 +436,21 @@ describe("AlignmentQuestionCard", () => {
       "utf8"
     );
 
-    expect(css).toMatch(/\.questionCard\s*{[^}]*width:\s*320px/s);
-    expect(css).toMatch(/\.questionCard\[data-expanded="true"\]\s*{[^}]*width:\s*360px/s);
-    expect(css).toMatch(/\.answerEditor\s*{[^}]*min-height:\s*70px/s);
-    expect(css).toMatch(/\.answerEditor\s*{[^}]*padding:\s*16px 16px 16px 20px/s);
-    expect(css).toMatch(/\.answerEditor\s*{[^}]*align-items:\s*flex-end/s);
-    expect(css).not.toMatch(/\.answerEditor\s*{[^}]*(?<!min-)height:\s*56px/s);
-    expect(css).toMatch(/\.answerEditor textarea\s*{[^}]*min-height:\s*38px/s);
-    expect(css).toMatch(/\.answerEditor textarea\s*{[^}]*overflow:\s*hidden/s);
-    expect(css).toMatch(/\.answerSubmit\s*{[^}]*align-self:\s*flex-end/s);
+    expect(css).toMatch(/\.questionCard\s*{[^}]*width:\s*360px/s);
+    expect(css).toMatch(/\.questionCard\s*{[^}]*padding:\s*6px/s);
+    expect(css).toMatch(/\.questionCard\s*{[^}]*border-radius:\s*14px/s);
+    expect(css).not.toMatch(/\.questionCard\[data-expanded="true"\]\s*{[^}]*width:/s);
+    expect(css).toMatch(/\.questionHeader\s*{[^}]*gap:\s*4px/s);
+    expect(css).toMatch(/\.questionNumber\s*{[^}]*width:\s*32px/s);
+    expect(css).toMatch(/\.questionNumber\s*{[^}]*height:\s*32px/s);
+    expect(css).toMatch(/\.questionNumber\s*{[^}]*border-radius:\s*8px/s);
+    expect(css).toMatch(/\.questionNumber\s*{[^}]*background:\s*#fff/s);
+    expect(css).toMatch(/\.questionCopy\s*{[^}]*background:\s*#fff/s);
+    expect(css).toMatch(/\.answerChoices\s*{[^}]*gap:\s*4px/s);
+    expect(css).toMatch(/\.answerChoice\s*,\s*\.customAnswerTrigger\s*{[^}]*min-height:\s*32px/s);
+    expect(css).toMatch(/\.finalAnswer\s*{[^}]*white-space:\s*pre-wrap/s);
+    expect(css).not.toMatch(/\.answerEditor\s*{/s);
+    expect(css).not.toMatch(/\.answerSubmit\s*{/s);
     expect(css).toMatch(/\.questionNumber\s*{[^}]*font-weight:\s*400/s);
     expect(css).toMatch(/\.questionObservation\s*{[^}]*font-weight:\s*400/s);
     expect(css).toMatch(/\.annotationHeading\s*{[^}]*font-weight:\s*400/s);

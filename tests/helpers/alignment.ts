@@ -18,7 +18,7 @@ export const ALIGNMENT_SECTIONS = [
   "interaction"
 ] as const;
 
-export type StagedCard = { id: string; answer: string };
+export type StagedCard = { id: string; answer: string; optionId: string };
 
 export type StagedAlignment = {
   attemptId: string;
@@ -93,7 +93,10 @@ export async function stageAlignmentAnswering(
           section,
           observation: `${section} ${index}`,
           question: `Question ${index} for ${section}?`,
-          proposedAnswer,
+          answerOptions: [
+            proposedAnswer,
+            `Alternative ${index} for ${section}`
+          ],
           anchor
         }
       }));
@@ -102,9 +105,14 @@ export async function stageAlignmentAnswering(
           `create_alignment_question_card(${section}/${index}) failed: ${JSON.stringify(created)}`
         );
       }
+      const record = created.record as {
+        id: string;
+        answer_options: Array<{ id: string; text: string }>;
+      };
       cards[section].push({
-        id: String((created.record as { id: string }).id),
-        answer: proposedAnswer
+        id: String(record.id),
+        answer: proposedAnswer,
+        optionId: record.answer_options[0].id
       });
     }
   }

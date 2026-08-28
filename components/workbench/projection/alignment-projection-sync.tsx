@@ -4,9 +4,8 @@ import { useEffect, useRef } from "react";
 import { createShapeId, useEditor, type Editor, type TLShapeId } from "tldraw";
 
 import {
-  ALIGNMENT_CARD_COLLAPSED_WIDTH,
-  ALIGNMENT_CARD_EXPANDED_WIDTH,
   ALIGNMENT_CARD_TYPE,
+  alignmentCardWidth,
   alignmentCardXForWidth,
   type AlignmentCardShape
 } from "../alignment-card-shape";
@@ -36,6 +35,106 @@ const ALIGNMENT_TYPES = new Set<string>([
   ALIGNMENT_TARGET_TYPE,
   ALIGNMENT_CONNECTOR_TYPE
 ]);
+
+type AlignmentStoreRecordsDiff = {
+  added: Record<string, unknown>;
+  removed: Record<string, unknown>;
+  updated: Record<string, readonly [unknown, unknown]>;
+};
+
+type AlignmentCardLikeRecord = {
+  type?: unknown;
+  y?: unknown;
+  props?: { cardKind?: unknown; h?: unknown };
+  meta?: { runtimeRecordId?: unknown };
+};
+
+function asAlignmentCardLike(record: unknown): AlignmentCardLikeRecord | null {
+  return record && typeof record === "object"
+    ? (record as AlignmentCardLikeRecord)
+    : null;
+}
+
+function isQuestionCardRecord(record: unknown): boolean {
+  const candidate = asAlignmentCardLike(record);
+  return (
+    candidate?.type === ALIGNMENT_CARD_TYPE &&
+    candidate.props?.cardKind === "question"
+  );
+}
+
+/** Pure seam: DOM-measured Question Card heights carried by tldraw shapes. */
+export function collectMeasuredQuestionHeights(
+  shapes: readonly unknown[]
+): ReadonlyMap<string, number> {
+  const heights = new Map<string, number>();
+  for (const shape of shapes) {
+    const candidate = asAlignmentCardLike(shape);
+    const runtimeRecordId = candidate?.meta?.runtimeRecordId;
+    const h = candidate?.props?.h;
+    if (
+      !isQuestionCardRecord(shape) ||
+      typeof runtimeRecordId !== "string" ||
+      typeof h !== "number" ||
+      !Number.isFinite(h) ||
+      h <= 0
+    ) {
+      continue;
+    }
+    heights.set(runtimeRecordId, h);
+  }
+  return heights;
+}
+
+/** Preserve the visible top edge while an open/collapse measurement reflows its lane. */
+export function collectQuestionCardTopPositions(
+  shapes: readonly unknown[],
+  runtimeRecordIds?: ReadonlySet<string>
+): ReadonlyMap<string, number> {
+  const positions = new Map<string, number>();
+  for (const shape of shapes) {
+    const candidate = asAlignmentCardLike(shape);
+    const runtimeRecordId = candidate?.meta?.runtimeRecordId;
+    const y = candidate?.y;
+    if (
+      !isQuestionCardRecord(shape) ||
+      typeof runtimeRecordId !== "string" ||
+      (runtimeRecordIds !== undefined && !runtimeRecordIds.has(runtimeRecordId)) ||
+      typeof y !== "number" ||
+      !Number.isFinite(y)
+    ) {
+      continue;
+    }
+    positions.set(runtimeRecordId, y);
+  }
+  return positions;
+}
+
+/** Question records whose own height changed in this transaction. */
+export function questionCardRuntimeIdsWithHeightChanges(
+  changes: AlignmentStoreRecordsDiff
+): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const [from, to] of Object.values(changes.updated)) {
+    if (!isQuestionCardRecord(from) && !isQuestionCardRecord(to)) continue;
+    const changed =
+      asAlignmentCardLike(from)?.props?.h !==
+      asAlignmentCardLike(to)?.props?.h;
+    if (!changed) continue;
+    const runtimeRecordId =
+      asAlignmentCardLike(to)?.meta?.runtimeRecordId ??
+      asAlignmentCardLike(from)?.meta?.runtimeRecordId;
+    if (typeof runtimeRecordId === "string") ids.add(runtimeRecordId);
+  }
+  return ids;
+}
+
+/** Reflow only for a true Question Card height delta, avoiding sync loops. */
+export function shouldResyncAlignmentForQuestionHeightChanges(
+  changes: AlignmentStoreRecordsDiff
+): boolean {
+  return questionCardRuntimeIdsWithHeightChanges(changes).size > 0;
+}
 
 function seedFramesFromEditor(editor: Editor): AlignmentSeedFrame[] {
   return editor
@@ -78,9 +177,10 @@ function tldrawId(shape: AlignmentProjectionShape): TLShapeId {
 export function alignmentCardShapeProps(
   props: AlignmentCardProjection["props"]
 ): AlignmentCardShape["props"] {
-  const { focusSelection, ...shapeProps } = props;
+  const { answerOptions, focusSelection, ...shapeProps } = props;
   return {
     ...shapeProps,
+    answerOptionsJson: JSON.stringify(answerOptions),
     focusSelectionJson: focusSelection ? JSON.stringify(focusSelection) : ""
   };
 }
@@ -124,12 +224,15 @@ function updateProjectedShape(editor: Editor, shape: AlignmentProjectionShape) {
   const id = tldrawId(shape);
   if (shape.type === ALIGNMENT_CARD_TYPE) {
     const current = editor.getShape<AlignmentCardShape>(id);
-    const expanded = current?.props.expanded ?? false;
+    const expanded =
+      shape.props.cardKind === "question" && shape.props.readOnly
+        ? false
+        : current?.props.expanded ?? false;
     const editing = current?.props.editing ?? false;
-    const expandedWidth =
+    const expandedWidth = alignmentCardWidth(
+      shape.props.cardKind,
       expanded || editing
-        ? ALIGNMENT_CARD_EXPANDED_WIDTH
-        : ALIGNMENT_CARD_COLLAPSED_WIDTH;
+    );
     editor.updateShape<AlignmentCardShape>({
       id,
       type: ALIGNMENT_CARD_TYPE,
@@ -174,16 +277,26 @@ function updateProjectedShape(editor: Editor, shape: AlignmentProjectionShape) {
 
 export function syncAlignmentProjectionShapes(
   editor: Editor,
-  records: Omit<AlignmentProjectionInput, "seedFrames">
+  records: Omit<AlignmentProjectionInput, "seedFrames">,
+  options: { preserveQuestionTopRuntimeIds?: ReadonlySet<string> } = {}
 ) {
+  const currentShapes = editor.getCurrentPageShapes();
   const plan = buildAlignmentProjectionPlan({
     ...records,
-    seedFrames: seedFramesFromEditor(editor)
+    seedFrames: seedFramesFromEditor(editor),
+    measuredQuestionHeights: collectMeasuredQuestionHeights(currentShapes),
+    ...(options.preserveQuestionTopRuntimeIds
+      ? {
+          currentQuestionTopPositions:
+            collectQuestionCardTopPositions(
+              currentShapes,
+              options.preserveQuestionTopRuntimeIds
+            )
+        }
+      : {})
   });
   const wantedIds = new Set(plan.map((shape) => String(tldrawId(shape))));
-  const existing = editor
-    .getCurrentPageShapes()
-    .filter((shape) => ALIGNMENT_TYPES.has(shape.type));
+  const existing = currentShapes.filter((shape) => ALIGNMENT_TYPES.has(shape.type));
 
   editor.store.mergeRemoteChanges(() => {
     editor.run(
@@ -224,6 +337,20 @@ export function AlignmentProjectionSync({
     return editor.store.listen(
       () => syncAlignmentProjectionShapes(editor, recordsRef.current),
       { source: "user", scope: "document" }
+    );
+  }, [editor]);
+
+  useEffect(() => {
+    return editor.store.listen(
+      (entry) => {
+        const changedQuestionIds =
+          questionCardRuntimeIdsWithHeightChanges(entry.changes);
+        if (changedQuestionIds.size === 0) return;
+        syncAlignmentProjectionShapes(editor, recordsRef.current, {
+          preserveQuestionTopRuntimeIds: changedQuestionIds
+        });
+      },
+      { source: "all", scope: "document" }
     );
   }, [editor]);
 

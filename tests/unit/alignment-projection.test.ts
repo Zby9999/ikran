@@ -4,11 +4,20 @@ import {
   AGENT_REGION_MARGIN
 } from "../../lib/runtime/region-annotation-display";
 import {
+  ALIGNMENT_ANNOTATION_CARD_H,
   ALIGNMENT_CARD_STACK_GAP,
+  ALIGNMENT_QUESTION_CARD_H,
+  alignmentCardLaneFootprintHeight,
   buildAlignmentProjectionPlan,
   type AlignmentProjectionInput
 } from "../../components/workbench/projection/alignment-projection";
-import { alignmentCardShapeProps } from "../../components/workbench/projection/alignment-projection-sync";
+import {
+  alignmentCardShapeProps,
+  collectMeasuredQuestionHeights,
+  collectQuestionCardTopPositions,
+  questionCardRuntimeIdsWithHeightChanges,
+  shouldResyncAlignmentForQuestionHeightChanges
+} from "../../components/workbench/projection/alignment-projection-sync";
 
 const input: AlignmentProjectionInput = {
   currentStage: "layout",
@@ -38,8 +47,13 @@ const input: AlignmentProjectionInput = {
       observation: "Cards use a stable inset.",
       question: "Should the inset remain 20px?",
       proposed_answer: "Yes.",
+      answer_options: [
+        { id: "yes", text: "Yes, keep the inset." },
+        { id: "responsive", text: "Make it responsive." }
+      ],
       final_answer: null,
       answer_source: null,
+      selected_option_id: null,
       anchor: {
         kind: "single",
         target: {
@@ -220,7 +234,7 @@ describe("buildAlignmentProjectionPlan", () => {
       "question-focus"
     ]);
     expect(cards.map((shape) => shape.props.number)).toEqual([1, 2, 3]);
-    expect(cards.map((shape) => shape.x)).toEqual([-240, -240, 500]);
+    expect(cards.map((shape) => shape.x)).toEqual([-240, -280, 500]);
     expect(cards.map((shape) => shape.props.placement)).toEqual([
       "left",
       "left",
@@ -234,6 +248,11 @@ describe("buildAlignmentProjectionPlan", () => {
       surfaceRecordId: "surface-1",
       evidenceVersionId: "version-1"
     });
+    expect(cards[1]!.props.answerOptions).toEqual([
+      { id: "yes", text: "Yes, keep the inset." },
+      { id: "responsive", text: "Make it responsive." }
+    ]);
+    expect(cards[1]!.props.selectedOptionId).toBe("");
 
     expect(targets).toHaveLength(2);
     const verticalMargin =
@@ -373,6 +392,213 @@ describe("buildAlignmentProjectionPlan", () => {
     ).toBe(true);
   });
 
+  test("uses measured Question Card heights for stacking and connector centers", () => {
+    const measuredInput: AlignmentProjectionInput = {
+      ...input,
+      questions: [
+        input.questions[0]!,
+        {
+          ...input.questions[0]!,
+          id: "question-layout-repeated",
+          question: "Which of the many prepared choices should be used?"
+        }
+      ],
+      annotations: [],
+      measuredQuestionHeights: new Map([
+        ["question-layout", 344],
+        ["question-layout-repeated", 411]
+      ])
+    };
+    const plan = buildAlignmentProjectionPlan(measuredInput);
+    const cards = plan.filter((shape) => shape.type === "alignment-card");
+    const connectors = plan.filter(
+      (shape) => shape.type === "alignment-connector"
+    );
+
+    expect(cards.map((card) => card.props.w)).toEqual([360, 360]);
+    expect(cards.map((card) => card.props.h)).toEqual([344, 411]);
+    expect(cards[1]!.y).toBeGreaterThanOrEqual(
+      cards[0]!.y + 344 + ALIGNMENT_CARD_STACK_GAP
+    );
+    expect(connectors).toHaveLength(2);
+    for (let index = 0; index < cards.length; index += 1) {
+      expect(cards[index]!.y + cards[index]!.props.h / 2).toBe(
+        connectors[index]!.y + connectors[index]!.props.endY
+      );
+    }
+  });
+
+  test("keeps a Question Card top edge stable across open and collapse measurements", () => {
+    const collapsed = buildAlignmentProjectionPlan({
+      ...input,
+      questions: [input.questions[0]!],
+      annotations: [],
+      measuredQuestionHeights: new Map([["question-layout", 152]])
+    });
+    const collapsedCard = collapsed.find(
+      (shape) => shape.type === "alignment-card"
+    );
+    expect(collapsedCard?.type).toBe("alignment-card");
+    if (collapsedCard?.type !== "alignment-card") return;
+
+    const expanded = buildAlignmentProjectionPlan({
+      ...input,
+      questions: [input.questions[0]!],
+      annotations: [],
+      measuredQuestionHeights: new Map([["question-layout", 353]]),
+      currentQuestionTopPositions: new Map([
+        ["question-layout", collapsedCard.y]
+      ])
+    });
+    const expandedCard = expanded.find(
+      (shape) => shape.type === "alignment-card"
+    );
+    expect(expandedCard?.type).toBe("alignment-card");
+    if (expandedCard?.type !== "alignment-card") return;
+
+    expect(expandedCard.y).toBe(collapsedCard.y);
+    expect(expandedCard.props.h).toBe(353);
+
+    const collapsedAgain = buildAlignmentProjectionPlan({
+      ...input,
+      questions: [input.questions[0]!],
+      annotations: [],
+      measuredQuestionHeights: new Map([["question-layout", 152]]),
+      currentQuestionTopPositions: new Map([
+        ["question-layout", expandedCard.y]
+      ])
+    });
+    const collapsedAgainCard = collapsedAgain.find(
+      (shape) => shape.type === "alignment-card"
+    );
+    expect(collapsedAgainCard?.type).toBe("alignment-card");
+    if (collapsedAgainCard?.type !== "alignment-card") return;
+    expect(collapsedAgainCard.y).toBe(collapsedCard.y);
+  });
+
+  test("reflows later cards back to their baseline without ratcheting down", () => {
+    const questions = [
+      input.questions[0]!,
+      {
+        ...input.questions[0]!,
+        id: "question-layout-repeated",
+        question: "Should the repeated use follow the same rule?"
+      }
+    ];
+    const cardShapes = (plan: ReturnType<typeof buildAlignmentProjectionPlan>) =>
+      plan.filter((shape) => shape.type === "alignment-card");
+    const baseline = cardShapes(buildAlignmentProjectionPlan({
+      ...input,
+      questions,
+      annotations: [],
+      measuredQuestionHeights: new Map([
+        ["question-layout", 152],
+        ["question-layout-repeated", 152]
+      ])
+    }));
+    const grown = cardShapes(buildAlignmentProjectionPlan({
+      ...input,
+      questions,
+      annotations: [],
+      measuredQuestionHeights: new Map([
+        ["question-layout", 500],
+        ["question-layout-repeated", 152]
+      ]),
+      currentQuestionTopPositions: new Map([
+        ["question-layout", baseline[0]!.y]
+      ])
+    }));
+    const shrunk = cardShapes(buildAlignmentProjectionPlan({
+      ...input,
+      questions,
+      annotations: [],
+      measuredQuestionHeights: new Map([
+        ["question-layout", 152],
+        ["question-layout-repeated", 152]
+      ]),
+      currentQuestionTopPositions: new Map([
+        ["question-layout", grown[0]!.y]
+      ])
+    }));
+    const grownAgain = cardShapes(buildAlignmentProjectionPlan({
+      ...input,
+      questions,
+      annotations: [],
+      measuredQuestionHeights: new Map([
+        ["question-layout", 500],
+        ["question-layout-repeated", 152]
+      ]),
+      currentQuestionTopPositions: new Map([
+        ["question-layout", shrunk[0]!.y]
+      ])
+    }));
+
+    expect(grown[0]!.y).toBe(baseline[0]!.y);
+    expect(grown[1]!.y).toBeGreaterThan(baseline[1]!.y);
+    expect(shrunk.map((card) => card.y)).toEqual(
+      baseline.map((card) => card.y)
+    );
+    expect(grownAgain.map((card) => card.y)).toEqual(
+      grown.map((card) => card.y)
+    );
+  });
+
+  test("keeps collapsed Question Cards from compressing the shared annotation lane", () => {
+    const collapsedInput: AlignmentProjectionInput = {
+      ...input,
+      questions: [
+        input.questions[0]!,
+        {
+          ...input.questions[0]!,
+          id: "question-layout-repeated",
+          question: "Should the repeated use follow the same rule?"
+        }
+      ],
+      annotations: [],
+      measuredQuestionHeights: new Map([
+        ["question-layout", 152],
+        ["question-layout-repeated", 173]
+      ])
+    };
+    const plan = buildAlignmentProjectionPlan(collapsedInput);
+    const cards = plan.filter((shape) => shape.type === "alignment-card");
+    const connectors = plan.filter(
+      (shape) => shape.type === "alignment-connector"
+    );
+
+    expect(cards.map((card) => card.props.h)).toEqual([152, 173]);
+    expect(cards[1]!.y).toBeGreaterThanOrEqual(
+      cards[0]!.y + ALIGNMENT_QUESTION_CARD_H + ALIGNMENT_CARD_STACK_GAP
+    );
+    expect(connectors[0]!.y + connectors[0]!.props.endY).toBe(
+      cards[0]!.y + 152 / 2
+    );
+    expect(alignmentCardLaneFootprintHeight("question", 152)).toBe(
+      ALIGNMENT_QUESTION_CARD_H
+    );
+    expect(alignmentCardLaneFootprintHeight("question", 344)).toBe(344);
+    expect(alignmentCardLaneFootprintHeight("agent-annotation", 180)).toBe(180);
+  });
+
+  test("falls back from invalid measurements and never changes annotation height", () => {
+    const invalidInput: AlignmentProjectionInput = {
+      ...input,
+      questions: [input.questions[0]!],
+      measuredQuestionHeights: new Map([
+        ["question-layout", Number.NaN],
+        ["annotation-1", 999]
+      ])
+    };
+    const cards = buildAlignmentProjectionPlan(invalidInput).filter(
+      (shape) => shape.type === "alignment-card"
+    );
+
+    expect(cards.find((card) => card.meta.runtimeRecordId === "question-layout")?.props.h)
+      .toBe(ALIGNMENT_QUESTION_CARD_H);
+    expect(cards.find((card) => card.meta.runtimeRecordId === "annotation-1")?.props.h)
+      .toBe(ALIGNMENT_ANNOTATION_CARD_H);
+  });
+
   test("places cards on the annotation side and keeps left and right collision lanes independent", () => {
     const sidedInput: AlignmentProjectionInput = {
       ...input,
@@ -405,7 +631,7 @@ describe("buildAlignmentProjectionPlan", () => {
       "left",
       "right"
     ]);
-    expect(cards[0]!.x).toBe(-240);
+    expect(cards[0]!.x).toBe(-280);
     expect(cards[1]!.x).toBe(500);
     expect(cards[0]!.y).toBe(cards[1]!.y);
     expect(connectors[0]!.props.startX).toBeGreaterThan(
@@ -447,6 +673,104 @@ describe("buildAlignmentProjectionPlan", () => {
     const props = alignmentCardShapeProps(normalCard.props);
 
     expect(props).not.toHaveProperty("focusSelection");
+    expect(props).not.toHaveProperty("answerOptions");
+    expect(JSON.parse(props.answerOptionsJson)).toEqual([
+      { id: "yes", text: "Yes, keep the inset." },
+      { id: "responsive", text: "Make it responsive." }
+    ]);
     expect(props.focusSelectionJson).toBe("");
+  });
+
+  test("collects only finite positive measured Question Card heights", () => {
+    const heights = collectMeasuredQuestionHeights([
+      {
+        type: "alignment-card",
+        props: { cardKind: "question", h: 312 },
+        meta: { runtimeRecordId: "question-1" }
+      },
+      {
+        type: "alignment-card",
+        props: { cardKind: "agent-annotation", h: 777 },
+        meta: { runtimeRecordId: "annotation-1" }
+      },
+      {
+        type: "alignment-card",
+        props: { cardKind: "question", h: 0 },
+        meta: { runtimeRecordId: "question-zero" }
+      },
+      { type: "geo", props: { h: 888 }, meta: { runtimeRecordId: "other" } }
+    ]);
+
+    expect([...heights]).toEqual([["question-1", 312]]);
+  });
+
+  test("collects only finite Question Card top positions", () => {
+    const positions = collectQuestionCardTopPositions([
+      {
+        type: "alignment-card",
+        y: 214,
+        props: { cardKind: "question", h: 312 },
+        meta: { runtimeRecordId: "question-1" }
+      },
+      {
+        type: "alignment-card",
+        y: 98,
+        props: { cardKind: "agent-annotation", h: 180 },
+        meta: { runtimeRecordId: "annotation-1" }
+      },
+      {
+        type: "alignment-card",
+        y: Number.NaN,
+        props: { cardKind: "question", h: 312 },
+        meta: { runtimeRecordId: "question-invalid" }
+      }
+    ], new Set(["question-1", "annotation-1", "question-invalid"]));
+
+    expect([...positions]).toEqual([["question-1", 214]]);
+  });
+
+  test("resyncs only when a projected Question Card height changes", () => {
+    const record = (
+      runtimeRecordId: string,
+      cardKind: "question" | "agent-annotation",
+      h: number
+    ) => ({
+      type: "alignment-card",
+      props: { cardKind, h },
+      meta: { runtimeRecordId }
+    });
+
+    const changed = {
+      added: {},
+      removed: {},
+      updated: {
+        first: [record("question-1", "question", 236), record("question-1", "question", 312)] as const,
+        second: [record("question-2", "question", 180), record("question-2", "question", 180)] as const,
+        annotation: [record("annotation-1", "agent-annotation", 180), record("annotation-1", "agent-annotation", 220)] as const
+      }
+    };
+
+    expect(
+      shouldResyncAlignmentForQuestionHeightChanges(changed)
+    ).toBe(true);
+    expect([...questionCardRuntimeIdsWithHeightChanges(changed)]).toEqual([
+      "question-1"
+    ]);
+    expect(
+      shouldResyncAlignmentForQuestionHeightChanges({
+        added: {},
+        removed: {},
+        updated: { card: [record("question-1", "question", 312), record("question-1", "question", 312)] }
+      })
+    ).toBe(false);
+    expect(
+      shouldResyncAlignmentForQuestionHeightChanges({
+        added: {},
+        removed: {},
+        updated: {
+          card: [record("annotation-1", "agent-annotation", 180), record("annotation-1", "agent-annotation", 220)]
+        }
+      })
+    ).toBe(false);
   });
 });

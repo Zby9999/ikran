@@ -79,12 +79,14 @@ describe("Workbench motion contract", () => {
     const css = source("components/workbench/alignment-ui.module.css");
     const stage = cssRule(css, ".stagePanel {");
     const question = cssRule(css, ".questionCard {");
-    const answer = cssRule(css, ".answerRegion {");
+    const choices = cssRule(css, ".answerChoices {");
+    const custom = cssRule(css, ".customAnswerEditor {");
     const annotation = cssRule(css, ".annotationCard {");
 
     expect(stage).not.toContain("transition:");
     expect(question).not.toMatch(/transition:[^;]*(?:width|height)/s);
-    expect(answer).not.toMatch(/transition:[^;]*grid-template-rows/s);
+    expect(choices).not.toContain("transition:");
+    expect(custom).not.toMatch(/transition:[^;]*(?:width|height)/s);
     expect(annotation).not.toMatch(/transition:[^;]*(?:width|height)/s);
   });
 
@@ -94,7 +96,7 @@ describe("Workbench motion contract", () => {
 
     expect(alignment).toContain("@media (prefers-reduced-motion: reduce)");
     expect(alignment).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.answerRegion[\s\S]*opacity 150ms var\(--motion-ease-out\)/
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.questionCard,[\s\S]*\.annotationCard[\s\S]*transition: none/
     );
     expect(workbench).toContain("@keyframes workbench-loading-pulse");
     expect(workbench).toMatch(

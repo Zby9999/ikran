@@ -88,8 +88,16 @@ function createQuestionCard(
     }
   }
   questionDelivery += 1;
+  const primaryAnswer =
+    typeof input.proposedAnswer === "string" && input.proposedAnswer.trim()
+      ? input.proposedAnswer.trim()
+      : "Keep the current design direction";
   return createQuestionCardRuntime(projectPath, {
     ...input,
+    answerOptions: input.answerOptions ?? [
+      primaryAnswer,
+      "Use an alternative design direction"
+    ],
     alignmentAttemptId: preparation.current_attempt?.id,
     idempotencyKey: `legacy-unit-${questionDelivery}`
   });
@@ -318,6 +326,10 @@ describe("Design Intent Alignment Runtime contract", () => {
         section: "layout",
         observation: "Flexible Grid",
         question: "Should the grid adapt across viewport sizes?",
+        answerOptions: [
+          "Keep the current responsive grid",
+          "Use a fixed grid"
+        ],
         anchor: singleTarget(link)
       } as const;
 
@@ -756,7 +768,10 @@ describe("Design Intent Alignment Runtime contract", () => {
 
       const answer = recordDesignerAnswer(projectPath, {
         questionCardId: card.record.id,
-        finalAnswer: "Yes, but allow it for selected navigation too"
+        answer: {
+          kind: "custom",
+          text: "Yes, but allow it for selected navigation too"
+        }
       });
       expect(answer.ok).toBe(true);
       if (!answer.ok) return;
@@ -780,7 +795,7 @@ describe("Design Intent Alignment Runtime contract", () => {
     });
   });
 
-  test("updates a legacy question-card title through an audited command", () => {
+  test("updates a question-card title through an audited command", () => {
     withProject((projectPath, link) => {
       setDesignLanguageDescription(projectPath, "A calm, precise product language");
       const card = createQuestionCard(projectPath, {
@@ -929,9 +944,12 @@ describe("Design Intent Alignment Runtime contract", () => {
 
       const answering = getDesignIntentAlignment(projectPath);
       for (const card of answering.question_cards) {
+        const firstOption = card.answer_options?.[0];
+        expect(firstOption).toBeDefined();
+        if (!firstOption) continue;
         const confirmed = recordDesignerAnswer(projectPath, {
           questionCardId: card.id,
-          finalAnswer: card.proposed_answer
+          answer: { kind: "option", optionId: firstOption.id }
         });
         expect(confirmed.ok).toBe(true);
         if (confirmed.ok) {
@@ -953,8 +971,9 @@ describe("Design Intent Alignment Runtime contract", () => {
       expect(
         completed.question_cards.every(
           (card) =>
-            card.final_answer === card.proposed_answer &&
+            card.final_answer === card.answer_options?.[0]?.text &&
             card.answer_source === "agent-proposed-designer-accepted" &&
+            card.selected_option_id === card.answer_options?.[0]?.id &&
             card.status === "answered"
         )
       ).toBe(true);

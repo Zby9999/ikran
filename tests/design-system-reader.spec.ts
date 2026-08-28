@@ -117,7 +117,10 @@ test("09C-A reader projection: atlas and leaf pages", async ({
     const designerEditedCardId = cards["token"][0].id;
     const answered = await patchAlignment(workbenchUrl, token, {
       action: "record-designer-answer",
-      input: { questionCardId: designerEditedCardId, finalAnswer: "设计师改写后的回答" }
+      input: {
+        questionCardId: designerEditedCardId,
+        answer: { kind: "custom", text: "设计师改写后的回答" }
+      }
     });
     expect(answered.status).toBe(200);
     for (const section of ALIGNMENT_SECTIONS) {
@@ -125,7 +128,10 @@ test("09C-A reader projection: atlas and leaf pages", async ({
         if (card.id === designerEditedCardId) continue;
         expect(structuredContent(await client.callTool({
           name: "record_designer_answer",
-          arguments: { questionCardId: card.id, finalAnswer: card.answer }
+          arguments: {
+            questionCardId: card.id,
+            answer: { kind: "option", optionId: card.optionId }
+          }
         }))).toMatchObject({ ok: true, record: { status: "answered" } });
       }
     }

@@ -238,7 +238,18 @@ describe("Workbench Runtime consistency", () => {
     });
     expect(await client.prepareDesignIntentAlignment()).toEqual({ ok: true });
     expect(await client.returnToSeedReference()).toEqual({ ok: true });
-    expect(await client.recordDesignerAnswer("question-1", "Use 16px")).toEqual({ ok: true });
+    expect(
+      await client.recordDesignerAnswer("question-1", {
+        kind: "option",
+        optionId: "option-2"
+      })
+    ).toEqual({ ok: true });
+    expect(
+      await client.recordDesignerAnswer("legacy-question", {
+        kind: "legacy",
+        text: "Keep the legacy proposal"
+      })
+    ).toEqual({ ok: true });
     expect(await client.appendAgentAnnotationInformation("annotation-1", "Keep this exception")).toEqual({ ok: true });
     expect(await client.completeDesignIntentAlignment()).toEqual({ ok: true });
     expect(await client.confirmPrototype()).toEqual({ ok: true });
@@ -247,7 +258,17 @@ describe("Workbench Runtime consistency", () => {
       { action: "return-to-seed-reference" },
       {
         action: "record-designer-answer",
-        input: { questionCardId: "question-1", finalAnswer: "Use 16px" }
+        input: {
+          questionCardId: "question-1",
+          answer: { kind: "option", optionId: "option-2" }
+        }
+      },
+      {
+        action: "record-designer-answer",
+        input: {
+          questionCardId: "legacy-question",
+          finalAnswer: "Keep the legacy proposal"
+        }
       },
       {
         action: "append-agent-annotation-information",

@@ -97,18 +97,46 @@ export function claimAlignmentPreparationCommand(projectPath: string) {
 }
 
 function preparationCoverageComplete(
-  rows: Array<{ section: string; proposed_answer: string | null }>
+  rows: Array<{ section: string; answer_options_json: string | null }>
 ): boolean {
   return ALIGNMENT_SECTIONS.every((section) => {
     const cards = rows.filter((row) => row.section === section);
     return (
       cards.length >= ALIGNMENT_SECTION_QUESTION_MIN &&
       cards.length <= ALIGNMENT_SECTION_QUESTION_MAX &&
-      cards.every(
-        (card) =>
-          typeof card.proposed_answer === "string" &&
-          card.proposed_answer.trim().length > 0
-      )
+      cards.every((card) => {
+        // NULL marks a persisted legacy singular/no-proposal card. New MCP
+        // cards always carry answer_options_json and must keep at least two
+        // valid, unique ordered choices.
+        if (card.answer_options_json === null) return true;
+        try {
+          const options = JSON.parse(card.answer_options_json) as unknown;
+          if (!Array.isArray(options) || options.length < 2) return false;
+          const seenIds = new Set<string>();
+          const seenTexts = new Set<string>();
+          return options.every((candidate) => {
+            if (
+              !candidate ||
+              typeof candidate !== "object" ||
+              Array.isArray(candidate)
+            ) return false;
+            const option = candidate as Record<string, unknown>;
+            if (
+              typeof option.id !== "string" ||
+              option.id.trim().length === 0 ||
+              typeof option.text !== "string" ||
+              option.text.trim().length === 0 ||
+              seenIds.has(option.id) ||
+              seenTexts.has(option.text.trim())
+            ) return false;
+            seenIds.add(option.id);
+            seenTexts.add(option.text.trim());
+            return true;
+          });
+        } catch {
+          return false;
+        }
+      })
     );
   });
 }
@@ -184,13 +212,13 @@ export function finalizeAlignmentPreparation(
       }
       const cards = db
         .prepare(
-          `SELECT section, proposed_answer
+          `SELECT section, answer_options_json
            FROM alignment_question_cards
            WHERE alignment_attempt_id = ?`
         )
         .all(alignmentAttemptId) as Array<{
         section: string;
-        proposed_answer: string | null;
+        answer_options_json: string | null;
       }>;
       if (!preparationCoverageComplete(cards)) {
         return { ok: false, reason: "coverage_incomplete" } as CommandFailure;

@@ -565,7 +565,10 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
           section,
           observation: `${section} ${index}`,
           question: `Question ${index} for ${section}?`,
-          proposedAnswer: `Proposal ${index}`,
+          answerOptions: [
+            `Proposal ${index}`,
+            `Alternative ${index}`
+          ],
           anchor
         });
         if (result.ok || result.reason !== "db_error") return result;
@@ -577,7 +580,10 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
         section,
         observation: `${section} ${index}`,
         question: `Question ${index} for ${section}?`,
-        proposedAnswer: `Proposal ${index}`,
+        answerOptions: [
+          `Proposal ${index}`,
+          `Alternative ${index}`
+        ],
         anchor
       });
     };
@@ -626,7 +632,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       section: "layout",
       observation: "Stale write",
       question: "Should this be rejected?",
-      proposedAnswer: "Yes",
+      answerOptions: ["Yes", "No"],
       anchor
     })).toEqual({ ok: false, reason: "stale_alignment_attempt" });
     expect(firstAnsweringCard).toBeTruthy();
@@ -674,7 +680,7 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
         evidenceVersionId: captured.surface.id
       }
     };
-    const proposedCards: Array<{ id: string; answer: string }> = [];
+    const proposedCards: Array<{ id: string; optionId: string }> = [];
     for (const section of ALIGNMENT_SECTIONS) {
       const createAnnotation = () => createAgentAnnotation(folder, {
         alignmentAttemptId: attemptId,
@@ -699,7 +705,10 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
           section,
           observation: `${section} ${index}`,
           question: `Question ${index} for ${section}?`,
-          proposedAnswer,
+          answerOptions: [
+            proposedAnswer,
+            `Alternative ${index} for ${section}`
+          ],
           anchor
         });
         for (let retry = 0; !created.ok && created.reason === "db_error" && retry < 4; retry += 1) {
@@ -710,15 +719,20 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
             section,
             observation: `${section} ${index}`,
             question: `Question ${index} for ${section}?`,
-            proposedAnswer,
+            answerOptions: [
+              proposedAnswer,
+              `Alternative ${index} for ${section}`
+            ],
             anchor
           });
         }
         expect(created, JSON.stringify(created)).toMatchObject({ ok: true });
         if (created.ok) {
+          const optionId = created.record.answer_options?.[0]?.id;
+          if (!optionId) throw new Error("missing primary answer option");
           proposedCards.push({
             id: created.record.id,
-            answer: proposedAnswer
+            optionId
           });
         }
       }
@@ -732,13 +746,13 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
     for (const proposed of proposedCards.slice(1)) {
       let confirmed = recordDesignerAnswer(folder, {
         questionCardId: proposed.id,
-        finalAnswer: proposed.answer
+        answer: { kind: "option", optionId: proposed.optionId }
       });
       for (let retry = 0; !confirmed.ok && confirmed.reason === "db_error" && retry < 4; retry += 1) {
         await page.waitForTimeout(25);
         confirmed = recordDesignerAnswer(folder, {
           questionCardId: proposed.id,
-          finalAnswer: proposed.answer
+          answer: { kind: "option", optionId: proposed.optionId }
         });
       }
       expect(confirmed, JSON.stringify(confirmed)).toMatchObject({ ok: true });
@@ -752,10 +766,12 @@ test.describe("Ikran Issue 02/04 — tldraw Workbench shell + Agent-first seed",
       "alignment-answering"
     );
     await page.getByRole("button", { name: "Open question 2 editor" }).click();
-    await page.getByRole("textbox", { name: "Answer question 2" }).fill(
-      "Designer-approved final answer"
-    );
-    await page.getByRole("button", { name: "Submit answer 2" }).click();
+    await page.getByRole("button", { name: "Add your answer" }).click();
+    const answerEditor = page.getByRole("textbox", {
+      name: "Answer question 2"
+    });
+    await answerEditor.fill("Designer-approved final answer");
+    await answerEditor.press("Enter");
     await expect.poll(async () => {
       const response = await rawGet(
         "/api/design-intent-alignment",

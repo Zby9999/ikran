@@ -113,7 +113,10 @@ describe("Alignment preparation Agent command", () => {
           per_section: {
             agent_annotations_min: 1,
             question_cards_min: 2,
-            question_cards_max: 5
+            question_cards_max: 5,
+            answer_options_min_per_question: 2,
+            answer_options_max_per_question: null,
+            answer_options: expect.stringContaining("no fixed maximum")
           },
           token_foundations: {
             owners: ["color", "typography", "material"],
@@ -156,7 +159,10 @@ describe("Alignment preparation Agent command", () => {
         section: "design-concept",
         observation: "Calm hierarchy",
         question: "Should hierarchy remain calm?",
-        proposedAnswer: "Yes, keep contrast deliberate.",
+        answerOptions: [
+          "Yes, keep contrast deliberate.",
+          "No, increase hierarchy contrast."
+        ],
         anchor
       };
       expect(
@@ -187,7 +193,7 @@ describe("Alignment preparation Agent command", () => {
       expect(
         recordDesignerAnswer(projectPath, {
           questionCardId: created.ok ? created.record.id : "",
-          finalAnswer: "Designer answer"
+          answer: { kind: "custom", text: "Designer answer" }
         })
       ).toEqual({ ok: false, reason: "alignment_not_answering" });
       expect(finalizeAlignmentPreparation(projectPath, prepared.attempt.id)).toEqual({
@@ -228,7 +234,10 @@ describe("Alignment preparation Agent command", () => {
             section,
             observation: `${section} ${index}`,
             question: `Question ${index} for ${section}?`,
-            proposedAnswer: `Proposed answer ${index}`,
+            answerOptions: [
+              `Proposed answer ${index}`,
+              `Alternative answer ${index}`
+            ],
             anchor
           });
           expect(created.ok).toBe(true);
@@ -283,7 +292,7 @@ describe("Alignment preparation Agent command", () => {
           section: "design-concept",
           observation: "design-concept 1",
           question: "Question 1 for design-concept?",
-          proposedAnswer: "Proposed answer 1",
+          answerOptions: ["Proposed answer 1", "Alternative answer 1"],
           anchor
         })
       ).toMatchObject({
@@ -294,7 +303,7 @@ describe("Alignment preparation Agent command", () => {
       expect(
         recordDesignerAnswer(projectPath, {
           questionCardId: firstCardId,
-          finalAnswer: "Designer-confirmed answer"
+          answer: { kind: "custom", text: "Designer-confirmed answer" }
         })
       ).toMatchObject({ ok: true });
     });
@@ -323,7 +332,10 @@ describe("Alignment preparation Agent command", () => {
             section,
             observation: `${section} ${index}`,
             question: `Question ${index} for ${section}?`,
-            proposedAnswer: `Proposed answer ${index}`,
+            answerOptions: [
+              `Proposed answer ${index}`,
+              `Alternative answer ${index}`
+            ],
             anchor
           });
           if (!created.ok) throw new Error(created.reason);
@@ -349,7 +361,7 @@ describe("Alignment preparation Agent command", () => {
       const designConceptCards = cardsBySection.get("design-concept")!;
       expect(recordDesignerAnswer(projectPath, {
         questionCardId: designConceptCards[0],
-        finalAnswer: "First confirmed answer"
+        answer: { kind: "custom", text: "First confirmed answer" }
       }).ok).toBe(true);
       expect(readAlignmentSemanticDelta(projectPath, {
         alignmentAttemptId: prepared.attempt.id,
@@ -358,7 +370,7 @@ describe("Alignment preparation Agent command", () => {
 
       expect(recordDesignerAnswer(projectPath, {
         questionCardId: designConceptCards[1],
-        finalAnswer: "Second confirmed answer"
+        answer: { kind: "custom", text: "Second confirmed answer" }
       }).ok).toBe(true);
       const ready = readAlignmentSemanticDelta(projectPath, {
         alignmentAttemptId: prepared.attempt.id,
@@ -420,7 +432,10 @@ describe("Alignment preparation Agent command", () => {
             section,
             observation: `${section} ${index}`,
             question: `Question ${index} for ${section}?`,
-            proposedAnswer: `Proposed answer ${index}`,
+            answerOptions: [
+              `Proposed answer ${index}`,
+              `Alternative answer ${index}`
+            ],
             anchor
           });
           if (!created.ok) throw new Error(created.reason);
@@ -432,7 +447,7 @@ describe("Alignment preparation Agent command", () => {
       for (const [index, questionCardId] of cards.entries()) {
         expect(recordDesignerAnswer(projectPath, {
           questionCardId,
-          finalAnswer: `Confirmed concept ${index + 1}`
+          answer: { kind: "custom", text: `Confirmed concept ${index + 1}` }
         }).ok).toBe(true);
       }
       const delta = readAlignmentSemanticDelta(projectPath, {
@@ -502,7 +517,7 @@ describe("Alignment preparation Agent command", () => {
 
       expect(recordDesignerAnswer(projectPath, {
         questionCardId: firstQuestion.sourceId,
-        finalAnswer: "Changed concept"
+        answer: { kind: "custom", text: "Changed concept" }
       }).ok).toBe(true);
       expect(readIncrementalPlanningStatus(
         projectPath,
@@ -568,7 +583,10 @@ describe("Alignment preparation Agent command", () => {
             section,
             observation: `${section} ${index}`,
             question: `Question ${index} for ${section}?`,
-            proposedAnswer: `Proposed answer ${index}`,
+            answerOptions: [
+              `Proposed answer ${index}`,
+              `Alternative answer ${index}`
+            ],
             anchor
           });
           if (!created.ok) throw new Error(created.reason);
@@ -583,7 +601,7 @@ describe("Alignment preparation Agent command", () => {
       for (const questionCardId of cardsBySection.get("design-concept")!) {
         expect(recordDesignerAnswer(projectPath, {
           questionCardId,
-          finalAnswer: "Concept answer"
+          answer: { kind: "custom", text: "Concept answer" }
         }).ok).toBe(true);
       }
       const conceptDelta = readAlignmentSemanticDelta(projectPath, {
@@ -600,7 +618,7 @@ describe("Alignment preparation Agent command", () => {
       for (const questionCardId of cardsBySection.get("visual-language")!) {
         expect(recordDesignerAnswer(projectPath, {
           questionCardId,
-          finalAnswer: "Visual answer"
+          answer: { kind: "custom", text: "Visual answer" }
         }).ok).toBe(true);
       }
       expect(recordIncrementalDesignSystemPlan(projectPath, {
@@ -676,7 +694,7 @@ describe("Alignment preparation Agent command", () => {
 
       expect(recordDesignerAnswer(projectPath, {
         questionCardId: visualSource.sourceId,
-        finalAnswer: "Edited visual answer"
+        answer: { kind: "custom", text: "Edited visual answer" }
       }).ok).toBe(true);
       const editedVisual = readAlignmentSemanticDelta(projectPath, {
         alignmentAttemptId: prepared.attempt.id,
@@ -741,7 +759,10 @@ describe("Alignment preparation Agent command", () => {
             section,
             observation: `${section} ${index}`,
             question: `Question ${index} for ${section}?`,
-            proposedAnswer: `Proposed answer ${index}`,
+            answerOptions: [
+              `Proposed answer ${index}`,
+              `Alternative answer ${index}`
+            ],
             anchor
           });
           if (!created.ok) throw new Error(created.reason);
@@ -759,13 +780,13 @@ describe("Alignment preparation Agent command", () => {
       for (const questionCardId of cardsBySection.get("visual-language")!) {
         expect(recordDesignerAnswer(projectPath, {
           questionCardId,
-          finalAnswer: "Visual answer"
+          answer: { kind: "custom", text: "Visual answer" }
         }).ok).toBe(true);
       }
       for (const questionCardId of cardsBySection.get("design-concept")!) {
         expect(recordDesignerAnswer(projectPath, {
           questionCardId,
-          finalAnswer: "Concept answer"
+          answer: { kind: "custom", text: "Concept answer" }
         }).ok).toBe(true);
       }
       const concept = readAlignmentSemanticDelta(projectPath, {
@@ -829,7 +850,10 @@ describe("Alignment preparation Agent command", () => {
                   section,
                   observation: `${section} ${index}`,
                   question: `Question ${index} for ${section}?`,
-                  proposedAnswer: `Proposed answer ${index}`,
+                  answerOptions: [
+                    `Proposed answer ${index}`,
+                    `Alternative answer ${index}`
+                  ],
                   anchor
                 });
                 if (!created.ok) throw new Error(created.reason);
@@ -850,11 +874,11 @@ describe("Alignment preparation Agent command", () => {
             });
             expect(recordDesignerAnswer(projectPath, {
               questionCardId: cards[0],
-              finalAnswer: "First answer"
+              answer: { kind: "custom", text: "First answer" }
             }).ok).toBe(true);
             expect(recordDesignerAnswer(projectPath, {
               questionCardId: cards[1],
-              finalAnswer: "Second answer"
+              answer: { kind: "custom", text: "Second answer" }
             }).ok).toBe(true);
             const available = await waiting;
             expect(available).toMatchObject({
@@ -905,7 +929,7 @@ describe("Alignment preparation Agent command", () => {
               .get("visual-language")!.entries()) {
               expect(recordDesignerAnswer(projectPath, {
                 questionCardId,
-                finalAnswer: `Visual answer ${index + 1}`
+                answer: { kind: "custom", text: `Visual answer ${index + 1}` }
               }).ok).toBe(true);
             }
             const resumed = await waitForAlignmentSemanticDelta(projectPath, {
@@ -942,7 +966,10 @@ describe("Alignment preparation Agent command", () => {
             section,
             observation: `${section} ${index}`,
             question: `Question ${index} for ${section}?`,
-            proposedAnswer: `Proposed answer ${index}`,
+            answerOptions: [
+              `Proposed answer ${index}`,
+              `Alternative answer ${index}`
+            ],
             anchor
           });
           if (!created.ok) throw new Error(created.reason);
@@ -965,7 +992,7 @@ describe("Alignment preparation Agent command", () => {
       for (const questionCardId of cards) {
         expect(recordDesignerAnswer(projectPath, {
           questionCardId,
-          finalAnswer: "Confirmed"
+          answer: { kind: "custom", text: "Confirmed" }
         }).ok).toBe(true);
       }
       const first = readAlignmentSemanticDelta(projectPath, {

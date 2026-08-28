@@ -84,22 +84,35 @@ function insertSeed(projectPath: string, id: string): void {
 function insertAnsweredQuestion(
   projectPath: string,
   id: string,
-  opts: { finalAnswer?: string | null; attemptId?: string | null } = {}
+  opts: {
+    finalAnswer?: string | null;
+    attemptId?: string | null;
+    answerOptions?: Array<{ id: string; text: string }> | null;
+    selectedOptionId?: string | null;
+  } = {}
 ): void {
   const db = new DatabaseSync(getProjectDbPath(projectPath));
   try {
     db.prepare(
       `INSERT INTO alignment_question_cards
        (id, section, observation, question, proposed_answer, final_answer,
-        answer_source, anchor_json, created_at, updated_at, alignment_attempt_id)
+        answer_source, anchor_json, created_at, updated_at,
+        alignment_attempt_id, answer_options_json, selected_option_id)
        VALUES (?, 'design-concept', 'obs', 'q?', 'proposed', ?,
-               'designer-edited', '{}', ?, ?, ?)`
+               ?, '{}', ?, ?, ?, ?, ?)`
     ).run(
       id,
       opts.finalAnswer === undefined ? "Final answer" : opts.finalAnswer,
+      opts.selectedOptionId
+        ? "agent-proposed-designer-accepted"
+        : "designer-edited",
       "2026-08-06T00:01:00.000Z",
       "2026-08-06T00:02:00.000Z",
-      opts.attemptId ?? null
+      opts.attemptId ?? null,
+      opts.answerOptions === undefined
+        ? null
+        : JSON.stringify(opts.answerOptions),
+      opts.selectedOptionId ?? null
     );
   } finally {
     db.close();
@@ -421,7 +434,15 @@ test("exportResearchPackage rejects ineligible projects without writing files", 
 test("eligible export writes the package, keeps early stages, and guards undeclared artifacts", () => {
   withProject((projectPath) => {
     insertSeed(projectPath, "seed-1");
-    insertAnsweredQuestion(projectPath, "q-answered");
+    insertAnsweredQuestion(projectPath, "q-answered", {
+      finalAnswer: "Use the expressive direction",
+      answerOptions: [
+        { id: "q-answered:option:1", text: "Keep it restrained" },
+        { id: "q-answered:option:2", text: "Use the expressive direction" },
+        { id: "q-answered:option:3", text: "Vary by context" }
+      ],
+      selectedOptionId: "q-answered:option:2"
+    });
     insertAnsweredQuestion(projectPath, "q-draft", { finalAnswer: null });
     insertFeedback(projectPath, "fb-1", "run-1");
     insertFeedback(projectPath, "fb-unreviewed", "run-1");
@@ -476,6 +497,32 @@ test("eligible export writes the package, keeps early stages, and guards undecla
       status: "confirmed"
     });
     logEvent(projectPath, "preview_failed", { reason: "install_failed" });
+    for (const revision of [
+      {
+        final_answer: "Keep it restrained",
+        answer_source: "agent-proposed-designer-accepted",
+        answer_kind: "option",
+        selected_option_id: "q-answered:option:1"
+      },
+      {
+        final_answer: "Blend restraint and expression\nby context",
+        answer_source: "designer-edited",
+        answer_kind: "custom",
+        selected_option_id: null
+      },
+      {
+        final_answer: "Use the expressive direction",
+        answer_source: "agent-proposed-designer-accepted",
+        answer_kind: "option",
+        selected_option_id: "q-answered:option:2"
+      }
+    ]) {
+      logEvent(projectPath, "designer_answer_submitted", {
+        question_card_id: "q-answered",
+        alignment_attempt_id: null,
+        ...revision
+      });
+    }
 
     const result = exportResearchPackage(projectPath);
     expect(result).toMatchObject({
@@ -503,6 +550,35 @@ test("eligible export writes the package, keeps early stages, and guards undecla
       events.filter((e) => e.type === "design_system_formalized")
     ).toHaveLength(2);
     expect(events.some((e) => e.type === "export_generated")).toBe(true);
+    expect(
+      events
+        .filter((event) => event.type === "designer_answer_submitted")
+        .map((event) => ({
+          final_answer: event.payload.final_answer,
+          answer_source: event.payload.answer_source,
+          answer_kind: event.payload.answer_kind,
+          selected_option_id: event.payload.selected_option_id
+        }))
+    ).toEqual([
+      {
+        final_answer: "Keep it restrained",
+        answer_source: "agent-proposed-designer-accepted",
+        answer_kind: "option",
+        selected_option_id: "q-answered:option:1"
+      },
+      {
+        final_answer: "Blend restraint and expression\nby context",
+        answer_source: "designer-edited",
+        answer_kind: "custom",
+        selected_option_id: null
+      },
+      {
+        final_answer: "Use the expressive direction",
+        answer_source: "agent-proposed-designer-accepted",
+        answer_kind: "option",
+        selected_option_id: "q-answered:option:2"
+      }
+    ]);
 
     // Failures / cancels / Open Gap stay out of research facts.
     expect(events.some((e) => e.type === "invalid_output")).toBe(false);
@@ -518,13 +594,29 @@ test("eligible export writes the package, keeps early stages, and guards undecla
 
     const questions = JSON.parse(
       readFileSync(path.join(exportDir, "alignment-questions.json"), "utf-8")
-    ) as Array<{ id: string }>;
+    ) as Array<{
+      id: string;
+      answer_options: Array<{ id: string; text: string }> | null;
+      selected_option_id: string | null;
+    }>;
     expect(questions.map((q) => q.id)).toEqual(["q-answered"]);
+    expect(questions[0]).toMatchObject({
+      answer_options: [
+        { id: "q-answered:option:1", text: "Keep it restrained" },
+        { id: "q-answered:option:2", text: "Use the expressive direction" },
+        { id: "q-answered:option:3", text: "Vary by context" }
+      ],
+      selected_option_id: "q-answered:option:2"
+    });
 
     const answers = JSON.parse(
       readFileSync(path.join(exportDir, "designer-answers.json"), "utf-8")
-    ) as Array<{ question_card_id: string }>;
+    ) as Array<{
+      question_card_id: string;
+      selected_option_id: string | null;
+    }>;
     expect(answers.map((a) => a.question_card_id)).toEqual(["q-answered"]);
+    expect(answers[0].selected_option_id).toBe("q-answered:option:2");
 
     const proposals = JSON.parse(
       readFileSync(

@@ -4,6 +4,7 @@
 
 import type { AlignmentStageId } from "../alignment-stage-panel";
 import type { FocusCardSelection } from "../focus-mode";
+import type { AnswerOption } from "@/components/runtime/alignment-answer-contract";
 import {
   expandAgentRegionRect,
   expandFocusHoleRect
@@ -37,8 +38,10 @@ export type AlignmentQuestionCardRecord = {
   section: AlignmentStageId;
   observation: string;
   question: string;
+  answer_options?: readonly AnswerOption[] | null;
   proposed_answer: string | null;
   final_answer: string | null;
+  selected_option_id?: string | null;
   answer_source:
     | "designer-edited"
     | "agent-proposed-designer-accepted"
@@ -79,6 +82,10 @@ export type AlignmentProjectionInput = {
   questions: AlignmentQuestionCardRecord[];
   annotations: AlignmentAgentAnnotationRecord[];
   seedFrames: AlignmentSeedFrame[];
+  /** DOM-measured heights keyed by Runtime Question Card id. */
+  measuredQuestionHeights?: ReadonlyMap<string, number>;
+  /** Existing canvas tops used only while reflowing an interactive height change. */
+  currentQuestionTopPositions?: ReadonlyMap<string, number>;
 };
 
 export type AlignmentProjectionMeta = {
@@ -107,8 +114,10 @@ export type AlignmentCardProjection = {
     number: number;
     observation: string;
     question: string;
+    answerOptions: readonly AnswerOption[];
     proposedAnswer: string;
     finalAnswer: string;
+    selectedOptionId: string;
     answerSource: string;
     title: string;
     body: string;
@@ -160,10 +169,25 @@ export type AlignmentProjectionShape =
 
 export const ALIGNMENT_CARD_COLLAPSED_W = 320;
 export const ALIGNMENT_CARD_EXPANDED_W = 360;
+export const ALIGNMENT_QUESTION_CARD_W = 360;
 export const ALIGNMENT_CARD_SEED_GAP = 20;
 export const ALIGNMENT_CARD_STACK_GAP = 12;
 export const ALIGNMENT_QUESTION_CARD_H = 236;
 export const ALIGNMENT_ANNOTATION_CARD_H = 180;
+
+/**
+ * Keep the established canvas rhythm after a Question Card collapses. The DOM
+ * height still drives its rendered box and connector center, while the shared
+ * Question/Annotation lane never reserves less than the original card height.
+ */
+export function alignmentCardLaneFootprintHeight(
+  cardKind: "question" | "agent-annotation",
+  renderedHeight: number
+): number {
+  return cardKind === "question"
+    ? Math.max(ALIGNMENT_QUESTION_CARD_H, renderedHeight)
+    : renderedHeight;
+}
 
 type CardCollisionBox = { y: number; h: number };
 
@@ -316,10 +340,23 @@ export function buildAlignmentProjectionPlan(
     if (!target) continue;
     const frame = frameForTarget(input.seedFrames, target);
     if (!frame) continue;
+    const measuredQuestionHeight =
+      item.kind === "question"
+        ? input.measuredQuestionHeights?.get(item.record.id)
+        : undefined;
     const h =
       item.kind === "question"
-        ? ALIGNMENT_QUESTION_CARD_H
+        ? typeof measuredQuestionHeight === "number" &&
+          Number.isFinite(measuredQuestionHeight) &&
+          measuredQuestionHeight > 0
+          ? measuredQuestionHeight
+          : ALIGNMENT_QUESTION_CARD_H
         : ALIGNMENT_ANNOTATION_CARD_H;
+    const w =
+      item.kind === "question"
+        ? ALIGNMENT_QUESTION_CARD_W
+        : ALIGNMENT_CARD_COLLAPSED_W;
+    const laneFootprintH = alignmentCardLaneFootprintHeight(item.kind, h);
     const cardId = `alignment-card:${item.record.id}`;
     const stage =
       item.kind === "question"
@@ -356,23 +393,31 @@ export function buildAlignmentProjectionPlan(
         : "right";
     const laneId = `${frame.id}:${placement}`;
     const fallbackY = nextYByLane.get(laneId) ?? frame.y;
-    const desiredY = targetGeometry
-      ? targetGeometry.y + targetGeometry.h / 2 - h / 2
-      : fallbackY;
+    const currentQuestionTop =
+      item.kind === "question"
+        ? input.currentQuestionTopPositions?.get(item.record.id)
+        : undefined;
+    const desiredY =
+      typeof currentQuestionTop === "number" &&
+      Number.isFinite(currentQuestionTop)
+        ? currentQuestionTop
+        : targetGeometry
+          ? targetGeometry.y + targetGeometry.h / 2 - h / 2
+          : fallbackY;
     const occupied = occupiedCardsByLane.get(laneId) ?? [];
-    const y = resolveCardCollisionY(desiredY, h, occupied);
+    const y = resolveCardCollisionY(desiredY, laneFootprintH, occupied);
     const card: AlignmentCardProjection = {
       type: "alignment-card",
       id: cardId,
       x:
         placement === "left"
-          ? frame.x - ALIGNMENT_CARD_SEED_GAP - ALIGNMENT_CARD_COLLAPSED_W
+          ? frame.x - ALIGNMENT_CARD_SEED_GAP - w
           : frame.x + frame.w + ALIGNMENT_CARD_SEED_GAP,
       y,
       isLocked: true,
       meta: metaFor(item.record.id, cardId, target),
       props: {
-        w: ALIGNMENT_CARD_COLLAPSED_W,
+        w,
         h,
         placement,
         cardKind: item.kind,
@@ -380,10 +425,14 @@ export function buildAlignmentProjectionPlan(
         number: item.number,
         observation: item.kind === "question" ? item.record.observation : "",
         question: item.kind === "question" ? item.record.question : "",
+        answerOptions:
+          item.kind === "question" ? item.record.answer_options ?? [] : [],
         proposedAnswer:
           item.kind === "question" ? item.record.proposed_answer ?? "" : "",
         finalAnswer:
           item.kind === "question" ? item.record.final_answer ?? "" : "",
+        selectedOptionId:
+          item.kind === "question" ? item.record.selected_option_id ?? "" : "",
         answerSource:
           item.kind === "question" ? item.record.answer_source ?? "" : "",
         title: item.kind === "agent-annotation" ? item.record.title : "",
@@ -404,13 +453,13 @@ export function buildAlignmentProjectionPlan(
       }
     };
     plan.push(card);
-    occupied.push({ y, h });
+    occupied.push({ y, h: laneFootprintH });
     occupiedCardsByLane.set(laneId, occupied);
     nextYByLane.set(
       laneId,
       Math.max(
         nextYByLane.get(laneId) ?? frame.y,
-        y + h + ALIGNMENT_CARD_STACK_GAP
+        y + laneFootprintH + ALIGNMENT_CARD_STACK_GAP
       )
     );
 

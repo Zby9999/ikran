@@ -375,8 +375,8 @@ function loadAlignmentExports(db: DatabaseType): {
   const rows = db
     .prepare(
       `SELECT id, section, observation, question, proposed_answer, final_answer,
-              answer_source, anchor_json, created_at, updated_at,
-              alignment_attempt_id
+              answer_source, answer_options_json, selected_option_id,
+              anchor_json, created_at, updated_at, alignment_attempt_id
        FROM alignment_question_cards
        ORDER BY created_at ASC, id ASC`
     )
@@ -388,6 +388,8 @@ function loadAlignmentExports(db: DatabaseType): {
     proposed_answer: string | null;
     final_answer: string | null;
     answer_source: string | null;
+    answer_options_json: string | null;
+    selected_option_id: string | null;
     anchor_json: string;
     created_at: string;
     updated_at: string;
@@ -415,6 +417,14 @@ function loadAlignmentExports(db: DatabaseType): {
     } catch {
       // Keep raw.
     }
+    let answerOptions: unknown = null;
+    if (typeof row.answer_options_json === "string") {
+      try {
+        answerOptions = JSON.parse(row.answer_options_json);
+      } catch {
+        answerOptions = row.answer_options_json;
+      }
+    }
 
     questions.push({
       id: row.id,
@@ -422,8 +432,10 @@ function loadAlignmentExports(db: DatabaseType): {
       observation: row.observation,
       question: row.question,
       proposed_answer: row.proposed_answer,
+      answer_options: answerOptions,
       final_answer: row.final_answer,
       answer_source: row.answer_source,
+      selected_option_id: row.selected_option_id,
       anchor,
       alignment_attempt_id: row.alignment_attempt_id,
       created_at: row.created_at,
@@ -434,6 +446,7 @@ function loadAlignmentExports(db: DatabaseType): {
       section: row.section,
       final_answer: row.final_answer,
       answer_source: row.answer_source,
+      selected_option_id: row.selected_option_id,
       alignment_attempt_id: row.alignment_attempt_id,
       updated_at: row.updated_at
     });

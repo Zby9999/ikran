@@ -168,7 +168,8 @@ export function claimInitialDesignSystemSemanticContext(projectPath: string) {
         title: card.observation,
         question: card.question,
         answer: card.final_answer,
-        answerSource: card.answer_source
+        answerSource: card.answer_source,
+        selectedOptionId: card.selected_option_id
       })),
       ...claimed.annotations.map((annotation) => ({
         ref: sourceRefsById.get(annotation.id)!,

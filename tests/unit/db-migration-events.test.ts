@@ -1180,7 +1180,15 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(44);
+        expect(CURRENT_SCHEMA_VERSION).toBe(45);
+        expect(
+          db.prepare("PRAGMA table_info(alignment_question_cards)").all()
+        ).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "answer_options_json" }),
+            expect.objectContaining({ name: "selected_option_id" })
+          ])
+        );
         expect(
           db.prepare("PRAGMA table_info(prototype_surfaces)").all()
         ).toEqual(
@@ -1344,6 +1352,47 @@ test.describe("PRAGMA user_version migration runner", () => {
         closeProjectDb(db);
       }
       expect(existsSync(getProjectDbBackupPath(dir, 0))).toBe(false);
+    });
+  });
+
+  test("v44→v45 preserves legacy Question cards with nullable answer-option identity", () => {
+    withTempProject((dir) => {
+      const initialized = openProjectDb(dir);
+      closeProjectDb(initialized);
+      const dbPath = getProjectDbPath(dir);
+      const v44 = new DatabaseSync(dbPath);
+      try {
+        v44.exec(`
+          INSERT INTO alignment_question_cards
+            (id, section, observation, question, proposed_answer, final_answer,
+             answer_source, anchor_json, created_at, updated_at)
+          VALUES
+            ('legacy-question-v44', 'layout', 'Legacy layout',
+             'Should this legacy card remain answerable?', 'Keep it', NULL,
+             NULL, '{}', '2026-08-27T00:00:00.000Z',
+             '2026-08-27T00:00:00.000Z');
+          ALTER TABLE alignment_question_cards DROP COLUMN answer_options_json;
+          ALTER TABLE alignment_question_cards DROP COLUMN selected_option_id;
+          PRAGMA user_version = 44;
+        `);
+      } finally {
+        v44.close();
+      }
+
+      const migrated = openProjectDb(dir);
+      try {
+        expect(userVersion(migrated)).toBe(45);
+        expect(migrated.prepare(
+          `SELECT proposed_answer, answer_options_json, selected_option_id
+           FROM alignment_question_cards WHERE id = 'legacy-question-v44'`
+        ).get()).toEqual({
+          proposed_answer: "Keep it",
+          answer_options_json: null,
+          selected_option_id: null
+        });
+      } finally {
+        closeProjectDb(migrated);
+      }
     });
   });
 

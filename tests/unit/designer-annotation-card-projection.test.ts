@@ -2,7 +2,7 @@
 // Pure geometry: designer-only filter, left/right wing docking, collision
 // stacking, connector geometry, height estimate, missing-surface skip.
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   buildDesignerAnnotationCardPlan,
   designerAnnotationCardHeight,
@@ -13,6 +13,7 @@ import {
   type DesignerAnnotationConnectorPlan,
   type DesignerAnnotationSurfaceContext
 } from "../../components/workbench/projection/designer-annotation-card-projection";
+import { createDeferredAlignmentLaneSync } from "../../components/workbench/projection/designer-annotation-card-sync";
 import { computeAnnotationPagePlacement, isAnnotationVisibleInStage } from "../../components/workbench/projection/annotation-projection";
 import type { RegionAnnotationRecord } from "../../lib/runtime/region-annotation";
 
@@ -109,6 +110,27 @@ function markerCenter(record: RegionAnnotationRecord) {
     rect: pageRect
   };
 }
+
+describe("deferred Alignment lane sync", () => {
+  test("coalesces height and position events into one settled annotation reflow", () => {
+    let flush: (() => void) | undefined;
+    const schedule = vi.fn((callback: () => void) => {
+      flush = callback;
+    });
+    const reflow = vi.fn();
+    const deferred = createDeferredAlignmentLaneSync(reflow, schedule);
+
+    deferred.request();
+    deferred.request();
+
+    expect(schedule).toHaveBeenCalledOnce();
+    expect(reflow).not.toHaveBeenCalled();
+
+    flush?.();
+
+    expect(reflow).toHaveBeenCalledOnce();
+  });
+});
 
 describe("designerAnnotationCardHeight", () => {
   test("clamps short bodies to the minimum", () => {

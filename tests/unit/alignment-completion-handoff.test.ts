@@ -65,7 +65,7 @@ function createAnsweringFixture(finalize = true): Fixture {
   if (!claimed.ok) throw new Error(claimed.reason);
 
   const questionIds: string[] = [];
-  const proposedAnswers: string[] = [];
+  const acceptedOptionIds: string[] = [];
   for (const section of ALIGNMENT_SECTIONS) {
     const annotation = createAgentAnnotation(projectPath, {
       alignmentAttemptId: prepared.attempt.id,
@@ -93,7 +93,10 @@ function createAnsweringFixture(finalize = true): Fixture {
         section,
         observation: `${section} ${index}`,
         question: `Question ${index} for ${section}?`,
-        proposedAnswer,
+        answerOptions: [
+          proposedAnswer,
+          `Alternative ${index} for ${section}`
+        ],
         anchor: {
           kind: "single",
           target: {
@@ -105,8 +108,10 @@ function createAnsweringFixture(finalize = true): Fixture {
         }
       });
       if (!created.ok) throw new Error(created.reason);
+      const acceptedOptionId = created.record.answer_options?.[0]?.id;
+      if (!acceptedOptionId) throw new Error("missing first answer option");
       questionIds.push(created.record.id);
-      proposedAnswers.push(proposedAnswer);
+      acceptedOptionIds.push(acceptedOptionId);
     }
   }
   if (finalize) {
@@ -118,7 +123,7 @@ function createAnsweringFixture(finalize = true): Fixture {
     questionIds.forEach((questionCardId, index) => {
       const confirmed = recordDesignerAnswer(projectPath, {
         questionCardId,
-        finalAnswer: proposedAnswers[index]
+        answer: { kind: "option", optionId: acceptedOptionIds[index]! }
       });
       if (!confirmed.ok) throw new Error(confirmed.reason);
     });
@@ -201,7 +206,7 @@ describe("Alignment completion handoff", () => {
       expect(
         recordDesignerAnswer(fixture.projectPath, {
           questionCardId: fixture.questionIds[0],
-          finalAnswer: "Designer final"
+          answer: { kind: "custom", text: "Designer final" }
         }).ok
       ).toBe(true);
 
@@ -240,7 +245,7 @@ describe("Alignment completion handoff", () => {
         answer_source: "designer-edited"
       });
       expect(read.question_cards.slice(1).every((card) =>
-        card.final_answer === card.proposed_answer &&
+        card.final_answer === card.answer_options?.[0]?.text &&
         card.answer_source === "agent-proposed-designer-accepted"
       )).toBe(true);
       expect(listEvents(fixture.projectPath, "design_intent_alignment_completed"))
@@ -322,7 +327,7 @@ END;
       expect(
         recordDesignerAnswer(fixture.projectPath, {
           questionCardId: fixture.questionIds[0],
-          finalAnswer: "Late mutation"
+          answer: { kind: "custom", text: "Late mutation" }
         })
       ).toEqual({ ok: false, reason: "alignment_completed" });
       expect(

@@ -714,11 +714,17 @@ export const createAlignmentQuestionCardInputSchema = z.object({
     .describe(
       "Question shown on the card. Language follows the claimed section_contract.output_language."
     ),
+  answerOptions: z
+    .array(z.string())
+    .min(2)
+    .describe(
+      "Ordered Agent-prepared answer choices. Supply at least two meaningful, mutually distinguishable strings; Runtime trims, validates uniqueness, and assigns stable ids. Add more when useful; there is no fixed maximum and no Agent-authored Other choice."
+    ),
   proposedAnswer: z
     .string()
     .optional()
     .describe(
-      "Optional prefilled answer. Language follows the claimed section_contract.output_language."
+      "Deprecated compatibility field. It never replaces answerOptions for newly created MCP cards."
     ),
   anchor: alignmentAnchorSchema
 });
@@ -875,10 +881,47 @@ export const appendAgentAnnotationInformationInputSchema = z.object({
   information: z.string()
 });
 
-export const recordDesignerAnswerInputSchema = z.object({
+export const designerAnswerIntentSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("option"),
+    optionId: z.string().describe(
+      "Stable option id read from the owning Question card. Runtime derives answer text and provenance."
+    )
+  }).strict(),
+  z.object({
+    kind: z.literal("custom"),
+    text: z.string().describe(
+      "Designer-authored answer text. It remains designer-edited even when equal to an Agent choice label."
+    )
+  }).strict()
+]);
+
+export const recordDesignerAnswerInputShape = {
   questionCardId: z.string(),
-  finalAnswer: z.string()
-});
+  answer: designerAnswerIntentSchema.optional(),
+  finalAnswer: z.string().optional().describe(
+    "Deprecated compatibility payload accepted only for persisted legacy cards without answer options."
+  )
+} as const;
+
+/** Object schema kept intact so the MCP SDK can advertise its JSON shape. */
+export const recordDesignerAnswerToolInputSchema = z
+  .object(recordDesignerAnswerInputShape)
+  .describe(
+    "Provide exactly one of answer (modern option/custom intent) or finalAnswer (legacy compatibility only)."
+  );
+
+/** Stricter parser for direct callers and tests; Runtime repeats the XOR gate. */
+export const recordDesignerAnswerInputSchema =
+  recordDesignerAnswerToolInputSchema.superRefine((value, context) => {
+  if ((value.answer === undefined) === (value.finalAnswer === undefined)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Provide exactly one of answer or finalAnswer.",
+      path: ["answer"]
+    });
+  }
+  });
 
 export const updateAlignmentQuestionTitleInputSchema = z.object({
   questionCardId: z.string(),

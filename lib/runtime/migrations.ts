@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 44;
+export const CURRENT_SCHEMA_VERSION = 45;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -2094,6 +2094,32 @@ CREATE TABLE IF NOT EXISTS alignment_incremental_plan_requests (
   PRIMARY KEY (alignment_attempt_id, idempotency_key)
 );
       `);
+    }
+  },
+  {
+    version: 45,
+    up(db) {
+      // Tickets 57–58: ordered Runtime-owned answer choices and explicit
+      // selected-choice identity. NULL answer_options_json intentionally
+      // distinguishes legacy singular/no-proposal cards from new cards.
+      const table = db.prepare(
+        `SELECT 1 AS present FROM sqlite_master
+         WHERE type = 'table' AND name = 'alignment_question_cards'`
+      ).get() as { present: number } | undefined;
+      if (!table) return;
+      const columns = new Set(
+        (db.prepare("PRAGMA table_info(alignment_question_cards)").all() as Array<{
+          name: string;
+        }>).map((column) => column.name)
+      );
+      if (!columns.has("answer_options_json")) {
+        db.exec(`ALTER TABLE alignment_question_cards
+          ADD COLUMN answer_options_json TEXT;`);
+      }
+      if (!columns.has("selected_option_id")) {
+        db.exec(`ALTER TABLE alignment_question_cards
+          ADD COLUMN selected_option_id TEXT;`);
+      }
     }
   }
 ];

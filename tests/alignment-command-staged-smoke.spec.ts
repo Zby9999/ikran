@@ -117,7 +117,7 @@ test("07G staged one-process Agent command handoff survives abandon and restart"
         section: "design-concept",
         observation: "Initial concept",
         question: "Which concept should lead the system?",
-        proposedAnswer: "Clarity before ornament",
+        answerOptions: ["Clarity before ornament", "Expression before clarity"],
         anchor
       }
     }))).toMatchObject({ ok: true });
@@ -146,7 +146,7 @@ test("07G staged one-process Agent command handoff survives abandon and restart"
         section: "visual-language",
         observation: "Stale visual",
         question: "Can the abandoned attempt still write?",
-        proposedAnswer: "It must not",
+        answerOptions: ["It must not", "Allow it"],
         anchor
       }
     }))).toMatchObject({ ok: false, error: "stale_alignment_attempt" });
@@ -166,7 +166,11 @@ test("07G staged one-process Agent command handoff survives abandon and restart"
       }
     });
 
-    const proposedCards: Array<{ id: string; answer: string }> = [];
+    const proposedCards: Array<{
+      id: string;
+      answer: string;
+      optionId: string;
+    }> = [];
     for (const section of SECTIONS) {
       expect(sc(await client.callTool({
         name: "create_agent_annotation",
@@ -190,14 +194,22 @@ test("07G staged one-process Agent command handoff survives abandon and restart"
             section,
             observation: `${section} ${index}`,
             question: `Question ${index} for ${section}?`,
-            proposedAnswer,
+            answerOptions: [
+              proposedAnswer,
+              `Alternative ${index} for ${section}`
+            ],
             anchor
           }
         }));
         expect(created).toMatchObject({ ok: true });
+        const record = created.record as {
+          id: string;
+          answer_options: Array<{ id: string; text: string }>;
+        };
         proposedCards.push({
-          id: String((created.record as { id: string }).id),
-          answer: proposedAnswer
+          id: String(record.id),
+          answer: proposedAnswer,
+          optionId: record.answer_options[0].id
         });
       }
     }
@@ -226,15 +238,21 @@ test("07G staged one-process Agent command handoff survives abandon and restart"
     }
     await page.getByRole("button", { name: "Design Concept", exact: true }).click();
     await page.getByRole("button", { name: "Open question 2 editor" }).click();
-    await page.getByRole("textbox", { name: "Answer question 2" })
-      .fill("Designer-edited smoke answer");
-    await page.getByRole("button", { name: "Submit answer 2" }).click();
+    await page.getByRole("button", { name: "Add your answer" }).click();
+    const customAnswer = page.getByRole("textbox", { name: "Answer question 2" });
+    await customAnswer.fill("Designer-edited smoke answer");
+    await customAnswer.press("Enter");
+    const collapsedQuestion = page.getByRole("button", {
+      name: "Open question 2 editor"
+    });
+    await expect(collapsedQuestion).toHaveAttribute("aria-expanded", "false");
+    await expect(collapsedQuestion).toBeFocused();
     for (const proposed of proposedCards.slice(1)) {
       expect(sc(await client.callTool({
         name: "record_designer_answer",
         arguments: {
           questionCardId: proposed.id,
-          finalAnswer: proposed.answer
+          answer: { kind: "option", optionId: proposed.optionId }
         }
       }))).toMatchObject({ ok: true });
     }

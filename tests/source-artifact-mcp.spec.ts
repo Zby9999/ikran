@@ -177,7 +177,10 @@ test("design-system token.json declaration links an answered card and ingests", 
     const stagedCard = staged.cards["design-concept"][0];
     expect(structuredContent(await client.callTool({
       name: "record_designer_answer",
-      arguments: { questionCardId: stagedCard.id, finalAnswer: stagedCard.answer }
+      arguments: {
+        questionCardId: stagedCard.id,
+        answer: { kind: "option", optionId: stagedCard.optionId }
+      }
     }))).toMatchObject({
       ok: true,
       record: { status: "answered" }
@@ -494,7 +497,10 @@ test("formalized entry without a designer-edited link is rejected at ingest", as
     const stagedCard = staged.cards["design-concept"][0];
     expect(structuredContent(await client.callTool({
       name: "record_designer_answer",
-      arguments: { questionCardId: stagedCard.id, finalAnswer: stagedCard.answer }
+      arguments: {
+        questionCardId: stagedCard.id,
+        answer: { kind: "option", optionId: stagedCard.optionId }
+      }
     }))).toMatchObject({
       ok: true,
       record: { status: "answered" }
