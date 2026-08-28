@@ -178,6 +178,15 @@ const STAGE_TINTS: Record<AlignmentStageId, string> = {
   interaction: "#fcffdc"
 };
 
+const STAGE_RAISED_COLORS: Record<AlignmentStageId, string> = {
+  "design-concept": "#fffbfa",
+  "visual-language": "#f9fcff",
+  token: "#fefbff",
+  layout: "#fdfbfc",
+  component: "#faffff",
+  interaction: "#fefff7"
+};
+
 const STAGE_SUBMIT_COLORS: Record<AlignmentStageId, string> = {
   "design-concept": "#a88a7e",
   "visual-language": "#698db9",
@@ -239,6 +248,7 @@ export function AlignmentQuestionCard({
   const style = {
     "--alignment-accent": stageDefinition.color,
     "--alignment-tint": STAGE_TINTS[stage],
+    "--alignment-raised": STAGE_RAISED_COLORS[stage],
     "--alignment-submit": STAGE_SUBMIT_COLORS[stage]
   } as CSSProperties;
 

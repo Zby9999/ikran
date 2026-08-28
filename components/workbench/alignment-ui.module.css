@@ -140,7 +140,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  background: #fff;
+  background: var(--alignment-raised);
   color: var(--alignment-submit);
   font-size: 15px;
   font-weight: 400;
@@ -157,7 +157,7 @@
   padding: 0 12px;
   overflow: hidden;
   border-radius: 8px;
-  background: #fff;
+  background: var(--alignment-raised);
   color: var(--alignment-submit);
   font-size: 15px;
   line-height: normal;
@@ -194,7 +194,7 @@
   align-items: center;
   padding: 8px 16px;
   border-radius: 8px;
-  background: #fffbfd;
+  background: var(--alignment-raised);
   color: #3d3d3d;
   font: 400 13px/1.2 Inter, sans-serif;
   letter-spacing: -0.39px;
@@ -219,7 +219,7 @@
   border: 0;
   border-radius: 8px;
   outline: 0;
-  background: #fffbfd;
+  background: var(--alignment-raised);
   color: #3d3d3d;
   font: 400 13px/18px Inter, sans-serif;
   letter-spacing: -0.39px;
@@ -256,7 +256,7 @@
   align-items: center;
   padding: 7px 16px;
   border-radius: 8px;
-  background: #fffbfd;
+  background: var(--alignment-raised);
 }
 
 .customAnswerEditor textarea {

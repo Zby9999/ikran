@@ -233,15 +233,15 @@ describe("AlignmentQuestionCard", () => {
   });
 
   test.each([
-    ["design-concept", "#c97759", "#fff0ea", "#a88a7e"],
-    ["visual-language", "#4178ba", "#e6f1ff", "#698db9"],
-    ["token", "#be5fde", "#fbeeff", "#ae6fc3"],
-    ["layout", "#dc3a91", "#f8eff3", "#b2688f"],
-    ["component", "#3db0ac", "#e8fffe", "#5ba3a1"],
-    ["interaction", "#b8c807", "#fcffdc", "#949b44"]
+    ["design-concept", "#c97759", "#fff0ea", "#fffbfa", "#a88a7e"],
+    ["visual-language", "#4178ba", "#e6f1ff", "#f9fcff", "#698db9"],
+    ["token", "#be5fde", "#fbeeff", "#fefbff", "#ae6fc3"],
+    ["layout", "#dc3a91", "#f8eff3", "#fdfbfc", "#b2688f"],
+    ["component", "#3db0ac", "#e8fffe", "#faffff", "#5ba3a1"],
+    ["interaction", "#b8c807", "#fcffdc", "#fefff7", "#949b44"]
   ] as const)(
-    "uses the exact Figma palette for %s",
-    (stage, accent, tint, submit) => {
+    "uses the stage palette and raised surface for %s",
+    (stage, accent, tint, raised, submit) => {
       const html = renderToStaticMarkup(
         createElement(AlignmentQuestionCard, {
           ...question,
@@ -254,6 +254,7 @@ describe("AlignmentQuestionCard", () => {
 
       expect(html).toContain(`--alignment-accent:${accent}`);
       expect(html).toContain(`--alignment-tint:${tint}`);
+      expect(html).toContain(`--alignment-raised:${raised}`);
       expect(html).toContain(`--alignment-submit:${submit}`);
     }
   );
@@ -444,11 +445,24 @@ describe("AlignmentQuestionCard", () => {
     expect(css).toMatch(/\.questionNumber\s*{[^}]*width:\s*32px/s);
     expect(css).toMatch(/\.questionNumber\s*{[^}]*height:\s*32px/s);
     expect(css).toMatch(/\.questionNumber\s*{[^}]*border-radius:\s*8px/s);
-    expect(css).toMatch(/\.questionNumber\s*{[^}]*background:\s*#fff/s);
-    expect(css).toMatch(/\.questionCopy\s*{[^}]*background:\s*#fff/s);
+    expect(css).toMatch(
+      /\.questionNumber\s*{[^}]*background:\s*var\(--alignment-raised\)/s
+    );
+    expect(css).toMatch(
+      /\.questionCopy\s*{[^}]*background:\s*var\(--alignment-raised\)/s
+    );
     expect(css).toMatch(/\.answerChoices\s*{[^}]*gap:\s*4px/s);
     expect(css).toMatch(/\.answerChoice\s*,\s*\.customAnswerTrigger\s*{[^}]*min-height:\s*32px/s);
     expect(css).toMatch(/\.finalAnswer\s*{[^}]*white-space:\s*pre-wrap/s);
+    expect(css).toMatch(
+      /\.finalAnswer\s*{[^}]*background:\s*var\(--alignment-raised\)/s
+    );
+    expect(css).toMatch(
+      /\.answerChoice\s*,\s*\.customAnswerTrigger\s*{[^}]*background:\s*var\(--alignment-raised\)/s
+    );
+    expect(css).toMatch(
+      /\.customAnswerEditor\s*{[^}]*background:\s*var\(--alignment-raised\)/s
+    );
     expect(css).not.toMatch(/\.answerEditor\s*{/s);
     expect(css).not.toMatch(/\.answerSubmit\s*{/s);
     expect(css).toMatch(/\.questionNumber\s*{[^}]*font-weight:\s*400/s);
