@@ -471,7 +471,44 @@ test("09A design system browser: declare → render → approve write-back", asy
         changeDescription: "Keep one clear action hierarchy in every Button.",
         fullRuleBody: JSON.stringify({
           id: "button-spec",
-          value: { description: "Button keeps one clear action hierarchy." }
+          name: "Button",
+          status: "candidate",
+          links: [annotationIds["component"]],
+          value: {
+            description: "Button keeps one clear action hierarchy.",
+            props: [
+              {
+                name: "variant",
+                type: "string",
+                required: true,
+                description: "Visual variant"
+              }
+            ],
+            variants: [
+              { axis: "style", name: "primary" },
+              { axis: "size", name: "default" }
+            ],
+            stateMatrix: [
+              { state: "hover", background: "primitive.color.ink" },
+              { state: "disabled", opacity: "0.5" }
+            ],
+            guidelines: [
+              {
+                kind: "dont",
+                text: "Never nest interactive elements inside Button"
+              }
+            ],
+            tokenLinks: ["semantic.color.text-primary"],
+            codeLinks: buttonCodeLinks,
+            sourceCaptures: [
+              {
+                nodeName: "Button",
+                artifactPath: "design-system/captures/button-source.svg",
+                capturedAt: "2026-08-07T14:00:00.000Z",
+                origin: "source"
+              }
+            ]
+          }
         }),
         reason: "The linked spec used a legacy id distinct from the inventory id.",
         affectedItems: ["Button"],

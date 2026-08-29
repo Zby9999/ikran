@@ -9,7 +9,11 @@ import process from "node:process";
 import { DatabaseSync } from "node:sqlite";
 
 import { buildStudyRuntime, findNativeMachO } from "./build-study-runtime.mjs";
-import { clearPrefilledAlignmentAnswers } from "./study-kit-database.mjs";
+import {
+  applyCuratedStudyKitQuestionCards,
+  clearPrefilledAlignmentAnswers
+} from "./study-kit-database.mjs";
+import { questionCardsForStudyKit } from "./study-kit-question-cards.mjs";
 import { smokeStudyPlugin } from "./smoke-study-plugin.mjs";
 import { studyKitStartHere } from "./study-kit-start-here.mjs";
 import {
@@ -22,7 +26,9 @@ const EPHEMERAL_NAMES = new Set([
   "runtime-endpoint.json",
   "runtime-mcp.sock",
   "runtime-state.json",
-  "runtime.log"
+  "runtime.log",
+  "ikran.db-shm",
+  "ikran.db-wal"
 ]);
 
 const WORKSPACE_JSON_FILES = [
@@ -348,13 +354,11 @@ function packageWorkspace(source, destination, label, relativePath) {
   sanitizeDatabase(destinationDb, source, label);
   writeText(path.join(destination, "README.md"), workspaceReadme());
 
-  for (const name of EPHEMERAL_NAMES) {
-    if (fs.existsSync(path.join(destinationIkran, name))) {
-      fail(`Ephemeral Runtime file entered package: ${label}/${name}`);
-    }
-  }
-
   const state = inspectDatabase(destinationDb);
+  for (const name of EPHEMERAL_NAMES) {
+    const ephemeral = path.join(destinationIkran, name);
+    if (fs.existsSync(ephemeral)) fs.rmSync(ephemeral, { force: true });
+  }
   if (state.stage !== "alignment-answering" || state.attemptStatus !== "answering") {
     fail(`${label} is not frozen at Alignment answering`);
   }
@@ -363,11 +367,12 @@ function packageWorkspace(source, destination, label, relativePath) {
   }
   if (
     state.questionCount !== 16 ||
+    state.answerOptionCardCount !== 16 ||
     state.proposedAnswerCount !== 0 ||
     state.allProposedAnswerCount !== 0 ||
     state.finalAnswerCount !== 0
   ) {
-    fail(`${label} must contain 16 Question cards with no prefilled or final answers`);
+    fail(`${label} must contain 16 optimized multi-option Question cards with no prefilled or final answers`);
   }
 
   const screenshot = path.join(destination, state.screenshotArtifactPath);
@@ -392,6 +397,7 @@ function packageWorkspace(source, destination, label, relativePath) {
       attemptStatus: state.attemptStatus,
       annotations: state.annotationCount,
       questions: state.questionCount,
+      questionsWithAnswerOptions: state.answerOptionCardCount,
       proposedAnswers: state.proposedAnswerCount,
       finalAnswers: state.finalAnswerCount
     }
@@ -433,6 +439,11 @@ function sanitizeDatabase(databasePath, sourceWorkspace, label) {
       }
     }
     clearPrefilledAlignmentAnswers(db);
+    applyCuratedStudyKitQuestionCards(
+      db,
+      label,
+      questionCardsForStudyKit(label)
+    );
     for (const trigger of immutableSnapshotTriggers) {
       db.exec(String(trigger.sql));
     }
@@ -496,6 +507,7 @@ function inspectDatabase(databasePath) {
       attemptStatus: String(workflow.attempt_status),
       annotationCount: scalar("SELECT count(*) FROM agent_alignment_annotations WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1)"),
       questionCount: scalar("SELECT count(*) FROM alignment_question_cards WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1)"),
+      answerOptionCardCount: scalar("SELECT count(*) FROM alignment_question_cards WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1) AND answer_options_json IS NOT NULL AND json_valid(answer_options_json) AND json_array_length(answer_options_json) >= 2"),
       proposedAnswerCount: scalar("SELECT count(*) FROM alignment_question_cards WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1) AND proposed_answer IS NOT NULL"),
       allProposedAnswerCount: scalar("SELECT count(*) FROM alignment_question_cards WHERE proposed_answer IS NOT NULL"),
       finalAnswerCount: scalar("SELECT count(*) FROM alignment_question_cards WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1) AND final_answer IS NOT NULL AND trim(final_answer) <> ''"),
