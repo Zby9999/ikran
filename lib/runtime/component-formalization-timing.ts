@@ -264,10 +264,22 @@ export function ensureComponentFormalizationTiming(
   projectPath: string,
   input: BeginComponentFormalizationTimingInput
 ): ComponentFormalizationTimingSession {
-  return (
-    getRunningComponentFormalizationTiming(projectPath, input.runId) ??
-    beginComponentFormalizationTiming(projectPath, input)
+  const running = getRunningComponentFormalizationTiming(
+    projectPath,
+    input.runId
   );
+  if (!running) return beginComponentFormalizationTiming(projectPath, input);
+  const existingIds = new Set(running.component_entry_ids);
+  const introducesNewComponent = normalizedIds(input.componentEntryIds).some(
+    (id) => !existingIds.has(id)
+  );
+  updateComponentFormalizationTimingScope(projectPath, running.id, {
+    componentEntryIds: input.componentEntryIds,
+    stateCount: introducesNewComponent
+      ? running.state_count + input.stateCount
+      : Math.max(running.state_count, input.stateCount)
+  });
+  return getRunningComponentFormalizationTiming(projectPath, input.runId)!;
 }
 
 /** Merge stable identities learned by later deterministic stages. */
@@ -684,10 +696,9 @@ export function getComponentFormalizationTiming(
       total_wall_ms: elapsedMs(row.started_at, end),
       runtime_ms: spans.reduce((sum, span) => sum + (span.runtime_ms ?? 0), 0),
       agent_wait_ms: spans.reduce((sum, span) => sum + span.agent_wait_ms, 0),
-      retry_count: Object.values(stages).reduce(
-        (sum, stage) => sum + Math.max(0, stage.attempts - 1),
-        0
-      ),
+      retry_count: spans.filter(
+        (span) => span.status === "failed" && span.retryable === 1
+      ).length,
       preview_startups: [
         ...new Set(
           spans.flatMap((span) =>

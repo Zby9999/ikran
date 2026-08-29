@@ -155,8 +155,10 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
           statement: "Preserve the confirmed concept.",
           sourceRefs: [{ sourceId: source.sourceId, digest: source.digest }]
         }],
-        draftBindings: [],
-        designSystemDraft: { name: "Incremental MCP draft" }
+        draftPatch: {
+          name: "Incremental MCP draft",
+          upserts: []
+        }
       }
     });
     for (let index = 0; index < 100; index += 1) {
@@ -186,6 +188,9 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
       continuationRequired: true,
       terminalBoundary: "draft_design_system_review",
       planVersion: 1,
+      checkpoint: {
+        designSystemDraft: { name: "Incremental MCP draft" }
+      },
       incrementalPlanning: {
         reason: "delta_available",
         delta: { section: "visual-language" }
@@ -220,8 +225,10 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
             digest: visualSource.digest
           }]
         }],
-        draftBindings: [],
-        designSystemDraft: { name: "Stale MCP draft" }
+        draftPatch: {
+          name: "Stale MCP draft",
+          upserts: []
+        }
       }
     }))).toMatchObject({
       ok: false,
@@ -254,8 +261,7 @@ test("dev MCP finalize and plan calls remain in the durable section monitor loop
             digest: visualSource.digest
           }]
         }],
-        draftBindings: [],
-        designSystemDraft: { name: "Incremental MCP draft" }
+        draftPatch: { upserts: [] }
       }
     });
     for (let index = 0; index < 100; index += 1) {

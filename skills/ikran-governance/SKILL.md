@@ -101,7 +101,19 @@ evidence linked to the Rule without substituting them for the Rule itself.
 
 ## Completion standard
 
-Before recommending a design-system change, account for:
+Before recommending a design-system change, rescan the complete reconciled
+decision ledger once. Do not stop after finding the first reusable decision.
+For every decision, record exactly one primary outcome: proposal evidence,
+coverage by an exact existing Rule, local-only, superseded, or open gap. A
+final decision cannot become local merely because one component already
+covers one of its exceptions.
+
+Related decisions may share one proposal when they govern the same choice and
+the merged Rule preserves their triggers, scope, and meaningful exceptions.
+Include every merged decision in that proposal's evidence; merging is not a
+license to drop the broader decision from the first audit.
+
+Before publishing the review, account for:
 
 - reuse scope;
 - supporting and conflicting evidence;

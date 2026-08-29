@@ -449,12 +449,12 @@ function ProposalCard({
                 </div>
               ) : proposal.status === "waiting_agent" ? (
                   <div className="dsb-ru-wait-copy">
-                    <strong>Waiting for Agent</strong>
+                    <span>Waiting for Agent</span>
                     <p>Ask the Agent to continue.</p>
                   </div>
                 ) : proposal.status === "failed" ? (
                   <p className="dsb-ru-wait-copy">
-                    Application failed. The Agent can retry the same command.
+                    Application failed. The Agent can retry or submit a corrected revision.
                   </p>
                 ) : proposal.status === "needs_revision" ? (
                   <div className="dsb-ru-actions">

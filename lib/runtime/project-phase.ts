@@ -69,6 +69,13 @@ export type ComponentPreviewOutcomeFailure = {
   preview_entry_ids: string[];
 };
 
+export type ComponentPreviewVerificationFailure = {
+  ok: false;
+  reason: "component_preview_verification_required";
+  phase: ProjectPhase;
+  verification_entry_ids: string[];
+};
+
 export type FormalizeFailure =
   | PhaseGateFailure
   | ComponentPreviewOutcomeFailure
@@ -133,6 +140,7 @@ export type PhaseCommandResult =
   | PhaseCommandSuccess
   | PhaseGateFailure
   | ComponentPreviewOutcomeFailure
+  | ComponentPreviewVerificationFailure
   | { ok: false; reason: "explicit_designer_confirmation_required" }
   | { ok: false; reason: "db_error" };
 
@@ -429,7 +437,32 @@ function componentPreviewOutcomeBlockersOnDb(
   ).map((row) => row.entry_id);
 }
 
-export function confirmPrototype(projectPath: string): PhaseCommandResult {
+function componentPreviewVerificationBlockersOnDb(
+  db: DatabaseType
+): string[] {
+  return (
+    db
+      .prepare(
+        `SELECT entry_id FROM component_preview_registrations
+         WHERE verification_status <> 'verified'
+         ORDER BY entry_id`
+      )
+      .all() as Array<{ entry_id: string }>
+  ).map((row) => row.entry_id);
+}
+
+type PrototypeConfirmation =
+  | { source: "workbench" }
+  | {
+      source: "agent-host-conversation";
+      designerConfirmation: string;
+      designerMessageId: string;
+    };
+
+function confirmPrototypeWithConfirmation(
+  projectPath: string,
+  confirmation: PrototypeConfirmation
+): PhaseCommandResult {
   // From prototype_validation: first prototype confirmed after draft audit.
   // From ready_for_new_design: a new-design-run prototype confirmed so the
   // Design System can be formalized again (v2, v3, …) — Issue 15's
@@ -449,6 +482,15 @@ export function confirmPrototype(projectPath: string): PhaseCommandResult {
           reason: "component_preview_outcome_required",
           phase: gate.phase,
           preview_entry_ids: blockers
+        };
+      }
+      const verificationBlockers = componentPreviewVerificationBlockersOnDb(db);
+      if (verificationBlockers.length > 0) {
+        return {
+          ok: false,
+          reason: "component_preview_verification_required",
+          phase: gate.phase,
+          verification_entry_ids: verificationBlockers
         };
       }
     } finally {
@@ -487,7 +529,33 @@ export function confirmPrototype(projectPath: string): PhaseCommandResult {
                  ORDER BY id DESC LIMIT 1`
               )
               .get() as { id: number } | undefined);
-      if (boundary === undefined) return {};
+      const latestRevision = db
+        .prepare(
+          `SELECT event_id
+           FROM events
+           WHERE type IN (
+             'prototype_preview_declared',
+             'component_preview_registered',
+             'component_preview_verified_candidate'
+           )
+              OR (
+                type = 'source_artifact_declared'
+                AND json_extract(payload, '$.artifact_type') IN ('code', 'prototype')
+              )
+           ORDER BY id DESC LIMIT 1`
+        )
+        .get() as { event_id: string } | undefined;
+      const confirmationPayload = {
+        confirmation_source: confirmation.source,
+        reviewed_revision_event_id: latestRevision?.event_id ?? null,
+        ...(confirmation.source === "agent-host-conversation"
+          ? {
+              designer_confirmation: confirmation.designerConfirmation,
+              designer_message_id: confirmation.designerMessageId
+            }
+          : {})
+      };
+      if (boundary === undefined) return confirmationPayload;
 
       const preview = db
         .prepare(
@@ -508,14 +576,44 @@ export function confirmPrototype(projectPath: string): PhaseCommandResult {
         typeof preview.prototype_run_id !== "string" ||
         preview.prototype_run_id.length === 0
       ) {
-        return {};
+        return confirmationPayload;
       }
       return {
+        ...confirmationPayload,
         run_id: preview.run_id,
         prototype_run_id: preview.prototype_run_id
       };
     }
   );
+}
+
+/** Workbench's Complete action is itself the direct designer confirmation. */
+export function confirmPrototype(projectPath: string): PhaseCommandResult {
+  return confirmPrototypeWithConfirmation(projectPath, { source: "workbench" });
+}
+
+/** Agent-host confirmation must preserve the explicit designer message. */
+export function confirmPrototypeFromConversation(
+  projectPath: string,
+  designerConfirmation: string,
+  designerMessageId: string
+): PhaseCommandResult {
+  if (
+    typeof designerConfirmation !== "string" ||
+    typeof designerMessageId !== "string"
+  ) {
+    return { ok: false, reason: "explicit_designer_confirmation_required" };
+  }
+  const wording = designerConfirmation.trim();
+  const messageId = designerMessageId.trim();
+  if (!wording || !messageId) {
+    return { ok: false, reason: "explicit_designer_confirmation_required" };
+  }
+  return confirmPrototypeWithConfirmation(projectPath, {
+    source: "agent-host-conversation",
+    designerConfirmation: wording,
+    designerMessageId: messageId
+  });
 }
 
 type PromotedEntryRow = {

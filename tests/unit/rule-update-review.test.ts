@@ -38,6 +38,64 @@ function createProject(): string {
   return projectPath;
 }
 
+function seedComponentTarget(projectPath: string): void {
+  const db = openProjectDb(projectPath);
+  try {
+    db.prepare(
+      `INSERT INTO source_artifacts
+         (id, path, artifact_type, semantic_purpose, related_record_ids_json,
+          readiness, declaration_version, status, created_at, updated_at,
+          content_digest)
+       VALUES ('source-component-recovery',
+               'design-system/components/project-item.json',
+               'component-spec', 'test fixture', '[]', NULL, 1, 'ingested',
+               '2026-08-29T00:00:00.000Z', '2026-08-29T00:00:00.000Z',
+               'digest-component-1')`
+    ).run();
+    db.prepare(
+      `INSERT INTO design_system_entries
+         (id, source_artifact_path, file_kind, section, entry_id, name,
+          value_json, meaning, status, links_json, position, created_at, updated_at)
+       VALUES
+         ('inventory-project-item', 'design-system/component-list.json',
+          'component-list.json', 'components.inventory', 'component-project-item',
+          'Project item', ?, 'Project item component', 'candidate', '[]', 0, ?, ?),
+         ('spec-project-item', 'design-system/components/project-item.json',
+          'component-spec', 'components.spec', 'component-project-item-spec',
+          'Project item', '{}', 'Project item specification', 'candidate', '[]', 0, ?, ?)`
+    ).run(
+      JSON.stringify({
+        name: "Project item",
+        specPath: "design-system/components/project-item.json"
+      }),
+      "2026-08-29T00:00:00.000Z",
+      "2026-08-29T00:00:00.000Z",
+      "2026-08-29T00:00:00.000Z",
+      "2026-08-29T00:00:00.000Z"
+    );
+  } finally {
+    closeProjectDb(db);
+  }
+}
+
+function componentSpecBody(axis: "style" | "context"): string {
+  return JSON.stringify({
+    id: "component-project-item-spec",
+    name: "Project item",
+    value: {
+      description: "Reusable project detail content block.",
+      props: [],
+      variants: [{ axis, name: "detail" }],
+      stateMatrix: [],
+      guidelines: [{ kind: "do", text: "Keep comparison labels outside media." }],
+      tokenLinks: [],
+      codeLinks: []
+    },
+    status: "candidate",
+    links: ["designer-feedback"]
+  });
+}
+
 function seedExistingInteractionRule(projectPath: string): void {
   const db = openProjectDb(projectPath);
   try {
@@ -784,16 +842,28 @@ test("component proposals canonicalize legacy spec ids to the browsable inventor
     context: "Footer component rule"
   });
   if (!review.ok) throw new Error(review.reason);
+  const fullRuleBody = JSON.stringify({
+    id: "component-footer-spec",
+    name: "Footer",
+    value: {
+      description: "Footer spacing specification",
+      props: [],
+      variants: [],
+      stateMatrix: [],
+      guidelines: [],
+      tokenLinks: [],
+      codeLinks: []
+    },
+    status: "candidate",
+    links: ["designer-feedback"]
+  });
   const proposal = draftRuleUpdateProposal(projectPath, {
     reviewId: review.review.id,
     kind: "new",
     classification: "proposed_update",
     title: "Footer spacing",
     changeDescription: "Keep footer spacing consistent.",
-    fullRuleBody: JSON.stringify({
-      id: "component-footer-spec",
-      value: { description: "Footer spacing specification" }
-    }),
+    fullRuleBody,
     reason: "The rule belongs to Footer.",
     affectedItems: ["Footer"],
     evidenceRecordIds: [],
@@ -808,10 +878,7 @@ test("component proposals canonicalize legacy spec ids to the browsable inventor
     ok: true,
     proposal: {
       change_description: "Keep footer spacing consistent.",
-      full_rule_body: JSON.stringify({
-        id: "component-footer-spec",
-        value: { description: "Footer spacing specification" }
-      }),
+      full_rule_body: fullRuleBody,
       target: {
         category: "component:component-footer",
         sourceArtifactPath: "design-system/components/footer.json",
@@ -849,6 +916,87 @@ test("component proposals canonicalize legacy spec ids to the browsable inventor
         }
       }]
     }]
+  });
+});
+
+test("component proposals reject a schema-invalid machine-write body before review", () => {
+  const projectPath = createProject();
+  seedComponentTarget(projectPath);
+  const review = createRuleUpdateReview(projectPath, {
+    context: "Component proposal preflight"
+  });
+  if (!review.ok) throw new Error(review.reason);
+
+  expect(
+    draftRuleUpdateProposal(projectPath, {
+      reviewId: review.review.id,
+      kind: "update",
+      classification: "proposed_update",
+      title: "Project comparison module",
+      changeDescription: "Add a reusable comparison module.",
+      fullRuleBody: componentSpecBody("context"),
+      reason: "Reusable on project detail pages.",
+      affectedItems: ["Project item"],
+      evidenceRecordIds: [],
+      target: {
+        category: "component:component-project-item",
+        sourceArtifactPath: "design-system/components/project-item.json",
+        entryId: "component-project-item"
+      }
+    })
+  ).toMatchObject({
+    ok: false,
+    reason: "invalid_proposal_body",
+    details: {
+      schema_reason: "invalid_field_type",
+      schema_details: { field: "value.variants[0]" }
+    }
+  });
+});
+
+test("publishing revalidates persisted component proposal bodies", () => {
+  const projectPath = createProject();
+  seedComponentTarget(projectPath);
+  const review = createRuleUpdateReview(projectPath, {
+    context: "Legacy component proposal preflight"
+  });
+  if (!review.ok) throw new Error(review.reason);
+  const drafted = draftRuleUpdateProposal(projectPath, {
+    reviewId: review.review.id,
+    kind: "update",
+    classification: "proposed_update",
+    title: "Project comparison module",
+    changeDescription: "Add a reusable comparison module.",
+    fullRuleBody: componentSpecBody("style"),
+    reason: "Reusable on project detail pages.",
+    affectedItems: ["Project item"],
+    evidenceRecordIds: [],
+    target: {
+      category: "component:component-project-item",
+      sourceArtifactPath: "design-system/components/project-item.json",
+      entryId: "component-project-item"
+    }
+  });
+  if (!drafted.ok) throw new Error(drafted.reason);
+  const legacyDb = openProjectDb(projectPath);
+  try {
+    legacyDb
+      .prepare(
+        `UPDATE rule_update_proposal_revisions SET full_rule_body = ?
+         WHERE proposal_id = ? AND revision = 1`
+      )
+      .run(componentSpecBody("context"), drafted.proposal.id);
+  } finally {
+    closeProjectDb(legacyDb);
+  }
+
+  expect(publishRuleUpdateReview(projectPath, review.review.id)).toMatchObject({
+    ok: false,
+    reason: "invalid_proposal_body",
+    details: {
+      proposal_id: drafted.proposal.id,
+      schema_reason: "invalid_field_type"
+    }
   });
 });
 
@@ -1027,4 +1175,121 @@ test("failed apply retries the same command and blocks later writes to the same 
     ok: true,
     command: { id: firstDecision.command.id, status: "claimed" }
   });
+});
+
+test("an Agent can replace a failed accepted revision and return it to designer review", () => {
+  const projectPath = createProject();
+  const db = openProjectDb(projectPath);
+  try {
+    db.prepare(
+      `INSERT INTO source_artifacts
+         (id, path, artifact_type, semantic_purpose, related_record_ids_json,
+          readiness, declaration_version, status, created_at, updated_at,
+          content_digest)
+       VALUES ('source-revision-recovery', 'design-system/interaction-rules.json',
+               'interaction-rules.json', 'test', '[]', NULL, 1, 'ingested',
+               '2026-08-29T00:00:00.000Z', '2026-08-29T00:00:00.000Z', 'digest-1')`
+    ).run();
+  } finally {
+    closeProjectDb(db);
+  }
+  const review = createRuleUpdateReview(projectPath, { context: "Revision recovery" });
+  if (!review.ok) throw new Error(review.reason);
+  const drafted = draftRuleUpdateProposal(projectPath, {
+    reviewId: review.review.id,
+    kind: "update",
+    classification: "proposed_update",
+    title: "Original accepted revision",
+    fullRuleBody: "Original body that later proves invalid.",
+    reason: "reason",
+    affectedItems: ["interaction"],
+    evidenceRecordIds: [],
+    target: {
+      category: "foundations.interaction",
+      sourceArtifactPath: "design-system/interaction-rules.json"
+    }
+  });
+  if (!drafted.ok) throw new Error(drafted.reason);
+  expect(publishRuleUpdateReview(projectPath, review.review.id).ok).toBe(true);
+  const accepted = decideRuleUpdateProposal(projectPath, {
+    proposalId: drafted.proposal.id,
+    decision: "accepted"
+  });
+  if (!accepted.ok) throw new Error(accepted.reason);
+  const claimed = claimRuleUpdateDecision(projectPath);
+  if (!claimed.ok || claimed.completed) throw new Error("claim failed");
+  expect(
+    failRuleUpdateApply(projectPath, {
+      commandId: claimed.command.id,
+      error: "schema_validation_failed"
+    }).ok
+  ).toBe(true);
+
+  const revised = reviseRuleUpdateProposal(projectPath, {
+    proposalId: drafted.proposal.id,
+    title: "Corrected revision",
+    fullRuleBody: "Corrected schema-valid body.",
+    target: {
+      category: drafted.proposal.target.category,
+      ...(drafted.proposal.target.sourceCategory === null
+        ? {}
+        : { sourceCategory: drafted.proposal.target.sourceCategory }),
+      ...(drafted.proposal.target.sourceArtifactPath === null
+        ? {}
+        : { sourceArtifactPath: drafted.proposal.target.sourceArtifactPath }),
+      ...(drafted.proposal.target.entryId === null
+        ? {}
+        : { entryId: drafted.proposal.target.entryId }),
+      ...(drafted.proposal.target.proposedTargetPath === null
+        ? {}
+        : { proposedTargetPath: drafted.proposal.target.proposedTargetPath })
+    },
+    author: "agent"
+  });
+  expect(revised).toMatchObject({
+    ok: true,
+    proposal: {
+      id: drafted.proposal.id,
+      revision: 2,
+      revision_author: "agent",
+      status: "pending_review"
+    }
+  });
+  if (!revised.ok) throw new Error(revised.reason);
+
+  const reaccepted = decideRuleUpdateProposal(projectPath, {
+    proposalId: revised.proposal.id,
+    decision: "accepted"
+  });
+  expect(reaccepted).toMatchObject({
+    ok: true,
+    reused: false,
+    proposal: { revision: 2, status: "waiting_agent" }
+  });
+  if (!reaccepted.ok) throw new Error(reaccepted.reason);
+  expect(reaccepted.command.id).not.toBe(accepted.command.id);
+  expect(claimRuleUpdateDecision(projectPath)).toMatchObject({
+    ok: true,
+    command: { id: reaccepted.command.id },
+    proposal: { revision: 2, revision_author: "agent" }
+  });
+
+  const auditDb = openProjectDb(projectPath);
+  try {
+    expect(
+      auditDb
+        .prepare("SELECT status FROM agent_commands WHERE id = ?")
+        .get(accepted.command.id)
+    ).toEqual({ status: "cancelled" });
+    expect(
+      auditDb
+        .prepare(
+          `SELECT decision FROM rule_update_designer_decisions
+           WHERE proposal_id = ? AND revision = 1`
+        )
+        .get(drafted.proposal.id)
+    ).toEqual({ decision: "accepted" });
+  } finally {
+    closeProjectDb(auditDb);
+  }
 });

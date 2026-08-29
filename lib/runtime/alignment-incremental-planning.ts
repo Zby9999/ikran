@@ -84,6 +84,40 @@ export type IncrementalPlanDraftBinding = {
   decisionId: string;
 };
 
+const DRAFT_COLLECTION_TARGETS = [
+  "concepts",
+  "tokens.primitive",
+  "tokens.semantic",
+  "tokens.component",
+  "foundationRules",
+  "layoutRules",
+  "interactionRules",
+  "components",
+  "categoryOmissions",
+  "sourceOmissions"
+] as const;
+
+export type IncrementalPlanDraftCollectionTarget =
+  (typeof DRAFT_COLLECTION_TARGETS)[number];
+
+export type IncrementalPlanDraftPatch = {
+  name?: string;
+  visualLanguage?: {
+    value: Record<string, unknown>;
+    decisionId: string;
+  };
+  upserts: Array<{
+    target: IncrementalPlanDraftCollectionTarget;
+    entryKey: string;
+    value: Record<string, unknown>;
+    decisionId: string;
+  }>;
+  retireEntryKeys?: Array<{
+    target: IncrementalPlanDraftCollectionTarget;
+    entryKey: string;
+  }>;
+};
+
 type StoredPlanDecision = IncrementalPlanDecision & {
   section: AlignmentSection;
 };
@@ -97,10 +131,20 @@ type PlanRow = {
   design_system_json: string;
 };
 
+type StoredDraftEntry = {
+  entryKey: string;
+  decisionId: string;
+};
+
 type StoredDraftEnvelope = {
-  __ikranIncrementalPlan: 1;
+  __ikranIncrementalPlan: 1 | 2;
   draft: unknown;
   bindings: IncrementalPlanDraftBinding[];
+  visualLanguageDecisionId?: string;
+  entries?: Partial<Record<
+    IncrementalPlanDraftCollectionTarget,
+    StoredDraftEntry[]
+  >>;
 };
 
 function digest(value: unknown): string {
@@ -166,16 +210,189 @@ function sectionCursorsOnDb(
   return cursors;
 }
 
+function draftCollection(
+  draft: Record<string, unknown>,
+  target: IncrementalPlanDraftCollectionTarget
+): unknown[] {
+  if (target.startsWith("tokens.")) {
+    const layer = target.slice("tokens.".length);
+    const tokens = draft.tokens && typeof draft.tokens === "object" &&
+      !Array.isArray(draft.tokens)
+      ? draft.tokens as Record<string, unknown>
+      : {};
+    const collection = tokens[layer];
+    return Array.isArray(collection) ? collection : [];
+  }
+  const collection = draft[target];
+  return Array.isArray(collection) ? collection : [];
+}
+
+function setDraftCollection(
+  draft: Record<string, unknown>,
+  target: IncrementalPlanDraftCollectionTarget,
+  collection: unknown[]
+): void {
+  if (target.startsWith("tokens.")) {
+    const layer = target.slice("tokens.".length);
+    const tokens = draft.tokens && typeof draft.tokens === "object" &&
+      !Array.isArray(draft.tokens)
+      ? { ...draft.tokens as Record<string, unknown> }
+      : {};
+    tokens[layer] = collection;
+    draft.tokens = tokens;
+    return;
+  }
+  draft[target] = collection;
+}
+
+function bindingDecisionId(
+  bindings: IncrementalPlanDraftBinding[],
+  path: string
+): string {
+  return bindings.find((binding) => binding.path === path)?.decisionId ?? "";
+}
+
+function targetPointer(target: IncrementalPlanDraftCollectionTarget): string {
+  return `/${target.replace(".", "/")}`;
+}
+
+function hydrateStoredDraftEnvelope(
+  envelope: StoredDraftEnvelope
+): StoredDraftEnvelope {
+  const draft = envelope.draft && typeof envelope.draft === "object" &&
+    !Array.isArray(envelope.draft)
+    ? envelope.draft as Record<string, unknown>
+    : {};
+  const entries = { ...(envelope.entries ?? {}) };
+  for (const target of DRAFT_COLLECTION_TARGETS) {
+    const collection = draftCollection(draft, target);
+    const existingEntries = entries[target] ?? [];
+    entries[target] = collection.map((_, index) => existingEntries[index] ?? ({
+      entryKey: `legacy:${target}:${index}`,
+      decisionId: bindingDecisionId(
+        envelope.bindings,
+        `${targetPointer(target)}/${index}`
+      )
+    }));
+  }
+  return {
+    ...envelope,
+    visualLanguageDecisionId: envelope.visualLanguageDecisionId ??
+      (bindingDecisionId(envelope.bindings, "/visualLanguage") || undefined),
+    entries
+  };
+}
+
 function parseStoredDraft(value: string): StoredDraftEnvelope {
   const parsed = JSON.parse(value) as unknown;
   if (
     parsed && typeof parsed === "object" &&
-    (parsed as Record<string, unknown>).__ikranIncrementalPlan === 1 &&
+    ((parsed as Record<string, unknown>).__ikranIncrementalPlan === 1 ||
+      (parsed as Record<string, unknown>).__ikranIncrementalPlan === 2) &&
     Array.isArray((parsed as Record<string, unknown>).bindings)
   ) {
-    return parsed as StoredDraftEnvelope;
+    return hydrateStoredDraftEnvelope(parsed as StoredDraftEnvelope);
   }
-  return { __ikranIncrementalPlan: 1, draft: parsed, bindings: [] };
+  return hydrateStoredDraftEnvelope({
+    __ikranIncrementalPlan: 1,
+    draft: parsed,
+    bindings: []
+  });
+}
+
+function materializeDraftPatch(
+  existing: StoredDraftEnvelope | null,
+  patch: IncrementalPlanDraftPatch,
+  retireDecisionIds: Set<string>
+): StoredDraftEnvelope {
+  const base = hydrateStoredDraftEnvelope(existing ?? {
+    __ikranIncrementalPlan: 2,
+    draft: {},
+    bindings: []
+  });
+  const draft = base.draft && typeof base.draft === "object" &&
+    !Array.isArray(base.draft)
+    ? structuredClone(base.draft) as Record<string, unknown>
+    : {};
+  const entries = structuredClone(base.entries ?? {});
+
+  if (patch.name !== undefined) draft.name = patch.name;
+  let visualLanguageDecisionId = base.visualLanguageDecisionId;
+  if (
+    visualLanguageDecisionId &&
+    retireDecisionIds.has(visualLanguageDecisionId)
+  ) {
+    delete draft.visualLanguage;
+    visualLanguageDecisionId = undefined;
+  }
+  if (patch.visualLanguage) {
+    draft.visualLanguage = structuredClone(patch.visualLanguage.value);
+    visualLanguageDecisionId = patch.visualLanguage.decisionId;
+  }
+
+  const retiredEntryKeys = new Set(
+    (patch.retireEntryKeys ?? []).map(({ target, entryKey }) =>
+      `${target}\u0000${entryKey}`
+    )
+  );
+  for (const target of DRAFT_COLLECTION_TARGETS) {
+    const collection = draftCollection(draft, target);
+    const targetEntries = entries[target] ?? [];
+    const kept = targetEntries.map((entry, index) => ({
+      entry,
+      value: collection[index]
+    })).filter(({ entry }) =>
+      !retireDecisionIds.has(entry.decisionId) &&
+      !retiredEntryKeys.has(`${target}\u0000${entry.entryKey}`)
+    );
+    entries[target] = kept.map(({ entry }) => entry);
+    setDraftCollection(draft, target, kept.map(({ value }) => value));
+  }
+
+  for (const upsert of patch.upserts) {
+    const collection = draftCollection(draft, upsert.target);
+    const targetEntries = entries[upsert.target] ?? [];
+    const existingIndex = targetEntries.findIndex(
+      (entry) => entry.entryKey === upsert.entryKey
+    );
+    const storedEntry = {
+      entryKey: upsert.entryKey,
+      decisionId: upsert.decisionId
+    };
+    if (existingIndex >= 0) {
+      collection[existingIndex] = structuredClone(upsert.value);
+      targetEntries[existingIndex] = storedEntry;
+    } else {
+      collection.push(structuredClone(upsert.value));
+      targetEntries.push(storedEntry);
+    }
+    entries[upsert.target] = targetEntries;
+    setDraftCollection(draft, upsert.target, collection);
+  }
+
+  const bindings: IncrementalPlanDraftBinding[] = [];
+  if (draft.visualLanguage && visualLanguageDecisionId) {
+    bindings.push({
+      path: "/visualLanguage",
+      decisionId: visualLanguageDecisionId
+    });
+  }
+  for (const target of DRAFT_COLLECTION_TARGETS) {
+    for (const [index, entry] of (entries[target] ?? []).entries()) {
+      if (!entry.decisionId) continue;
+      bindings.push({
+        path: `${targetPointer(target)}/${index}`,
+        decisionId: entry.decisionId
+      });
+    }
+  }
+  return {
+    __ikranIncrementalPlan: 2,
+    draft,
+    bindings,
+    visualLanguageDecisionId,
+    entries
+  };
 }
 
 function draftUnits(value: unknown): Array<{ path: string; sourceIds: string[] }> {
@@ -744,6 +961,70 @@ function validDraftBindingInput(
     typeof raw.decisionId === "string" && raw.decisionId.trim().length > 0;
 }
 
+function validDraftPatchInput(
+  value: unknown
+): value is IncrementalPlanDraftPatch {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const raw = value as Record<string, unknown>;
+  if (
+    raw.name !== undefined &&
+    (typeof raw.name !== "string" || raw.name.trim().length === 0)
+  ) return false;
+  if (raw.visualLanguage !== undefined) {
+    if (
+      !raw.visualLanguage || typeof raw.visualLanguage !== "object" ||
+      Array.isArray(raw.visualLanguage)
+    ) return false;
+    const visualLanguage = raw.visualLanguage as Record<string, unknown>;
+    if (
+      !visualLanguage.value || typeof visualLanguage.value !== "object" ||
+      Array.isArray(visualLanguage.value) ||
+      typeof visualLanguage.decisionId !== "string" ||
+      visualLanguage.decisionId.trim().length === 0
+    ) return false;
+  }
+  if (!Array.isArray(raw.upserts)) return false;
+  const upsertKeys = new Set<string>();
+  for (const candidate of raw.upserts) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      return false;
+    }
+    const upsert = candidate as Record<string, unknown>;
+    if (
+      !DRAFT_COLLECTION_TARGETS.includes(
+        upsert.target as IncrementalPlanDraftCollectionTarget
+      ) ||
+      typeof upsert.entryKey !== "string" || !upsert.entryKey.trim() ||
+      typeof upsert.decisionId !== "string" || !upsert.decisionId.trim() ||
+      !upsert.value || typeof upsert.value !== "object" ||
+      Array.isArray(upsert.value)
+    ) return false;
+    const key = `${upsert.target}\u0000${upsert.entryKey}`;
+    if (upsertKeys.has(key)) return false;
+    upsertKeys.add(key);
+  }
+  if (raw.retireEntryKeys !== undefined) {
+    if (!Array.isArray(raw.retireEntryKeys)) return false;
+    const retiredKeys = new Set<string>();
+    for (const candidate of raw.retireEntryKeys) {
+      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+        return false;
+      }
+      const retired = candidate as Record<string, unknown>;
+      if (
+        !DRAFT_COLLECTION_TARGETS.includes(
+          retired.target as IncrementalPlanDraftCollectionTarget
+        ) ||
+        typeof retired.entryKey !== "string" || !retired.entryKey.trim()
+      ) return false;
+      const key = `${retired.target}\u0000${retired.entryKey}`;
+      if (retiredKeys.has(key) || upsertKeys.has(key)) return false;
+      retiredKeys.add(key);
+    }
+  }
+  return true;
+}
+
 export function recordIncrementalDesignSystemPlan(
   projectPath: string,
   input: {
@@ -756,7 +1037,8 @@ export function recordIncrementalDesignSystemPlan(
     decisions: IncrementalPlanDecision[];
     retireDecisionIds?: string[];
     draftBindings?: IncrementalPlanDraftBinding[];
-    designSystemDraft: unknown;
+    designSystemDraft?: unknown;
+    draftPatch?: IncrementalPlanDraftPatch;
   }
 ):
   | {
@@ -787,7 +1069,11 @@ export function recordIncrementalDesignSystemPlan(
         typeof id === "string" && id.trim().length > 0
       )
     )) ||
-    !input.designSystemDraft || typeof input.designSystemDraft !== "object"
+    ((input.designSystemDraft === undefined) === (input.draftPatch === undefined)) ||
+    (input.designSystemDraft !== undefined && (
+      !input.designSystemDraft || typeof input.designSystemDraft !== "object"
+    )) ||
+    (input.draftPatch !== undefined && !validDraftPatchInput(input.draftPatch))
   ) {
     return { ok: false, reason: "invalid_incremental_plan" };
   }
@@ -903,6 +1189,25 @@ export function recordIncrementalDesignSystemPlan(
       }
       decisionIds.add(decision.decisionId);
     }
+    const patchDecisionIds = input.draftPatch
+      ? [
+          ...(input.draftPatch.visualLanguage
+            ? [input.draftPatch.visualLanguage.decisionId]
+            : []),
+          ...input.draftPatch.upserts.map((upsert) => upsert.decisionId)
+        ]
+      : [];
+    const unknownPatchDecisionIds = [...new Set(patchDecisionIds)].filter(
+      (decisionId) => !decisionIds.has(decisionId)
+    );
+    if (unknownPatchDecisionIds.length > 0) {
+      db.exec("ROLLBACK");
+      return {
+        ok: false,
+        reason: "unknown_draft_patch_decision",
+        details: { decisionIds: unknownPatchDecisionIds }
+      };
+    }
     const unresolvedStaleDecisionIds = storedDecisions.filter((decision) =>
       decision.sourceRefs.some((source) =>
         currentSources.get(source.sourceId)?.digest !== source.digest &&
@@ -934,6 +1239,13 @@ export function recordIncrementalDesignSystemPlan(
     const existingDraft = existing
       ? parseStoredDraft(existing.design_system_json)
       : null;
+    const storedDraft = input.draftPatch
+      ? materializeDraftPatch(existingDraft, input.draftPatch, retireDecisionIds)
+      : {
+          __ikranIncrementalPlan: 1 as const,
+          draft: input.designSystemDraft,
+          bindings: input.draftBindings ?? existingDraft?.bindings ?? []
+        };
     db.prepare(
       `INSERT INTO alignment_incremental_plans
          (alignment_attempt_id, plan_version, processed_revision,
@@ -953,11 +1265,7 @@ export function recordIncrementalDesignSystemPlan(
       processedRevision,
       JSON.stringify(sectionDigests),
       JSON.stringify(storedDecisions),
-      JSON.stringify({
-        __ikranIncrementalPlan: 1,
-        draft: input.designSystemDraft,
-        bindings: input.draftBindings ?? existingDraft?.bindings ?? []
-      } satisfies StoredDraftEnvelope),
+      JSON.stringify(storedDraft satisfies StoredDraftEnvelope),
       now,
       now
     );
@@ -1026,6 +1334,15 @@ export function readIncrementalPlanningStatus(
       unboundDraftSourceIds: string[];
       unaccountedDraftSourceIds: string[];
       invalidSemanticDraft: Array<{ path: string; message: string }>;
+      draftInventory: {
+        hasName: boolean;
+        visualLanguageDecisionId?: string;
+        entries: Array<{
+          target: IncrementalPlanDraftCollectionTarget;
+          entryKey: string;
+          decisionId: string;
+        }>;
+      };
       nextAction: {
         tool: string;
         reconciliation?: {
@@ -1128,6 +1445,22 @@ export function readIncrementalPlanningStatus(
       draftBindings: storedDraft.bindings,
       ...dependencyState,
       invalidSemanticDraft,
+      draftInventory: {
+        hasName: Boolean(
+          storedDraft.draft && typeof storedDraft.draft === "object" &&
+          !Array.isArray(storedDraft.draft) &&
+          typeof (storedDraft.draft as Record<string, unknown>).name === "string"
+        ),
+        ...(storedDraft.visualLanguageDecisionId
+          ? { visualLanguageDecisionId: storedDraft.visualLanguageDecisionId }
+          : {}),
+        entries: DRAFT_COLLECTION_TARGETS.flatMap((target) =>
+          (storedDraft.entries?.[target] ?? []).map((entry) => ({
+            target,
+            ...entry
+          }))
+        )
+      },
       nextAction: {
         tool: nextTool,
         ...(reconciliationSection
@@ -1202,14 +1535,15 @@ export function claimIncrementalPlanCommitInput(
         | "incremental_plan_stale"
         | "db_error";
       details?: unknown;
-      fallback: { tool: "claim_initial_design_system_preparation" };
+      fallback?: { tool: "claim_initial_design_system_preparation" };
+      repair?: { tool: "resume_initial_design_system_planning" };
     } {
   const fallback = { tool: "claim_initial_design_system_preparation" } as const;
   const db = openProjectDb(projectPath);
   try {
     const state = stateOnDb(db, input.alignmentAttemptId);
     if (!state || state.frozen_revision === null) {
-      return { ok: false, reason: "alignment_not_completed", fallback };
+      return { ok: false, reason: "alignment_not_completed" };
     }
     const plan = planOnDb(db, input.alignmentAttemptId);
     if (!plan) {
@@ -1219,8 +1553,7 @@ export function claimIncrementalPlanCommitInput(
       return {
         ok: false,
         reason: "incremental_plan_version_mismatch",
-        details: { expected: plan.plan_version, received: input.planVersion },
-        fallback
+        details: { expected: plan.plan_version, received: input.planVersion }
       };
     }
     const sectionDigests = JSON.parse(
@@ -1265,7 +1598,7 @@ export function claimIncrementalPlanCommitInput(
           ...dependencyState,
           invalidSemanticDraft
         },
-        fallback
+        repair: { tool: "resume_initial_design_system_planning" }
       };
     }
     return {
@@ -1275,7 +1608,7 @@ export function claimIncrementalPlanCommitInput(
       designSystem: storedDraft.draft
     };
   } catch {
-    return { ok: false, reason: "db_error", fallback };
+    return { ok: false, reason: "db_error" };
   } finally {
     closeProjectDb(db);
   }

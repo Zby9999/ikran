@@ -26,6 +26,7 @@ const CONFLICT_REASONS = new Set([
   // Issue 28: illegal phase transition / formalize feedback gate.
   "phase_gate",
   "unreviewed_feedback",
+  "component_preview_verification_required",
   // Issue 29: proposal-first gate — decided proposal, or artifact declared
   // against a proposal the designer has not confirmed.
   "proposal_not_awaiting_confirmation",

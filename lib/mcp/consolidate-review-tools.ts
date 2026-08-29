@@ -21,7 +21,7 @@ export function registerConsolidateReviewTools(
     "claim_consolidate_review",
     {
       description:
-        "Claim Consolidate only after reconcile_designer_conversation completed the frozen Agent-host transcript review; pass its reconciliation id. During design_system_formal that reconciliation must have completed after the latest confirm_prototype and, when the confirmation has a canonical record_preview binding, carry the same runId. The result returns prototype_confirmation_event_id as the durable current-cycle binding. Older or different-run reconciliations are rejected. This is the ONLY read path for designer feedback and must never be used for design generation. Returns the reconciled decision ledger plus legacy feedback with linkage, transcript provenance, and review disposition. Use final decisions as current evidence; preserve superseded/local/open-gap outcomes rather than promoting them silently. Draft global proposals via propose_rule_update and give every feedback record an outcome through a confirmed proposal or dismiss_designer_feedback.",
+        "Claim Consolidate only after reconcile_designer_conversation completed the frozen Agent-host transcript review; pass its reconciliation id. During design_system_formal that reconciliation must have completed after the latest confirm_prototype and, when the confirmation has a canonical record_preview binding, carry the same runId. The result returns prototype_confirmation_event_id as the durable current-cycle binding. Older or different-run reconciliations are rejected. This is the ONLY read path for designer feedback and must never be used for design generation. Returns the reconciled decision ledger, exact legal target categories, existing Rule entries, and a draft coverage contract. Audit every final decision before publishing. Related decisions may be merged into one proposal when their meaningful boundaries survive; include every merged decision id in evidenceRecordIds. A final_decision needs proposal coverage or an exact existing Rule entry.",
       inputSchema: claimConsolidateReviewInputSchema
     },
     async (args) => {
@@ -41,7 +41,7 @@ export function registerConsolidateReviewTools(
     "dismiss_designer_feedback",
     {
       description:
-        "Record the no-rule-change disposition for feedback the designer decided against acting on during Consolidate review. Requires an explicit reason and records one designer_feedback_dismissed event per record. Dismissed records stop counting as unreviewed for formalize_design_system. Unknown feedback ids are rejected.",
+        "Record a typed no-proposal disposition during Consolidate review. final_decision records cannot be dismissed as local/superseded/process/open-gap: include them in proposal evidenceRecordIds or use covered_by_existing_rule with an exact existingRuleEntryId from the claim contract. Other reconciliation dispositions must match their typed dismissal. Requires an evidence-grounded reason and records one designer_feedback_dismissed event per record.",
       inputSchema: dismissDesignerFeedbackInputSchema
     },
     async (args) => {

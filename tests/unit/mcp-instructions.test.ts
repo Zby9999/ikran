@@ -7,6 +7,7 @@
 import { describe, expect, test } from "vitest";
 
 import { registerIkranTools } from "../../lib/mcp/register-tools";
+import { incrementalCommitFailureDetails } from "../../lib/mcp/initial-design-system-tools";
 import { DECLARE_COMPONENT_LIVE_HEROES_DESCRIPTION } from "../../lib/mcp/rule-capture-tools";
 import {
   CLAUDE_MCP_INSTRUCTIONS,
@@ -84,10 +85,16 @@ describe("MCP instructions channel split", () => {
     expect(instructions).toContain("do not end the turn");
     expect(instructions).toContain("After Draft creation stop for visible designer review");
 
-    const names: string[] = [];
+    const tools: Array<{
+      name: string;
+      spec: { description?: string; inputSchema?: unknown };
+    }> = [];
     const mcp = {
-      registerTool(name: string) {
-        names.push(name);
+      registerTool(
+        name: string,
+        spec: { description?: string; inputSchema?: unknown }
+      ) {
+        tools.push({ name, spec });
       }
     };
     const deps: RegisterIkranToolsDeps = {
@@ -104,12 +111,94 @@ describe("MCP instructions channel split", () => {
       mcpEntryPath: "/tmp/ikran-mcp.mjs"
     };
     registerIkranTools(mcp as never, deps);
+    const names = tools.map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining([
       "read_alignment_semantic_delta",
       "record_incremental_initial_design_system_plan",
       "resume_initial_design_system_planning",
-      "commit_incremental_initial_design_system_plan"
+      "commit_incremental_initial_design_system_plan",
+      "revise_rule_update_proposal"
     ]));
+    const retryRuleUpdate = tools.find(
+      (tool) => tool.name === "retry_rule_update_apply"
+    );
+    expect(retryRuleUpdate?.spec.description).toContain(
+      "operational failure"
+    );
+    const reviseRuleUpdate = tools.find(
+      (tool) => tool.name === "revise_rule_update_proposal"
+    );
+    expect(reviseRuleUpdate?.spec.description).toContain(
+      "must Accept the new revision"
+    );
+    const confirmPrototype = tools.find(
+      (tool) => tool.name === "confirm_prototype"
+    );
+    const confirmPrototypeSchema = confirmPrototype?.spec.inputSchema as {
+      safeParse?: (input: unknown) => { success: boolean };
+    };
+    expect(confirmPrototypeSchema.safeParse?.({}).success).toBe(false);
+    expect(
+      confirmPrototypeSchema.safeParse?.({
+        designerConfirmation: "I reviewed the current Prototype.",
+        designerMessageId: "designer-message-1"
+      }).success
+    ).toBe(true);
+    expect(confirmPrototype?.spec.description).toContain(
+      "Never call automatically after component registration"
+    );
+    expect(instructions).toContain(
+      "stop and return control for visible Prototype review"
+    );
+    expect(instructions).toContain(
+      "Do not poll verify_registered_component_previews"
+    );
+    expect(instructions).toContain(
+      "open a new task"
+    );
+    expect(instructions).toContain(
+      "never build a temporary MCP client"
+    );
+
+    const proposeRuleUpdate = tools.find(
+      (tool) => tool.name === "propose_rule_update"
+    );
+    const proposeRuleUpdateSchema = proposeRuleUpdate?.spec.inputSchema as {
+      safeParse?: (input: unknown) => { success: boolean };
+    };
+    const proposalBase = {
+      reason: "Evidence supports one reusable rule.",
+      affectedItems: [],
+      evidenceRecordIds: []
+    };
+    expect(proposeRuleUpdateSchema.safeParse?.({
+      ...proposalBase,
+      targetCategory: "layout"
+    }).success).toBe(false);
+    expect(proposeRuleUpdateSchema.safeParse?.({
+      ...proposalBase,
+      targetCategory: "foundations.layout"
+    }).success).toBe(true);
+    expect(proposeRuleUpdateSchema.safeParse?.({
+      ...proposalBase,
+      targetCategory: "component:navigation-bar"
+    }).success).toBe(true);
+
+    const dismissFeedback = tools.find(
+      (tool) => tool.name === "dismiss_designer_feedback"
+    );
+    const dismissFeedbackSchema = dismissFeedback?.spec.inputSchema as {
+      safeParse?: (input: unknown) => { success: boolean };
+    };
+    expect(dismissFeedbackSchema.safeParse?.({
+      feedbackIds: ["feedback-1"],
+      reason: "No reusable rule."
+    }).success).toBe(false);
+    expect(dismissFeedbackSchema.safeParse?.({
+      feedbackIds: ["feedback-1"],
+      disposition: "local_only",
+      reason: "No reusable rule."
+    }).success).toBe(true);
   });
 
   test("serializes structured details into the model-visible failure text", () => {
@@ -147,6 +236,30 @@ describe("MCP instructions channel split", () => {
     expect(result.content[0]?.text).toBe(
       "wait_for_agent_command failed: state_unavailable"
     );
+  });
+
+  test("preserves incremental commit repair details instead of reducing them to fallback", () => {
+    expect(incrementalCommitFailureDetails({
+      ok: false,
+      reason: "incremental_plan_stale",
+      failedStage: "projection",
+      details: {
+        invalidSemanticDraft: [{
+          path: "tokens.semantic.0.value",
+          message: "Required"
+        }]
+      },
+      repair: { tool: "resume_initial_design_system_planning" }
+    })).toEqual({
+      failed_stage: "projection",
+      details: {
+        invalidSemanticDraft: [{
+          path: "tokens.semantic.0.value",
+          message: "Required"
+        }]
+      },
+      repair: { tool: "resume_initial_design_system_planning" }
+    });
   });
 
   test("keeps fast-path success text concise without duplicating structured data", () => {
@@ -234,5 +347,21 @@ describe("Claude Code MCP text budget", () => {
     expect(descriptions.find(
       (tool) => tool.name === "record_incremental_initial_design_system_plan"
     )?.description).toContain("do not end the turn");
+    expect(descriptions.find(
+      (tool) => tool.name === "record_incremental_initial_design_system_plan"
+    )?.description).toContain("Never resend the complete Draft");
+    expect(descriptions.find(
+      (tool) => tool.name === "record_incremental_initial_design_system_plan"
+    )?.description).toContain("complete merged Draft/checkpoint");
+    expect(descriptions.find(
+      (tool) => tool.name === "record_incremental_initial_design_system_plan"
+    )?.description).toContain(
+      "value={alias:'primitive.<token-name>',usage:'...'}"
+    );
+    expect(descriptions.find(
+      (tool) => tool.name === "commit_initial_design_system_semantics"
+    )?.description).toContain(
+      "never use value='{color.<token-name>}'"
+    );
   });
 });

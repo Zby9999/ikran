@@ -21,8 +21,11 @@ not a one-shot status check. Every successful finalize, record, or resume result
 with `continuationRequired: true` is a binding continuation contract:
 
 1. Execute the returned `nextAction` immediately.
-2. When a ready section is returned, update the cumulative Incremental Plan and
-   call `record_incremental_initial_design_system_plan`.
+2. When a ready section is returned, send only that section's stable-keyed
+   decisions and `draftPatch` to
+   `record_incremental_initial_design_system_plan`. Runtime merges the patch,
+   owns cumulative bindings, and returns the complete Draft for global review;
+   never resend that complete Draft as input.
 3. When no section is ready and Alignment is still open, call
    `resume_initial_design_system_planning` again.
 4. When Alignment is completed, consume the final checkpoint and call

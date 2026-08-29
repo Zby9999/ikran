@@ -462,6 +462,12 @@ function aliasTargetOf(
   return { ok: true, alias: value.alias };
 }
 
+function braceColorReferenceOf(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const match = /^\{color\.([^{}]+)\}$/.exec(value.trim());
+  return match?.[1]?.trim() || null;
+}
+
 export function validateTokenUsageField(
   value: unknown,
   layer: TokenLayer,
@@ -547,6 +553,29 @@ function validateTokenJson(json: Record<string, unknown>): DesignSystemSchemaRes
       const alias = aliasTargetOf(raw.value);
       if (!alias.ok) return alias;
       const aliasRef = alias.alias;
+      const braceColorReference =
+        layer === "primitive" || raw.kind === "domain-rule" || raw.domain !== "color"
+          ? null
+          : braceColorReferenceOf(raw.value);
+      if (braceColorReference !== null) {
+        const primitive = layers.get("primitive")!;
+        const primitiveName = Object.prototype.hasOwnProperty.call(
+          primitive,
+          braceColorReference
+        )
+          ? braceColorReference
+          : Object.prototype.hasOwnProperty.call(
+                primitive,
+                `color.${braceColorReference}`
+              )
+            ? `color.${braceColorReference}`
+            : "<token-name>";
+        return fail("token_alias_unresolvable", {
+          ...ctx,
+          field: "value",
+          expected: `{ alias: \"primitive.${primitiveName}\", usage: \"...\" }`
+        });
+      }
       if (raw.kind !== "domain-rule" && raw.meaning !== undefined) {
         return fail("token_meaning_forbidden", {
           ...ctx,

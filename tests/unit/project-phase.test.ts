@@ -17,6 +17,7 @@ import {
   abandonProjectPhase,
   confirmDraftDesignSystem,
   confirmPrototype,
+  confirmPrototypeFromConversation,
   formalizeDesignSystem,
   getProjectPhase,
   requireProjectPhase
@@ -189,6 +190,50 @@ test("formalize requires a Rule Update review after Prototype confirmation even 
       phase: "design_system_formal"
     });
     expect(listEvents(projectPath, "design_system_formalized")).toEqual([]);
+  });
+});
+
+test("Agent-host Prototype confirmation requires explicit designer wording and message identity", () => {
+  withProject((projectPath) => {
+    setPhase(projectPath, "prototype_validation");
+
+    expect(
+      confirmPrototypeFromConversation(projectPath, "", "designer-message-1")
+    ).toEqual({
+      ok: false,
+      reason: "explicit_designer_confirmation_required"
+    });
+    expect(
+      confirmPrototypeFromConversation(
+        projectPath,
+        "I reviewed the current Prototype and it is complete.",
+        ""
+      )
+    ).toEqual({
+      ok: false,
+      reason: "explicit_designer_confirmation_required"
+    });
+
+    expect(
+      confirmPrototypeFromConversation(
+        projectPath,
+        "I reviewed the current Prototype and it is complete.",
+        "designer-message-1"
+      )
+    ).toMatchObject({ ok: true, phase: "design_system_formal" });
+    expect(listEvents(projectPath, "project_phase_confirmed")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            command: "confirm_prototype",
+            confirmation_source: "agent-host-conversation",
+            designer_confirmation:
+              "I reviewed the current Prototype and it is complete.",
+            designer_message_id: "designer-message-1"
+          })
+        })
+      ])
+    );
   });
 });
 

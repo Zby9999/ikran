@@ -19,10 +19,11 @@ export async function writeDraftReleaseNotes({ outDir, version, outputPath }) {
   const notes = `# Ikran v${safeVersion}\n\n` +
     `Alpha evaluation build for macOS on Apple Silicon. Download one product Kit: the Agent Plugin Kit (Cursor, Codex, Agent Plugin 1.0) or the Claude Plugin Kit (Claude Code beta, 2KB MCP contract). They are not interchangeable.\n\n` +
     `## What's new\n\n` +
-    `- Unifies component Rule Update identity on the browsable \`component-list.json\` id while resolving source specs through \`specPath\`.\n` +
-    `- Canonicalizes linked legacy spec ids, rejects orphan component targets with actionable valid ids, and hardens Records Check navigation.\n` +
-    `- Makes unfinished proposals directly Acceptable or Rejectable from Records so a missing navigation target cannot deadlock review.\n` +
-    `- Separates the human-readable proposal summary from the complete machine-write body and adds Runtime, MCP, and Chromium regression coverage.\n\n` +
+    `- Adds multi-option Question Cards with custom answers, editable completed responses, Annotation-safe grouping, and stable interaction motion.\n` +
+    `- Hardens the incremental Alignment fast path so the Agent preserves the full Draft context, resumes continuously, and stops at the correct designer review boundary.\n` +
+    `- Requires every observed Typography size to project into a visible semantic role while keeping role specimens and designer-facing copy in their intended languages.\n` +
+    `- Makes component registration, Prototype review, and Rule Update retries deterministic across Vite projects and operational failures.\n` +
+    `- Rejects non-projectable Color shorthand aliases with an actionable structured-alias repair instead of silently hiding Browser tokens.\n\n` +
     `## Download one Kit\n\n` +
     `- **Agent Plugin Kit** — production Runtime plus Agent Plugin 1.0 (\`plugin.json\`, \`mcp.json\`, \`skills/\`) and host-native Cursor/Codex adapters (\`.cursor-plugin/plugin.json\`, \`.codex-plugin/plugin.json\`). Does not include the Claude Code adapter.\n` +
     `- **Claude Plugin Kit** — the same production Runtime plus the Claude Code-native adapter (\`.claude-plugin/plugin.json\`, \`.mcp.json\`). Uses the 2KB-truncated MCP instruction budget. Does not include Cursor or Codex adapters.\n` +

@@ -23,10 +23,17 @@ interaction, or components category likewise carries its own evidence-linked
 Agent omission so the required empty artifact remains traceable. Foundation
 domain rules (including Color rules) are first-class semantic input rather
 than being flattened into tokens; evidence-backed Typography roles are
-semantic/component composite tokens rather than primitive bundles. Each role
-names one stable job and carries one scalar `fontSize`; scales and step
-collections remain atomic construction facts unless evidence maps their
-individual values to distinct roles.
+semantic/component tokens rather than primitive bundles. As a
+Typography-specific exception, every distinct font size observed in the frozen
+Seed / Alignment evidence remains an atomic construction fact and must also be
+represented by its own visible role with one scalar `fontSize`. When the exact
+font-role mapping is unresolved, the Agent supplies a concise canonical English
+role identity for the Browser specimen and an evidence-backed `usedFor` in the
+designer's language for correction during Draft review; Runtime owns the
+separate candidate lifecycle status. Uncertainty
+cannot remove an observed size from Type styles. This typography role-prefill
+rule does not apply to Color, Material, Layout, Interaction, or Component
+extraction. Font scales and step collections are never bundled into one role.
 
 The compact Q/A/D source map is semantic input, so the claim tool returns it in
 model-visible text as well as structured content. A host that does not expose
@@ -35,6 +42,21 @@ otherwise the Agent would be forced to guess lineage from ordering. Incremental
 Draft preflight reuses the final Token usage-field contract and reports all
 field mismatches before projection, instead of discovering them one at a time
 during commit.
+
+Incremental planning uses Runtime-owned accumulation rather than Agent-owned
+snapshot replacement. For each ready Alignment section, the Agent sends only
+stable-keyed entry upserts/retirements and the decisions that support them.
+Runtime merges those patches into the persisted semantic Draft and regenerates
+the cumulative path-to-decision bindings. The response still includes the
+complete merged Draft and global checkpoint: this preserves the Agent's ability
+to audit cross-section consistency without requiring it to serialize the full
+Draft back into every subsequent request.
+
+Typography role identities remain concise canonical English labels so the
+Browser specimens demonstrate the intended Latin typeface. Their `usedFor`
+copy follows the designer's language. This is a Typography-only presentation
+contract: the English role identity is not a language precedent for other
+Draft owners, and Runtime does not impose one global Draft output language.
 
 ## Considered options
 
@@ -53,6 +75,9 @@ during commit.
 
 - Initial Draft creation becomes one resumable semantic operation instead of a
   progressive mechanical tool loop.
+- Section planning request size follows the current semantic delta rather than
+  the cumulative Draft size; stable entry keys make retries and answer edits
+  deterministic while Runtime remains the sole cumulative-state owner.
 - Runtime validation and canonical projection are deterministic; semantic
   quality remains attributable to the Agent-supplied bundle and its source
   references.

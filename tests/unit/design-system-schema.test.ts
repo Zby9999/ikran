@@ -623,6 +623,22 @@ test.describe("token.json", () => {
     expect(res.reason).toBe("token_alias_unresolvable");
   });
 
+  test("brace-string Color references → token_alias_unresolvable", () => {
+    const json = validTokenJson();
+    json.semantic["color.primary"].value = "{color.blue.500}";
+    const res = validateDesignSystemJson("token.json", json);
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res).toMatchObject({
+      reason: "token_alias_unresolvable",
+      details: {
+        token: "semantic.color.primary",
+        field: "value",
+        expected: '{ alias: "primitive.color.blue.500", usage: "..." }'
+      }
+    });
+  });
+
   test("forward-layer alias (semantic → component) → token_alias_invalid_layer", () => {
     const json = validTokenJson();
     json.semantic["color.primary"].value = { alias: "component.button.bg" };

@@ -70,7 +70,6 @@ function isCompositeTypographyRole(entry: DesignSystemEntryRowInput): boolean {
   return (
     unknownFields.length === 0 &&
     fields.includes("fontSize") &&
-    fields.some((field) => field !== "fontSize") &&
     entry.value.fontSize !== null &&
     !Array.isArray(entry.value.fontSize) &&
     typeof usedFor === "string" &&

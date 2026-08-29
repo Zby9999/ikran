@@ -93,31 +93,16 @@ const TYPOGRAPHY_ROLE_WRITING_STYLE = {
     "textTransform"
   ],
   rules: [
-    "Represent every reusable type style as one complete composite token; keep atomic typography tokens as referenced construction facts.",
-    "Give each role one scalar fontSize and one stable job; never bundle a scale or step collection into one role token.",
+    "Preserve every distinct font size observed in the frozen Seed/Alignment evidence as an atomic primitive and represent it with its own semantic/component role so it appears individually in Type styles.",
+    "Give each role one scalar fontSize and one job; never bundle a scale or step collection into one role token.",
     "Semantic and component layer tokens use the token identity for the stable role name and write value.usedFor as one sentence about usage context, function, or design intent.",
     "Do not repeat the role name with only size, role, or token appended.",
-    "Do not invent usage or missing font fields; preserve unsupported facts as explicit gaps."
+    "Keep the token identity as a concise canonical English semantic role so the Browser specimen demonstrates the intended Latin typeface. Write value.usedFor from the observed job in the designer's language, and do not use the English role identity as a language precedent for other Draft copy. Runtime owns candidate lifecycle status; Draft review remains the correction boundary.",
+    "Do not invent missing construction fields such as weight, line height, tracking, or transform."
   ],
-  examples: {
-    good: {
-      name: "typography.connectHeading",
-      value: {
-        fontFamily: { alias: "semantic.typography.brandFamily" },
-        fontSize: { alias: "primitive.fontSize.37" },
-        fontWeight: { alias: "primitive.fontWeight.regular" },
-        lineHeight: { alias: "primitive.lineHeight.100" },
-        letterSpacing: { alias: "primitive.letterSpacing.tight" },
-        usedFor: "Closing-section call to action."
-      }
-    },
-    bad: {
-      name: "typography.connectHeadingSize",
-      value: {
-        alias: "primitive.fontSize.37",
-        usedFor: "Connect call-to-action heading size role."
-      }
-    }
+  role_identity_examples: {
+    good: "typography.pageTitle",
+    bad: "typography.pageTitleSize"
   }
 } as const;
 
@@ -263,7 +248,7 @@ export const INITIAL_DESIGN_SYSTEM_WORK_UNIT_EXAMPLES = {
 } as const;
 
 export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
-  schema_version: 3,
+  schema_version: 6,
   source_root: "design-system",
   file_layout: [
     ...INITIAL_DESIGN_SYSTEM_REQUIRED_ARTIFACTS,
@@ -290,7 +275,7 @@ export const INITIAL_DESIGN_SYSTEM_SOURCE_CONTRACT = {
     primitive:
       "Primitive tokens carry construction facts only and write neither meaning nor a usage field.",
     typography:
-      "Each semantic/component typography role has one scalar fontSize, at least one other supported style field, and one non-empty value.usedFor sentence in the designer's source language; scales and step collections stay atomic primitives.",
+      "Every distinct fontSize primitive has its own semantic/component typography role with one scalar fontSize. Keep the role identity concise canonical English for the Browser specimen; write one non-empty value.usedFor sentence in the designer's source language and do not use the English role identity as a language precedent for other Draft copy. Runtime owns candidate lifecycle status. Scales and step collections stay atomic primitives.",
     other_domains:
       "Semantic and component tokens outside typography may write one non-empty value.usage sentence in the designer's source language.",
     fail_closed:

@@ -1180,7 +1180,7 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(45);
+        expect(CURRENT_SCHEMA_VERSION).toBe(46);
         expect(
           db.prepare("PRAGMA table_info(alignment_question_cards)").all()
         ).toEqual(
@@ -1355,7 +1355,7 @@ test.describe("PRAGMA user_version migration runner", () => {
     });
   });
 
-  test("v44→v45 preserves legacy Question cards with nullable answer-option identity", () => {
+  test("v44→current preserves legacy Question cards with nullable answer-option identity", () => {
     withTempProject((dir) => {
       const initialized = openProjectDb(dir);
       closeProjectDb(initialized);
@@ -1381,7 +1381,7 @@ test.describe("PRAGMA user_version migration runner", () => {
 
       const migrated = openProjectDb(dir);
       try {
-        expect(userVersion(migrated)).toBe(45);
+        expect(userVersion(migrated)).toBe(CURRENT_SCHEMA_VERSION);
         expect(migrated.prepare(
           `SELECT proposed_answer, answer_options_json, selected_option_id
            FROM alignment_question_cards WHERE id = 'legacy-question-v44'`

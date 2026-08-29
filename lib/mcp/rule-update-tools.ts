@@ -16,6 +16,8 @@ import {
   failRuleUpdateApplyInputSchema,
   retryRuleUpdateApplyCommand,
   retryRuleUpdateApplyInputSchema,
+  reviseRuleUpdateProposalCommand,
+  reviseRuleUpdateProposalInputSchema,
   requireActiveProjectCommand
 } from "../runtime/commands";
 import {
@@ -48,7 +50,7 @@ export function registerRuleUpdateTools(
     "publish_rule_update_review",
     {
       description:
-        "Publish every proposal in a draft Review as one visible batch and activate the Rule Update-specific designer wait. Component targets must resolve to a browsable component-list.json id through its specPath; publishing rejects orphan targets with the valid component ids. An empty batch completes immediately as an explicit no-change Review; an already completed Review is rejected.",
+        "Publish every proposal in a draft Review as one visible batch and activate the Rule Update-specific designer wait. For a reconciliation-bound Review, publishing first verifies that every decision is covered by proposal evidence or a typed no-proposal disposition; every final_decision must be in proposal evidence or cite an existing Rule. One proposal may cover multiple related decisions. Component targets must resolve to a browsable component-list.json id through its specPath; publishing rejects orphan targets with the valid component ids. An empty batch completes immediately only when the coverage audit is complete.",
       inputSchema: publishRuleUpdateReviewInputSchema
     },
     async (args) => {
@@ -116,7 +118,7 @@ export function registerRuleUpdateTools(
     "fail_rule_update_apply",
     {
       description:
-        "Mark a claimed accepted Rule Update application as recoverably failed. This preserves the same command/proposal/revision identity and reopens the Review wait; use retry_rule_update_apply after correcting the operational failure.",
+        "Mark a claimed accepted Rule Update application as recoverably failed and reopen the Review wait. Use retry_rule_update_apply only when the frozen proposal is still correct and the failure was operational. If the accepted proposal body itself is invalid, use revise_rule_update_proposal to append a corrected immutable revision for a new designer decision.",
       inputSchema: failRuleUpdateApplyInputSchema
     },
     async (args) => {
@@ -129,10 +131,42 @@ export function registerRuleUpdateTools(
   );
 
   mcp.registerTool(
+    "revise_rule_update_proposal",
+    {
+      description:
+        "Append an Agent-authored immutable revision after an accepted Rule Update application failed or entered Needs revision. Submit the complete corrected title, machine-write body, optional short changeDescription, and the same canonical semantic target. Runtime schema-validates component bodies before saving, cancels the failed command without deleting its audit history, and returns the proposal to Pending Review. The designer must Accept the new revision before any source write. This tool cannot revise a normal pending proposal.",
+      inputSchema: reviseRuleUpdateProposalInputSchema
+    },
+    async (args) => {
+      const rt = await ensureRuntime();
+      const active = requireActiveProjectCommand();
+      if (!active.ok) {
+        return failureResult(
+          "revise_rule_update_proposal",
+          active.reason,
+          rt
+        );
+      }
+      const result = reviseRuleUpdateProposalCommand(active.project.path, {
+        ...args,
+        author: "agent"
+      });
+      return result.ok
+        ? successResult(rt, result)
+        : failureResult(
+            "revise_rule_update_proposal",
+            result.reason,
+            rt,
+            "details" in result ? result.details : undefined
+          );
+    }
+  );
+
+  mcp.registerTool(
     "retry_rule_update_apply",
     {
       description:
-        "Retry a recoverably failed Rule Update application using the same durable command identity. Base digest validation still runs again at claim time.",
+        "Retry a Rule Update application only after an operational failure when the frozen proposal body remains correct, using the same durable command identity. If the proposal body is invalid, submit a corrected immutable revision with revise_rule_update_proposal instead. Base digest validation still runs again at claim time.",
       inputSchema: retryRuleUpdateApplyInputSchema
     },
     async (args) => {

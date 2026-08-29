@@ -9,7 +9,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 45;
+export const CURRENT_SCHEMA_VERSION = 46;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -2119,6 +2119,36 @@ CREATE TABLE IF NOT EXISTS alignment_incremental_plan_requests (
       if (!columns.has("selected_option_id")) {
         db.exec(`ALTER TABLE alignment_question_cards
           ADD COLUMN selected_option_id TEXT;`);
+      }
+    }
+  },
+  {
+    version: 46,
+    up(db) {
+      // Consolidate audit coverage: a free-form dismissal reason is not
+      // sufficient to prove why a reconciled decision does not need a Rule
+      // proposal. Persist the typed disposition and, when applicable, the
+      // exact existing Rule entry that already owns the decision.
+      const table = db.prepare(
+        `SELECT 1 AS present FROM sqlite_master
+         WHERE type = 'table' AND name = 'designer_feedback_dismissals'`
+      ).get() as { present: number } | undefined;
+      if (!table) return;
+      const columns = new Set(
+        (db.prepare("PRAGMA table_info(designer_feedback_dismissals)").all() as Array<{
+          name: string;
+        }>).map((column) => column.name)
+      );
+      if (!columns.has("disposition")) {
+        db.exec(`ALTER TABLE designer_feedback_dismissals
+          ADD COLUMN disposition TEXT CHECK (disposition IN (
+            'local_only', 'superseded', 'open_gap', 'process_only',
+            'covered_by_existing_rule'
+          ));`);
+      }
+      if (!columns.has("existing_rule_entry_id")) {
+        db.exec(`ALTER TABLE designer_feedback_dismissals
+          ADD COLUMN existing_rule_entry_id TEXT;`);
       }
     }
   }

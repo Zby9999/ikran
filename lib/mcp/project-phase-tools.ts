@@ -25,6 +25,15 @@ const confirmDraftInputSchema = z.object({
   )
 }).strict();
 
+const confirmPrototypeInputSchema = z.object({
+  designerConfirmation: z.string().trim().min(1).describe(
+    "The designer's explicit current-turn confirmation that they reviewed the latest visible Prototype after all requested page changes and want to finish Prototype review. Preserve their wording; an operational instruction to continue testing is not confirmation."
+  ),
+  designerMessageId: z.string().trim().min(1).describe(
+    "Stable id of that exact designer-authored Agent-host message. The subsequent frozen reconciliation must contain this message with role=designer."
+  )
+}).strict();
+
 const timingInputSchema = z.object({
   sessionId: z
     .string()
@@ -142,21 +151,25 @@ export function registerProjectPhaseTools(
     "confirm_prototype",
     {
       description:
-        "Declare that the designer confirmed Prototype modifications and audit. Every code-linked Candidate component must already have a Runtime Preview registration from record_artifact_written.componentPreview or a resolved retain_open_gap exception; compatibility code-link backfill alone cannot satisfy this gate. Runtime owns code linking, the shared live Preview, verification cache, and internal Verified Candidate. Then reconcile the frozen conversation, complete claim_consolidate_review, resolve only emitted component Preview exceptions, wait for automatic verification eligibility, and formalize. Do not run the legacy per-component harness/backfill/declaration/verification chain. Rejected out of order.",
-      inputSchema: emptyInputSchema
+        "Use only after the designer visibly reviews the latest Prototype, gives any feedback, the requested page changes are implemented and redeclared, and the designer explicitly says that Prototype review is complete. Never call automatically after component registration, automatic verification, or an operational request to continue testing. Preserve the designer's wording and exact message id. Every code-linked Candidate must already have a terminal Preview outcome and every registration must be Runtime-verified. After success, reconcile the complete frozen review conversation, then Consolidate and Rule Update. Rejected when confirmation is absent, verification is pending, the reviewed revision changes, or the phase is wrong.",
+      inputSchema: confirmPrototypeInputSchema
     },
-    async () => {
+    async (args) => {
       const rt = await ensureRuntime();
       const active = requireActiveProjectCommand();
       if (!active.ok) {
         return failureResult("confirm_prototype", active.reason, rt);
       }
-      const result = confirmPrototypeCommand(active.project.path);
+      const result = confirmPrototypeCommand(active.project.path, {
+        source: "agent-host-conversation",
+        designerConfirmation: args.designerConfirmation,
+        designerMessageId: args.designerMessageId
+      });
       return result.ok
         ? successResult(rt, {
             ...result,
             next_action: { tool: "reconcile_designer_conversation" },
-            next: "Continue autonomously: reconcile the frozen transcript → claim_consolidate_review → outcome feedback → resolve only emitted component Preview exceptions → wait for automatic verification → formalize_design_system."
+            next: "Prototype review is explicitly complete. Reconcile the full frozen designer review transcript, then claim Consolidate, disposition feedback, publish Rule Update Review, apply designer decisions, and formalize."
           })
         : phaseFailure("confirm_prototype", result, rt);
     }

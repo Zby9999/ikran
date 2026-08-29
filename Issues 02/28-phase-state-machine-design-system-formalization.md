@@ -2,6 +2,8 @@
 
 Status: resolved
 
+> **修订记录（2026-08-29，Prototype 审阅边界）**：组件声明与 Runtime 自动验证完成后，Agent 必须停止并把控制权交还设计师审阅 Prototype；不得把“继续测试/完成链路”一类操作指令当作视觉审阅。Workbench 的 Complete 是设计师直接确认；Agent-host 的 `confirm_prototype` 必须携带设计师确认原文和稳定消息 ID，后续冻结 transcript 必须包含该 designer 消息。确认后若又声明 Prototype/code、重建 Preview 或重新登记组件，本轮确认失效，Consolidate 返回 `prototype_review_stale`，必须对最新页面修订重新审阅。Rule Update 只发生在最终确认与完整 conversation reconciliation 之后。
+
 > **修订记录(2026-08-10,真实 Agent Rule Update 稳定性修复)**:
 >
 > - `formalize_design_system` 不再把非空 `modificationReview` 当作完成审查的替代品：最新一次 `confirm_prototype` 之后必须真实完成 `reconcile_designer_conversation → claim_consolidate_review`，且 Consolidate 事件显式绑定该 Prototype confirmation；存在 canonical preview 时 reconciliation 的 `runId` 还必须匹配本轮 Prototype run。即使结论是零反馈、零规则变化也必须走完。缺失返回 `rule_update_review_required`。

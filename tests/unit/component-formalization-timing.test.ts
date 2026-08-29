@@ -8,6 +8,7 @@ import {
   beginComponentFormalizationTiming,
   beginComponentFormalizationTimingStage,
   completeComponentFormalizationTiming,
+  ensureComponentFormalizationTiming,
   finishComponentFormalizationTimingStage,
   getComponentFormalizationTiming,
   interruptComponentFormalizationTiming
@@ -159,6 +160,32 @@ test("records a sanitized successful timing breakdown with wait and milestone to
   expect(JSON.stringify(result)).not.toContain("sourceCode");
 });
 
+test("merges later component declarations into the active run timing scope", () => {
+  const dir = project();
+  const first = ensureComponentFormalizationTiming(dir, {
+    runId: "run-batch",
+    componentEntryIds: ["component.alpha"],
+    stateCount: 1
+  });
+  const second = ensureComponentFormalizationTiming(dir, {
+    runId: "run-batch",
+    componentEntryIds: ["component.beta"],
+    stateCount: 3
+  });
+  ensureComponentFormalizationTiming(dir, {
+    runId: "run-batch",
+    componentEntryIds: ["component.beta"],
+    stateCount: 3
+  });
+
+  expect(second.id).toBe(first.id);
+  expect(getComponentFormalizationTiming(dir, first.id)).toMatchObject({
+    component_entry_ids: ["component.alpha", "component.beta"],
+    component_count: 2,
+    state_count: 4
+  });
+});
+
 test("closes a failed stage with a typed failure stage", () => {
   const dir = project();
   const time = clock();
@@ -236,6 +263,42 @@ test("counts retries without overwriting earlier attempts", () => {
     stages: {
       preview_readiness: { attempts: 2, runtime_ms: 18, agent_wait_ms: 5 }
     }
+  });
+});
+
+test("does not count normal repeated stages for different components as retries", () => {
+  const dir = project();
+  const time = clock();
+  const session = beginComponentFormalizationTiming(
+    dir,
+    {
+      runId: "run-multiple-components",
+      componentEntryIds: ["component.alpha", "component.beta"],
+      stateCount: 2
+    },
+    { now: time.now }
+  );
+  for (let index = 0; index < 2; index += 1) {
+    const span = beginComponentFormalizationTimingStage(
+      dir,
+      session.id,
+      "artifact_declaration",
+      { componentCount: 1, stateCount: 1 },
+      { now: time.now }
+    );
+    time.advance(5);
+    finishComponentFormalizationTimingStage(
+      dir,
+      span.id,
+      { status: "succeeded" },
+      { now: time.now }
+    );
+  }
+  completeComponentFormalizationTiming(dir, session.id, { now: time.now });
+
+  expect(getComponentFormalizationTiming(dir, session.id)).toMatchObject({
+    retry_count: 0,
+    stages: { artifact_declaration: { attempts: 2, succeeded: 2 } }
   });
 });
 

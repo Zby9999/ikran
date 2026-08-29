@@ -489,9 +489,18 @@ describe("Alignment preparation Agent command", () => {
             }]
           }
         ],
-        designSystemDraft: {
+        draftPatch: {
           name: "Incremental draft",
-          concepts: [{ meaning: "Calm hierarchy" }]
+          upserts: [{
+            target: "concepts",
+            entryKey: "calm-hierarchy",
+            decisionId: "calm-principle",
+            value: {
+              meaning: "Calm hierarchy",
+              value: "Use calm hierarchy.",
+              sourceRefs: [firstQuestion.sourceId]
+            }
+          }]
         }
       });
       expect(recorded).toMatchObject({
@@ -509,11 +518,50 @@ describe("Alignment preparation Agent command", () => {
         section: delta.delta.section,
         sectionDigest: delta.delta.sectionDigest,
         decisions: recorded.ok ? recorded.decisions : [],
-        designSystemDraft: {
+        draftPatch: {
           name: "Incremental draft",
-          concepts: [{ meaning: "Calm hierarchy" }]
+          upserts: [{
+            target: "concepts",
+            entryKey: "calm-hierarchy",
+            decisionId: "calm-principle",
+            value: {
+              meaning: "Calm hierarchy",
+              value: "Use calm hierarchy.",
+              sourceRefs: [firstQuestion.sourceId]
+            }
+          }]
         }
       })).toMatchObject({ ok: true, reused: true, planVersion: 1 });
+
+      expect(recordIncrementalDesignSystemPlan(projectPath, {
+        alignmentAttemptId: prepared.attempt.id,
+        idempotencyKey: "design-concept-plan-update-entry",
+        basePlanVersion: 1,
+        baseRevision: delta.currentRevision,
+        section: delta.delta.section,
+        sectionDigest: delta.delta.sectionDigest,
+        decisions: [{
+          decisionId: "calm-principle",
+          outputConcern: "global",
+          statement: "Use a refined calm hierarchy as a global principle.",
+          sourceRefs: [{
+            sourceId: firstQuestion.sourceId,
+            digest: firstQuestion.digest
+          }]
+        }],
+        draftPatch: {
+          upserts: [{
+            target: "concepts",
+            entryKey: "calm-hierarchy",
+            decisionId: "calm-principle",
+            value: {
+              meaning: "Refined calm hierarchy",
+              value: "Use a refined calm hierarchy.",
+              sourceRefs: [firstQuestion.sourceId]
+            }
+          }]
+        }
+      })).toMatchObject({ ok: true, planVersion: 2 });
 
       expect(recordDesignerAnswer(projectPath, {
         questionCardId: firstQuestion.sourceId,
@@ -524,12 +572,27 @@ describe("Alignment preparation Agent command", () => {
         prepared.attempt.id
       )).toMatchObject({
         ok: true,
-        planVersion: 1,
+        planVersion: 2,
         staleDecisionIds: ["calm-principle"],
         validDecisionIds: ["retain-observed-intent"],
         designSystemDraft: {
           name: "Incremental draft",
-          concepts: [{ meaning: "Calm hierarchy" }]
+          concepts: [{
+            meaning: "Refined calm hierarchy",
+            value: "Use a refined calm hierarchy.",
+            sourceRefs: [firstQuestion.sourceId]
+          }]
+        },
+        draftBindings: [{
+          path: "/concepts/0",
+          decisionId: "calm-principle"
+        }],
+        draftInventory: {
+          entries: [{
+            target: "concepts",
+            entryKey: "calm-hierarchy",
+            decisionId: "calm-principle"
+          }]
         },
         nextAction: { tool: "record_incremental_initial_design_system_plan" }
       });
@@ -543,21 +606,27 @@ describe("Alignment preparation Agent command", () => {
       expect(recordIncrementalDesignSystemPlan(projectPath, {
         alignmentAttemptId: prepared.attempt.id,
         idempotencyKey: "design-concept-plan-retire-stale",
-        basePlanVersion: 1,
+        basePlanVersion: 2,
         baseRevision: editedDelta.currentRevision,
         section: editedDelta.delta.section,
         sectionDigest: editedDelta.delta.sectionDigest,
         decisions: [],
         retireDecisionIds: ["calm-principle"],
-        designSystemDraft: { name: "Incremental draft" }
-      })).toMatchObject({ ok: true, planVersion: 2 });
+        draftPatch: { upserts: [] }
+      })).toMatchObject({ ok: true, planVersion: 3 });
       expect(readIncrementalPlanningStatus(
         projectPath,
         prepared.attempt.id
       )).toMatchObject({
         ok: true,
         staleDecisionIds: [],
-        validDecisionIds: ["retain-observed-intent"]
+        validDecisionIds: ["retain-observed-intent"],
+        designSystemDraft: {
+          name: "Incremental draft",
+          concepts: []
+        },
+        draftBindings: [],
+        draftInventory: { entries: [] }
       });
     });
   });

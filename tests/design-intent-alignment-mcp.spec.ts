@@ -60,6 +60,7 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
     expect(advertisedCommitSchema).toContain("sourceOmissions");
     expect(advertisedCommitSchema).toContain("usedFor");
     expect(advertisedCommitSchema).not.toContain("sourceRecordIds");
+    expect(commitTool?.description).toContain("Typography role identity");
     const answerTool = advertisedTools.find(
       (tool) => tool.name === "record_designer_answer"
     );
@@ -84,6 +85,16 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
       required: ["designerConfirmation"]
     });
     expect(confirmDraftTool?.description).toContain("Never call automatically");
+    const confirmPrototypeTool = advertisedTools.find(
+      (tool) => tool.name === "confirm_prototype"
+    );
+    expect(confirmPrototypeTool?.inputSchema).toMatchObject({
+      type: "object",
+      required: ["designerConfirmation", "designerMessageId"]
+    });
+    expect(confirmPrototypeTool?.description).toContain(
+      "Never call automatically after component registration"
+    );
 
     const opened = sc(await client.callTool({
       name: "create_or_open_project",
@@ -480,6 +491,7 @@ test("Issue 07 semantic MCP surface is discoverable", async () => {
         sourceField: "sourceRefs"
       },
     });
+    expect("outputLanguage" in claimedInitialDesignSystem).toBe(false);
     const compactSources = claimedInitialDesignSystem.sources as Array<Record<string, unknown>>;
     expect(compactSources).toHaveLength(18);
     expect(compactSources[0]).toMatchObject({ ref: "Q01", kind: "question" });

@@ -44,7 +44,9 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid_action" }, { status: 400 });
   }
 
-  const result = confirmPrototypeCommand(active.project.path);
+  const result = confirmPrototypeCommand(active.project.path, {
+    source: "workbench"
+  });
   if (result.ok) return NextResponse.json(result);
   return NextResponse.json(
     result.reason === "phase_gate"

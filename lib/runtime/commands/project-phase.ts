@@ -2,6 +2,7 @@ import {
   abandonProjectPhase,
   confirmDraftDesignSystem,
   confirmPrototype,
+  confirmPrototypeFromConversation,
   formalizeDesignSystem,
   getProjectPhase,
   requireProjectPhase,
@@ -35,9 +36,22 @@ export function confirmDraftDesignSystemCommand(
 }
 
 export function confirmPrototypeCommand(
-  projectPath: string
+  projectPath: string,
+  confirmation:
+    | { source: "workbench" }
+    | {
+        source: "agent-host-conversation";
+        designerConfirmation: string;
+        designerMessageId: string;
+      } = { source: "workbench" }
 ): PhaseCommandResult {
-  return confirmPrototype(projectPath);
+  return confirmation.source === "workbench"
+    ? confirmPrototype(projectPath)
+    : confirmPrototypeFromConversation(
+        projectPath,
+        confirmation.designerConfirmation,
+        confirmation.designerMessageId
+      );
 }
 
 export function formalizeDesignSystemCommand(

@@ -30,8 +30,14 @@ import {
   proposeRuleUpdate
 } from "../../lib/runtime/rule-update-proposal";
 import {
+  createRuleUpdateReview,
+  draftRuleUpdateProposal,
+  publishRuleUpdateReview
+} from "../../lib/runtime/rule-update-review";
+import {
   confirmDraftDesignSystem,
   confirmPrototype,
+  confirmPrototypeFromConversation,
   countUnreviewedDesignerFeedbackOnDb,
   formalizeDesignSystem,
   listUnreviewedDesignerFeedbackOnDb
@@ -269,6 +275,95 @@ test("design_system_formal only claims a reconciliation completed after the late
         })
       })
     ]);
+  });
+});
+
+test("Agent-host Prototype confirmation must be present in the frozen designer transcript", () => {
+  withProject((projectPath) => {
+    setPhase(projectPath, "prototype_validation");
+    expect(
+      confirmPrototypeFromConversation(
+        projectPath,
+        "I reviewed the current Prototype and it is complete.",
+        "prototype-complete-message"
+      )
+    ).toMatchObject({ ok: true, phase: "design_system_formal" });
+
+    const reconciliation = reconcileDesignerConversation(projectPath, {
+      reviewId: "missing-confirmation-message-review",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      sessionId: "session-1",
+      startMessageId: "different-message",
+      endMessageId: "different-message",
+      messages: [
+        {
+          id: "different-message",
+          role: "designer",
+          content: "This is unrelated operational guidance."
+        }
+      ],
+      decisions: []
+    });
+    expect(reconciliation).toMatchObject({ ok: true });
+
+    expect(
+      claimConsolidateReview(
+        projectPath,
+        "missing-confirmation-message-review"
+      )
+    ).toEqual({
+      ok: false,
+      reason: "prototype_confirmation_message_not_in_reconciliation"
+    });
+  });
+});
+
+test("Prototype changes after designer confirmation invalidate Consolidate review", () => {
+  withProject((projectPath) => {
+    setPhase(projectPath, "prototype_validation");
+    expect(
+      confirmPrototypeFromConversation(
+        projectPath,
+        "I reviewed the current Prototype and it is complete.",
+        "prototype-complete-message"
+      )
+    ).toMatchObject({ ok: true, phase: "design_system_formal" });
+
+    const componentPath = "prototype/src/components/ChangedAfterReview.tsx";
+    const absolutePath = path.join(projectPath, componentPath);
+    mkdirSync(path.dirname(absolutePath), { recursive: true });
+    writeFileSync(absolutePath, "export const ChangedAfterReview = () => null;\n");
+    expect(
+      recordSourceArtifact(projectPath, {
+        path: componentPath,
+        artifactType: "code",
+        semanticPurpose: "Changed after the reviewed Prototype revision",
+        relatedRecordIds: []
+      })
+    ).toMatchObject({ ok: true });
+
+    const reconciliation = reconcileDesignerConversation(projectPath, {
+      reviewId: "stale-prototype-review",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      sessionId: "session-1",
+      startMessageId: "prototype-complete-message",
+      endMessageId: "prototype-complete-message",
+      messages: [
+        {
+          id: "prototype-complete-message",
+          role: "designer",
+          content: "I reviewed the current Prototype and it is complete."
+        }
+      ],
+      decisions: []
+    });
+    expect(reconciliation).toMatchObject({ ok: true });
+
+    expect(
+      claimConsolidateReview(projectPath, "stale-prototype-review")
+    ).toEqual({ ok: false, reason: "prototype_review_stale" });
   });
 });
 
@@ -647,6 +742,7 @@ test("dismiss_designer_feedback records an explicit disposition and clears unrev
     expect(
       dismissDesignerFeedback(projectPath, {
         feedbackIds: [first, "forged-feedback"],
+        disposition: "local_only",
         reason: "Local exception; no global rule."
       })
     ).toEqual({ ok: false, reason: "feedback_record_not_found" });
@@ -655,12 +751,14 @@ test("dismiss_designer_feedback records an explicit disposition and clears unrev
     expect(
       dismissDesignerFeedback(projectPath, {
         feedbackIds: [first, second],
+        disposition: "local_only",
         reason: ""
       })
     ).toEqual({ ok: false, reason: "invalid_dismissal" });
 
     const dismissed = dismissDesignerFeedback(projectPath, {
       feedbackIds: [first, second],
+      disposition: "local_only",
       reason: "Local exception; no global rule."
     });
     expect(dismissed).toMatchObject({
@@ -691,6 +789,138 @@ test("dismiss_designer_feedback records an explicit disposition and clears unrev
     expect(claim.feedback[0].dismissed_reason).toBe(
       "Local exception; no global rule."
     );
+    expect(claim.feedback[0].dismissed_disposition).toBe("local_only");
+  });
+});
+
+test("the first Rule Update audit must cover every final decision and may merge related decisions", () => {
+  withProject((projectPath) => {
+    const reconciliation = reconcileDesignerConversation(projectPath, {
+      reviewId: "divider-audit",
+      conversationId: "divider-conversation",
+      runId: "run-1",
+      sessionId: "session-1",
+      startMessageId: "designer-divider-1",
+      endMessageId: "designer-divider-4",
+      messages: [
+        {
+          id: "designer-divider-1",
+          role: "designer",
+          content: "Navigation needs a bottom divider."
+        },
+        {
+          id: "designer-divider-2",
+          role: "designer",
+          content: "Use dividers only where they clarify hierarchy."
+        },
+        {
+          id: "designer-divider-3",
+          role: "designer",
+          content: "The earlier absolute divider restriction is superseded."
+        },
+        {
+          id: "designer-divider-4",
+          role: "designer",
+          content: "This one page exception remains local."
+        }
+      ],
+      decisions: [
+        {
+          summary: "Navigation uses a bottom divider.",
+          disposition: "final_decision",
+          sourceMessageIds: ["designer-divider-1"]
+        },
+        {
+          summary: "Divider use follows information hierarchy, including component exceptions.",
+          disposition: "final_decision",
+          sourceMessageIds: ["designer-divider-2"]
+        },
+        {
+          summary: "The absolute restriction is obsolete.",
+          disposition: "superseded",
+          sourceMessageIds: ["designer-divider-3"]
+        },
+        {
+          summary: "The page-only exception is not reusable.",
+          disposition: "local_exception",
+          sourceMessageIds: ["designer-divider-4"]
+        }
+      ]
+    });
+    if (!reconciliation.ok) throw new Error(reconciliation.reason);
+
+    const claim = claimConsolidateReview(projectPath, reconciliation.reconciliation.id);
+    if (!claim.ok) throw new Error(claim.reason);
+    expect(claim.review_draft_contract).toMatchObject({
+      allowed_target_categories: expect.arrayContaining([
+        "foundations.layout",
+        "foundations.interaction"
+      ]),
+      final_decision_policy: "proposal_or_existing_rule_coverage",
+      merge_policy: "related decisions may share one proposal when no meaningful boundary is lost"
+    });
+
+    const bySummary = new Map(claim.feedback.map((item) => [item.summary, item.id]));
+    const navId = bySummary.get("Navigation uses a bottom divider.")!;
+    const overallId = bySummary.get(
+      "Divider use follows information hierarchy, including component exceptions."
+    )!;
+    const supersededId = bySummary.get("The absolute restriction is obsolete.")!;
+    const localId = bySummary.get("The page-only exception is not reusable.")!;
+
+    expect(dismissDesignerFeedback(projectPath, {
+      feedbackIds: [overallId],
+      disposition: "local_only",
+      reason: "Mistakenly treated the broader final decision as page-local."
+    })).toEqual({
+      ok: false,
+      reason: "final_decision_requires_rule_coverage"
+    });
+
+    const review = createRuleUpdateReview(projectPath, {
+      context: "Complete divider-use audit",
+      reconciliationId: reconciliation.reconciliation.id
+    });
+    if (!review.ok) throw new Error(review.reason);
+    expect(publishRuleUpdateReview(projectPath, review.review.id)).toMatchObject({
+      ok: false,
+      reason: "rule_update_review_incomplete",
+      details: {
+        missing_feedback_ids: expect.arrayContaining([navId, overallId])
+      }
+    });
+
+    const merged = draftRuleUpdateProposal(projectPath, {
+      reviewId: review.review.id,
+      kind: "new",
+      classification: "proposed_update",
+      title: "Divider use follows hierarchy",
+      fullRuleBody:
+        "Use dividers where they clarify information hierarchy; preserve component-specific exceptions.",
+      reason: "The navigation decision and overall hierarchy decision govern the same choice.",
+      affectedItems: ["Navigation", "Data lists"],
+      evidenceRecordIds: [navId, overallId],
+      target: {
+        category: "foundations.layout",
+        sourceArtifactPath: "design-system/layout-rules.json"
+      }
+    });
+    if (!merged.ok) throw new Error(merged.reason);
+    expect(dismissDesignerFeedback(projectPath, {
+      feedbackIds: [supersededId],
+      disposition: "superseded",
+      reason: "Replaced by the final hierarchy-based decision."
+    }).ok).toBe(true);
+    expect(dismissDesignerFeedback(projectPath, {
+      feedbackIds: [localId],
+      disposition: "local_only",
+      reason: "The reconciliation explicitly classifies this as a local exception."
+    }).ok).toBe(true);
+
+    expect(publishRuleUpdateReview(projectPath, review.review.id)).toMatchObject({
+      ok: true,
+      proposal_count: 1
+    });
   });
 });
 
@@ -737,6 +967,7 @@ test("formalize stays gated until every feedback record is confirmed or dismisse
     expect(
       dismissDesignerFeedback(projectPath, {
         feedbackIds: [dismissedId],
+        disposition: "local_only",
         reason: "Local exception; no global rule."
       }).ok
     ).toBe(true);

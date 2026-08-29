@@ -299,6 +299,15 @@ export const backfillComponentCodeLinksInputSchema = z.object(
 
 // Strings (not enums) for kind / classification so the domain reasons
 // invalid_proposal_kind / invalid_proposal_classification reach the caller.
+const ruleUpdateCategoryInputSchema = z
+  .string()
+  .regex(
+    /^(?:foundations\.(?:home|color|typography|materials|layout|interaction)|component:.+)$/
+  )
+  .describe(
+    "Exact Rule Update category: foundations.home | foundations.color | foundations.typography | foundations.materials | foundations.layout | foundations.interaction | component:<component-list.json entry id>. Bare values such as layout are invalid."
+  );
+
 export const proposeRuleUpdateInputShape = {
   reviewId: z.string().optional(),
   kind: z
@@ -314,8 +323,8 @@ export const proposeRuleUpdateInputShape = {
   title: z.string().optional(),
   changeDescription: z.string().optional(),
   fullRuleBody: z.string().optional(),
-  targetCategory: z.string().optional(),
-  sourceCategory: z.string().optional(),
+  targetCategory: ruleUpdateCategoryInputSchema.optional(),
+  sourceCategory: ruleUpdateCategoryInputSchema.optional(),
   reason: z.string(),
   affectedItems: z.array(z.string()),
   evidenceRecordIds: z.array(z.string()),
@@ -376,8 +385,8 @@ export const retryRuleUpdateApplyInputSchema = z.object(
 );
 
 const ruleUpdateTargetShape = {
-  category: z.string(),
-  sourceCategory: z.string().optional(),
+  category: ruleUpdateCategoryInputSchema,
+  sourceCategory: ruleUpdateCategoryInputSchema.optional(),
   sourceArtifactPath: z.string().optional(),
   entryId: z.string().optional(),
   proposedTargetPath: z.string().optional()
@@ -386,6 +395,7 @@ const ruleUpdateTargetShape = {
 export const reviseRuleUpdateProposalInputShape = {
   proposalId: z.string(),
   title: z.string(),
+  changeDescription: z.string().optional(),
   fullRuleBody: z.string(),
   target: z.object(ruleUpdateTargetShape)
 } as const;
@@ -415,9 +425,26 @@ export const claimConsolidateReviewInputSchema = z.object(
 
 export const dismissDesignerFeedbackInputShape = {
   feedbackIds: z.array(z.string()),
+  disposition: z
+    .enum([
+      "local_only",
+      "superseded",
+      "open_gap",
+      "process_only",
+      "covered_by_existing_rule"
+    ])
+    .describe(
+      "Typed reason no proposal is needed. A final_decision permits only covered_by_existing_rule; otherwise include it in a proposal's evidenceRecordIds."
+    ),
   reason: z
     .string()
-    .describe("Why these feedback records need no rule change.")
+    .describe("Evidence-grounded explanation for this exact disposition."),
+  existingRuleEntryId: z
+    .string()
+    .optional()
+    .describe(
+      "Required only for covered_by_existing_rule; use an exact non-retired design_system_entries.entry_id returned in the Consolidate draft contract."
+    )
 } as const;
 
 export const dismissDesignerFeedbackInputSchema = z.object(
@@ -745,9 +772,37 @@ const incrementalPlanDecisionSchema = z.object({
   sourceRefs: z.array(incrementalPlanSourceRefSchema)
 }).strict();
 
-const incrementalPlanDraftBindingSchema = z.object({
-  path: z.string().startsWith("/"),
-  decisionId: z.string().min(1)
+const incrementalPlanDraftCollectionTargetSchema = z.enum([
+  "concepts",
+  "tokens.primitive",
+  "tokens.semantic",
+  "tokens.component",
+  "foundationRules",
+  "layoutRules",
+  "interactionRules",
+  "components",
+  "categoryOmissions",
+  "sourceOmissions"
+]);
+
+const incrementalPlanDraftPatchSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+  visualLanguage: z.object({
+    value: z.record(z.string(), z.unknown()),
+    decisionId: z.string().trim().min(1)
+  }).strict().optional(),
+  upserts: z.array(z.object({
+    target: incrementalPlanDraftCollectionTargetSchema,
+    entryKey: z.string().trim().min(1).describe(
+      "Stable Agent-chosen identity for this entry across retries and answer edits."
+    ),
+    value: z.record(z.string(), z.unknown()),
+    decisionId: z.string().trim().min(1)
+  }).strict()).default([]),
+  retireEntryKeys: z.array(z.object({
+    target: incrementalPlanDraftCollectionTargetSchema,
+    entryKey: z.string().trim().min(1)
+  }).strict()).optional()
 }).strict();
 
 export const readAlignmentSemanticDeltaInputSchema = z.object({
@@ -771,8 +826,7 @@ export const recordIncrementalDesignSystemPlanInputSchema = z.object({
   sectionDigest: z.string(),
   decisions: z.array(incrementalPlanDecisionSchema),
   retireDecisionIds: z.array(z.string()).optional(),
-  draftBindings: z.array(incrementalPlanDraftBindingSchema),
-  designSystemDraft: z.record(z.string(), z.unknown())
+  draftPatch: incrementalPlanDraftPatchSchema
 }).strict();
 
 export const commitIncrementalDesignSystemPlanInputSchema = z.object({

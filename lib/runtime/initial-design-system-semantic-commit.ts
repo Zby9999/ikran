@@ -137,7 +137,7 @@ export function claimInitialDesignSystemSemanticContext(projectPath: string) {
       tool: "commit_initial_design_system_semantics",
       sourceField: "sourceRefs",
       instruction:
-        "Submit one semantic Draft using only the short Q/A/D refs above. Explicitly account for every source: map it to an output/category omission or add an Agent-authored sourceOmission; Runtime will reject unconsumed evidence and never invent an omission. Empty tokens/layout/interaction/components require an evidence-linked categoryOmission. Preserve all evidence-backed color roles plus color foundationRules. Typography construction facts stay primitive; each supported semantic/component role has one scalar fontSize, at least one other style field, one stable job, and a distinct usedFor—never bundle a scale or step collection into one role. Do not re-claim, inspect legacy extraction tools, read SQLite, or re-extract raw positional evidence."
+        "Submit one semantic Draft using only the short Q/A/D refs above. Explicitly account for every source: map it to an output/category omission or add an Agent-authored sourceOmission; Runtime will reject unconsumed evidence and never invent an omission. Empty tokens/layout/interaction/components require an evidence-linked categoryOmission. Preserve all evidence-backed color roles plus color foundationRules. Typography facts stay primitive, and every distinct fontSize primitive also needs its own semantic/component role with one scalar fontSize and usedFor. Keep each Typography role identity concise canonical English for the Browser specimen, write usedFor in the designer's language, and do not use that role identity as a language precedent for other Draft copy. Runtime owns candidate lifecycle status. Never bundle a scale. Do not re-claim, inspect legacy extraction tools, read SQLite, or re-extract raw positional evidence."
     }
   };
 }
@@ -1013,6 +1013,7 @@ export function commitIncrementalInitialDesignSystemPlan(
   | (SemanticCommitSuccess & { planVersion: number; frozenRevision: number })
   | (CommitFailure & {
       fallback?: { tool: "claim_initial_design_system_preparation" };
+      repair?: { tool: "resume_initial_design_system_planning" };
     }) {
   if (!rawInput || typeof rawInput !== "object") {
     return { ok: false, reason: "invalid_incremental_plan_commit" };
@@ -1044,6 +1045,6 @@ export function commitIncrementalInitialDesignSystemPlan(
       }
     : {
         ...committed,
-        fallback: { tool: "claim_initial_design_system_preparation" }
+        repair: { tool: "resume_initial_design_system_planning" }
       };
 }

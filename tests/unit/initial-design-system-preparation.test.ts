@@ -1453,6 +1453,7 @@ describe("Initial Design System preparation", () => {
     });
     expect(contract.token_domains).toContain("color");
     expect(contract.token_domains).toContain("typography");
+    expect("output_language" in contract).toBe(false);
     expect(contract.foundation_ownership).toMatchObject({
       owners: ["color", "typography", "material"],
       token_domains: {
@@ -1497,12 +1498,17 @@ describe("Initial Design System preparation", () => {
     expect(style.examples.layout.bad.value).toEqual(expect.any(Object));
 
     const typography = contract.typography_role_writing_style;
-    expect(typography.rules.join(" ")).toContain("complete composite");
+    expect(typography.rules.join(" ")).toContain("every distinct font size");
     expect(typography.rules.join(" ")).toContain("one scalar fontSize");
     expect(typography.rules.join(" ")).toContain("scale or step collection");
-    expect(typography.examples.bad.value.usedFor).toBe(
-      "Connect call-to-action heading size role."
+    expect(typography.rules.join(" ")).toContain("Runtime owns candidate lifecycle status");
+    expect(typography.rules.join(" ")).toContain(
+      "do not use the English role identity as a language precedent"
     );
+    expect(typography.role_identity_examples).toEqual({
+      good: "typography.pageTitle",
+      bad: "typography.pageTitleSize"
+    });
 
     expect(contract.omitted_component_spec_fields).toEqual([
       ...RICH_COMPONENT_SPEC_FIELDS
@@ -1596,7 +1602,7 @@ describe("Initial Design System preparation", () => {
         "design-system/interaction-rules.json"
       ],
       source_contract: {
-        schema_version: 3,
+        schema_version: 6,
         source_root: "design-system",
         entry_envelope: expect.arrayContaining([
           "kind",
@@ -1684,22 +1690,14 @@ describe("Initial Design System preparation", () => {
             "textTransform"
           ]),
           rules: expect.arrayContaining([
-            expect.stringContaining("composite token"),
+            expect.stringContaining("every distinct font size"),
             expect.stringContaining("usage context"),
-            expect.stringContaining("Do not invent")
+            expect.stringContaining("Runtime owns candidate lifecycle status"),
+            expect.stringContaining("Do not invent missing construction fields")
           ]),
-          examples: {
-            good: expect.objectContaining({
-              name: "typography.connectHeading",
-              value: expect.objectContaining({
-                usedFor: "Closing-section call to action."
-              })
-            }),
-            bad: expect.objectContaining({
-              value: expect.objectContaining({
-                usedFor: "Connect call-to-action heading size role."
-              })
-            })
+          role_identity_examples: {
+            good: "typography.pageTitle",
+            bad: "typography.pageTitleSize"
           }
         },
         rule_body_writing_style: {

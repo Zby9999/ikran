@@ -17,6 +17,10 @@ import {
   listUnreviewedDesignerFeedbackOnDb,
   readProjectPhaseOnDb
 } from "./project-phase";
+import {
+  ruleUpdateCategories,
+  type RuleUpdateCategory
+} from "./rule-update-category";
 
 export type DesignerFeedbackReviewState =
   | "unreviewed"
@@ -45,6 +49,29 @@ export interface ConsolidateReviewFeedback {
   review_state: DesignerFeedbackReviewState;
   consumed_by_proposal_id: string | null;
   dismissed_reason: string | null;
+  dismissed_disposition: DesignerFeedbackDismissalDisposition | null;
+  existing_rule_entry_id: string | null;
+}
+
+export type DesignerFeedbackDismissalDisposition =
+  | "local_only"
+  | "superseded"
+  | "open_gap"
+  | "process_only"
+  | "covered_by_existing_rule";
+
+export interface RuleUpdateReviewDraftContract {
+  allowed_target_categories: RuleUpdateCategory[];
+  required_feedback_ids: string[];
+  final_decision_policy: "proposal_or_existing_rule_coverage";
+  merge_policy: "related decisions may share one proposal when no meaningful boundary is lost";
+  existing_rule_entries: Array<{
+    entry_id: string;
+    name: string;
+    file_kind: string;
+    source_artifact_path: string;
+    rule_body: string;
+  }>;
 }
 
 export type ClaimConsolidateReviewResult =
@@ -56,20 +83,25 @@ export type ClaimConsolidateReviewResult =
       unreviewed_feedback_count: number;
       reconciliation_id: string | null;
       prototype_confirmation_event_id: string | null;
+      review_draft_contract: RuleUpdateReviewDraftContract;
       event_id: string;
     }
   | { ok: false; reason: string };
 
 export interface DismissDesignerFeedbackInput {
   feedbackIds: string[];
+  disposition: DesignerFeedbackDismissalDisposition;
   reason: string;
+  existingRuleEntryId?: string;
 }
 
 export type DismissDesignerFeedbackResult =
   | {
       ok: true;
       dismissed_feedback_ids: string[];
+      disposition: DesignerFeedbackDismissalDisposition;
       reason: string;
+      existing_rule_entry_id: string | null;
       dismissed_at: string;
       unreviewed_feedback_count: number;
       event_ids: string[];
@@ -92,6 +124,8 @@ type FeedbackJoinRow = {
   created_at: string;
   consumed_by_proposal_id: string | null;
   dismissed_reason: string | null;
+  dismissed_disposition: DesignerFeedbackDismissalDisposition | null;
+  existing_rule_entry_id: string | null;
 };
 
 function reviewStateOf(row: FeedbackJoinRow): DesignerFeedbackReviewState {
@@ -135,7 +169,8 @@ export function claimConsolidateReview(
         const confirmation = db
           .prepare(
             `SELECT id, event_id,
-                    json_extract(payload, '$.run_id') AS run_id
+                    json_extract(payload, '$.run_id') AS run_id,
+                    json_extract(payload, '$.designer_message_id') AS designer_message_id
              FROM events
              WHERE type = 'project_phase_confirmed'
                AND json_extract(payload, '$.command') = 'confirm_prototype'
@@ -143,7 +178,12 @@ export function claimConsolidateReview(
              LIMIT 1`
           )
           .get() as
-          | { id: number; event_id: string; run_id: unknown }
+          | {
+              id: number;
+              event_id: string;
+              run_id: unknown;
+              designer_message_id: unknown;
+            }
           | undefined;
         if (!confirmation) {
           return {
@@ -184,6 +224,49 @@ export function claimConsolidateReview(
             reason: "conversation_reconciliation_prototype_run_mismatch"
           };
         }
+        if (
+          typeof confirmation.designer_message_id === "string" &&
+          confirmation.designer_message_id.length > 0
+        ) {
+          const confirmationMessage = db
+            .prepare(
+              `SELECT 1 AS ok
+               FROM conversation_reconciliations reconciliation,
+                    json_each(reconciliation.transcript_json) message
+               WHERE reconciliation.id = ?
+                 AND json_extract(message.value, '$.id') = ?
+                 AND json_extract(message.value, '$.role') = 'designer'
+               LIMIT 1`
+            )
+            .get(
+              boundedReconciliationId,
+              confirmation.designer_message_id
+            ) as { ok: number } | undefined;
+          if (!confirmationMessage) {
+            return {
+              ok: false as const,
+              reason: "prototype_confirmation_message_not_in_reconciliation"
+            };
+          }
+        }
+        const postConfirmationMutation = db
+          .prepare(
+            `SELECT 1 AS ok
+             FROM events
+             WHERE id > ?
+               AND (
+                 type IN ('prototype_preview_declared', 'component_preview_registered')
+                 OR (
+                   type = 'source_artifact_declared'
+                   AND json_extract(payload, '$.artifact_type') IN ('code', 'prototype')
+                 )
+               )
+             LIMIT 1`
+          )
+          .get(confirmation.id) as { ok: number } | undefined;
+        if (postConfirmationMutation) {
+          return { ok: false as const, reason: "prototype_review_stale" };
+        }
         prototypeConfirmationEventId = confirmation.event_id;
       }
 
@@ -196,7 +279,9 @@ export function claimConsolidateReview(
                   rf.reconciliation_id, rf.decision_disposition,
                   rf.source_message_ids_json,
                   c.proposal_id AS consumed_by_proposal_id,
-                  d.reason AS dismissed_reason
+                  d.reason AS dismissed_reason,
+                  d.disposition AS dismissed_disposition,
+                  d.existing_rule_entry_id
            FROM designer_feedback f
            LEFT JOIN conversation_reconciliation_feedback rf
              ON rf.feedback_id = f.id
@@ -229,7 +314,9 @@ export function claimConsolidateReview(
         created_at: row.created_at,
         review_state: reviewStateOf(row),
         consumed_by_proposal_id: row.consumed_by_proposal_id,
-        dismissed_reason: row.dismissed_reason
+        dismissed_reason: row.dismissed_reason,
+        dismissed_disposition: row.dismissed_disposition,
+        existing_rule_entry_id: row.existing_rule_entry_id
       }));
 
       const unreviewedIds = feedback
@@ -244,6 +331,31 @@ export function claimConsolidateReview(
       });
       insertEvent(db, event);
 
+      const componentCategories = (db
+        .prepare(
+          `SELECT DISTINCT entry_id
+           FROM design_system_entries
+           WHERE file_kind = 'component-list.json'
+             AND status <> 'retired'
+           ORDER BY position ASC, entry_id ASC`
+        )
+        .all() as Array<{ entry_id: string }>).map(
+          (row) => `component:${row.entry_id}` as const
+        );
+      const existingRuleEntries = db
+        .prepare(
+          `SELECT entry_id, name, file_kind, source_artifact_path,
+                  COALESCE(meaning, value_json) AS rule_body
+           FROM design_system_entries
+           WHERE file_kind IN (
+             'design-system.json', 'layout-rules.json',
+             'interaction-rules.json', 'components.spec.json'
+           )
+             AND status <> 'retired'
+           ORDER BY file_kind ASC, position ASC, entry_id ASC`
+        )
+        .all() as RuleUpdateReviewDraftContract["existing_rule_entries"];
+
       return {
         ok: true as const,
         feedback,
@@ -252,6 +364,14 @@ export function claimConsolidateReview(
         unreviewed_feedback_count: unreviewedIds.length,
         reconciliation_id: boundedReconciliationId,
         prototype_confirmation_event_id: prototypeConfirmationEventId,
+        review_draft_contract: {
+          allowed_target_categories: ruleUpdateCategories(componentCategories),
+          required_feedback_ids: unreviewedIds,
+          final_decision_policy: "proposal_or_existing_rule_coverage",
+          merge_policy:
+            "related decisions may share one proposal when no meaningful boundary is lost",
+          existing_rule_entries: existingRuleEntries
+        },
         event_id: event.event_id
       };
     });
@@ -270,13 +390,27 @@ export function dismissDesignerFeedback(
   input: DismissDesignerFeedbackInput
 ): DismissDesignerFeedbackResult {
   const reason = typeof input.reason === "string" ? input.reason.trim() : "";
+  const disposition = input.disposition;
+  const existingRuleEntryId = typeof input.existingRuleEntryId === "string"
+    ? input.existingRuleEntryId.trim()
+    : "";
+  const validDispositions = new Set<DesignerFeedbackDismissalDisposition>([
+    "local_only",
+    "superseded",
+    "open_gap",
+    "process_only",
+    "covered_by_existing_rule"
+  ]);
   const feedbackIds = (input.feedbackIds ?? []).map((id) =>
     typeof id === "string" ? id.trim() : ""
   );
   if (
     reason.length === 0 ||
+    !validDispositions.has(disposition) ||
     feedbackIds.length === 0 ||
-    feedbackIds.some((id) => id.length === 0)
+    feedbackIds.some((id) => id.length === 0) ||
+    (disposition === "covered_by_existing_rule") !==
+      (existingRuleEntryId.length > 0)
   ) {
     return { ok: false, reason: "invalid_dismissal" };
   }
@@ -291,18 +425,82 @@ export function dismissDesignerFeedback(
         }
       }
 
+      if (disposition === "covered_by_existing_rule") {
+        const existingRule = db
+          .prepare(
+            `SELECT 1 FROM design_system_entries
+             WHERE entry_id = ? AND status <> 'retired' LIMIT 1`
+          )
+          .get(existingRuleEntryId);
+        if (!existingRule) {
+          return { ok: false as const, reason: "existing_rule_entry_not_found" };
+        }
+      }
+
+      const reconciledDisposition = db.prepare(
+        `SELECT decision_disposition
+         FROM conversation_reconciliation_feedback
+         WHERE feedback_id = ?`
+      );
+      for (const id of uniqueIds) {
+        const row = reconciledDisposition.get(id) as
+          | { decision_disposition: ConsolidateReviewFeedback["decision_disposition"] }
+          | undefined;
+        if (
+          row?.decision_disposition === "final_decision" &&
+          disposition !== "covered_by_existing_rule"
+        ) {
+          return {
+            ok: false as const,
+            reason: "final_decision_requires_rule_coverage"
+          };
+        }
+        if (
+          row?.decision_disposition === "superseded" &&
+          !["superseded", "covered_by_existing_rule"].includes(disposition)
+        ) {
+          return { ok: false as const, reason: "dismissal_disposition_mismatch" };
+        }
+        if (
+          row?.decision_disposition === "local_exception" &&
+          !["local_only", "covered_by_existing_rule"].includes(disposition)
+        ) {
+          return { ok: false as const, reason: "dismissal_disposition_mismatch" };
+        }
+        if (
+          row?.decision_disposition === "open_gap" &&
+          !["open_gap", "covered_by_existing_rule"].includes(disposition)
+        ) {
+          return { ok: false as const, reason: "dismissal_disposition_mismatch" };
+        }
+      }
+
       const dismissedAt = new Date().toISOString();
       const dismiss = db.prepare(
-        `INSERT OR IGNORE INTO designer_feedback_dismissals
-           (feedback_id, reason, dismissed_at)
-         VALUES (?, ?, ?)`
+        `INSERT INTO designer_feedback_dismissals
+           (feedback_id, reason, dismissed_at, disposition,
+            existing_rule_entry_id)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(feedback_id) DO UPDATE SET
+           reason = excluded.reason,
+           dismissed_at = excluded.dismissed_at,
+           disposition = excluded.disposition,
+           existing_rule_entry_id = excluded.existing_rule_entry_id`
       );
       const eventIds: string[] = [];
       for (const id of uniqueIds) {
-        dismiss.run(id, reason, dismissedAt);
+        dismiss.run(
+          id,
+          reason,
+          dismissedAt,
+          disposition,
+          existingRuleEntryId || null
+        );
         const event = buildLoggedEvent("designer_feedback_dismissed", {
           feedback_id: id,
+          disposition,
           reason,
+          existing_rule_entry_id: existingRuleEntryId || null,
           dismissed_at: dismissedAt
         });
         insertEvent(db, event);
@@ -320,7 +518,9 @@ export function dismissDesignerFeedback(
     return {
       ok: true,
       dismissed_feedback_ids: uniqueIds,
+      disposition,
       reason,
+      existing_rule_entry_id: existingRuleEntryId || null,
       dismissed_at: transaction.dismissedAt,
       unreviewed_feedback_count: transaction.unreviewedCount,
       event_ids: transaction.eventIds

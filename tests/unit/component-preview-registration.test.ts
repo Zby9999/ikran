@@ -32,6 +32,7 @@ import {
 } from "../../lib/runtime/component-preview-orchestration";
 import { resolveComponentPreviewException } from "../../lib/runtime/component-preview-exception";
 import { applyDesignSystemIngestOnDb } from "../../lib/runtime/design-system-ingest";
+import { confirmPrototype } from "../../lib/runtime/project-phase";
 
 const projects: string[] = [];
 
@@ -384,7 +385,9 @@ test("one same-run artifact declaration auto-links code and shared preview idemp
       ok: true,
       automatic: true,
       registration: { entry_id: "component.text-link" },
-      next_action: "automatic_verification_queued"
+      next_action: "automatic_verification_queued",
+      agent_next_action:
+        "declare_remaining_components_then_return_for_prototype_review"
     }
   });
   const specPath = path.join(dir, "design-system/components/text-link.json");
@@ -409,6 +412,44 @@ test("one same-run artifact declaration auto-links code and shared preview idemp
   expect(
     readdirSync(path.join(dir, "prototype/app/ikran/component-preview")).sort()
   ).toEqual(["[registrationId]", "registry.tsx"]);
+});
+
+test("Prototype completion waits for automatic component verification", () => {
+  const dir = fixture({ linked: false });
+  setAutomaticComponentPreviewOrchestrationHostForTests({
+    schedule: () => undefined
+  });
+  const result = recordArtifactWrittenCommand(dir, {
+    path: "prototype/components/TextLink.tsx",
+    artifactType: "code",
+    semanticPurpose: "Text Link implementation",
+    componentPreview: {
+      runId: "run-1",
+      surfaceId: "surface-1",
+      entryId: "component.text-link",
+      modulePath: "prototype/components/TextLink.tsx",
+      exportName: "TextLink",
+      semanticImpact: "none",
+      defaultArgs: { label: "Read details" },
+      stateArgs: {}
+    }
+  });
+  expect(result).toMatchObject({ ok: true });
+  const db = new DatabaseSync(getProjectDbPath(dir));
+  try {
+    db.prepare(
+      "UPDATE project_phase SET phase = 'prototype_validation' WHERE singleton = 1"
+    ).run();
+  } finally {
+    db.close();
+  }
+
+  expect(confirmPrototype(dir)).toEqual({
+    ok: false,
+    reason: "component_preview_verification_required",
+    phase: "prototype_validation",
+    verification_entry_ids: ["component.text-link"]
+  });
 });
 
 test("same-run declaration rejects identity mismatch before changing the component spec", () => {

@@ -121,15 +121,22 @@ Preserve both layers:
 2. composite roles — the supported combinations used for body, display,
    metadata, actions, or other named jobs.
 
-Store construction facts as atomic primitive tokens. Store each supported
-semantic or component role as one composite token whose value contains the
-combined typography properties, exactly one scalar `fontSize`, and a `usedFor`
-that names one stable job. A scale or step collection is evidence for atomic
-construction facts, not one omnibus role; create separate roles only where the
-context supports their distinct jobs. Never put a composite typography object
-in the primitive layer. When the context
-establishes construction facts but not role mapping, preserve only the
-supported atomic facts rather than inventing composite roles.
+Store construction facts as atomic primitive tokens. Store each font role as
+one semantic or component token whose value contains exactly one scalar
+`fontSize`, every other supported typography property, and a `usedFor` that
+names one job. Every distinct font size observed in the frozen Seed /
+Alignment evidence is mandatory: preserve it as an atomic primitive and create
+one separate semantic or component role for it so it appears individually in
+Type styles. A scale or step collection is never one omnibus role. Keep the
+token identity as a concise canonical English semantic role so the Design
+System Browser specimen demonstrates the intended Latin typeface. Write
+`usedFor` from the observed job in the designer's language, and do not treat the
+English role identity as a language precedent for any other Draft copy. Runtime
+owns candidate lifecycle status, and the designer may correct the role during
+Draft review. Do not omit an observed size because its semantics are uncertain,
+and do not invent unsupported construction fields such as weight, line height,
+tracking, or transform. Never put a composite typography object in the
+primitive layer.
 
 ### Material
 
@@ -149,9 +156,9 @@ Before the single commit, make one quick semantic check:
   non-empty category does;
 - evidence-backed color primitives, semantic roles, and color
   `foundationRules` remain distinct;
-- typography construction facts are atomic primitives, while supported roles
-  are separate composite semantic/component tokens with one scalar `fontSize`
-  and one stable job in `usedFor`;
+- typography construction facts are atomic primitives, and every distinct
+  observed font size also has a separate semantic/component role with one
+  scalar `fontSize` and the best evidence-backed job in `usedFor`;
 - component-local decisions were not promoted to a global foundation;
 - unsupported fields are omitted rather than invented;
 - duplicate wording has been compressed.

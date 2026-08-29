@@ -23,6 +23,25 @@ import {
   type RegisterIkranToolsDeps
 } from "./shared";
 
+export function incrementalCommitFailureDetails(result: {
+  ok?: false;
+  reason?: string;
+  failedStage?: string;
+  details?: unknown;
+  fallback?: { tool: "claim_initial_design_system_preparation" };
+  repair?: { tool: "resume_initial_design_system_planning" };
+}): Record<string, unknown> | undefined {
+  const details = {
+    ...(result.failedStage === undefined
+      ? {}
+      : { failed_stage: result.failedStage }),
+    ...(result.details === undefined ? {} : { details: result.details }),
+    ...(result.fallback === undefined ? {} : { fallback: result.fallback }),
+    ...(result.repair === undefined ? {} : { repair: result.repair })
+  };
+  return Object.keys(details).length === 0 ? undefined : details;
+}
+
 export function registerInitialDesignSystemTools(
   mcp: McpServer,
   { ensureRuntime }: RegisterIkranToolsDeps
@@ -42,7 +61,7 @@ export function registerInitialDesignSystemTools(
     "commit_incremental_initial_design_system_plan",
     {
       description:
-        "Commit the caught-up hidden Incremental Plan against the Alignment's frozen revision. Takes only attempt id, exact plan version, and idempotency key; Runtime loads the persisted semantic draft, validates its complete final schema, every section digest, every output/omission dependency, then runs the artifact, lineage, audit, and Draft gates. On a semantic Draft reconciliation result, repair the plan instead of pretending the fast path succeeded. On an unavailable or stale plan, follow the returned claim_initial_design_system_preparation fallback.",
+        "Commit the caught-up hidden Incremental Plan against the Alignment's frozen revision. Takes only attempt id, exact plan version, and idempotency key; Runtime loads the persisted semantic draft, validates its complete final schema, every section digest, every output/omission dependency, then runs the artifact, lineage, audit, and Draft gates. On a semantic Draft reconciliation result, keep the incremental plan and follow the returned resume_initial_design_system_planning repair route. Use claim_initial_design_system_preparation only when Runtime explicitly returns that fallback because no incremental plan exists.",
       inputSchema: commitIncrementalDesignSystemPlanInputSchema
     },
     async (args) => {
@@ -62,7 +81,7 @@ export function registerInitialDesignSystemTools(
             "commit_incremental_initial_design_system_plan",
             result.reason,
             ctx.rt,
-            "fallback" in result ? { fallback: result.fallback } : undefined
+            incrementalCommitFailureDetails(result)
           );
     }
   );
@@ -71,7 +90,7 @@ export function registerInitialDesignSystemTools(
     "commit_initial_design_system_semantics",
     {
       description:
-        "Second and final call in the Initial Design System fast path. Submit one semantic Draft using the alignmentAttemptId and short Q/A/D refs returned by claim_initial_design_system_preparation. Every frozen source must be mapped or receive an explicit Agent-authored sourceOmission; every empty tokens/layout/interaction/components category needs an evidence-linked categoryOmission. Preserve evidence-backed color primitives, semantic roles, and foundationRules. Keep typography facts atomic in primitive; each supported semantic/component role needs one scalar fontSize, at least one other style field, one stable job, and a distinct usedFor—never bundle a scale or step collection. Runtime validates complete coverage, projects deterministic files/provenance/work units/audit, and supports corrected retry with a new key after a failed commit. Do not re-claim, inspect legacy tools, query SQLite, or re-extract raw evidence.",
+        "Second and final call in the Initial Design System fast path. Submit one semantic Draft using the alignmentAttemptId and short Q/A/D refs returned by claim_initial_design_system_preparation. Every frozen source must be mapped or receive an explicit Agent-authored sourceOmission; every empty tokens/layout/interaction/components category needs an evidence-linked categoryOmission. Preserve evidence-backed color primitives, semantic roles, and foundationRules. For a semantic/component Color role that reuses a primitive, write value={alias:'primitive.<token-name>',usage:'...'}; never use value='{color.<token-name>}'. Keep typography facts atomic in primitive, and give every distinct fontSize primitive its own semantic/component role with one scalar fontSize and usedFor. Keep each Typography role identity concise canonical English for the Browser specimen, write usedFor in the designer's language, and do not use that role identity as a language precedent for other Draft copy. Runtime owns candidate lifecycle status. Never bundle a scale. Runtime validates complete coverage, projects deterministic files/provenance/work units/audit, and supports corrected retry with a new key after a failed commit. Do not re-claim, inspect legacy tools, query SQLite, or re-extract raw evidence.",
       inputSchema: commitInitialDesignSystemSemanticInputSchema
     },
     async (args) => {

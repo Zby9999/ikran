@@ -712,6 +712,7 @@
 .dsb-ru-wait-copy {
   color: var(--dsc-ink-3) !important;
   font-size: 11px !important;
+  font-weight: 400;
 }
 
 .dsb-ru-wait-copy p,

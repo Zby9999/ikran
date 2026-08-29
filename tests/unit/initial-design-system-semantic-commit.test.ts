@@ -38,7 +38,8 @@ import {
   readAlignmentSemanticDelta,
   readCurrentIncrementalPlanningStatus,
   readIncrementalPlanningStatus,
-  recordIncrementalDesignSystemPlan
+  recordIncrementalDesignSystemPlan,
+  type IncrementalPlanDraftPatch
 } from "../../lib/runtime/alignment-incremental-planning";
 import { setDesignLanguageDescription } from "../../lib/runtime/project-readiness";
 import { registerSeedReference } from "../../lib/runtime/seed-reference";
@@ -269,6 +270,91 @@ function semanticDraftBindings(
   ];
 }
 
+function semanticDraftPatchForSection(
+  section: (typeof ALIGNMENT_SECTIONS)[number],
+  designSystem: CommitInitialDesignSystemSemanticInput["designSystem"],
+  claimed: Extract<ReturnType<typeof claimInitialDesignSystemSemanticContext>, { ok: true }>,
+  durableSourceByRef: Record<string, string>
+): IncrementalPlanDraftPatch {
+  const sectionIndex = ALIGNMENT_SECTIONS.indexOf(section);
+  const decisionId = `frozen-decision-${sectionIndex}`;
+  const compactRefFor = (sourceId: string) =>
+    Object.entries(durableSourceByRef).find(([, durableId]) =>
+      durableId === sourceId
+    )?.[0] ?? sourceId;
+  const sourceSection = (sourceId: string) => claimed.sources.find(
+    (source) => source.ref === compactRefFor(sourceId)
+  )!.section as (typeof ALIGNMENT_SECTIONS)[number];
+  const upserts: IncrementalPlanDraftPatch["upserts"] = [];
+
+  if (section === "design-concept") {
+    upserts.push(...designSystem.concepts.map((value, index) => ({
+      target: "concepts" as const,
+      entryKey: `concept-${index}`,
+      value,
+      decisionId
+    })));
+  } else if (section === "token") {
+    for (const layer of ["primitive", "semantic", "component"] as const) {
+      upserts.push(...designSystem.tokens[layer].map((value, index) => ({
+        target: `tokens.${layer}` as const,
+        entryKey: `${layer}-token-${index}`,
+        value,
+        decisionId
+      })));
+    }
+    upserts.push(...designSystem.foundationRules.map((value, index) => ({
+      target: "foundationRules" as const,
+      entryKey: `foundation-rule-${index}`,
+      value,
+      decisionId
+    })));
+  } else if (section === "layout") {
+    upserts.push(...designSystem.layoutRules.map((value, index) => ({
+      target: "layoutRules" as const,
+      entryKey: `layout-rule-${index}`,
+      value,
+      decisionId
+    })));
+  } else if (section === "component") {
+    upserts.push(...designSystem.components.map((value, index) => ({
+      target: "components" as const,
+      entryKey: `component-${index}`,
+      value,
+      decisionId
+    })));
+  } else if (section === "interaction") {
+    upserts.push(...designSystem.interactionRules.map((value, index) => ({
+      target: "interactionRules" as const,
+      entryKey: `interaction-rule-${index}`,
+      value,
+      decisionId
+    })));
+  }
+  upserts.push(...designSystem.sourceOmissions.flatMap((value, index) =>
+    sourceSection(value.sourceRef) === section
+      ? [{
+          target: "sourceOmissions" as const,
+          entryKey: `source-omission-${index}`,
+          value,
+          decisionId
+        }]
+      : []
+  ));
+  return {
+    ...(section === "design-concept" ? { name: designSystem.name } : {}),
+    ...(section === "visual-language"
+      ? {
+          visualLanguage: {
+            value: designSystem.visualLanguage,
+            decisionId
+          }
+        }
+      : {}),
+    upserts
+  };
+}
+
 afterEach(() => {
   for (const projectPath of projects.splice(0)) {
     rmSync(projectPath, { recursive: true, force: true });
@@ -301,6 +387,7 @@ describe("commitInitialDesignSystemSemantic", () => {
       fixture.durableSourceByRef
     ).designSystem;
     const sectionPlanningMs: number[] = [];
+    const sectionPatchBytes: number[] = [];
     let finalDelta: Extract<
       ReturnType<typeof readAlignmentSemanticDelta>,
       { ok: true }
@@ -314,6 +401,25 @@ describe("commitInitialDesignSystemSemantic", () => {
       });
       if (!delta.ok || !delta.delta) throw new Error("missing plan delta");
       finalDelta = delta.delta;
+      const decisions = [{
+        decisionId: `frozen-decision-${index}`,
+        outputConcern: delta.delta.section,
+        statement: `Prepared ${delta.delta.section} semantics.`,
+        sourceRefs: delta.delta.sources.map((source) => ({
+          sourceId: source.sourceId,
+          digest: source.digest
+        }))
+      }];
+      const draftPatch = semanticDraftPatchForSection(
+        delta.delta.section,
+        designSystem,
+        claimed,
+        fixture.durableSourceByRef
+      );
+      sectionPatchBytes.push(Buffer.byteLength(JSON.stringify({
+        decisions,
+        draftPatch
+      })));
       const recorded = recordIncrementalDesignSystemPlan(fixture.projectPath, {
         alignmentAttemptId: fixture.attemptId,
         idempotencyKey: `frozen-plan-${index}`,
@@ -321,21 +427,8 @@ describe("commitInitialDesignSystemSemantic", () => {
         baseRevision: delta.currentRevision,
         section: delta.delta.section,
         sectionDigest: delta.delta.sectionDigest,
-        decisions: [{
-          decisionId: `frozen-decision-${index}`,
-          outputConcern: delta.delta.section,
-          statement: `Prepared ${delta.delta.section} semantics.`,
-          sourceRefs: delta.delta.sources.map((source) => ({
-            sourceId: source.sourceId,
-            digest: source.digest
-          }))
-        }],
-        draftBindings: semanticDraftBindings(
-          designSystem,
-          claimed,
-          fixture.durableSourceByRef
-        ),
-        designSystemDraft: designSystem
+        decisions,
+        draftPatch
       });
       expect(recorded.ok).toBe(true);
       sectionPlanningMs.push(performance.now() - sectionStartedAt);
@@ -374,6 +467,11 @@ describe("commitInitialDesignSystemSemantic", () => {
           digest: source.digest
         }))
       }],
+      draftBindings: semanticDraftBindings(
+        designSystem,
+        claimed,
+        fixture.durableSourceByRef
+      ),
       designSystemDraft: unboundDraft
     });
     expect(unbound).toMatchObject({ ok: true, planVersion: 7 });
@@ -403,9 +501,13 @@ describe("commitInitialDesignSystemSemantic", () => {
       details: {
         invalidDraftBindingPaths: ["/visualLanguage"],
         unboundDraftSourceIds: [borrowedComponentSource]
-      },
-      fallback: { tool: "claim_initial_design_system_preparation" }
+      }
     });
+    expect(commitIncrementalInitialDesignSystemPlan(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      planVersion: 7,
+      idempotencyKey: "reject-unbound-draft-without-fallback"
+    })).not.toHaveProperty("fallback");
     const rebound = recordIncrementalDesignSystemPlan(fixture.projectPath, {
       alignmentAttemptId: fixture.attemptId,
       idempotencyKey: "rebind-draft-source",
@@ -431,12 +533,152 @@ describe("commitInitialDesignSystemSemantic", () => {
     });
     expect(rebound).toMatchObject({ ok: true, planVersion: 8 });
 
+    const missingTokenValueDraft = structuredClone(designSystem);
+    missingTokenValueDraft.tokens.semantic.push({
+      name: "semantic.link",
+      domain: "color",
+      sourceRefs: designSystem.tokens.primitive[0]!.sourceRefs
+    } as never);
+    const missingTokenValueBindings = [
+      ...semanticDraftBindings(
+        designSystem,
+        claimed,
+        fixture.durableSourceByRef
+      ),
+      { path: "/tokens/semantic/0", decisionId: "frozen-decision-2" }
+    ];
+    expect(recordIncrementalDesignSystemPlan(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      idempotencyKey: "missing-token-value-draft",
+      basePlanVersion: 8,
+      baseRevision: status.currentRevision,
+      section: finalDelta.section,
+      sectionDigest: finalDelta.sectionDigest,
+      decisions: [],
+      draftBindings: missingTokenValueBindings,
+      designSystemDraft: missingTokenValueDraft
+    })).toMatchObject({ ok: true, planVersion: 9 });
+    expect(readIncrementalPlanningStatus(
+      fixture.projectPath,
+      fixture.attemptId
+    )).toMatchObject({
+      ok: true,
+      invalidSemanticDraft: [
+        expect.objectContaining({ path: "tokens.semantic.0.value" })
+      ],
+      nextAction: { tool: "record_incremental_initial_design_system_plan" }
+    });
+    expect(commitIncrementalInitialDesignSystemPlan(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      planVersion: 9,
+      idempotencyKey: "reject-missing-token-value"
+    })).toMatchObject({
+      ok: false,
+      reason: "incremental_plan_stale",
+      details: {
+        invalidSemanticDraft: [
+          expect.objectContaining({ path: "tokens.semantic.0.value" })
+        ]
+      }
+    });
+    expect(commitIncrementalInitialDesignSystemPlan(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      planVersion: 9,
+      idempotencyKey: "reject-missing-token-value-without-fallback"
+    })).not.toHaveProperty("fallback");
+
+    expect(recordIncrementalDesignSystemPlan(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      idempotencyKey: "repair-missing-token-value",
+      basePlanVersion: 9,
+      baseRevision: status.currentRevision,
+      section: finalDelta.section,
+      sectionDigest: finalDelta.sectionDigest,
+      decisions: [],
+      draftBindings: semanticDraftBindings(
+        designSystem,
+        claimed,
+        fixture.durableSourceByRef
+      ),
+      designSystemDraft: designSystem
+    })).toMatchObject({ ok: true, planVersion: 10 });
+
+    const conflictingDispositionDraft = structuredClone(designSystem);
+    conflictingDispositionDraft.sourceOmissions.push({
+      sourceRef: designSystem.tokens.primitive[0]!.sourceRefs[0]!,
+      statement: "This source does not produce reusable output.",
+      reason: "Deliberately conflicting regression fixture."
+    });
+    const conflictingDispositionBindings = [
+      ...semanticDraftBindings(
+        designSystem,
+        claimed,
+        fixture.durableSourceByRef
+      ),
+      {
+        path: `/sourceOmissions/${conflictingDispositionDraft.sourceOmissions.length - 1}`,
+        decisionId: "frozen-decision-2"
+      }
+    ];
+    expect(recordIncrementalDesignSystemPlan(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      idempotencyKey: "conflicting-source-disposition-draft",
+      basePlanVersion: 10,
+      baseRevision: status.currentRevision,
+      section: finalDelta.section,
+      sectionDigest: finalDelta.sectionDigest,
+      decisions: [],
+      draftBindings: conflictingDispositionBindings,
+      designSystemDraft: conflictingDispositionDraft
+    })).toMatchObject({ ok: true, planVersion: 11 });
+    expect(readIncrementalPlanningStatus(
+      fixture.projectPath,
+      fixture.attemptId
+    )).toMatchObject({
+      ok: true,
+      invalidSemanticDraft: [
+        expect.objectContaining({
+          path: `sourceOmissions.${conflictingDispositionDraft.sourceOmissions.length - 1}.sourceRef`
+        })
+      ],
+      nextAction: { tool: "record_incremental_initial_design_system_plan" }
+    });
+    expect(commitIncrementalInitialDesignSystemPlan(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      planVersion: 11,
+      idempotencyKey: "reject-conflicting-source-disposition"
+    })).toMatchObject({
+      ok: false,
+      reason: "incremental_plan_stale",
+      details: {
+        invalidSemanticDraft: [
+          expect.objectContaining({ path: expect.stringContaining("sourceOmissions") })
+        ]
+      }
+    });
+
+    expect(recordIncrementalDesignSystemPlan(fixture.projectPath, {
+      alignmentAttemptId: fixture.attemptId,
+      idempotencyKey: "repair-conflicting-source-disposition",
+      basePlanVersion: 11,
+      baseRevision: status.currentRevision,
+      section: finalDelta.section,
+      sectionDigest: finalDelta.sectionDigest,
+      decisions: [],
+      draftBindings: semanticDraftBindings(
+        designSystem,
+        claimed,
+        fixture.durableSourceByRef
+      ),
+      designSystemDraft: designSystem
+    })).toMatchObject({ ok: true, planVersion: 12 });
+
     const invalidFinalDraft = structuredClone(designSystem) as Record<string, unknown>;
     delete invalidFinalDraft.name;
     const invalidFinalPlan = recordIncrementalDesignSystemPlan(fixture.projectPath, {
       alignmentAttemptId: fixture.attemptId,
       idempotencyKey: "invalid-final-semantic-draft",
-      basePlanVersion: 8,
+      basePlanVersion: 12,
       baseRevision: status.currentRevision,
       section: finalDelta.section,
       sectionDigest: finalDelta.sectionDigest,
@@ -448,7 +690,7 @@ describe("commitInitialDesignSystemSemantic", () => {
       ),
       designSystemDraft: invalidFinalDraft
     });
-    expect(invalidFinalPlan).toMatchObject({ ok: true, planVersion: 9 });
+    expect(invalidFinalPlan).toMatchObject({ ok: true, planVersion: 13 });
     expect(readIncrementalPlanningStatus(
       fixture.projectPath,
       fixture.attemptId
@@ -461,7 +703,7 @@ describe("commitInitialDesignSystemSemantic", () => {
     });
     expect(commitIncrementalInitialDesignSystemPlan(fixture.projectPath, {
       alignmentAttemptId: fixture.attemptId,
-      planVersion: 9,
+      planVersion: 13,
       idempotencyKey: "reject-invalid-final-semantic-draft"
     })).toMatchObject({
       ok: false,
@@ -473,7 +715,7 @@ describe("commitInitialDesignSystemSemantic", () => {
     const repairedFinalPlan = recordIncrementalDesignSystemPlan(fixture.projectPath, {
       alignmentAttemptId: fixture.attemptId,
       idempotencyKey: "repair-final-semantic-draft",
-      basePlanVersion: 9,
+      basePlanVersion: 13,
       baseRevision: status.currentRevision,
       section: finalDelta.section,
       sectionDigest: finalDelta.sectionDigest,
@@ -485,12 +727,12 @@ describe("commitInitialDesignSystemSemantic", () => {
       ),
       designSystemDraft: designSystem
     });
-    expect(repairedFinalPlan).toMatchObject({ ok: true, planVersion: 10 });
+    expect(repairedFinalPlan).toMatchObject({ ok: true, planVersion: 14 });
 
     const commitStartedAt = performance.now();
     const committed = commitIncrementalInitialDesignSystemPlan(fixture.projectPath, {
       alignmentAttemptId: fixture.attemptId,
-      planVersion: 10,
+      planVersion: 14,
       idempotencyKey: "commit-frozen-plan"
     });
     const commitElapsedMs = performance.now() - commitStartedAt;
@@ -500,7 +742,7 @@ describe("commitInitialDesignSystemSemantic", () => {
       projectPhase: "draft_design_system",
       continuationRequired: false,
       terminalBoundary: "draft_design_system_review",
-      planVersion: 10,
+      planVersion: 14,
       frozenRevision: status.frozenRevision
     });
     expect(readCurrentIncrementalPlanningStatus(fixture.projectPath)).toEqual({
@@ -508,6 +750,15 @@ describe("commitInitialDesignSystemSemantic", () => {
       reason: "planning_not_active"
     });
     expect(Math.max(...sectionPlanningMs)).toBeLessThan(500);
+    const cumulativeSnapshotBytes = Buffer.byteLength(JSON.stringify({
+      designSystemDraft: designSystem,
+      draftBindings: semanticDraftBindings(
+        designSystem,
+        claimed,
+        fixture.durableSourceByRef
+      )
+    }));
+    expect(Math.max(...sectionPatchBytes)).toBeLessThan(cumulativeSnapshotBytes);
     expect(commitElapsedMs).toBeLessThan(2_000);
     if (process.env.IKRAN_BENCHMARK_OUTPUT === "1") {
       console.info(JSON.stringify({
@@ -515,6 +766,9 @@ describe("commitInitialDesignSystemSemantic", () => {
         sections: sectionPlanningMs.length,
         sectionPlanningMs: sectionPlanningMs.map((value) => Number(value.toFixed(1))),
         maxSectionPlanningMs: Number(Math.max(...sectionPlanningMs).toFixed(1)),
+        sectionPatchBytes,
+        maxSectionPatchBytes: Math.max(...sectionPatchBytes),
+        cumulativeSnapshotBytes,
         planBackedCommitMs: Number(commitElapsedMs.toFixed(1))
       }));
     }
@@ -658,6 +912,46 @@ describe("commitInitialDesignSystemSemantic", () => {
     ))).toBe(false);
   });
 
+  test("rejects a semantic commit that omits roles for observed font sizes", () => {
+    const fixture = completedAlignment();
+    const claimed = claimInitialDesignSystemSemanticContext(fixture.projectPath);
+    if (!claimed.ok) throw new Error(claimed.reason);
+    const input = semanticInput(fixture.attemptId, claimed);
+    const sourceRefs = input.designSystem.tokens.primitive[0]!.sourceRefs;
+    input.designSystem.tokens.primitive.push(
+      {
+        name: "fontSize.16",
+        domain: "typography",
+        value: "16px",
+        sourceRefs
+      },
+      {
+        name: "fontSize.24",
+        domain: "typography",
+        value: "24px",
+        sourceRefs
+      }
+    );
+    input.designSystem.tokens.semantic.push({
+      name: "typography.display",
+      domain: "typography",
+      value: {
+        fontSize: { alias: "primitive.fontSize.24" },
+        usedFor: "Prominent display copy."
+      },
+      sourceRefs
+    });
+
+    expect(commitInitialDesignSystemSemantic(fixture.projectPath, input)).toMatchObject({
+      ok: false,
+      reason: "invalid_semantic_bundle"
+    });
+    expect(existsSync(path.join(
+      fixture.projectPath,
+      "design-system/design-system.json"
+    ))).toBe(false);
+  });
+
   test("a failed write can be repaired with a new idempotency key", () => {
     const fixture = completedAlignment();
     const claimed = claimInitialDesignSystemSemanticContext(fixture.projectPath);
@@ -695,17 +989,16 @@ describe("commitInitialDesignSystemSemantic", () => {
     });
   });
 
-  test("validates the complete projection before writing any artifact", () => {
+  test("rejects a missing token value before projecting any artifact", () => {
     const fixture = completedAlignment();
     const claimed = claimInitialDesignSystemSemanticContext(fixture.projectPath);
     if (!claimed.ok) throw new Error(claimed.reason);
     const input = semanticInput(fixture.attemptId, claimed);
-    input.designSystem.tokens.primitive[0]!.value = undefined;
+    input.designSystem.tokens.primitive[0]!.value = undefined as never;
 
     expect(commitInitialDesignSystemSemantic(fixture.projectPath, input)).toMatchObject({
       ok: false,
-      reason: "invalid_projected_artifact",
-      failedStage: "projection"
+      reason: "invalid_semantic_bundle"
     });
     expect(
       existsSync(path.join(fixture.projectPath, "design-system/design-system.json"))
@@ -723,6 +1016,7 @@ describe("commitInitialDesignSystemSemantic", () => {
 
     const serialized = JSON.stringify(compact);
     expect(compact.sources).toHaveLength(24);
+    expect("outputLanguage" in compact).toBe(false);
     expect(compact.sources[0]).toMatchObject({ ref: "Q01", kind: "question" });
     expect(serialized.length).toBeLessThan(12_000);
     expect(claimElapsedMs).toBeLessThan(500);
@@ -731,8 +1025,12 @@ describe("commitInitialDesignSystemSemantic", () => {
     expect(serialized).not.toContain("source_contract");
     expect(compact.nextAction).toMatchObject({
       tool: "commit_initial_design_system_semantics",
-      sourceField: "sourceRefs"
+      sourceField: "sourceRefs",
+      instruction: expect.stringContaining("Typography role identity")
     });
+    expect(compact.nextAction.instruction).not.toContain(
+      "every human-facing Draft copy"
+    );
     if (process.env.IKRAN_BENCHMARK_OUTPUT === "1") {
       console.info(JSON.stringify({
         benchmark: "semantic-claim",

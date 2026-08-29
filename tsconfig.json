@@ -37,7 +37,19 @@
     ".next/e2e-build/types/**/*.ts",
     ".next/e2e-build/dev/types/**/*.ts",
     ".next/cursor-07-dev/types/**/*.ts",
-    ".next/cursor-07-dev/dev/types/**/*.ts"
+    ".next/cursor-07-dev/dev/types/**/*.ts",
+    ".next/ikran-fast-path-full-chain-validation-5/types/**/*.ts",
+    ".next/ikran-fast-path-full-chain-validation-5/dev/types/**/*.ts",
+    ".next/ikran-fast-path-full-chain-validation-6/types/**/*.ts",
+    ".next/ikran-fast-path-full-chain-validation-6/dev/types/**/*.ts",
+    ".next/ikran-fast-path-full-chain-validation-7/types/**/*.ts",
+    ".next/ikran-fast-path-full-chain-validation-7/dev/types/**/*.ts",
+    ".next/ikran-fast-path-full-chain-validation-8/types/**/*.ts",
+    ".next/ikran-fast-path-full-chain-validation-8/dev/types/**/*.ts",
+    ".next/ikran-fast-path-full-chain-validation-9/types/**/*.ts",
+    ".next/ikran-fast-path-full-chain-validation-9/dev/types/**/*.ts",
+    ".next/ikran-fast-path-full-chain-validation-10/types/**/*.ts",
+    ".next/ikran-fast-path-full-chain-validation-10/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

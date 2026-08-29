@@ -12,6 +12,9 @@ describe("commandErrorHttpStatus", () => {
 
   test("maps project_mismatch conflict to 409", () => {
     expect(commandErrorHttpStatus("project_mismatch")).toBe(409);
+    expect(
+      commandErrorHttpStatus("component_preview_verification_required")
+    ).toBe(409);
   });
 
   test("maps source write-back conflicts to 409", () => {

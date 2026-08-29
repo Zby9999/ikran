@@ -93,7 +93,7 @@ export function registerComponentPreviewTools(
     "verify_registered_component_previews",
     {
       description:
-        "Diagnostic trigger for registered previews; Active artifact declarations schedule this automatically. Default geometry settles first, remaining states run under digest cache and bounded concurrency, and non-default failure never removes a working default hero.",
+        "Compatibility/diagnostic trigger only; never call it as the Active post-registration step. record_artifact_written.componentPreview already schedules verification automatically. Default geometry settles first, remaining states run under digest cache and bounded concurrency, and non-default failure never removes a working default hero.",
       inputSchema: verifyRegisteredInputSchema
     },
     async (args) => {

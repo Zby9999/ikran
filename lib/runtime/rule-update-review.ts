@@ -9,6 +9,7 @@ import {
 import { withProjectTransaction, openProjectDb, closeProjectDb } from "./db";
 import { buildLoggedEvent, insertEvent } from "./events";
 import { specPathMatchesSourceArtifact } from "./design-system-spec-path";
+import { validateDesignSystemJson } from "./design-system-schema";
 import { canonicalizeArtifactPath } from "./source-artifact";
 import { settleOrRewaitReviewOnDb } from "./rule-update-apply";
 import {
@@ -218,7 +219,9 @@ export type DraftRuleUpdateProposalInput = {
 
 type RevisionInput = {
   title: string;
+  changeDescription?: string;
   fullRuleBody: string;
+  author?: "agent" | "designer";
   target: {
     category: string;
     sourceCategory?: string;
@@ -227,6 +230,49 @@ type RevisionInput = {
     proposedTargetPath?: string;
   };
 };
+
+function validateRuleUpdateProposalBody(
+  target: RuleUpdateTarget,
+  fullRuleBody: string
+):
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "invalid_proposal_body";
+      details: {
+        target_category: RuleUpdateCategory;
+        schema_reason: string;
+        schema_details?: unknown;
+      };
+    } {
+  if (!target.category.startsWith("component:")) return { ok: true };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fullRuleBody) as unknown;
+  } catch {
+    return {
+      ok: false,
+      reason: "invalid_proposal_body",
+      details: {
+        target_category: target.category,
+        schema_reason: "invalid_json"
+      }
+    };
+  }
+  const validation = validateDesignSystemJson("component-spec", parsed);
+  if (validation.ok) return { ok: true };
+  return {
+    ok: false,
+    reason: "invalid_proposal_body",
+    details: {
+      target_category: target.category,
+      schema_reason: validation.reason,
+      ...(validation.details === undefined
+        ? {}
+        : { schema_details: validation.details })
+    }
+  };
+}
 
 function canonicalTarget(
   projectPath: string,
@@ -543,6 +589,13 @@ export function draftRuleUpdateProposal(
       ) {
         return { ok: false as const, reason: "rule_entry_not_found" };
       }
+      if (kind !== "retire") {
+        const bodyValidation = validateRuleUpdateProposalBody(
+          target,
+          fullRuleBody
+        );
+        if (!bodyValidation.ok) return bodyValidation;
+      }
       const evidenceTables = [
         "alignment_question_cards",
         "agent_alignment_annotations",
@@ -760,8 +813,12 @@ export function reviseRuleUpdateProposal(
   const proposalId = text(input.proposalId);
   const title = text(input.title);
   const fullRuleBody = text(input.fullRuleBody);
+  const author = input.author ?? "designer";
   if (!proposalId || !title) {
     return { ok: false, reason: "invalid_revision" };
+  }
+  if (author !== "agent" && author !== "designer") {
+    return { ok: false, reason: "invalid_revision_author" };
   }
   const rawTargetResult = canonicalTarget(projectPath, input.target);
   if (!rawTargetResult.ok) return rawTargetResult;
@@ -791,7 +848,13 @@ export function reviseRuleUpdateProposal(
       if (!review || review.status !== "published") {
         return { ok: false as const, reason: "review_not_published" };
       }
-      if (current.status !== "pending_review" && current.status !== "needs_revision") {
+      const agentRecovery =
+        author === "agent" &&
+        (current.status === "failed" || current.status === "needs_revision");
+      const designerEdit =
+        author === "designer" &&
+        (current.status === "pending_review" || current.status === "needs_revision");
+      if (!agentRecovery && !designerEdit) {
         return { ok: false as const, reason: "proposal_not_editable" };
       }
       if (!targetMatchesCategoriesOnDb(db, target)) {
@@ -803,7 +866,16 @@ export function reviseRuleUpdateProposal(
       ) {
         return { ok: false as const, reason: "rule_entry_not_found" };
       }
-      const previousNeedsRevision = current.status === "needs_revision";
+      if (current.kind !== "retire") {
+        const bodyValidation = validateRuleUpdateProposalBody(
+          target,
+          fullRuleBody
+        );
+        if (!bodyValidation.ok) return bodyValidation;
+      }
+      const previousNeedsRevision =
+        current.status === "needs_revision" ||
+        (author === "agent" && current.status === "failed");
       if (
         current.title === title &&
         current.full_rule_body === fullRuleBody &&
@@ -821,7 +893,7 @@ export function reviseRuleUpdateProposal(
             source_category, source_artifact_path, entry_id,
             proposed_target_path, base_digest,
             base_digests_json, author, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'designer', ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         proposalId,
         revision,
@@ -834,6 +906,7 @@ export function reviseRuleUpdateProposal(
         target.proposedTargetPath,
         baseDigest,
         JSON.stringify(baseDigests),
+        author,
         now
       );
       if (previousNeedsRevision) {
@@ -842,10 +915,14 @@ export function reviseRuleUpdateProposal(
            SET status = 'cancelled', cancelled_at = ?, updated_at = ?
            WHERE id IN (
              SELECT command_id FROM rule_update_apply_attempts
-             WHERE proposal_id = ? AND revision = ? AND status = 'needs_revision'
+             WHERE proposal_id = ? AND revision = ?
+               AND status IN ('needs_revision', 'failed')
            )`
         ).run(now, now, proposalId, current.revision);
       }
+      const nextChangeDescription =
+        text(input.changeDescription) ||
+        (author === "agent" ? current.change_description : fullRuleBody);
       db.prepare(
         `UPDATE rule_update_proposals
          SET title = ?, change_description = ?, source_artifact_path = ?,
@@ -854,7 +931,7 @@ export function reviseRuleUpdateProposal(
          WHERE id = ?`
       ).run(
         title,
-        fullRuleBody,
+        nextChangeDescription,
         target.sourceArtifactPath,
         target.entryId,
         target.proposedTargetPath,
@@ -869,7 +946,7 @@ export function reviseRuleUpdateProposal(
           review_id: current.review_id,
           proposal_id: proposalId,
           revision,
-          author: "designer",
+          author,
           target_category: target.category
         })
       );
@@ -1428,9 +1505,56 @@ export function publishRuleUpdateReview(
       const count = (db
         .prepare("SELECT COUNT(*) AS count FROM rule_update_proposals WHERE review_id = ?")
         .get(reviewId) as { count: number }).count;
+      if (review.reconciliation_id) {
+        const coverage = db
+          .prepare(
+            `SELECT rf.feedback_id, rf.decision_disposition,
+                    d.disposition AS dismissed_disposition,
+                    EXISTS (
+                      SELECT 1
+                      FROM rule_update_proposals p,
+                           json_each(p.evidence_record_ids_json) evidence
+                      WHERE p.review_id = ?
+                        AND evidence.value = rf.feedback_id
+                    ) AS covered_by_proposal
+             FROM conversation_reconciliation_feedback rf
+             LEFT JOIN designer_feedback_dismissals d
+               ON d.feedback_id = rf.feedback_id
+             WHERE rf.reconciliation_id = ?
+             ORDER BY rf.position ASC, rf.feedback_id ASC`
+          )
+          .all(reviewId, review.reconciliation_id) as Array<{
+            feedback_id: string;
+            decision_disposition: string;
+            dismissed_disposition: string | null;
+            covered_by_proposal: number;
+          }>;
+        const missing = coverage.filter(
+          (row) => row.covered_by_proposal !== 1 && !row.dismissed_disposition
+        );
+        const invalidFinalDismissals = coverage.filter(
+          (row) =>
+            row.decision_disposition === "final_decision" &&
+            row.covered_by_proposal !== 1 &&
+            row.dismissed_disposition !== "covered_by_existing_rule"
+        );
+        if (missing.length > 0 || invalidFinalDismissals.length > 0) {
+          return {
+            ok: false as const,
+            reason: "rule_update_review_incomplete",
+            details: {
+              missing_feedback_ids: missing.map((row) => row.feedback_id),
+              invalid_final_decision_feedback_ids: invalidFinalDismissals.map(
+                (row) => row.feedback_id
+              )
+            }
+          };
+        }
+      }
       const targets = db
         .prepare(
-          `SELECT r.target_category, r.source_category, r.source_artifact_path,
+          `SELECT p.id AS proposal_id, p.kind, r.full_rule_body,
+                  r.target_category, r.source_category, r.source_artifact_path,
                   r.entry_id, r.proposed_target_path
            FROM rule_update_proposals p
            JOIN rule_update_proposal_revisions r
@@ -1438,6 +1562,9 @@ export function publishRuleUpdateReview(
            WHERE p.review_id = ?`
         )
         .all(reviewId) as Array<{
+          proposal_id: string;
+          kind: RuleUpdateProposalKind;
+          full_rule_body: string;
           target_category: RuleUpdateCategory;
           source_category: RuleUpdateCategory | null;
           source_artifact_path: string | null;
@@ -1453,6 +1580,21 @@ export function publishRuleUpdateReview(
           proposedTargetPath: target.proposed_target_path
         });
         if (!canonicalized.ok) return canonicalized;
+        if (target.kind !== "retire") {
+          const bodyValidation = validateRuleUpdateProposalBody(
+            canonicalized.target,
+            target.full_rule_body
+          );
+          if (!bodyValidation.ok) {
+            return {
+              ...bodyValidation,
+              details: {
+                proposal_id: target.proposal_id,
+                ...bodyValidation.details
+              }
+            };
+          }
+        }
       }
       const now = new Date().toISOString();
       if (count > 0) {
