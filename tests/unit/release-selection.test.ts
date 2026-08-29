@@ -91,6 +91,9 @@ describe("release selection policy", () => {
     expect(paths).toContain("tests/global-setup.ts");
     expect(paths).toContain("tests/unit/release-selection.test.ts");
     expect(paths).toContain("scripts/release/build.mjs");
+    expect(paths).toContain(
+      "docs/validation/question-card-plugin-candidate-2026-08-28.json"
+    );
     expect(paths).toContain("plugin.json");
     expect(paths).toContain(".cursor-plugin/plugin.json");
     expect(paths).toContain(".claude-plugin/plugin.json");

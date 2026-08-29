@@ -113,6 +113,7 @@ export const RELEASE_KITS = deepFreeze({
       ...AGENT_PLUGIN_FILES,
       ...CLAUDE_PLUGIN_FILES,
       "components.json",
+      "docs/validation/question-card-plugin-candidate-2026-08-28.json",
       "playwright.config.ts",
       "vitest.config.ts"
     ],
@@ -122,6 +123,7 @@ export const RELEASE_KITS = deepFreeze({
       ...RUNTIME_ANCHORS,
       ...AGENT_PLUGIN_FILES,
       ...CLAUDE_PLUGIN_FILES,
+      "docs/validation/question-card-plugin-candidate-2026-08-28.json",
       "tests/global-setup.ts",
       "tests/fixtures.ts",
       "scripts/release/build.mjs"
