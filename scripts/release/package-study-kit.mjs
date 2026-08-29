@@ -14,6 +14,10 @@ import {
   clearPrefilledAlignmentAnswers
 } from "./study-kit-database.mjs";
 import { questionCardsForStudyKit } from "./study-kit-question-cards.mjs";
+import {
+  figmaReferenceForStudyKit,
+  rewriteStudyKitFigmaReferenceText
+} from "./study-kit-figma-references.mjs";
 import { smokeStudyPlugin } from "./smoke-study-plugin.mjs";
 import { studyKitStartHere } from "./study-kit-start-here.mjs";
 import {
@@ -362,6 +366,15 @@ function packageWorkspace(source, destination, label, relativePath) {
   if (state.stage !== "alignment-answering" || state.attemptStatus !== "answering") {
     fail(`${label} is not frozen at Alignment answering`);
   }
+  const expectedReference = figmaReferenceForStudyKit(label);
+  if (
+    state.fileKey !== expectedReference.fileKey ||
+    state.nodeId !== expectedReference.nodeId ||
+    state.frameNodeId !== expectedReference.nodeId ||
+    state.figmaSeedReference !== expectedReference.url
+  ) {
+    fail(`${label} does not use its current canonical Figma reference`);
+  }
   if (state.designSystemEntries || state.sourceArtifacts || state.prototypeRuns || state.prototypeSurfaces) {
     fail(`${label} contains post-Alignment artifacts`);
   }
@@ -386,7 +399,8 @@ function packageWorkspace(source, destination, label, relativePath) {
     frame: {
       fileKey: state.fileKey,
       nodeId: state.nodeId,
-      name: state.frameName
+      name: state.frameName,
+      reference: state.figmaSeedReference
     },
     evidence: {
       screenshot: state.screenshotArtifactPath,
@@ -473,10 +487,9 @@ function sanitizeDatabase(databasePath, sourceWorkspace, label) {
 }
 
 function sanitizeText(value, sourceWorkspace, label) {
-  return value
+  return rewriteStudyKitFigmaReferenceText(value, label)
     .split(sourceWorkspace).join(".")
     .split(os.homedir()).join("[LOCAL_HOME]")
-    .replace(/&t=[^"'\\\s]+/g, "")
     .replace(/\"name\":\"ikran study kit [12]\"/g, `\"name\":\"${label}\"`);
 }
 
@@ -494,6 +507,8 @@ function inspectDatabase(databasePath) {
     const evidence = db.prepare(
       `SELECT seed_references.file_key,
               seed_references.node_id,
+              seed_references.figma_seed_reference,
+              figma_evidence_surfaces.frame_node_id,
               figma_evidence_surfaces.frame_name,
               figma_evidence_surfaces.screenshot_artifact_path,
               json_array_length(figma_evidence_surfaces.positional_nodes_json) AS positional_node_count
@@ -517,6 +532,8 @@ function inspectDatabase(databasePath) {
       prototypeSurfaces: scalar("SELECT count(*) FROM prototype_surfaces"),
       fileKey: String(evidence.file_key),
       nodeId: String(evidence.node_id),
+      figmaSeedReference: String(evidence.figma_seed_reference),
+      frameNodeId: String(evidence.frame_node_id),
       frameName: String(evidence.frame_name),
       screenshotArtifactPath: String(evidence.screenshot_artifact_path),
       positionalNodeCount: Number(evidence.positional_node_count)

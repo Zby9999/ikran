@@ -6,8 +6,30 @@ import {
   clearPrefilledAlignmentAnswers
 } from "../../scripts/release/study-kit-database.mjs";
 import { questionCardsForStudyKit } from "../../scripts/release/study-kit-question-cards.mjs";
+import {
+  figmaReferenceForStudyKit,
+  rewriteStudyKitFigmaReferenceText
+} from "../../scripts/release/study-kit-figma-references.mjs";
 
 describe("Study Kit database sanitization", () => {
+  test("moves Kit 1 to its current Figma node throughout frozen evidence text", () => {
+    const old = "https://www.figma.com/design/zMbujZ9js5LsAXnOdtTAHG/ikran?node-id=1-2024&t=share-token-11";
+    expect(rewriteStudyKitFigmaReferenceText(
+      JSON.stringify({ url: old, frameNodeId: "1:2024", parentId: "1:2024" }),
+      "kit-1"
+    )).toBe(JSON.stringify({
+      url: figmaReferenceForStudyKit("kit-1").url,
+      frameNodeId: "99:71",
+      parentId: "99:71"
+    }));
+  });
+
+  test("canonicalizes Kit 2 without changing its still-current node", () => {
+    const old = "https://www.figma.com/design/zMbujZ9js5LsAXnOdtTAHG/ikran?node-id=2-1721&t=share-token-11";
+    expect(rewriteStudyKitFigmaReferenceText(old, "kit-2"))
+      .toBe(figmaReferenceForStudyKit("kit-2").url);
+  });
+
   test("removes proposed answers from every attempt without changing final answers", () => {
     const db = new DatabaseSync(":memory:");
     try {
