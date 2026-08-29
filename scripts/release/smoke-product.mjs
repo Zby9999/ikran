@@ -158,7 +158,15 @@ export async function smokeProductKit({ root, timeoutMs = 120_000 }) {
       timeoutMs
     );
     prepareDraftPhaseFixture(projectDir);
-    await callToolOk(client, "confirm_draft_design_system", {}, timeoutMs);
+    await callToolOk(
+      client,
+      "confirm_draft_design_system",
+      {
+        designerConfirmation:
+          "Release Gate reviewed the prepared Draft Design System fixture."
+      },
+      timeoutMs
+    );
     const seedReferenceId = capturedSeed.record?.id;
     const evidenceVersionId = capturedSeed.surface?.id;
     if (typeof seedReferenceId !== "string" || typeof evidenceVersionId !== "string") {
