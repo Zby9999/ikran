@@ -150,6 +150,11 @@ test("recordNewDesignRun persists run, context packet, and event", () => {
 
     expect(result.context.intent).toBe("A quieter product page");
     expect(result.context.design_system_version).toBeTruthy();
+    expect(result.context.design_system_revision).toMatchObject({
+      id: expect.any(String),
+      sequence: 1,
+      digest: expect.stringMatching(/^[a-f0-9]{64}$/)
+    });
     expect(result.context.priority_contract).toEqual({
       formalized: "hard_reference",
       candidate: "soft_reference",
@@ -177,6 +182,7 @@ test("recordNewDesignRun persists run, context packet, and event", () => {
     );
     // Isolation: context must not grow feedback/event/annotation bags.
     expect(Object.keys(result.context).sort()).toEqual([
+      "design_system_revision",
       "design_system_version",
       "entries",
       "excluded",

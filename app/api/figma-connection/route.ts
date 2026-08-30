@@ -11,11 +11,20 @@ import {
   getFigmaConnectionStatusCommand,
   parseCommandInput
 } from "../../../lib/runtime/commands";
+import { studyModeEnabled } from "../../../lib/runtime/study-mode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function studyFrozenResponse() {
+  return NextResponse.json(
+    { ok: false, error: "study_frozen" },
+    { status: 404 }
+  );
+}
+
 export async function GET(request: NextRequest) {
+  if (studyModeEnabled()) return studyFrozenResponse();
   const auth = authorize(request);
   if (!auth.ok) {
     return NextResponse.json(
@@ -29,6 +38,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (studyModeEnabled()) return studyFrozenResponse();
   const auth = authorize(request);
   if (!auth.ok) {
     return NextResponse.json(
@@ -68,6 +78,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  if (studyModeEnabled()) return studyFrozenResponse();
   const auth = authorize(request);
   if (!auth.ok) {
     return NextResponse.json(

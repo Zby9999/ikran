@@ -27,7 +27,12 @@ export default async function Page({
     (Array.isArray(view) ? view[0] : view) === WORKBENCH_VIEW_VALUE;
   return (
     <ProjectSetupCard
-      bootstrap={{ session, service: SERVICE, openWorkbench }}
+      bootstrap={{
+        session,
+        service: SERVICE,
+        openWorkbench,
+        studyMode: process.env.IKRAN_STUDY_MODE === "1"
+      }}
     />
   );
 }

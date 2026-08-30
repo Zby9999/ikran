@@ -39,6 +39,7 @@ type Bootstrap = {
   service: string;
   /** From `?view=workbench` — restore Seed Evidence Workbench after reload. */
   openWorkbench?: boolean;
+  studyMode?: boolean;
 };
 
 type RuntimeState = "loading" | "connected" | "disconnected";
@@ -297,6 +298,7 @@ export function ProjectSetupCard({
       <SeedEvidenceWorkbench
         session={bootstrap.session}
         folderName={project.name}
+        studyMode={bootstrap.studyMode === true}
         onBack={leaveSeedWorkbench}
       />
     );

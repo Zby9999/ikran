@@ -251,3 +251,9 @@ export {
 } from "./schemas";
 
 export { commandErrorHttpStatus } from "./http-status";
+
+export {
+  getDesignSystemRevisionHistoryCommand,
+  getEffectiveDesignSystemCommand,
+  reviseDraftDesignSystemCommand
+} from "./design-system-revision";

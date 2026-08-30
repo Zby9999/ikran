@@ -14,6 +14,10 @@ import { buildLoggedEvent, insertEvent, logEventOnDb } from "./events";
 import { requireProjectPhase } from "./project-phase";
 import { countSeedReferencesOnDb } from "./project-readiness";
 import { designSystemVersionOnDb } from "./prototype-surface";
+import {
+  ensureActiveDesignSystemRevisionOnDb,
+  readActiveDesignSystemSnapshotOnDb
+} from "./design-system-revision";
 
 export const NEW_DESIGN_RUN_KIND = "new_design" as const;
 export const SEED_RECONSTRUCTION_RUN_KIND = "seed_reconstruction" as const;
@@ -38,6 +42,11 @@ export interface NewDesignRunContextEntry {
 export interface NewDesignRunContext {
   intent: string;
   design_system_version: string;
+  design_system_revision: {
+    id: string;
+    sequence: number;
+    digest: string;
+  } | null;
   priority_contract: {
     formalized: "hard_reference";
     candidate: "soft_reference";
@@ -68,6 +77,8 @@ export type RecordNewDesignRunResult =
         kind: typeof NEW_DESIGN_RUN_KIND;
         intent: string;
         design_system_version: string;
+        design_system_revision_id: string | null;
+        design_system_revision_digest: string | null;
         used_candidate_ids: string[];
         created_at: string;
       };
@@ -127,20 +138,22 @@ export function buildNewDesignRunContextOnDb(
   db: DatabaseType,
   intent: string
 ): NewDesignRunContext {
-  const rows = db
+  const revision = ensureActiveDesignSystemRevisionOnDb(db);
+  const activeSnapshot = readActiveDesignSystemSnapshotOnDb(db);
+  const rows = (activeSnapshot?.snapshot.entries ?? db
     .prepare(
       `SELECT id, entry_id, section, name, meaning, value_json, status,
               source_artifact_path
        FROM design_system_entries
        ORDER BY source_artifact_path ASC, position ASC, entry_id ASC`
     )
-    .all() as Array<{
+    .all()) as Array<{
     id: string;
     entry_id: string;
     section: string;
     name: string | null;
     meaning: string;
-    value_json: string;
+    value_json: unknown;
     status: string;
     source_artifact_path: string;
   }>;
@@ -151,10 +164,12 @@ export function buildNewDesignRunContextOnDb(
         ? row.status
         : "gap";
     let value: unknown = row.value_json;
-    try {
-      value = JSON.parse(row.value_json);
-    } catch {
-      // Keep raw text when value_json is not JSON.
+    if (typeof row.value_json === "string") {
+      try {
+        value = JSON.parse(row.value_json);
+      } catch {
+        // Keep raw text when value_json is not JSON.
+      }
     }
     return {
       id: row.id,
@@ -172,7 +187,10 @@ export function buildNewDesignRunContextOnDb(
 
   return {
     intent,
-    design_system_version: designSystemVersionOnDb(db),
+    design_system_version: revision?.digest ?? designSystemVersionOnDb(db),
+    design_system_revision: revision
+      ? { id: revision.id, sequence: revision.sequence, digest: revision.digest }
+      : null,
     priority_contract: {
       formalized: "hard_reference",
       candidate: "soft_reference",
@@ -234,13 +252,15 @@ export function recordNewDesignRun(
       const now = new Date().toISOString();
       const id = randomUUID();
       const designSystemVersion = designSystemVersionOnDb(db);
+      const context = buildNewDesignRunContextOnDb(db, intent);
       db.prepare(
         `INSERT INTO prototype_runs (
            id, run_id, source_artifact_path, prototype_root, dev_command,
            seed_reference_ids_json, evidence_version_ids_json,
            design_system_version, created_at, updated_at,
-           kind, intent, used_candidate_ids_json
-         ) VALUES (?, ?, '', '', '', '[]', '[]', ?, ?, ?, ?, ?, ?)`
+           kind, intent, used_candidate_ids_json,
+           design_system_revision_id, design_system_revision_digest
+         ) VALUES (?, ?, '', '', '', '[]', '[]', ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         id,
         runId,
@@ -249,7 +269,9 @@ export function recordNewDesignRun(
         now,
         NEW_DESIGN_RUN_KIND,
         intent,
-        JSON.stringify(candidates.ids)
+        JSON.stringify(candidates.ids),
+        context.design_system_revision?.id ?? null,
+        context.design_system_revision?.digest ?? null
       );
 
       if (candidates.ids.length > 0) {
@@ -265,11 +287,12 @@ export function recordNewDesignRun(
         kind: NEW_DESIGN_RUN_KIND,
         intent,
         design_system_version: designSystemVersion,
+        design_system_revision_id: context.design_system_revision?.id ?? null,
+        design_system_revision_digest: context.design_system_revision?.digest ?? null,
         used_candidate_ids: candidates.ids
       });
       insertEvent(db, event);
 
-      const context = buildNewDesignRunContextOnDb(db, intent);
       return {
         ok: true as const,
         run: {
@@ -278,6 +301,8 @@ export function recordNewDesignRun(
           kind: NEW_DESIGN_RUN_KIND,
           intent,
           design_system_version: designSystemVersion,
+          design_system_revision_id: context.design_system_revision?.id ?? null,
+          design_system_revision_digest: context.design_system_revision?.digest ?? null,
           used_candidate_ids: candidates.ids,
           created_at: now
         },

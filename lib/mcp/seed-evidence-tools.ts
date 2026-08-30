@@ -34,6 +34,7 @@ export function registerSeedEvidenceTools(
 ): void {
   const { ensureRuntime } = deps;
 
+  if (!deps.studyMode) {
   mcp.registerTool(
     "get_figma_connection_status",
     {
@@ -179,6 +180,8 @@ export function registerSeedEvidenceTools(
       };
     }
   );
+
+  }
 
   mcp.registerTool(
     "get_seed_reference_context",

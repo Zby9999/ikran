@@ -2,28 +2,35 @@ import { expect, test } from "vitest";
 
 import { studyKitStartHere } from "../../scripts/release/study-kit-start-here.mjs";
 
-test("participant instructions require a native Ikran MCP preflight before project work", () => {
+test("participant instructions make the Agent own exact installation and both MCP preflights", () => {
   const markdown = studyKitStartHere("ikran-study-kit-1", [
-    { id: "study-1", path: "workspace" }
+    {
+      id: "kit-1",
+      workspaceNumber: 1,
+      displayName: "Workspace 1",
+      path: "workspace-1",
+      frame: { fileKey: "file-1", nodeId: "12:34", name: "Seed" }
+    }
   ]);
 
-  expect(markdown).toContain("Step 0 — verify the native Ikran MCP connection");
+  expect(markdown).toContain("You own the complete setup");
+  expect(markdown).toContain("Do not ask the participant to copy a path");
+  expect(markdown).toContain("Step 1 — install this exact bundled plugin");
+  expect(markdown).toContain("ikran@ikran-study-kit");
+  expect(markdown).toContain("Workspace 1");
+  expect(markdown).toContain("workspace-1");
+  expect(markdown).toContain("fileKey `file-1`, nodeId `12:34`");
+  expect(markdown).toContain("Step 2 — create the study task yourself");
+  expect(markdown).toContain("STUDY_SETUP_BLOCKED_TASK_CREATION");
+  expect(markdown).toContain("Step 3 — verify native Ikran MCP");
   expect(markdown).toContain("`list_working_folders`");
   expect(markdown).toContain("`open_workbench`");
-  expect(markdown).toContain("If either Ikran MCP tool is unavailable");
-  expect(markdown).toContain("stop and report the connection failure");
-  expect(markdown).toContain("Do not create an ad-hoc MCP client");
-  expect(markdown).toContain("Before reading project state or continuing Alignment");
-  expect(markdown).toContain("resolve the current task folder with `pwd`");
-  expect(markdown).toContain("`create_or_open_project({ path: <absolute pwd> })`");
-  expect(markdown).toContain("plugin installation directory is not a workspace");
-  expect(markdown).not.toContain(
-    "The reported folder must be the Study Kit `workspace` selected for this task"
-  );
-  expect(markdown).toContain(
-    "Give this file to the Agent as context, then ask: `打开 Ikran，先检查MCP链接，并继续当前 Alignment。`"
-  );
-  expect(markdown).not.toContain(
-    "Give this file to the Agent as context, then ask: `打开 Ikran，并继续当前 Alignment。`"
-  );
+  expect(markdown).toContain("STUDY_SETUP_BLOCKED_IKRAN_MCP");
+  expect(markdown).toContain("Step 4 — verify the host-native Figma MCP");
+  expect(markdown).toContain("Tool presence alone is not sufficient");
+  expect(markdown).toContain("STUDY_SETUP_BLOCKED_FIGMA_MCP");
+  expect(markdown).toContain("Never request credentials through Ikran");
+  expect(markdown).toContain("Step 5 — present the Workbench");
+  expect(markdown).toContain("use Draft revision tools");
+  expect(markdown).toContain("do not abandon the project phase or return to Seed");
 });

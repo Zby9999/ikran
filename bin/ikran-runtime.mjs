@@ -21,6 +21,7 @@ import {
 import { resolveRuntimeSocketPath } from "../lib/runtime/runtime-socket-path.mjs";
 
 const argv = process.argv.slice(2);
+if (argv.includes("--study")) process.env.IKRAN_STUDY_MODE = "1";
 const prod = argv.includes("--prod");
 const option = (name, fallback) => {
   const index = argv.indexOf(name);
@@ -170,6 +171,7 @@ socketServer = createServer((socket) => {
     discoverWorkingFolder,
     host,
     prod,
+    studyMode: process.env.IKRAN_STUDY_MODE === "1",
     mcpEntryPath: path.join(appDir, "bin/ikran-mcp.mjs")
   });
   const transport = new StdioServerTransport(socket, socket);

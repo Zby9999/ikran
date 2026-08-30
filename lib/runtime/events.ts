@@ -78,6 +78,8 @@ export type EventType =
   | "designer_feedback_dismissed"
   | "project_phase_confirmed"
   | "design_system_formalized"
+  | "design_system_revision_created"
+  | "design_system_revision_activated"
   | "project_phase_abandoned"
   | "export_generated"
   | "invalid_output"

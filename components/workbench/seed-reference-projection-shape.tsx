@@ -512,6 +512,7 @@ function SeedReferenceProjectionFrame({
           {title}
         </p>
         <div className="seed-ref-frame__header-actions">
+          {seedActions?.canRefreshSeedReference ? (
           <div className="seed-ref-frame__action-wrap">
             <div className="seed-ref-frame__action-hint-anchor" aria-hidden="true">
               <SeedRefFrameActionHint
@@ -551,6 +552,7 @@ function SeedReferenceProjectionFrame({
               )}
             </Button>
           </div>
+          ) : null}
           <div className="seed-ref-frame__action-wrap">
             <div className="seed-ref-frame__action-hint-anchor" aria-hidden="true">
               <SeedRefFrameActionHint

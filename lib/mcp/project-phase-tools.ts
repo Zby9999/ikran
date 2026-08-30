@@ -95,8 +95,9 @@ function phaseFailure(
 
 export function registerProjectPhaseTools(
   mcp: McpServer,
-  { ensureRuntime }: RegisterIkranToolsDeps
+  deps: RegisterIkranToolsDeps
 ): void {
+  const { ensureRuntime } = deps;
   mcp.registerTool(
     "get_component_formalization_timing",
     {
@@ -230,7 +231,7 @@ export function registerProjectPhaseTools(
     }
   );
 
-  mcp.registerTool(
+  if (!deps.studyMode) mcp.registerTool(
     "abandon_project_phase",
     {
       description:

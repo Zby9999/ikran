@@ -10,7 +10,7 @@ import {
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 47;
+export const CURRENT_SCHEMA_VERSION = 48;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -2299,6 +2299,57 @@ CREATE TABLE IF NOT EXISTS alignment_incremental_plan_requests (
           sourceDigest(value),
           now
         );
+      }
+    }
+  },
+  {
+    version: 48,
+    up(db) {
+      // Draft Design System revisions retain immutable snapshots while one
+      // explicit active revision feeds Prototype and new-design consumers.
+      db.exec(`
+CREATE TABLE IF NOT EXISTS design_system_revisions (
+  id TEXT PRIMARY KEY,
+  sequence INTEGER NOT NULL UNIQUE CHECK (sequence > 0),
+  parent_revision_id TEXT REFERENCES design_system_revisions(id) ON DELETE RESTRICT,
+  status TEXT NOT NULL CHECK (status IN ('draft', 'formal')),
+  summary TEXT NOT NULL,
+  digest TEXT NOT NULL,
+  snapshot_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS design_system_revision_state (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  active_revision_id TEXT REFERENCES design_system_revisions(id) ON DELETE RESTRICT,
+  updated_at TEXT NOT NULL
+);
+INSERT OR IGNORE INTO design_system_revision_state
+  (singleton, active_revision_id, updated_at)
+VALUES (1, NULL, '');
+CREATE TABLE IF NOT EXISTS design_system_revision_requests (
+  idempotency_key TEXT PRIMARY KEY,
+  input_digest TEXT NOT NULL,
+  revision_id TEXT NOT NULL REFERENCES design_system_revisions(id) ON DELETE RESTRICT,
+  response_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_design_system_revisions_parent
+  ON design_system_revisions(parent_revision_id, sequence);
+      `);
+      const hasPrototypeRuns = Boolean(db.prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'prototype_runs'"
+      ).get());
+      if (!hasPrototypeRuns) return;
+      const columns = new Set(
+        (db.prepare("PRAGMA table_info(prototype_runs)").all() as Array<{
+          name: string;
+        }>).map((column) => column.name)
+      );
+      if (!columns.has("design_system_revision_id")) {
+        db.exec("ALTER TABLE prototype_runs ADD COLUMN design_system_revision_id TEXT");
+      }
+      if (!columns.has("design_system_revision_digest")) {
+        db.exec("ALTER TABLE prototype_runs ADD COLUMN design_system_revision_digest TEXT");
       }
     }
   }

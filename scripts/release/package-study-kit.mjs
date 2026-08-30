@@ -97,7 +97,9 @@ try {
       workspace.source,
       path.join(staging, workspace.relativePath),
       workspace.id,
-      workspace.relativePath
+      workspace.relativePath,
+      workspace.workspaceNumber,
+      workspace.displayName
     )
   );
 
@@ -115,7 +117,8 @@ try {
       studyRuntime,
       smoke: pluginSmoke
     },
-    figmaConnectionRequired: false,
+    evidencePolicy: "preloaded-frozen",
+    figmaMcpPreflightRequired: true,
     participantCheckpoint: "alignment-answering",
     workspaces: packagedWorkspaces
   };
@@ -172,20 +175,26 @@ function resolveWorkspaceSpecs(parsed) {
     }
     return [{
       id,
+      workspaceNumber: id === "kit-1" ? 1 : 2,
+      displayName: id === "kit-1" ? "Workspace 1" : "Workspace 2",
       source: requireDirectory(parsed.kit, "--kit"),
-      relativePath: "workspace"
+      relativePath: id === "kit-1" ? "workspace-1" : "workspace-2"
     }];
   }
   return [
     {
       id: "kit-1",
+      workspaceNumber: 1,
+      displayName: "Workspace 1",
       source: requireDirectory(parsed.kit1, "--kit1"),
-      relativePath: path.join("workspaces", "kit-1")
+      relativePath: path.join("workspaces", "workspace-1")
     },
     {
       id: "kit-2",
+      workspaceNumber: 2,
+      displayName: "Workspace 2",
       source: requireDirectory(parsed.kit2, "--kit2"),
-      relativePath: path.join("workspaces", "kit-2")
+      relativePath: path.join("workspaces", "workspace-2")
     }
   ];
 }
@@ -253,18 +262,18 @@ function copyCodexPlugin(source, destination, version) {
     mcpServers: {
       ikran: {
         command: "node",
-        args: ["./bin/ikran-mcp.mjs", "--prod"],
+        args: ["./bin/ikran-mcp.mjs", "--prod", "--study"],
         cwd: "."
       }
     },
     interface: {
       displayName: "Ikran Study Kit",
       shortDescription: "Open a preloaded Ikran Alignment study workspace.",
-      longDescription: "Runs the local Ikran Workbench and resumes the bundled evidence-grounded Alignment checkpoint without requiring a new Figma connection.",
+      longDescription: "Runs the local Ikran Workbench and resumes a preloaded, frozen Alignment checkpoint. The host-native Figma MCP must pass source-identity preflight before study work begins.",
       developerName: "Ikran",
       category: "Productivity",
       capabilities: ["Local MCP tools", "Design Intent Alignment", "Evidence-grounded Workbench"],
-      defaultPrompt: "Open Ikran for this workspace and resume its existing Alignment. Do not request a Figma connection for the preloaded reference."
+      defaultPrompt: "Follow START-HERE.md, verify native Ikran and host-native Figma MCP access, open the assigned numbered workspace, and resume its existing Alignment without adding or refreshing evidence."
     }
   };
   writeJson(path.join(destination, ".codex-plugin", "plugin.json"), manifest);
@@ -333,7 +342,7 @@ function readPluginVersion(source) {
   return version;
 }
 
-function packageWorkspace(source, destination, label, relativePath) {
+function packageWorkspace(source, destination, label, relativePath, workspaceNumber, displayName) {
   const sourceIkran = path.join(source, ".ikran");
   const destinationIkran = path.join(destination, ".ikran");
   fs.mkdirSync(destinationIkran, { recursive: true });
@@ -404,6 +413,8 @@ function packageWorkspace(source, destination, label, relativePath) {
 
   return {
     id: label,
+    workspaceNumber,
+    displayName,
     path: slash(relativePath),
     frame: {
       fileKey: state.fileKey,
@@ -609,7 +620,7 @@ function scanPackage(root, { forbiddenLiterals }) {
       if (pattern.test(text)) secretHits.push({ file: relative, category });
     }
     if (
-      (relative.startsWith("workspaces/") || relative.startsWith("workspace/")) &&
+      (relative.startsWith("workspaces/") || relative.startsWith("workspace-")) &&
       /(?:\?|&)t=[A-Za-z0-9_-]{8,}/.test(text)
     ) {
       figmaQueryTokenHits.push({ file: relative, category: "figma_query_token" });
@@ -656,11 +667,11 @@ function criticalChecksums(root, manifest) {
 }
 
 function workspaceReadme() {
-  return `# Ikran study workspace\n\nOpen this folder as the Codex workspace, then ask the Agent to open Ikran and continue the existing Alignment.\n\nThe Figma reference and evidence are already installed. Question answer fields are intentionally blank; no proposed answers are prefilled. Do not connect Figma, refresh the reference, or generate a Draft Design System before answering the study questions.\n`;
+  return `# Ikran numbered study workspace\n\nThis folder must be opened as the Codex task workspace assigned by START-HERE.md. The evidence is preloaded and frozen; the host-native Figma MCP is used only for source-identity preflight.\n\nQuestion answer fields are intentionally blank; no proposed answers are prefilled. Do not add or refresh a Seed Reference, and do not generate a Draft Design System before answering the study questions.\n`;
 }
 
 function pluginReadme() {
-  return `# Ikran — Codex Study Kit build\n\nThis Codex-only plugin is bundled with a preloaded Ikran Study Kit. It contains the production Runtime, Workbench, MCP tools, and Ikran skills.\n\nInstall it through the Study Kit marketplace at .agents/plugins/marketplace.json. The bundled workspaces already contain their Figma reference evidence, so no Figma credential is required for the study flow.\n`;
+  return `# Ikran — Codex Study Kit build\n\nThis Codex-only plugin is bundled with a preloaded, frozen Ikran Study Kit. It contains the production Runtime, Workbench, MCP tools, and Ikran skills.\n\nInstall it through the Study Kit marketplace at .agents/plugins/marketplace.json. Ikran never requests or stores a Figma token in Study mode. Before study work starts, the Agent verifies the assigned source through the host-native Figma MCP.\n`;
 }
 
 function walkFiles(root, { symlinkBoundaryRoot = root } = {}) {

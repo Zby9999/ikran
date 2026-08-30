@@ -10,6 +10,7 @@ import { resolveRuntimeSocketPath } from "../lib/runtime/runtime-socket-path.mjs
 import { resolveRuntimeStateDir } from "../lib/runtime/runtime-state-dir.mjs";
 
 const argv = process.argv.slice(2);
+if (argv.includes("--study")) process.env.IKRAN_STUDY_MODE = "1";
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const stateDir = resolveRuntimeStateDir({ appDir });
 const socketPath = resolveRuntimeSocketPath(stateDir);

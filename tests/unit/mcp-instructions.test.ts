@@ -16,6 +16,7 @@ import {
   failureResult,
   IKRAN_MCP_INSTRUCTIONS,
   resolveMcpInstructions,
+  STUDY_MCP_INSTRUCTIONS,
   type RegisterIkranToolsDeps
 } from "../../lib/mcp/shared";
 
@@ -73,6 +74,50 @@ describe("MCP instructions channel split", () => {
     expect(resolveMcpInstructions({ IKRAN_MCP_HOST: "claude" })).toBe(
       CLAUDE_MCP_INSTRUCTIONS
     );
+  });
+
+  test("serves a frozen-evidence Study contract and removes mutating setup tools", () => {
+    expect(resolveMcpInstructions({ IKRAN_STUDY_MODE: "1" })).toBe(
+      STUDY_MCP_INSTRUCTIONS
+    );
+    expect(STUDY_MCP_INSTRUCTIONS).toContain("host-native Figma MCP");
+    expect(STUDY_MCP_INSTRUCTIONS).toContain("Never request credentials");
+    expect(STUDY_MCP_INSTRUCTIONS).toContain("revise_draft_design_system");
+
+    const names: string[] = [];
+    const mcp = {
+      registerTool(name: string) {
+        names.push(name);
+      }
+    };
+    registerIkranTools(mcp as never, {
+      ensureRuntime: async () => ({
+        host: "127.0.0.1",
+        port: 1,
+        token: "test",
+        url: "http://127.0.0.1:1/?session=test&view=workbench",
+        spawned: false
+      }),
+      discoverWorkingFolder: async () => ({ folder: null, source: "none", roots: [] }),
+      host: "127.0.0.1",
+      prod: false,
+      mcpEntryPath: "/tmp/ikran-mcp.mjs",
+      studyMode: true
+    });
+
+    expect(names).toEqual(expect.arrayContaining([
+      "open_workbench",
+      "get_effective_design_system",
+      "revise_draft_design_system"
+    ]));
+    expect(names).not.toEqual(expect.arrayContaining([
+      "get_figma_connection_status",
+      "connect_figma",
+      "disconnect_figma",
+      "add_seed_reference",
+      "refresh_seed_reference",
+      "abandon_project_phase"
+    ]));
   });
 
   test("advertises the incremental loop and recovery tools by default", () => {

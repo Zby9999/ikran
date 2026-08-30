@@ -161,7 +161,7 @@ describe("Alignment completion handoff", () => {
 
       const migrated = openProjectDb(fixture.projectPath);
       try {
-        expect(CURRENT_SCHEMA_VERSION).toBe(47);
+        expect(CURRENT_SCHEMA_VERSION).toBe(48);
         expect(
           migrated.prepare(
             `SELECT current_revision, monitoring_status

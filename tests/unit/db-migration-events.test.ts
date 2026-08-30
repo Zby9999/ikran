@@ -1180,7 +1180,7 @@ test.describe("PRAGMA user_version migration runner", () => {
       const db = openProjectDb(dir);
       try {
         expect(userVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(CURRENT_SCHEMA_VERSION).toBe(47);
+        expect(CURRENT_SCHEMA_VERSION).toBe(48);
         expect(
           db.prepare("PRAGMA table_info(alignment_question_cards)").all()
         ).toEqual(

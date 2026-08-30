@@ -5,6 +5,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 
 export type WorkbenchSeedActions = {
+  canRefreshSeedReference: boolean;
   refreshSeedReference: (
     seedId: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>;

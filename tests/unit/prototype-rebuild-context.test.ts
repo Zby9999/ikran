@@ -120,6 +120,7 @@ test("returns seeds, design-system version, and the rebuild contract", async () 
   ]);
   expect(typeof result.design_system_version).toBe("string");
   expect(result.design_system_version.length).toBeGreaterThan(0);
+  expect(result.design_system_revision).toBeNull();
   expect(result.rebuild_contract).toBe(PROTOTYPE_REBUILD_CONTRACT);
   expect(result.rebuild_contract).toContain("get_design_context");
   expect(result.rebuild_contract).toContain("record_preview");

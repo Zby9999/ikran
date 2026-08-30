@@ -7,6 +7,10 @@
 // capture screenshots are auxiliary fallback only.
 
 import { closeProjectDb, openProjectDb } from "./db";
+import {
+  ensureActiveDesignSystemRevision,
+  readActiveDesignSystemRevisionOnDb
+} from "./design-system-revision";
 import { requireProjectPhase, type ProjectPhase } from "./project-phase";
 import { designSystemVersionOnDb } from "./prototype-surface";
 
@@ -16,7 +20,7 @@ import { designSystemVersionOnDb } from "./prototype-surface";
  * routing layer.
  */
 export const PROTOTYPE_REBUILD_CONTRACT =
-  "Rebuild the seed page as the first prototype. Fetch the CURRENT Figma design context via the host's own Figma MCP get_design_context on each seed's source fileKey/nodeId — live Figma is the structural and visual source of truth. Persisted capture screenshots are auxiliary fallback only (via get_figma_connection_status / Figma Connection outage). Use design-system source for reusable tokens/rules, but the seed page structure/copy/layout comes from the live design context, not from invention. Then declare artifacts and call record_preview with these seedReferenceIds and currentEvidence surface ids as evidenceVersionIds.";
+  "Rebuild the seed page as the first prototype. Fetch the CURRENT Figma design context via the host's own Figma MCP get_design_context on each seed's source fileKey/nodeId — live Figma is the structural and visual source of truth. If that host-native Figma read is unavailable, stop with a Figma MCP preflight failure; never request or store a Figma API token through Ikran. Use only the active Design System revision for reusable tokens/rules; the seed page structure/copy/layout comes from the live design context, not from invention. Then declare artifacts and call record_preview with these seedReferenceIds and currentEvidence surface ids as evidenceVersionIds.";
 
 /** Machine-readable preview handoff; prose above remains reconstruction guidance. */
 export const PROTOTYPE_PREVIEW_CONTRACT = Object.freeze({
@@ -83,6 +87,11 @@ export type PrototypeRebuildContextResult =
   | {
       ok: true;
       design_system_version: string;
+      design_system_revision: {
+        id: string;
+        sequence: number;
+        digest: string;
+      } | null;
       seeds: PrototypeRebuildSeed[];
       component_preview_targets: PrototypeComponentPreviewTarget[];
       rebuild_contract: string;
@@ -105,8 +114,11 @@ export function getPrototypeRebuildContext(
     return { ok: false, reason: "phase_gate", phase: gate.phase };
   }
 
+  ensureActiveDesignSystemRevision(projectPath);
+
   const db = openProjectDb(projectPath);
   try {
+    const revision = readActiveDesignSystemRevisionOnDb(db);
     const rows = db
       .prepare(
         `SELECT sr.id, sr.file_key, sr.node_id, sr.figma_seed_reference,
@@ -175,7 +187,10 @@ export function getPrototypeRebuildContext(
     });
     return {
       ok: true,
-      design_system_version: designSystemVersionOnDb(db),
+      design_system_version: revision?.digest ?? designSystemVersionOnDb(db),
+      design_system_revision: revision
+        ? { id: revision.id, sequence: revision.sequence, digest: revision.digest }
+        : null,
       seeds,
       component_preview_targets: componentPreviewTargets,
       rebuild_contract: PROTOTYPE_REBUILD_CONTRACT,

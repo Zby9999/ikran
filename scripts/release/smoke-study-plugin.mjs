@@ -65,7 +65,7 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
 
     transport = new StdioClientTransport({
       command: process.execPath,
-      args: [mcpBin, "--prod"],
+      args: [mcpBin, "--prod", "--study"],
       // Match an installed plugin: the process runs from the plugin cache,
       // and Codex does not expose the user's task workspace through MCP Roots.
       cwd: pluginRoot,
@@ -85,6 +85,29 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
       { capabilities: {} }
     );
     await within(client.connect(transport), timeoutMs, "MCP connection");
+    const listed = await within(client.listTools(), timeoutMs, "MCP tool list");
+    const toolNames = new Set((listed?.tools ?? []).map((tool) => tool.name));
+    for (const forbidden of [
+      "get_figma_connection_status",
+      "connect_figma",
+      "disconnect_figma",
+      "add_seed_reference",
+      "refresh_seed_reference",
+      "abandon_project_phase"
+    ]) {
+      if (toolNames.has(forbidden)) {
+        throw new Error(`Study MCP exposed forbidden tool: ${forbidden}`);
+      }
+    }
+    for (const required of [
+      "open_workbench",
+      "get_effective_design_system",
+      "revise_draft_design_system"
+    ]) {
+      if (!toolNames.has(required)) {
+        throw new Error(`Study MCP omitted required tool: ${required}`);
+      }
+    }
     const discovered = await callToolOk(
       client,
       "list_working_folders",
@@ -145,10 +168,26 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
       throw new Error(`Packaged Workbench project route returned unexpected state: ${body}`);
     }
 
+    const figmaConnectionResponse = await within(
+      fetch(new URL("/api/figma-connection", parsed), {
+        headers: { "x-ikran-session": session },
+        signal: AbortSignal.timeout(timeoutMs)
+      }),
+      timeoutMs,
+      "Study Figma Connection route"
+    );
+    if (figmaConnectionResponse.status !== 404) {
+      throw new Error(
+        `Study Figma Connection route must be unavailable; received HTTP ${figmaConnectionResponse.status}`
+      );
+    }
+
     return Object.freeze({
       ok: true,
       aliases: portability.aliases,
-      route: "/api/project"
+      route: "/api/project",
+      toolCount: toolNames.size,
+      figmaConnectionRoute: "unavailable"
     });
   } finally {
     if (workbenchUrl) await boundedCleanup(() => requestStop(workbenchUrl), 5_000);

@@ -29,6 +29,7 @@ import {
   mapSeedRow,
   mapSurfaceRow
 } from "./seed-row-map";
+import { studyModeEnabled } from "./study-mode";
 
 export type SeedCaptureInitiator = "ui" | "agent";
 
@@ -40,6 +41,7 @@ export type SeedCaptureInput = {
 };
 
 export type SeedCaptureErrorReason =
+  | "study_frozen"
   | "figma_connection_required"
   | "missing_figma_seed_reference"
   | "invalid_figma_url"
@@ -213,6 +215,7 @@ export async function addSeedReference(
   projectPath: string,
   input: SeedCaptureInput
 ): Promise<SeedCaptureResult> {
+  if (studyModeEnabled()) return { ok: false, reason: "study_frozen" };
   const connection = await requireFigmaConnectionCommand();
   if (!connection.ok) {
     return { ok: false, reason: connection.reason };
@@ -459,6 +462,7 @@ export async function refreshSeedReference(
   projectPath: string,
   input: { seedReferenceId: string; initiator: SeedCaptureInitiator }
 ): Promise<SeedRefreshResult> {
+  if (studyModeEnabled()) return { ok: false, reason: "study_frozen" };
   const connection = await requireFigmaConnectionCommand();
   if (!connection.ok) {
     return { ok: false, reason: connection.reason };

@@ -1,6 +1,6 @@
 {
   "name": "recursive-design-agent",
-  "version": "0.1.0-alpha.21",
+  "version": "0.1.0-alpha.22",
   "license": "Apache-2.0",
   "private": true,
   "packageManager": "npm@11.6.2",

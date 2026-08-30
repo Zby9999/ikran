@@ -54,10 +54,12 @@ const WorkbenchCanvas = dynamic(
 export function SeedEvidenceWorkbench({
   session,
   folderName,
+  studyMode = false,
   onBack
 }: {
   session: string;
   folderName: string;
+  studyMode?: boolean;
   onBack: () => void;
 }) {
   const prefersReducedMotion = usePrefersReducedMotion();
@@ -269,12 +271,17 @@ export function SeedEvidenceWorkbench({
   const { pasteError, inFlightCaptures, focusSeedId, clearFocusSeedId } =
     useFigmaPasteCapture({
       canvasLocked,
-      gateOpen: gateStatus === "open",
+      gateOpen: !studyMode && gateStatus === "open",
       seeds: records,
       captureSeedReference
     });
 
   useEffect(() => {
+    if (studyMode) {
+      setGateStatus("open");
+      setCanvasEntered(true);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       const status = await getFigmaConnection();
@@ -290,7 +297,7 @@ export function SeedEvidenceWorkbench({
     return () => {
       cancelled = true;
     };
-  }, [getFigmaConnection]);
+  }, [getFigmaConnection, studyMode]);
 
   const seedCount = records.length + inFlightCaptures.length;
   // Issue 30 — once the draft design system is confirmed, the panel follows the
@@ -503,7 +510,7 @@ export function SeedEvidenceWorkbench({
             onPutWorkbenchLayout={putWorkbenchLayout}
             onFlushWorkbenchLayout={flushWorkbenchLayout}
             onUpdateSeedReferenceNote={updateSeedReferenceNote}
-            onRefreshSeedReference={refreshSeedReference}
+            onRefreshSeedReference={studyMode ? undefined : refreshSeedReference}
             onUpdateDesignLanguageDescription={updateDesignLanguageDescription}
             focusSeedId={focusTargetId}
             onFocusSeedApplied={() => {

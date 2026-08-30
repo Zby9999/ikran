@@ -19,6 +19,7 @@ import { registerProjectPhaseTools } from "./project-phase-tools";
 import { registerResearchExportTools } from "./research-export-tools";
 import { registerComponentPreviewTools } from "./component-preview-tools";
 import { registerInitialDesignSystemTools } from "./initial-design-system-tools";
+import { registerDesignSystemRevisionTools } from "./design-system-revision-tools";
 import {
   IKRAN_MCP_INSTRUCTIONS,
   resolveMcpInstructions,
@@ -41,6 +42,7 @@ export function registerIkranTools(
   registerRegionTools(mcp, deps);
   registerDesignIntentAlignmentTools(mcp, deps);
   registerInitialDesignSystemTools(mcp, deps);
+  registerDesignSystemRevisionTools(mcp, deps);
   registerArtifactTools(mcp, deps);
   registerRuleUpdateTools(mcp, deps);
   registerDesignerFeedbackTools(mcp, deps);

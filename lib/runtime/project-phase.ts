@@ -1119,6 +1119,15 @@ export function formalizeDesignSystem(
       db.prepare(
         `UPDATE project_phase SET phase = ?, updated_at = ? WHERE singleton = 1`
       ).run("ready_for_new_design", now);
+      db.prepare(
+        `UPDATE design_system_revisions
+         SET status = 'formal'
+         WHERE id = (
+           SELECT active_revision_id
+           FROM design_system_revision_state
+           WHERE singleton = 1
+         )`
+      ).run();
       const event = buildLoggedEvent("design_system_formalized", {
         from_phase: "design_system_formal",
         phase: "ready_for_new_design",

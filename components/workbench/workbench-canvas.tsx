@@ -227,6 +227,7 @@ export function WorkbenchCanvas({
 
   const seedActions = useMemo(
     () => ({
+      canRefreshSeedReference: onRefreshSeedReference !== undefined,
       refreshSeedReference:
         onRefreshSeedReference ??
         (async () =>
