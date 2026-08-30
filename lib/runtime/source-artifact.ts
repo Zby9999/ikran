@@ -71,6 +71,9 @@ import {
   queuePrototypeSurfaceRefreshAfterArtifact
 } from "./prototype-surface";
 import {
+  scheduleAutomaticComponentPreviewOrchestrations
+} from "./component-preview-orchestration";
+import {
   claimedRuleUpdateApplyIdentityOnDb,
   completeRuleUpdateApplyOnArtifactDeclaration,
   markRuleUpdateDeclarationConflict
@@ -535,10 +538,12 @@ export function recordSourceArtifact(
   try {
     const result = withProjectTransaction(projectPath, (db) => {
       let ingestPlan: DesignSystemIngestPlan | null = null;
-      // sha256 of the exact bytes ingested — the lazy file→DB sync
-      // (design-system-sync) compares against this to detect undeclared
-      // source edits. Null for non-design-system artifacts.
-      let contentDigest: string | null = null;
+      // sha256 of the declared file. Design-system sync uses it to detect
+      // undeclared drift; component verification uses the same identity to
+      // avoid invalidating an unchanged implementation declaration.
+      const contentDigest = sourceContentDigestOf(
+        readFileSync(absolutePath, "utf8")
+      );
       let ruleUpdateClaim: { commandId: string; revision: number } | null = null;
 
       // Issue 29 proposal-first gate: a rule-update write may only be
@@ -618,19 +623,22 @@ export function recordSourceArtifact(
           );
           if (!semanticAuthorization.ok) return semanticAuthorization;
         }
-        contentDigest = sourceContentDigestOf(
-          readFileSync(absolutePath, "utf8")
-        );
       }
 
       const existing = db
         .prepare(
-          `SELECT id, declaration_version, created_at
+          `SELECT id, declaration_version, created_at, content_digest
            FROM source_artifacts WHERE path = ?`
         )
         .get(relativePath) as
-        | { id: string; declaration_version: number; created_at: string }
+        | {
+            id: string;
+            declaration_version: number;
+            created_at: string;
+            content_digest: string | null;
+          }
         | undefined;
+      const contentChanged = existing?.content_digest !== contentDigest;
 
       // Re-declaring the same path updates the index row with a new
       // declaration version instead of duplicating it. A design-system file
@@ -723,8 +731,8 @@ export function recordSourceArtifact(
       // leaves entries without their declaration.
       if (ingestPlan) {
         applyDesignSystemIngestOnDb(db, ingestPlan);
-        recordSourceContentDigest(db, record.path, contentDigest!);
       }
+      recordSourceContentDigest(db, record.path, contentDigest);
 
       const ruleUpdateApply =
         declaration.proposalId === undefined
@@ -741,9 +749,13 @@ export function recordSourceArtifact(
       // live preview. An active Runtime screenshot watcher covering this
       // path recaptures instead; unreachable previews still go stale.
       const prototypeChange =
-        spec.validationClass === "code"
+        spec.validationClass === "code" && contentChanged
           ? applyPrototypeCodeChangeOnDb(db, projectPath, record.path)
-          : { staleIds: [] as string[], refreshIds: [] as string[] };
+          : {
+              staleIds: [] as string[],
+              refreshIds: [] as string[],
+              reverifyRegistrationIds: [] as string[]
+            };
 
       return {
         ok: true as const,
@@ -751,6 +763,7 @@ export function recordSourceArtifact(
         event_id: event.event_id,
         staleSurfaceIds: prototypeChange.staleIds,
         refreshSurfaceIds: prototypeChange.refreshIds,
+        reverifyRegistrationIds: prototypeChange.reverifyRegistrationIds,
         quality_diagnostics: ingestPlan
           ? designSystemQualityDiagnostics(relativePath, ingestPlan.rows)
           : [],
@@ -806,6 +819,10 @@ export function recordSourceArtifact(
     queuePrototypeSurfaceRefreshAfterArtifact(
       projectPath,
       result.refreshSurfaceIds
+    );
+    scheduleAutomaticComponentPreviewOrchestrations(
+      projectPath,
+      result.reverifyRegistrationIds
     );
 
     if (result.ingested) {

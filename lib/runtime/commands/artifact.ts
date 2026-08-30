@@ -49,9 +49,12 @@ type RecordArtifactWrittenCommandResult =
                 : never
               : never;
             orchestration: AutomaticComponentPreviewOrchestration;
-            next_action: "automatic_verification_queued";
+            next_action:
+              | "automatic_verification_queued"
+              | "repair_component_then_redeclare_changed_artifact";
             agent_next_action:
-              "declare_remaining_components_then_return_for_prototype_review";
+              | "declare_remaining_components_then_return_for_prototype_review"
+              | "repair_component_then_redeclare_changed_artifact";
           }
         | {
             automatic: false;
@@ -312,6 +315,7 @@ export function recordArtifactWrittenCommand(
     registration.registration.id,
     semanticBaseline!.digest
   );
+  const cachedFailure = orchestration.status === "failed";
   return {
     ...artifact,
     component_preview: {
@@ -322,9 +326,12 @@ export function recordArtifactWrittenCommand(
         priorDigest === registration.registration.registration_digest,
       registration: registration.registration,
       orchestration,
-      next_action: "automatic_verification_queued",
-      agent_next_action:
-        "declare_remaining_components_then_return_for_prototype_review"
+      next_action: cachedFailure
+        ? "repair_component_then_redeclare_changed_artifact"
+        : "automatic_verification_queued",
+      agent_next_action: cachedFailure
+        ? "repair_component_then_redeclare_changed_artifact"
+        : "declare_remaining_components_then_return_for_prototype_review"
     }
   };
 }

@@ -240,20 +240,47 @@ export default function IkranComponentPreview() {
   useEffect(() => {
     if (!root.current || !registration) return;
     const href = window.location.href;
+    const bounds = () => {
+      const elements = [root.current!, ...root.current!.querySelectorAll("*")];
+      const rects = elements
+        .map((element) => element.getBoundingClientRect())
+        .filter((rect) => rect.width > 0 && rect.height > 0);
+      if (rects.length === 0) {
+        const rect = root.current!.getBoundingClientRect();
+        return {
+          x: rect.left,
+          y: rect.top,
+          width: Math.max(root.current!.scrollWidth, rect.width),
+          height: Math.max(root.current!.scrollHeight, rect.height)
+        };
+      }
+      const left = Math.min(...rects.map((rect) => rect.left));
+      const top = Math.min(...rects.map((rect) => rect.top));
+      const right = Math.max(...rects.map((rect) => rect.right));
+      const bottom = Math.max(...rects.map((rect) => rect.bottom));
+      return { x: left, y: top, width: right - left, height: bottom - top };
+    };
     const report = () => {
-      const rect = root.current!.getBoundingClientRect();
+      const rect = bounds();
       window.parent.postMessage({
         type: "ikran:component-size", version: 2, href,
-        x: rect.left, y: rect.top,
-        width: Math.max(root.current!.scrollWidth, rect.width),
-        height: Math.max(root.current!.scrollHeight, rect.height)
+        x: rect.x, y: rect.y, width: rect.width, height: rect.height
       }, "*");
     };
     const observer = new ResizeObserver(report);
-    observer.observe(root.current);
+    const observeRenderedElements = () => {
+      observer.observe(root.current!);
+      root.current!.querySelectorAll("*").forEach((element) => observer.observe(element));
+    };
+    const mutations = new MutationObserver(() => {
+      observeRenderedElements();
+      report();
+    });
+    observeRenderedElements();
+    mutations.observe(root.current, { childList: true, subtree: true, attributes: true });
     const frame = requestAnimationFrame(report);
     window.addEventListener("resize", report);
-    return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener("resize", report); };
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); mutations.disconnect(); window.removeEventListener("resize", report); };
   }, [registration, state]);
   if (!registration) return <div data-ikran-preview-error="registration-not-found" />;
   const stateArgs = registration.stateArgs[state as keyof typeof registration.stateArgs] ?? {};
@@ -290,16 +317,44 @@ const VITE_ADAPTER_SOURCE = `<!doctype html>
           ...registration.defaultArgs,
           ...stateArgs
         }));
+        const bounds = () => {
+          const elements = [mount, ...mount.querySelectorAll("*")];
+          const rects = elements
+            .map((element) => element.getBoundingClientRect())
+            .filter((rect) => rect.width > 0 && rect.height > 0);
+          if (rects.length === 0) {
+            const rect = mount.getBoundingClientRect();
+            return {
+              x: rect.left,
+              y: rect.top,
+              width: Math.max(mount.scrollWidth, rect.width),
+              height: Math.max(mount.scrollHeight, rect.height)
+            };
+          }
+          const left = Math.min(...rects.map((rect) => rect.left));
+          const top = Math.min(...rects.map((rect) => rect.top));
+          const right = Math.max(...rects.map((rect) => rect.right));
+          const bottom = Math.max(...rects.map((rect) => rect.bottom));
+          return { x: left, y: top, width: right - left, height: bottom - top };
+        };
         const report = () => {
-          const rect = mount.getBoundingClientRect();
+          const rect = bounds();
           window.parent.postMessage({
             type: "ikran:component-size", version: 2, href: window.location.href,
-            x: rect.left, y: rect.top,
-            width: Math.max(mount.scrollWidth, rect.width),
-            height: Math.max(mount.scrollHeight, rect.height)
+            x: rect.x, y: rect.y, width: rect.width, height: rect.height
           }, "*");
         };
-        new ResizeObserver(report).observe(mount);
+        const observer = new ResizeObserver(report);
+        const observeRenderedElements = () => {
+          observer.observe(mount);
+          mount.querySelectorAll("*").forEach((element) => observer.observe(element));
+        };
+        const mutations = new MutationObserver(() => {
+          observeRenderedElements();
+          report();
+        });
+        observeRenderedElements();
+        mutations.observe(mount, { childList: true, subtree: true, attributes: true });
         requestAnimationFrame(report);
         window.addEventListener("resize", report);
       }

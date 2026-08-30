@@ -771,11 +771,17 @@ export function applyPrototypeCodeChangeOnDb(
   db: DatabaseType,
   projectPath: string,
   relativeArtifactPath: string
-): { staleIds: string[]; refreshIds: string[] } {
+): {
+  staleIds: string[];
+  refreshIds: string[];
+  reverifyRegistrationIds: string[];
+} {
   const rows = db
     .prepare(`${SURFACE_SELECT} WHERE s.stale = 0`)
     .all() as Array<Record<string, unknown>>;
-  if (rows.length === 0) return { staleIds: [], refreshIds: [] };
+  if (rows.length === 0) {
+    return { staleIds: [], refreshIds: [], reverifyRegistrationIds: [] };
+  }
 
   const roots = new Map(
     (
@@ -793,13 +799,16 @@ export function applyPrototypeCodeChangeOnDb(
       relativeArtifactPath.startsWith(`${root}/`)
     );
   });
-  if (affected.length === 0) return { staleIds: [], refreshIds: [] };
+  if (affected.length === 0) {
+    return { staleIds: [], refreshIds: [], reverifyRegistrationIds: [] };
+  }
 
   // A registered component's dev server remains the live execution truth
   // across ordinary source edits. Keep a shared registered surface live,
   // while invalidating/queueing audit evidence for only the registration
   // whose module changed; do not conflate either with server reachability.
   const registeredSurfaceIds = new Set<string>();
+  const reverifyRegistrationIds: string[] = [];
   const registrationTable = db
     .prepare(
       `SELECT 1 AS present FROM sqlite_master
@@ -837,6 +846,14 @@ export function applyPrototypeCodeChangeOnDb(
        SET verification_status = 'queued',
            verification_identity = ?, updated_at = ? WHERE id = ?`
     );
+    const resetOrchestration = db.prepare(
+      `UPDATE component_preview_orchestrations
+       SET status = 'pending', checkpoint = 'source_changed',
+           failure_stage = NULL, failure_code = NULL,
+           verified_candidate_event_id = NULL, completed_at = NULL,
+           updated_at = ?
+       WHERE registration_id = ? AND status <> 'exception_required'`
+    );
     const now = new Date().toISOString();
     for (const registration of registrations) {
       if (!affected.some((surface) => surface.id === registration.prototype_surface_id)) {
@@ -848,6 +865,9 @@ export function applyPrototypeCodeChangeOnDb(
         )
         .digest("hex");
       update.run(identity, now, registration.id);
+      if (resetOrchestration.run(now, registration.id).changes === 1) {
+        reverifyRegistrationIds.push(registration.id);
+      }
     }
   }
 
@@ -856,14 +876,19 @@ export function applyPrototypeCodeChangeOnDb(
     relativeArtifactPath
   );
   if (covered) {
-    return { staleIds: [], refreshIds: affected.map((surface) => surface.id) };
+    return {
+      staleIds: [],
+      refreshIds: affected.map((surface) => surface.id),
+      reverifyRegistrationIds
+    };
   }
   const staleCandidates = affected.filter(
     (surface) => !registeredSurfaceIds.has(surface.id)
   );
   return {
     staleIds: markSurfacesStaleOnDb(db, staleCandidates, "code_changed"),
-    refreshIds: [...registeredSurfaceIds]
+    refreshIds: [...registeredSurfaceIds],
+    reverifyRegistrationIds
   };
 }
 

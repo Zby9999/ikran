@@ -19,10 +19,10 @@ export async function writeDraftReleaseNotes({ outDir, version, outputPath }) {
   const notes = `# Ikran v${safeVersion}\n\n` +
     `Alpha evaluation build for macOS on Apple Silicon. Download one product Kit: the Agent Plugin Kit (Cursor, Codex, Agent Plugin 1.0) or the Claude Plugin Kit (Claude Code beta, 2KB MCP contract). They are not interchangeable.\n\n` +
     `## What's new\n\n` +
-    `- Prevents an installed Codex plugin directory from being mistaken for the participant workspace when the host exposes no Roots.\n` +
-    `- Requires Study Kit Agents to bind the verified task folder explicitly before opening the Workbench or continuing Alignment.\n` +
-    `- Adds a targeted incremental-planning fallback: when exact Color or Typography evidence is missing, the Agent is prompted to reread the relevant registered Figma node once instead of degrading or omitting the token.\n` +
-    `- Keeps the fallback live and evidence-driven without freezing a Runtime copy of Figma data or forcing a full-reference reread.\n` +
+    `- Re-registers every component affected by a shared source change, so one component can no longer retain a stale source-backed preview while its siblings update.\n` +
+    `- Measures the visible union of descendant content for source-backed previews, including absolute and fixed layouts whose host container has no intrinsic size.\n` +
+    `- Makes failed preview verification deterministic and fast by preserving structured failure reasons and reusing unchanged failed declarations.\n` +
+    `- Scopes component confirmation and formalization blockers to the current Prototype run and exposes the exact blocking component in the Workbench.\n` +
     `- Retains the optimized 16-card, multi-option Alignment checkpoint and canonical Figma reference in both Codex Study Kits.\n\n` +
     `## Download one Kit\n\n` +
     `- **Agent Plugin Kit** — production Runtime plus Agent Plugin 1.0 (\`plugin.json\`, \`mcp.json\`, \`skills/\`) and host-native Cursor/Codex adapters (\`.cursor-plugin/plugin.json\`, \`.codex-plugin/plugin.json\`). Does not include the Claude Code adapter.\n` +

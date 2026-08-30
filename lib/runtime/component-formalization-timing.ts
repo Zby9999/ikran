@@ -94,6 +94,11 @@ export interface ComponentFormalizationTimingSummary
   time_to_visual_ms: number | null;
   time_to_verified_ms: number | null;
   time_to_formalized_ms: number | null;
+  current_blocker: {
+    stage: ComponentFormalizationStage;
+    failure_code: string;
+    attempt: number;
+  } | null;
   stages: Partial<
     Record<ComponentFormalizationStage, ComponentFormalizationStageSummary>
   >;
@@ -639,6 +644,34 @@ function milestone(
   return last?.ended_at ? elapsedMs(session.started_at, last.ended_at) : null;
 }
 
+function currentRetryableBlocker(
+  session: SessionRow,
+  spans: SpanRow[]
+): ComponentFormalizationTimingSummary["current_blocker"] {
+  if (session.status !== "running") return null;
+  const blockers = new Map<ComponentFormalizationStage, SpanRow>();
+  for (const span of spans) {
+    if (span.status === "succeeded") {
+      blockers.delete(span.stage);
+    } else if (
+      span.status === "failed" &&
+      span.retryable === 1 &&
+      span.failure_code
+    ) {
+      blockers.delete(span.stage);
+      blockers.set(span.stage, span);
+    }
+  }
+  const latest = [...blockers.values()].at(-1);
+  return latest?.failure_code
+    ? {
+        stage: latest.stage,
+        failure_code: latest.failure_code,
+        attempt: latest.attempt
+      }
+    : null;
+}
+
 export function getComponentFormalizationTiming(
   projectPath: string,
   sessionId?: string
@@ -716,6 +749,7 @@ export function getComponentFormalizationTiming(
       time_to_visual_ms: milestone(row, spans, "live_hero_declaration"),
       time_to_verified_ms: milestone(row, spans, "verification"),
       time_to_formalized_ms: milestone(row, spans, "formalization"),
+      current_blocker: currentRetryableBlocker(row, spans),
       stages
     };
   } finally {

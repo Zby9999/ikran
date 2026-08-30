@@ -32,6 +32,21 @@ export function resetAutomaticComponentPreviewOrchestrationHostForTests(): void 
   orchestrationHost = defaultHost;
 }
 
+export function scheduleAutomaticComponentPreviewOrchestrations(
+  projectPath: string,
+  registrationIds: readonly string[]
+): void {
+  const ids = [...new Set(registrationIds)];
+  if (ids.length === 0) return;
+  orchestrationHost.schedule(async () => {
+    await Promise.allSettled(
+      ids.map((registrationId) =>
+        runAutomaticComponentPreviewOrchestration(projectPath, registrationId)
+      )
+    );
+  });
+}
+
 export interface AutomaticComponentPreviewOrchestration {
   id: string;
   registration_id: string;
@@ -167,7 +182,7 @@ export function beginAutomaticComponentPreviewOrchestration(
   const semanticStatus = uncertain ? "uncertain" : "no_delta";
   const existing = readOrchestration(projectPath, registrationId);
   if (
-    existing?.status === "verified_candidate" &&
+    (existing?.status === "verified_candidate" || existing?.status === "failed") &&
     existing.registration_digest === registration.registration_digest &&
     existing.semantic_digest === contract.digest
   ) {
@@ -228,9 +243,7 @@ export function beginAutomaticComponentPreviewOrchestration(
       ]
     });
   } else {
-    orchestrationHost.schedule(async () => {
-      await runAutomaticComponentPreviewOrchestration(projectPath, registrationId);
-    });
+    scheduleAutomaticComponentPreviewOrchestrations(projectPath, [registrationId]);
   }
   return publicRow(created);
 }

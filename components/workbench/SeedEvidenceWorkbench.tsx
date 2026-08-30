@@ -8,6 +8,7 @@ import "tldraw/tldraw.css";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkbenchRuntime } from "@/components/runtime/use-workbench-runtime";
+import { formatRuntimeMutationError } from "@/components/runtime/runtime-client";
 import { FolderChrome } from "./folder-chrome";
 import { FigmaVerificationPanelController } from "./figma-verification-panel";
 import { useFigmaPasteCapture } from "./use-figma-paste-capture";
@@ -117,10 +118,11 @@ export function SeedEvidenceWorkbench({
   }, []);
 
   const showPhaseError = useCallback(
-    (message: string) => {
+    (message: string, persistent = false) => {
       clearPhaseErrorTimers();
       setPhaseErrorExiting(false);
       setPhaseError(message);
+      if (persistent) return;
       phaseErrorDismissRef.current = setTimeout(() => {
         setPhaseErrorExiting(true);
         phaseErrorFadeRef.current = setTimeout(() => {
@@ -402,7 +404,12 @@ export function SeedEvidenceWorkbench({
           onConfirmPrototype={() => {
             announceWorkbenchSemanticActivity();
             void confirmPrototype().then((result) => {
-              if (!result.ok) showPhaseError(result.error);
+              if (!result.ok) {
+                showPhaseError(
+                  formatRuntimeMutationError(result),
+                  result.error === "component_preview_verification_required"
+                );
+              }
             });
           }}
           selectActive={!annotateMode}

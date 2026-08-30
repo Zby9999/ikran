@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { chromium } from "playwright-core";
 import { afterEach, expect, test } from "vitest";
 
 import { initializeProjectDb } from "../../lib/runtime/db";
@@ -301,6 +302,78 @@ test("registers Vite React exports into one shared adapter and carries entry CSS
   expect(html + registry).not.toContain("@storybook");
 });
 
+test("the generated Vite adapter reports absolutely positioned component geometry", async () => {
+  const dir = fixture({ linked: false, framework: "vite" });
+  setAutomaticComponentPreviewOrchestrationHostForTests({ schedule: () => undefined });
+  const result = recordArtifactWrittenCommand(dir, {
+    path: "prototype/components/TextLink.tsx",
+    artifactType: "code",
+    semanticPurpose: "Absolute component geometry fixture",
+    componentPreview: {
+      runId: "run-1",
+      surfaceId: "surface-1",
+      entryId: "component.text-link",
+      modulePath: "prototype/components/TextLink.tsx",
+      exportName: "TextLink",
+      semanticImpact: "none",
+      defaultArgs: {},
+      stateArgs: {}
+    }
+  });
+  expect(result).toMatchObject({ ok: true });
+  let html = readFileSync(
+    path.join(dir, "prototype/ikran-component-preview.html"),
+    "utf8"
+  );
+  html = html
+    .replace(
+      /import React from "react";\s*import \{ createRoot \} from "react-dom\/client";\s*import \{ ikranComponentPreviewRegistry \} from "\/src\/ikran\/component-preview-registry\.jsx";/,
+      `const React = { createElement: () => null };
+       const createRoot = (mount) => ({ render() {
+         const header = document.createElement("header");
+         header.style.cssText = "position:absolute;left:0;top:0;width:640px;height:180px";
+         mount.appendChild(header);
+       }});
+       const ikranComponentPreviewRegistry = {
+         fixture: { Component: () => null, defaultArgs: {}, stateArgs: {} }
+       };`
+    )
+    .replace(
+      'const registrationId = new URL(window.location.href).searchParams.get("registrationId");',
+      'const registrationId = "fixture";'
+    )
+    .replace(
+      "<body>",
+      `<body><script>
+        window.__ikranTestReports = [];
+        window.addEventListener("message", (event) => {
+          if (event.data?.type === "ikran:component-size") {
+            window.__ikranTestReports.push(event.data);
+          }
+        });
+      </script>`
+    );
+
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1133, height: 800 } });
+    await page.setContent(html);
+    await page.waitForFunction(
+      () => (window as unknown as { __ikranTestReports?: unknown[] })
+        .__ikranTestReports?.length
+    );
+    const report = await page.evaluate(() => {
+      const reports = (window as unknown as {
+        __ikranTestReports: Array<Record<string, unknown>>;
+      }).__ikranTestReports;
+      return reports.at(-1);
+    });
+    expect(report).toMatchObject({ x: 0, y: 0, width: 640, height: 180 });
+  } finally {
+    await browser.close();
+  }
+});
+
 test("unsupported adapters report detected capabilities and actionable remediation", () => {
   const dir = fixture({ framework: "unsupported" });
   expect(registerComponentPreview(dir, {
@@ -448,7 +521,87 @@ test("Prototype completion waits for automatic component verification", () => {
     ok: false,
     reason: "component_preview_verification_required",
     phase: "prototype_validation",
-    verification_entry_ids: ["component.text-link"]
+    verification_entry_ids: ["component.text-link"],
+    verification_blockers: [{
+      entry_id: "component.text-link",
+      availability_status: "registered",
+      verification_status: "unverified",
+      orchestration_status: "pending",
+      failure_code: null,
+      failure_reason: null
+    }]
+  });
+});
+
+test("Prototype completion ignores failed registrations from an older prototype run", () => {
+  const dir = fixture();
+  const oldRegistration = registerComponentPreview(dir, {
+    runId: "run-1",
+    surfaceId: "surface-1",
+    entryId: "component.text-link",
+    modulePath: "prototype/components/TextLink.tsx",
+    exportName: "TextLink"
+  });
+  if (!oldRegistration.ok) throw new Error(JSON.stringify(oldRegistration));
+  const db = new DatabaseSync(getProjectDbPath(dir));
+  try {
+    const now = "2026-08-28T00:00:00.000Z";
+    db.prepare(
+      `UPDATE component_preview_registrations
+       SET availability_status = 'unavailable', verification_status = 'failed'
+       WHERE id = ?`
+    ).run(oldRegistration.registration.id);
+    db.prepare(
+      `INSERT INTO prototype_runs
+       (id, run_id, source_artifact_path, prototype_root, dev_command,
+        seed_reference_ids_json, evidence_version_ids_json,
+        design_system_version, created_at, updated_at, kind, intent,
+        used_candidate_ids_json)
+       VALUES ('prototype-run-2', 'run-2', 'prototype/components/TextLink.tsx',
+               'prototype', 'npm run dev', '[]', '[]', 'ds-v1', ?, ?,
+               'new_design', 'Current run', '[]')`
+    ).run(now, now);
+    db.prepare(
+      `INSERT INTO prototype_surfaces
+       (id, prototype_run_id, surface_key, name, preview_url, preview_port,
+        readiness, readiness_reason, stale, stale_reason, created_at, updated_at)
+       VALUES ('surface-2', 'prototype-run-2', 'default', 'Current',
+               'http://127.0.0.1:4301', 4301, 'ready', NULL, 0, NULL, ?, ?)`
+    ).run(now, now);
+  } finally {
+    db.close();
+  }
+  const currentRegistration = registerComponentPreview(dir, {
+    runId: "run-2",
+    surfaceId: "surface-2",
+    entryId: "component.text-link",
+    modulePath: "prototype/components/TextLink.tsx",
+    exportName: "TextLink"
+  });
+  if (!currentRegistration.ok) throw new Error(JSON.stringify(currentRegistration));
+  const ready = new DatabaseSync(getProjectDbPath(dir));
+  try {
+    ready.prepare(
+      `UPDATE component_preview_registrations
+       SET availability_status = 'available', verification_status = 'verified'
+       WHERE id = ?`
+    ).run(currentRegistration.registration.id);
+    ready.prepare(
+      `UPDATE design_system_entries SET status = 'formalized'
+       WHERE entry_id = 'component.icon-button'`
+    ).run();
+    ready.prepare(
+      "UPDATE project_phase SET phase = 'prototype_validation' WHERE singleton = 1"
+    ).run();
+  } finally {
+    ready.close();
+  }
+
+  const confirmed = confirmPrototype(dir);
+  expect(confirmed, JSON.stringify(confirmed)).toMatchObject({
+    ok: true,
+    from_phase: "prototype_validation",
+    phase: "design_system_formal"
   });
 });
 
@@ -1132,6 +1285,155 @@ test("ordinary declaration autonomously reaches internal Verified Candidate exac
   } finally {
     after.close();
   }
+});
+
+test("a later declaration in a shared source module re-verifies every invalidated registration", async () => {
+  const dir = fixture({ linked: false, framework: "vite" });
+  write(
+    dir,
+    "prototype/src/App.jsx",
+    [
+      "export function TextLink({ label = 'Open' }) { return <a href='#'>{label}</a>; }",
+      "export function IconButton({ label = 'Menu' }) { return <button>{label}</button>; }"
+    ].join("\n")
+  );
+  const db = new DatabaseSync(getProjectDbPath(dir));
+  try {
+    for (const entryId of ["component.text-link", "component.icon-button"]) {
+      const row = db.prepare(
+        "SELECT value_json FROM design_system_entries WHERE entry_id = ?"
+      ).get(entryId) as { value_json: string };
+      const value = JSON.parse(row.value_json) as Record<string, unknown>;
+      value.codeLinks = ["prototype/src/App.jsx"];
+      db.prepare(
+        "UPDATE design_system_entries SET value_json = ? WHERE entry_id = ?"
+      ).run(JSON.stringify(value), entryId);
+    }
+  } finally {
+    db.close();
+  }
+
+  const scheduled: Array<() => Promise<void>> = [];
+  const deps: LiveHeroVerifyDeps = {
+    launchBrowser: async () => ({
+      newPage: async () => ({
+        setContent: async () => undefined,
+        loadHarnessAndAwaitReport: async () => ({
+          x: 0, y: 0, width: 120, height: 32
+        })
+      }),
+      close: async () => undefined
+    }),
+    fetchStatus: async () => ({ ok: true, status: 200 })
+  };
+  setAutomaticComponentPreviewOrchestrationHostForTests({
+    deps,
+    schedule: (work) => scheduled.push(work)
+  });
+  const declare = (
+    entryId: "component.text-link" | "component.icon-button",
+    exportName: "TextLink" | "IconButton"
+  ) => recordArtifactWrittenCommand(dir, {
+    path: "prototype/src/App.jsx",
+    artifactType: "code",
+    semanticPurpose: `${exportName} implementation`,
+    componentPreview: {
+      runId: "run-1",
+      surfaceId: "surface-1",
+      entryId,
+      modulePath: "prototype/src/App.jsx",
+      exportName,
+      semanticImpact: "none",
+      defaultArgs: {},
+      stateArgs: {}
+    }
+  });
+
+  expect(declare("component.text-link", "TextLink")).toMatchObject({ ok: true });
+  expect(scheduled).toHaveLength(1);
+  await scheduled.shift()!();
+
+  expect(declare("component.icon-button", "IconButton")).toMatchObject({ ok: true });
+  await Promise.all(scheduled.splice(0).map((work) => work()));
+
+  const after = new DatabaseSync(getProjectDbPath(dir));
+  try {
+    expect(after.prepare(
+      `SELECT entry_id, verification_status
+       FROM component_preview_registrations ORDER BY entry_id`
+    ).all()).toEqual([
+      { entry_id: "component.icon-button", verification_status: "verified" },
+      { entry_id: "component.text-link", verification_status: "verified" }
+    ]);
+    expect(after.prepare(
+      `SELECT r.entry_id, o.status
+       FROM component_preview_orchestrations o
+       JOIN component_preview_registrations r ON r.id = o.registration_id
+       ORDER BY r.entry_id`
+    ).all()).toEqual([
+      { entry_id: "component.icon-button", status: "verified_candidate" },
+      { entry_id: "component.text-link", status: "verified_candidate" }
+    ]);
+  } finally {
+    after.close();
+  }
+});
+
+test("an unchanged failed verification is returned without repeating browser work", async () => {
+  const dir = fixture({ linked: false });
+  const scheduled: Array<() => Promise<void>> = [];
+  let browserLoads = 0;
+  setAutomaticComponentPreviewOrchestrationHostForTests({
+    deps: {
+      launchBrowser: async () => ({
+        newPage: async () => ({
+          setContent: async () => undefined,
+          loadHarnessAndAwaitReport: async () => {
+            browserLoads += 1;
+            return { x: 0, y: 0, width: 0, height: 0 };
+          }
+        }),
+        close: async () => undefined
+      }),
+      fetchStatus: async () => ({ ok: true, status: 200 })
+    },
+    schedule: (work) => scheduled.push(work)
+  });
+  const declaration = {
+    path: "prototype/components/TextLink.tsx",
+    artifactType: "code",
+    semanticPurpose: "Text Link implementation",
+    componentPreview: {
+      runId: "run-1",
+      surfaceId: "surface-1",
+      entryId: "component.text-link",
+      modulePath: "prototype/components/TextLink.tsx",
+      exportName: "TextLink",
+      semanticImpact: "none" as const,
+      defaultArgs: {},
+      stateArgs: {}
+    }
+  };
+
+  expect(recordArtifactWrittenCommand(dir, declaration)).toMatchObject({ ok: true });
+  await scheduled.shift()!();
+  expect(browserLoads).toBe(1);
+
+  const repeated = recordArtifactWrittenCommand(dir, declaration);
+  expect(repeated).toMatchObject({
+    ok: true,
+    component_preview: {
+      idempotent: true,
+      next_action: "repair_component_then_redeclare_changed_artifact",
+      agent_next_action: "repair_component_then_redeclare_changed_artifact",
+      orchestration: {
+        status: "failed",
+        failure_code: "default_verification_failed"
+      }
+    }
+  });
+  expect(scheduled).toEqual([]);
+  expect(browserLoads).toBe(1);
 });
 
 test("direct orchestration uncertainty produces one bounded semantic exception", () => {

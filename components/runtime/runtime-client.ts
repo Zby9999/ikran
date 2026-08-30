@@ -180,7 +180,45 @@ export type WorkbenchRuntimeSnapshot = {
 
 export type RuntimeMutationResult =
   | { ok: true; reused?: boolean; seedId?: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string; details?: Record<string, unknown> };
+
+function mutationErrorDetails(
+  data: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  const { ok: _ok, error: _error, reason: _reason, ...details } = data;
+  return Object.keys(details).length > 0 ? details : undefined;
+}
+
+export function formatRuntimeMutationError(result: RuntimeMutationResult): string {
+  if (result.ok) return "";
+  const blockers = result.details?.verification_blockers;
+  if (
+    result.error !== "component_preview_verification_required" ||
+    !Array.isArray(blockers) ||
+    blockers.length === 0
+  ) {
+    return result.error;
+  }
+  const labels = blockers.map((value) => {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return "unknown component";
+    }
+    const blocker = value as Record<string, unknown>;
+    const entryId = typeof blocker.entry_id === "string"
+      ? blocker.entry_id
+      : "unknown component";
+    const status = typeof blocker.verification_status === "string"
+      ? blocker.verification_status
+      : "incomplete";
+    const reason = typeof blocker.failure_reason === "string"
+      ? blocker.failure_reason
+      : typeof blocker.failure_code === "string"
+        ? blocker.failure_code
+        : null;
+    return `${entryId} (${status}${reason ? `: ${reason}` : ""})`;
+  });
+  return `Component verification is incomplete: ${labels.join(", ")}.`;
+}
 
 export type RuntimeFetch = (
   input: RequestInfo | URL,
@@ -499,9 +537,12 @@ export function createWorkbenchDataClient(
     return request;
   };
 
-  const reportMutationError = (error: string): RuntimeMutationResult => {
+  const reportMutationError = (
+    error: string,
+    details?: Record<string, unknown>
+  ): RuntimeMutationResult => {
     if (active) options.onError(error);
-    return { ok: false, error };
+    return { ok: false, error, ...(details ? { details } : {}) };
   };
 
   const createAnnotation = async (payload: {
@@ -862,7 +903,8 @@ export function createWorkbenchDataClient(
     if (!result.ok) {
       return reportMutationError(
         (typeof result.data.error === "string" && result.data.error) ||
-          "confirm_prototype_failed"
+          "confirm_prototype_failed",
+        mutationErrorDetails(result.data)
       );
     }
     const reloaded = await loadAll();

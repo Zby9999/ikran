@@ -49,9 +49,7 @@ export async function PATCH(request: NextRequest) {
   });
   if (result.ok) return NextResponse.json(result);
   return NextResponse.json(
-    result.reason === "phase_gate"
-      ? { ok: false, error: result.reason, phase: result.phase }
-      : { ok: false, error: result.reason },
+    { ...result, error: result.reason },
     { status: commandErrorHttpStatus(result.reason) }
   );
 }

@@ -217,6 +217,39 @@ test("closes a failed stage with a typed failure stage", () => {
   });
 });
 
+test("reports the latest retryable failure as the current blocker while the session remains open", () => {
+  const dir = project();
+  const time = clock();
+  const session = beginComponentFormalizationTiming(
+    dir,
+    { runId: "run-blocked", componentEntryIds: ["component.header"], stateCount: 1 },
+    { now: time.now }
+  );
+  const stage = beginComponentFormalizationTimingStage(
+    dir,
+    session.id,
+    "verification",
+    {},
+    { now: time.now }
+  );
+  time.advance(12);
+  finishComponentFormalizationTimingStage(
+    dir,
+    stage.id,
+    { status: "failed", failureCode: "zero_extent", retryable: true },
+    { now: time.now }
+  );
+
+  expect(getComponentFormalizationTiming(dir, session.id)).toMatchObject({
+    status: "running",
+    current_blocker: {
+      stage: "verification",
+      failure_code: "zero_extent",
+      attempt: 1
+    }
+  });
+});
+
 test("counts retries without overwriting earlier attempts", () => {
   const dir = project();
   const time = clock();
@@ -258,6 +291,7 @@ test("counts retries without overwriting earlier attempts", () => {
 
   expect(getComponentFormalizationTiming(dir, session.id)).toMatchObject({
     status: "completed",
+    current_blocker: null,
     retry_count: 1,
     preview_startups: ["cold", "warm"],
     stages: {

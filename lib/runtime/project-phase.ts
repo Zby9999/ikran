@@ -74,6 +74,16 @@ export type ComponentPreviewVerificationFailure = {
   reason: "component_preview_verification_required";
   phase: ProjectPhase;
   verification_entry_ids: string[];
+  verification_blockers: ComponentPreviewVerificationBlocker[];
+};
+
+export type ComponentPreviewVerificationBlocker = {
+  entry_id: string;
+  availability_status: string;
+  verification_status: string;
+  orchestration_status: string | null;
+  failure_code: string | null;
+  failure_reason: string | null;
 };
 
 export type FormalizeFailure =
@@ -85,6 +95,7 @@ export type FormalizeFailure =
       reason: "component_preview_verification_required";
       phase: ProjectPhase;
       verification_entry_ids: string[];
+      verification_blockers: ComponentPreviewVerificationBlocker[];
     }
   | {
       ok: false;
@@ -406,6 +417,7 @@ export function confirmDraftDesignSystem(
 function componentPreviewOutcomeBlockersOnDb(
   db: DatabaseType
 ): string[] {
+  const runId = currentPrototypeRunIdOnDb(db);
   return (
     db.prepare(
       `SELECT entry.entry_id
@@ -417,6 +429,7 @@ function componentPreviewOutcomeBlockersOnDb(
          AND NOT EXISTS (
            SELECT 1 FROM component_preview_registrations registration
            WHERE registration.entry_id = entry.entry_id
+             AND (? IS NULL OR registration.run_id = ?)
              AND EXISTS (
                SELECT 1 FROM json_each(entry.value_json, '$.codeLinks') code_link
                WHERE code_link.value = registration.module_path
@@ -425,6 +438,7 @@ function componentPreviewOutcomeBlockersOnDb(
          AND NOT EXISTS (
            SELECT 1 FROM component_preview_exceptions exception
            WHERE exception.entry_id = entry.entry_id
+             AND (? IS NULL OR exception.run_id = ?)
              AND exception.status = 'resolved'
              AND json_extract(exception.disposition_json, '$.disposition') = 'retain_open_gap'
              AND EXISTS (
@@ -433,22 +447,43 @@ function componentPreviewOutcomeBlockersOnDb(
              )
          )
        ORDER BY entry.entry_id`
-    ).all() as Array<{ entry_id: string }>
+    ).all(runId, runId, runId, runId) as Array<{ entry_id: string }>
   ).map((row) => row.entry_id);
+}
+
+function currentPrototypeRunIdOnDb(db: DatabaseType): string | null {
+  const row = db.prepare(
+    `SELECT run_id FROM prototype_runs
+     ORDER BY created_at DESC, rowid DESC LIMIT 1`
+  ).get() as { run_id: string } | undefined;
+  return row?.run_id ?? null;
 }
 
 function componentPreviewVerificationBlockersOnDb(
   db: DatabaseType
-): string[] {
-  return (
-    db
-      .prepare(
-        `SELECT entry_id FROM component_preview_registrations
-         WHERE verification_status <> 'verified'
-         ORDER BY entry_id`
-      )
-      .all() as Array<{ entry_id: string }>
-  ).map((row) => row.entry_id);
+): ComponentPreviewVerificationBlocker[] {
+  const runId = currentPrototypeRunIdOnDb(db);
+  return db.prepare(
+    `SELECT registration.entry_id,
+            registration.availability_status,
+            registration.verification_status,
+            orchestration.status AS orchestration_status,
+            orchestration.failure_code,
+            (
+              SELECT result.failure_reason
+              FROM component_preview_verification_results result
+              WHERE result.registration_id = registration.id
+                AND result.verification_identity = registration.verification_identity
+                AND result.status = 'failed'
+              ORDER BY result.updated_at DESC LIMIT 1
+            ) AS failure_reason
+     FROM component_preview_registrations registration
+     LEFT JOIN component_preview_orchestrations orchestration
+       ON orchestration.registration_id = registration.id
+     WHERE (? IS NULL OR registration.run_id = ?)
+       AND registration.verification_status <> 'verified'
+     ORDER BY registration.entry_id`
+  ).all(runId, runId) as ComponentPreviewVerificationBlocker[];
 }
 
 type PrototypeConfirmation =
@@ -490,7 +525,8 @@ function confirmPrototypeWithConfirmation(
           ok: false,
           reason: "component_preview_verification_required",
           phase: gate.phase,
-          verification_entry_ids: verificationBlockers
+          verification_entry_ids: verificationBlockers.map((row) => row.entry_id),
+          verification_blockers: verificationBlockers
         };
       }
     } finally {
@@ -759,18 +795,14 @@ export function formalizeDesignSystem(
           preview_entry_ids: previewOutcomeBlockers
         };
       }
-      const verificationBlockers = db
-        .prepare(
-          `SELECT entry_id FROM component_preview_registrations
-           WHERE verification_status <> 'verified' ORDER BY entry_id`
-        )
-        .all() as Array<{ entry_id: string }>;
+      const verificationBlockers = componentPreviewVerificationBlockersOnDb(db);
       if (verificationBlockers.length > 0) {
         return {
           ok: false,
           reason: "component_preview_verification_required",
           phase: current,
-          verification_entry_ids: verificationBlockers.map((row) => row.entry_id)
+          verification_entry_ids: verificationBlockers.map((row) => row.entry_id),
+          verification_blockers: verificationBlockers
         };
       }
       for (const id of promoteIds) {

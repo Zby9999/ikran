@@ -289,7 +289,31 @@ test("a page that never reports geometry is a geometry_timeout", async () => {
   ]);
 });
 
-test("out-of-viewport bounds are invalid_geometry", async () => {
+test("a stable zero-size report is identified without masquerading as a timeout", async () => {
+  const dir = projectDir();
+  seed(dir, { stateMatrix: [] });
+  const result = await verifyComponentLiveHeroes(
+    dir,
+    { entryIds: ["component.button"] },
+    fakeDeps(
+      {
+        [BASE_URL]: {
+          report: { href: BASE_URL, x: 0, y: 0, width: 0, height: 0 }
+        }
+      },
+      []
+    )
+  );
+  expect(result).toMatchObject({
+    ok: true,
+    all_passed: false,
+    entries: [{
+      results: [{ ok: false, reason: "zero_extent" }]
+    }]
+  });
+});
+
+test("out-of-viewport bounds are reported precisely", async () => {
   const dir = projectDir();
   seed(dir);
   const wide = { href: BASE_URL, x: 0, y: 0, width: 1200, height: 40 };
@@ -311,7 +335,7 @@ test("out-of-viewport bounds are invalid_geometry", async () => {
   expect(result.all_passed).toBe(false);
   expect(result.entries[0]!.results[0]).toMatchObject({
     ok: false,
-    reason: "invalid_geometry"
+    reason: "out_of_viewport"
   });
   expect(result.entries[0]!.results[1]).toMatchObject({ ok: true });
 });

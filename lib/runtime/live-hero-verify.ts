@@ -60,6 +60,9 @@ export type LiveHeroVerifyUrlResult =
         | "preview_unreachable"
         | "http_error"
         | "geometry_timeout"
+        | "zero_extent"
+        | "out_of_viewport"
+        | "render_exception"
         | "invalid_geometry";
       /** HTTP status when the harness document itself answered an error. */
       status?: number;
@@ -112,6 +115,7 @@ export interface LiveHeroVerifyBrowser {
 interface PlaywrightPageLike {
   setContent(html: string): Promise<unknown>;
   evaluate(fn: unknown, arg?: unknown): Promise<unknown>;
+  on?(event: string, listener: (value: unknown) => void): unknown;
   waitForFunction(
     fn: unknown,
     arg: unknown,
@@ -120,15 +124,45 @@ interface PlaywrightPageLike {
 }
 
 function playwrightVerifyPage(page: PlaywrightPageLike): LiveHeroVerifyPage {
+  let pageErrors: string[] = [];
+  page.on?.("pageerror", (error) => {
+    pageErrors.push(error instanceof Error ? error.message : String(error));
+  });
+  page.on?.("console", (message) => {
+    const consoleMessage = message as { type?: () => string; text?: () => string };
+    if (consoleMessage.type?.() === "error") {
+      pageErrors.push(consoleMessage.text?.() ?? "console_error");
+    }
+  });
   return {
     setContent: (html) => page.setContent(html),
     async loadHarnessAndAwaitReport(url, timeoutMs) {
+      pageErrors = [];
       await page.evaluate((target: string) => {
         const w = window as unknown as { __ikranReports?: unknown[] };
         w.__ikranReports = [];
         const frame = document.getElementById("harness");
         if (frame !== null) frame.setAttribute("src", target);
       }, url);
+      const startedAt = Date.now();
+      try {
+        await page.waitForFunction(
+          (expected: string) => {
+            const w = window as unknown as {
+              __ikranReports?: Array<{ href?: unknown }>;
+            };
+            return (w.__ikranReports ?? []).some(
+              (report) => report.href === expected
+            );
+          },
+          url,
+          { timeout: timeoutMs }
+        );
+      } catch {
+        return pageErrors.length > 0
+          ? { __ikranFailure: "render_exception", errors: [...pageErrors] }
+          : null;
+      }
       try {
         await page.waitForFunction(
           (input: { expected: string; maxWidth: number; maxExtent: number }) => {
@@ -165,10 +199,16 @@ function playwrightVerifyPage(page: PlaywrightPageLike): LiveHeroVerifyPage {
             maxWidth: PROTOTYPE_PRESENTATION_VIEWPORT_WIDTH,
             maxExtent: LIVE_HERO_MAX_REPORTED_EXTENT
           },
-          { timeout: timeoutMs }
+          {
+            timeout: Math.max(
+              1,
+              Math.min(400, timeoutMs - (Date.now() - startedAt))
+            )
+          }
         );
       } catch {
-        return null;
+        // A report arrived, but it did not settle into valid geometry. Return
+        // the observed report below so callers can name the actual defect.
       }
       const reports = (await page.evaluate((expected: string) => {
         const w = window as unknown as {
@@ -178,7 +218,7 @@ function playwrightVerifyPage(page: PlaywrightPageLike): LiveHeroVerifyPage {
           (report) => report.href === expected
         );
       }, url)) as Array<Record<string, unknown>>;
-      return firstValidLiveHeroReport(reports, url);
+      return firstValidLiveHeroReport(reports, url) ?? reports.at(-1) ?? null;
     }
   };
 }
@@ -262,6 +302,31 @@ function toValidBounds(value: unknown): LiveHeroVerifyBounds | null {
     return null;
   }
   return { x, y, width, height };
+}
+
+function geometryFailureReason(
+  value: unknown
+): "zero_extent" | "out_of_viewport" | "invalid_geometry" {
+  if (!isPlainObject(value)) return "invalid_geometry";
+  const { x, y, width, height } = value;
+  if (
+    !isFiniteNumber(x) ||
+    !isFiniteNumber(y) ||
+    !isFiniteNumber(width) ||
+    !isFiniteNumber(height)
+  ) {
+    return "invalid_geometry";
+  }
+  if (width <= 0 || height <= 0) return "zero_extent";
+  if (
+    x < 0 ||
+    y < 0 ||
+    x + width > PROTOTYPE_PRESENTATION_VIEWPORT_WIDTH ||
+    y + height > LIVE_HERO_MAX_REPORTED_EXTENT
+  ) {
+    return "out_of_viewport";
+  }
+  return "invalid_geometry";
 }
 
 /** Select the first report for this exact navigation that already has usable
@@ -424,13 +489,25 @@ async function verifyUrl(
   if (report === null) {
     return { state, url, ok: false, reason: "geometry_timeout" };
   }
+  if (
+    isPlainObject(report) &&
+    report.__ikranFailure === "render_exception"
+  ) {
+    return {
+      state,
+      url,
+      ok: false,
+      reason: "render_exception",
+      details: { errors: report.errors }
+    };
+  }
   const bounds = toValidBounds(report);
   if (bounds === null) {
     return {
       state,
       url,
       ok: false,
-      reason: "invalid_geometry",
+      reason: geometryFailureReason(report),
       details: { report }
     };
   }

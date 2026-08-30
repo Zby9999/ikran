@@ -280,6 +280,53 @@ describe("Workbench Runtime consistency", () => {
     client.dispose();
   });
 
+  test("preserves and formats component verification blockers from Prototype completion", async () => {
+    const blockers = [{
+      entry_id: "component-spec-shared-header",
+      availability_status: "unavailable",
+      verification_status: "failed",
+      orchestration_status: "failed",
+      failure_code: "default_verification_failed",
+      failure_reason: "zero_extent"
+    }];
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("PATCH");
+      return new Response(JSON.stringify({
+        ok: false,
+        error: "component_preview_verification_required",
+        verification_entry_ids: ["component-spec-shared-header"],
+        verification_blockers: blockers
+      }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" }
+      });
+    });
+    const {
+      createWorkbenchDataClient,
+      formatRuntimeMutationError
+    } = await import("../../components/runtime/runtime-client");
+    const client = createWorkbenchDataClient("session", {
+      fetcher,
+      sleep: async () => {},
+      onSnapshot: () => {},
+      onError: () => {}
+    });
+
+    const result = await client.confirmPrototype();
+    expect(result).toEqual({
+      ok: false,
+      error: "component_preview_verification_required",
+      details: {
+        verification_entry_ids: ["component-spec-shared-header"],
+        verification_blockers: blockers
+      }
+    });
+    expect(formatRuntimeMutationError(result)).toBe(
+      "Component verification is incomplete: component-spec-shared-header (failed: zero_extent)."
+    );
+    client.dispose();
+  });
+
   test("structural click creates an explicit figma-node target", async () => {
     let posted: unknown = null;
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
