@@ -47,6 +47,20 @@ test.describe("resolveWorkingFolder", () => {
     });
   });
 
+  test("does not treat the MCP executable root as a workspace", () => {
+    const result = resolveWorkingFolder({
+      envCwd: "",
+      roots: [],
+      processCwd: "/tmp/plugin-cache/ikran",
+      excludedFolders: ["/tmp/plugin-cache/ikran"]
+    });
+    expect(result).toEqual({
+      folder: null,
+      source: "none",
+      roots: []
+    });
+  });
+
   test("returns none when env, roots, and process cwd are all absent", () => {
     const result = resolveWorkingFolder({
       envCwd: null,

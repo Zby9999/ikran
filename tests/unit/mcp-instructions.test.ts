@@ -359,6 +359,16 @@ describe("Claude Code MCP text budget", () => {
       "value={alias:'primitive.<token-name>',usage:'...'}"
     );
     expect(descriptions.find(
+      (tool) => tool.name === "record_incremental_initial_design_system_plan"
+    )?.description).toContain(
+      "inspect the registered Seed Reference through the available Figma tools"
+    );
+    expect(descriptions.find(
+      (tool) => tool.name === "record_incremental_initial_design_system_plan"
+    )?.description).toContain(
+      "only when exact inspectable Color or Typography construction facts are missing"
+    );
+    expect(descriptions.find(
       (tool) => tool.name === "commit_initial_design_system_semantics"
     )?.description).toContain(
       "never use value='{color.<token-name>}'"

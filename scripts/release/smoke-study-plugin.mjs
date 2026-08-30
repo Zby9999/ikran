@@ -9,7 +9,6 @@ import { pathToFileURL } from "node:url";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const HASHED_EXTERNAL_PATTERN = /require\(["']([^"']+-[a-f0-9]{12,})["']\)/g;
 
@@ -68,7 +67,7 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
       command: process.execPath,
       args: [mcpBin, "--prod"],
       // Match an installed plugin: the process runs from the plugin cache,
-      // while MCP Roots identify the user's task workspace.
+      // and Codex does not expose the user's task workspace through MCP Roots.
       cwd: pluginRoot,
       env: {
         ...process.env,
@@ -83,40 +82,40 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
     });
     client = new Client(
       { name: "ikran-study-plugin-smoke", version: "0.1.0" },
-      { capabilities: { roots: {} } }
+      { capabilities: {} }
     );
-    client.setRequestHandler(ListRootsRequestSchema, async () => ({
-      roots: [
-        {
-          uri: pathToFileURL(projectDir).href,
-          name: "ikran-study-workspace"
-        }
-      ]
-    }));
     await within(client.connect(transport), timeoutMs, "MCP connection");
+    const discovered = await callToolOk(
+      client,
+      "list_working_folders",
+      {},
+      timeoutMs
+    );
+    if (discovered?.folder !== null || discovered?.source !== "none") {
+      throw new Error(
+        `Installed plugin root was mistaken for a workspace: ${JSON.stringify(discovered)}`
+      );
+    }
+    const projectBinding = await callToolOk(
+      client,
+      "create_or_open_project",
+      { path: projectDir },
+      timeoutMs
+    );
+    if (projectBinding?.project?.path !== projectDir) {
+      throw new Error(
+        `Packaged MCP did not bind the explicit task workspace: ${JSON.stringify(projectBinding)}`
+      );
+    }
     const opened = await within(
       client.callTool({ name: "open_workbench", arguments: {} }),
       timeoutMs,
       "open_workbench"
     );
     workbenchUrl = resultUrl(opened);
-    if (
-      opened?.structuredContent?.workspace_binding !== "resumed" ||
-      opened?.structuredContent?.active_project !== projectDir
-    ) {
+    if (opened?.structuredContent?.active_project !== projectDir) {
       throw new Error(
-        `open_workbench did not resume the portable Roots project: ${JSON.stringify(opened?.structuredContent ?? opened)}`
-      );
-    }
-    const projectBinding = await callToolOk(
-      client,
-      "create_or_open_project",
-      {},
-      timeoutMs
-    );
-    if (projectBinding?.project?.path !== projectDir) {
-      throw new Error(
-        `Packaged MCP bound the wrong Roots project: ${JSON.stringify(projectBinding)}`
+        `open_workbench did not keep the explicit task workspace: ${JSON.stringify(opened?.structuredContent ?? opened)}`
       );
     }
 

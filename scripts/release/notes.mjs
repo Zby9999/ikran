@@ -19,11 +19,11 @@ export async function writeDraftReleaseNotes({ outDir, version, outputPath }) {
   const notes = `# Ikran v${safeVersion}\n\n` +
     `Alpha evaluation build for macOS on Apple Silicon. Download one product Kit: the Agent Plugin Kit (Cursor, Codex, Agent Plugin 1.0) or the Claude Plugin Kit (Claude Code beta, 2KB MCP contract). They are not interchangeable.\n\n` +
     `## What's new\n\n` +
-    `- Adds multi-option Question Cards with custom answers, editable completed responses, Annotation-safe grouping, and stable interaction motion.\n` +
-    `- Hardens the incremental Alignment fast path so the Agent preserves the full Draft context, resumes continuously, and stops at the correct designer review boundary.\n` +
-    `- Requires every observed Typography size to project into a visible semantic role while keeping role specimens and designer-facing copy in their intended languages.\n` +
-    `- Makes component registration, Prototype review, and Rule Update retries deterministic across Vite projects and operational failures.\n` +
-    `- Rejects non-projectable Color shorthand aliases with an actionable structured-alias repair instead of silently hiding Browser tokens.\n\n` +
+    `- Prevents an installed Codex plugin directory from being mistaken for the participant workspace when the host exposes no Roots.\n` +
+    `- Requires Study Kit Agents to bind the verified task folder explicitly before opening the Workbench or continuing Alignment.\n` +
+    `- Adds a targeted incremental-planning fallback: when exact Color or Typography evidence is missing, the Agent is prompted to reread the relevant registered Figma node once instead of degrading or omitting the token.\n` +
+    `- Keeps the fallback live and evidence-driven without freezing a Runtime copy of Figma data or forcing a full-reference reread.\n` +
+    `- Retains the optimized 16-card, multi-option Alignment checkpoint and canonical Figma reference in both Codex Study Kits.\n\n` +
     `## Download one Kit\n\n` +
     `- **Agent Plugin Kit** — production Runtime plus Agent Plugin 1.0 (\`plugin.json\`, \`mcp.json\`, \`skills/\`) and host-native Cursor/Codex adapters (\`.cursor-plugin/plugin.json\`, \`.codex-plugin/plugin.json\`). Does not include the Claude Code adapter.\n` +
     `- **Claude Plugin Kit** — the same production Runtime plus the Claude Code-native adapter (\`.claude-plugin/plugin.json\`, \`.mcp.json\`). Uses the 2KB-truncated MCP instruction budget. Does not include Cursor or Codex adapters.\n` +

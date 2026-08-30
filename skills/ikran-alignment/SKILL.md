@@ -38,6 +38,19 @@ successful Draft commit with `continuationRequired: false` and
 `terminalBoundary: draft_design_system_review`. Stop there until the designer
 explicitly confirms the visible Draft; only then may Prototype begin.
 
+### Recover missing inspectable Token facts
+
+Before omitting, retiring, or downgrading an evidence-backed Color or Typography
+item because its exact construction value is absent from the current incremental
+context, inspect the registered Seed Reference through the available Figma tools.
+Use this recovery only when exact inspectable Color or Typography construction
+facts are missing and their absence would otherwise remove or weaken the Draft.
+Read only the relevant Seed node and at most once per planning turn. Recover
+directly inspectable values such as color, font size, family, weight, line height,
+and letter spacing. Do not infer semantic intent from implementation values. If
+Figma is unavailable, preserve the uncertainty as an explicit gap rather than
+inventing a value or silently dropping the item.
+
 ## Decision gaps
 
 A **decision gap** is an uncertainty whose answer would change a reusable design

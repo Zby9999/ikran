@@ -154,7 +154,8 @@ socketServer = createServer((socket) => {
     discovered = resolveWorkingFolder({
       envCwd: process.env.IKRAN_CWD,
       roots,
-      processCwd: process.cwd()
+      processCwd: process.cwd(),
+      excludedFolders: [appDir]
     });
     return discovered;
   };

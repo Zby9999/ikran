@@ -26,6 +26,8 @@ export type ResolveWorkingFolderInput = {
   roots?: unknown[];
   /** `process.cwd()` of the MCP server process (may be omitted to skip). */
   processCwd?: string | null;
+  /** Launch-only folders that must never be mistaken for a user workspace. */
+  excludedFolders?: string[];
 };
 
 /**
@@ -71,8 +73,15 @@ export function resolveWorkingFolder(
 
   const processCwd = input.processCwd;
   if (typeof processCwd === "string" && processCwd.trim().length > 0) {
+    const resolvedCwd = path.resolve(processCwd.trim());
+    const excluded = new Set(
+      (input.excludedFolders ?? []).map((folder) => path.resolve(folder))
+    );
+    if (excluded.has(resolvedCwd)) {
+      return { folder: null, source: "none", roots };
+    }
     return {
-      folder: path.resolve(processCwd.trim()),
+      folder: resolvedCwd,
       source: "cwd",
       roots
     };
