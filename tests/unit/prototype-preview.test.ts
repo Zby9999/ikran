@@ -52,6 +52,7 @@ import {
   isAllowedDevCommand,
   killAllPreviewServers,
   previewDependencyInstallPlan,
+  previewDevServerPlan,
   previewUrlForPort,
   prototypeDependencyFingerprint,
   startPreviewServer,
@@ -583,16 +584,67 @@ test("dependency installs include dev packages without generating a source lockf
   const root = mkdtempSync(path.join(tmpdir(), "ikran-preview-plan-"));
   try {
     writeFileSync(path.join(root, "package.json"), "{}\n");
-    expect(previewDependencyInstallPlan(root)).toEqual({
-      command: "npm",
-      args: ["install", "--include=dev", "--no-package-lock"]
-    });
+    const install = previewDependencyInstallPlan(root);
+    expect(install.command).toBe(process.execPath);
+    expect(install.args[0]).toMatch(
+      /node_modules[/\\]npm[/\\]bin[/\\]npm-cli\.js$/
+    );
+    expect(install.args.slice(1)).toEqual([
+      "install",
+      "--include=dev",
+      "--no-package-lock"
+    ]);
     writeFileSync(path.join(root, "package-lock.json"), "{}\n");
-    expect(previewDependencyInstallPlan(root)).toEqual({
-      command: "npm",
-      args: ["ci", "--include=dev"]
-    });
+    const cleanInstall = previewDependencyInstallPlan(root);
+    expect(cleanInstall.command).toBe(process.execPath);
+    expect(cleanInstall.args[0]).toBe(install.args[0]);
+    expect(cleanInstall.args.slice(1)).toEqual(["ci", "--include=dev"]);
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("preview scripts use the Node-adjacent npm CLI instead of PATH package managers", () => {
+  for (const command of ["npm run dev", "pnpm dev", "yarn dev", "bun run dev"]) {
+    const plan = previewDevServerPlan(command);
+    expect(plan.command).toBe(process.execPath);
+    expect(plan.args[0]).toMatch(
+      /node_modules[/\\]npm[/\\]bin[/\\]npm-cli\.js$/
+    );
+    expect(plan.args.slice(1)).toEqual(["run", "dev"]);
+  }
+
+  expect(previewDevServerPlan("npx vite").args.slice(1)).toEqual([
+    "exec",
+    "--",
+    "vite"
+  ]);
+});
+
+test("the packaged Runtime installs prototype dependencies without npm on PATH", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "ikran-preview-bundled-npm-"));
+  const previousPath = process.env.PATH;
+  try {
+    mkdirSync(path.join(root, "preview-dependency"));
+    writeFileSync(
+      path.join(root, "preview-dependency", "package.json"),
+      `${JSON.stringify({ name: "preview-dependency", version: "1.0.0" })}\n`
+    );
+    writeFileSync(
+      path.join(root, "package.json"),
+      `${JSON.stringify({
+        name: "preview-fixture",
+        private: true,
+        devDependencies: { "preview-dependency": "file:preview-dependency" }
+      })}\n`
+    );
+    process.env.PATH = "/usr/bin:/bin";
+
+    await expect(
+      defaultPreviewSupervisorDeps.installDependencies(root, 10_000)
+    ).resolves.toEqual({ ok: true });
+  } finally {
+    process.env.PATH = previousPath;
     rmSync(root, { recursive: true, force: true });
   }
 });

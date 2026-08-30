@@ -17,7 +17,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer } from "node:net";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { stopAllPrototypePreviewRefresh } from "./prototype-preview-refresh";
@@ -142,18 +142,58 @@ export function prototypeDependencyFingerprint(root: string): string | null {
 }
 
 export function previewDependencyInstallPlan(root: string): {
-  command: "npm";
+  command: string;
   args: string[];
 } {
   const hasLock = ["npm-shrinkwrap.json", "package-lock.json"].some((file) =>
     existsSync(path.join(root, file))
   );
-  return hasLock
-    ? { command: "npm", args: ["ci", "--include=dev"] }
-    : {
-        command: "npm",
-        args: ["install", "--include=dev", "--no-package-lock"]
-      };
+  const installArgs = hasLock
+    ? ["ci", "--include=dev"]
+    : ["install", "--include=dev", "--no-package-lock"];
+  return runtimeNpmCommand(installArgs);
+}
+
+function resolveRuntimeNpmCli(): string | null {
+  const nodeBin = path.dirname(process.execPath);
+  const candidates = [
+    process.env.npm_execpath,
+    path.join(nodeBin, "npm"),
+    path.join(nodeBin, "node_modules", "npm", "bin", "npm-cli.js"),
+    path.resolve(nodeBin, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js")
+  ];
+  for (const candidate of candidates) {
+    if (!candidate || !existsSync(candidate)) continue;
+    const resolved = realpathSync(candidate);
+    if (path.basename(resolved) === "npm-cli.js") return resolved;
+  }
+  return null;
+}
+
+function runtimeNpmCommand(args: string[]): {
+  command: string;
+  args: string[];
+} {
+  const npmCli = resolveRuntimeNpmCli();
+  return npmCli
+    ? { command: process.execPath, args: [npmCli, ...args] }
+    : { command: "npm", args };
+}
+
+export function previewDevServerPlan(command: string): {
+  command: string;
+  args: string[];
+} {
+  const words = command.trim().split(/\s+/);
+  if (words[0] === "npx") {
+    const npmPlan = runtimeNpmCommand(["exec", "--", ...words.slice(1)]);
+    return npmPlan.command === "npm"
+      ? { command: "npx", args: words.slice(1) }
+      : npmPlan;
+  }
+  const scriptName = words[1] === "run" ? words[2] : words[1];
+  if (!scriptName) throw new Error(`Invalid preview dev command: ${command}`);
+  return runtimeNpmCommand(["run", scriptName]);
 }
 
 function sanitizeDiagnosticOutput(value: string | undefined): string | undefined {
@@ -463,9 +503,10 @@ export async function allocatePreviewPort(
 }
 
 function shellCommand(root: string, command: string, port: number) {
-  return spawn(command, {
+  const plan = previewDevServerPlan(command);
+  return spawn(plan.command, plan.args, {
     cwd: root,
-    shell: true,
+    shell: false,
     detached: process.platform !== "win32",
     stdio: ["ignore", "ignore", "pipe"],
     env: { ...process.env, PORT: String(port) }
