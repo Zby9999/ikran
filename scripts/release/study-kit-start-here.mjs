@@ -33,17 +33,25 @@ Read \`STUDY-KIT-MANIFEST.json\` from the same package directory and treat its s
 
 ## Step 2 — create the study task yourself
 
-Plugin discovery is fixed for an already-running task. After installation, use the host-native task creation capability to create a new Codex task rooted at the assigned numbered workspace and send that task this continuation instruction plus the manifest identity. Do not ask the participant to create or switch tasks. If the host cannot create a correctly rooted task programmatically, stop with \`STUDY_SETUP_BLOCKED_TASK_CREATION\`; do not transfer the operation to the participant.
+Plugin discovery is fixed for an already-running task. After installation, create a **standalone, user-visible Codex task** with the host's \`create_thread\` capability. Use a local projectless task; the verified manifest activation in Step 3 selects the Ikran workspace, so the new task's cwd is not a workspace identity signal.
+
+1. Do not use \`spawn_agent\`, a subagent, or \`fork_thread\`. Those are not a fresh independent plugin-discovery boundary.
+2. Resolve and place the concrete absolute \`MANIFEST_PATH\`, stable \`workspaceId\`, expected package \`${packageName}\`, expected plugin version, and assigned Figma fileKey/nodeId in the new task's initial prompt. Never send a placeholder path or rely on a folder name.
+3. The new task must first follow Step 3 below, then Step 4, then Step 5. Its prompt must explicitly authorize the complete bootstrap and tell it not to ask the participant to operate Codex.
+4. Verify task creation returned a distinct \`threadId\` rather than an agent/subagent ID. Then use \`navigate_to_codex_page\` with that \`threadId\` so the participant is moved to the independent task without manual switching.
+5. If \`create_thread\`, a distinct \`threadId\`, or programmatic navigation is unavailable, stop with \`STUDY_SETUP_BLOCKED_TASK_CREATION\`; do not transfer the operation to the participant.
 
 Continuation instruction:
 
-> Continue the Ikran Study bootstrap for the assigned workspace. Read the package manifest supplied by the bootstrap task, verify native Ikran tools and the host-native Figma MCP, open the exact Workbench URL, and only then continue the existing Alignment. Do not request credentials and do not add or refresh evidence.
+> Continue the authorized Ikran Study bootstrap using the concrete absolute MANIFEST_PATH and assigned stable workspaceId supplied in this prompt. First call the native activate_study_workspace tool with exactly those two values and verify its returned package, plugin version, workspace ID, active project, and Figma identity. Then verify the host-native Figma MCP, open and present the exact Workbench URL, and only then continue the existing Alignment. Do not request credentials, do not add or refresh evidence, and do not ask the participant to operate Codex.
 
 ## Step 3 — verify native Ikran MCP
 
-- Confirm \`list_working_folders\` and \`open_workbench\` are native tools in the new task.
-- Call \`list_working_folders\`. A missing host Root may produce an empty discovered folder; that alone is not a mismatch.
-- Call \`open_workbench\`. The manifest workspace ID, numbered workspace, \`active_project\`, and Workbench project must resolve to the assigned workspace. A non-empty discovered folder that conflicts is a failure.
+- Confirm \`activate_study_workspace\`, \`list_working_folders\`, and \`open_workbench\` are native tools in the new task.
+- First call \`activate_study_workspace\` with \`manifestPath\` = the concrete absolute \`MANIFEST_PATH\` and \`workspaceId\` = the assigned stable ID. Do not call \`create_or_open_project\` with a guessed path.
+- Require \`ok: true\` and verify the returned package, plugin version, \`workspace_id\`, workspace number, Figma fileKey/nodeId, and \`active_project\` against the manifest. This call is the authoritative workspace selection even when MCP Roots are empty, stale, or point at another downloaded Study Kit.
+- Call \`list_working_folders\` as a diagnostic. After successful activation it must report the assigned folder with source \`study_manifest\`; the task cwd and a similarly named folder are not evidence.
+- Call \`open_workbench\`. Its \`workspace_source\` must remain \`study_manifest\`, and its \`active_project\` and Workbench project must still equal the activated manifest workspace.
 - If verification fails, stop with \`STUDY_SETUP_BLOCKED_IKRAN_MCP\`. Do not build an ad-hoc client, manipulate plugin cache files, or edit the database.
 
 ## Step 4 — verify the host-native Figma MCP

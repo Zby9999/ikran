@@ -172,6 +172,7 @@ socketServer = createServer((socket) => {
     host,
     prod,
     studyMode: process.env.IKRAN_STUDY_MODE === "1",
+    packageVersion,
     mcpEntryPath: path.join(appDir, "bin/ikran-mcp.mjs")
   });
   const transport = new StdioServerTransport(socket, socket);

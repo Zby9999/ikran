@@ -50,7 +50,14 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
   const pluginRoot = path.resolve(root);
   const portability = assertPortableNextExternals(pluginRoot);
   const stateDir = mkdtempSync(path.join(tmpdir(), "ikran-study-smoke-state-"));
-  const projectDir = mkdtempSync(path.join(tmpdir(), "ikran-study-smoke-project-"));
+  const packageDir = fs.realpathSync(
+    mkdtempSync(path.join(tmpdir(), "ikran-study-smoke-package-"))
+  );
+  const projectDir = path.join(packageDir, "workspace-2");
+  const wrongProjectDir = fs.realpathSync(
+    mkdtempSync(path.join(tmpdir(), "ikran-study-smoke-wrong-"))
+  );
+  const manifestPath = path.join(packageDir, "STUDY-KIT-MANIFEST.json");
   const mcpBin = path.join(pluginRoot, "bin", "ikran-mcp.mjs");
   let client;
   let transport;
@@ -59,9 +66,32 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
   try {
     // Match the packaged Study Kit contract: the portable workspace retains
     // its DB, while machine-specific config.json is intentionally omitted.
-    const projectStateDir = path.join(projectDir, ".ikran");
-    fs.mkdirSync(projectStateDir, { recursive: true });
-    fs.writeFileSync(path.join(projectStateDir, "ikran.db"), "");
+    for (const directory of [projectDir, wrongProjectDir]) {
+      const projectStateDir = path.join(directory, ".ikran");
+      fs.mkdirSync(projectStateDir, { recursive: true });
+      fs.writeFileSync(path.join(projectStateDir, "ikran.db"), "");
+    }
+    const pluginVersion = JSON.parse(
+      fs.readFileSync(path.join(pluginRoot, "package.json"), "utf8")
+    ).version;
+    fs.writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        package: "ikran-study-plugin-smoke",
+        host: "codex",
+        plugin: { name: "ikran", version: pluginVersion },
+        workspaces: [
+          {
+            id: "kit-2",
+            workspaceNumber: 2,
+            displayName: "Workspace 2",
+            path: "workspace-2",
+            frame: { fileKey: "smoke-file", nodeId: "2:2" }
+          }
+        ]
+      })
+    );
 
     transport = new StdioClientTransport({
       command: process.execPath,
@@ -71,7 +101,9 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
       cwd: pluginRoot,
       env: {
         ...process.env,
-        IKRAN_CWD: "",
+        // Reproduce a previously selected/wrong Study Kit. The manifest
+        // activation below must outrank this stale host workspace.
+        IKRAN_CWD: wrongProjectDir,
         IKRAN_STATE_DIR: stateDir,
         IKRAN_HOST: "127.0.0.1",
         IKRAN_IDLE_SHUTDOWN_MS: "5000",
@@ -100,6 +132,7 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
       }
     }
     for (const required of [
+      "activate_study_workspace",
       "open_workbench",
       "get_effective_design_system",
       "revise_draft_design_system"
@@ -114,20 +147,37 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
       {},
       timeoutMs
     );
-    if (discovered?.folder !== null || discovered?.source !== "none") {
+    if (discovered?.folder !== wrongProjectDir || discovered?.source !== "env") {
       throw new Error(
-        `Installed plugin root was mistaken for a workspace: ${JSON.stringify(discovered)}`
+        `Smoke fixture did not expose the stale workspace: ${JSON.stringify(discovered)}`
       );
     }
     const projectBinding = await callToolOk(
       client,
-      "create_or_open_project",
-      { path: projectDir },
+      "activate_study_workspace",
+      { manifestPath, workspaceId: "kit-2" },
       timeoutMs
     );
-    if (projectBinding?.project?.path !== projectDir) {
+    if (
+      projectBinding?.active_project !== projectDir ||
+      projectBinding?.workspace_id !== "kit-2"
+    ) {
       throw new Error(
-        `Packaged MCP did not bind the explicit task workspace: ${JSON.stringify(projectBinding)}`
+        `Packaged MCP did not activate the manifest workspace: ${JSON.stringify(projectBinding)}`
+      );
+    }
+    const activatedDiscovery = await callToolOk(
+      client,
+      "list_working_folders",
+      {},
+      timeoutMs
+    );
+    if (
+      activatedDiscovery?.folder !== projectDir ||
+      activatedDiscovery?.source !== "study_manifest"
+    ) {
+      throw new Error(
+        `Manifest workspace did not remain authoritative: ${JSON.stringify(activatedDiscovery)}`
       );
     }
     const opened = await within(
@@ -196,7 +246,8 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
     await stopRecordedRuntime(stateDir);
     await Promise.all([
       rm(stateDir, { recursive: true, force: true }),
-      rm(projectDir, { recursive: true, force: true })
+      rm(packageDir, { recursive: true, force: true }),
+      rm(wrongProjectDir, { recursive: true, force: true })
     ]);
   }
 }

@@ -228,6 +228,7 @@ export {
   recordNewDesignRunInputSchema,
   recordNewDesignRunInputShape,
   createOrOpenProjectInputShape,
+  activateStudyWorkspaceInputShape,
   setupWorkspaceInputShape
 } from "./schemas";
 

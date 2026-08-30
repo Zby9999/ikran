@@ -21,8 +21,17 @@ test("participant instructions make the Agent own exact installation and both MC
   expect(markdown).toContain("workspace-1");
   expect(markdown).toContain("fileKey `file-1`, nodeId `12:34`");
   expect(markdown).toContain("Step 2 — create the study task yourself");
+  expect(markdown).toContain("standalone, user-visible Codex task");
+  expect(markdown).toContain("`create_thread`");
+  expect(markdown).toContain("Do not use `spawn_agent`, a subagent, or `fork_thread`");
+  expect(markdown).toContain("absolute `MANIFEST_PATH`");
+  expect(markdown).toContain("distinct `threadId`");
+  expect(markdown).toContain("`navigate_to_codex_page`");
   expect(markdown).toContain("STUDY_SETUP_BLOCKED_TASK_CREATION");
   expect(markdown).toContain("Step 3 — verify native Ikran MCP");
+  expect(markdown).toContain("`activate_study_workspace`");
+  expect(markdown).toContain("`manifestPath`");
+  expect(markdown).toContain("`workspaceId`");
   expect(markdown).toContain("`list_working_folders`");
   expect(markdown).toContain("`open_workbench`");
   expect(markdown).toContain("STUDY_SETUP_BLOCKED_IKRAN_MCP");

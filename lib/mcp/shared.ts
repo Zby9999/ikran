@@ -20,6 +20,8 @@ export type RegisterIkranToolsDeps = {
   /** Absolute path to bin/ikran-mcp.mjs (for setup_workspace snippet). */
   mcpEntryPath: string;
   studyMode?: boolean;
+  /** Running plugin version used to validate a Study Kit manifest. */
+  packageVersion?: string;
 };
 
 export function failureResult(
@@ -81,7 +83,7 @@ export function conciseSuccessResult(
 export const CLAUDE_MCP_TEXT_BUDGET = 2048;
 
 export const STUDY_MCP_INSTRUCTIONS =
-  "Ikran Study Kit with preloaded frozen evidence. The assigned numbered workspace and STUDY-KIT-MANIFEST.json are authoritative. Verify the host-native Figma MCP can read the manifest fileKey/nodeId before beginning. Never request credentials, add or refresh Seed References, use Ikran Figma Connection tools, or abandon the project phase. After Draft creation, use get_effective_design_system and revise_draft_design_system to structurally supplement omissions; only the returned active revision may drive Prototype or new-design work.";
+  "Ikran Study Kit with preloaded frozen evidence. In a newly created standalone task, first call activate_study_workspace with the absolute STUDY-KIT-MANIFEST.json path and assigned stable workspace ID; that verified manifest binding is authoritative even when MCP Roots are absent or stale. Verify the host-native Figma MCP can read the manifest fileKey/nodeId before beginning. Never request credentials, add or refresh Seed References, use Ikran Figma Connection tools, or abandon the project phase. After Draft creation, use get_effective_design_system and revise_draft_design_system to structurally supplement omissions; only the returned active revision may drive Prototype or new-design work.";
 
 export const IKRAN_MCP_INSTRUCTIONS =
   "Ikran local research workbench; open_workbench returns a localhost URL. OPEN-AND-WAIT: open that URL first; while a response re-arms it for Alignment preparation or an active Rule Update Review, keep calling wait_for_agent_command and claim each scoped durable command. All source-of-truth changes go through Ikran tools.\n\n" +

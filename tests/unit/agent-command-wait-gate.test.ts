@@ -77,7 +77,7 @@ function createProjectAtStage(
   return projectPath;
 }
 
-function registeredHandlers(): Map<string, ToolHandler> {
+function registeredHandlers({ studyMode = false }: { studyMode?: boolean } = {}): Map<string, ToolHandler> {
   const handlers = new Map<string, ToolHandler>();
   const mcp = {
     registerTool(
@@ -103,12 +103,34 @@ function registeredHandlers(): Map<string, ToolHandler> {
     }),
     host: "127.0.0.1",
     prod: false,
+    studyMode,
+    packageVersion: "0.1.0-alpha.22",
     mcpEntryPath: "/tmp/ikran-mcp.mjs"
   };
   registerProjectWorkspaceTools(mcp, deps);
   registerDesignIntentAlignmentTools(mcp, deps);
   return handlers;
 }
+
+test("Study Workbench fails closed until the manifest workspace is activated", async () => {
+  activeFixture.projectPath = "/tmp/wrong-study-workspace";
+  const openWorkbench = registeredHandlers({ studyMode: true }).get(
+    "open_workbench"
+  );
+  if (!openWorkbench) throw new Error("open_workbench not registered");
+
+  const response = await openWorkbench({});
+
+  expect(response.structuredContent).toMatchObject({
+    ok: false,
+    error: "study_workspace_not_activated",
+    next_action: { tool: "activate_study_workspace" }
+  });
+  expect(response.content[0].text).toContain("activate_study_workspace");
+  expect(response.content[0].text).not.toContain(
+    activeFixture.projectPath
+  );
+});
 
 function expectWaitArmedAfterOpen(response: {
   content: Array<{ type: string; text: string }>;

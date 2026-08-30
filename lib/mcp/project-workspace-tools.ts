@@ -3,6 +3,7 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   activateExistingProjectCommand,
+  activateStudyWorkspaceInputShape,
   bindProjectCommand,
   createOrOpenProjectInputShape,
   getProjectStateCommand,
@@ -11,9 +12,15 @@ import {
   setupWorkspaceInputShape
 } from "../runtime/commands";
 import {
+  failureResult,
+  successResult,
   type DiscoveredWorkingFolder,
   type RegisterIkranToolsDeps
 } from "./shared";
+import {
+  resolveStudyWorkspaceManifest,
+  type ResolvedStudyWorkspaceManifest
+} from "./study-workspace-manifest";
 import { getProjectPhase } from "../runtime/project-phase";
 import { readAgentCommandWaitEligibility } from "../runtime/adaptive-agent-wait";
 import { readCurrentIncrementalPlanningStatus } from "../runtime/alignment-incremental-planning";
@@ -56,7 +63,9 @@ function isHostAuthoritativeWorkspace(
 ): discovered is DiscoveredWorkingFolder & { folder: string } {
   return (
     typeof discovered.folder === "string" &&
-    (discovered.source === "env" || discovered.source === "roots")
+    (discovered.source === "env" ||
+      discovered.source === "roots" ||
+      discovered.source === "study_manifest")
   );
 }
 
@@ -86,17 +95,117 @@ export function registerProjectWorkspaceTools(
   mcp: McpServer,
   deps: RegisterIkranToolsDeps
 ): void {
-  const { ensureRuntime, discoverWorkingFolder, host, prod, mcpEntryPath } =
-    deps;
+  const {
+    ensureRuntime,
+    discoverWorkingFolder,
+    host,
+    prod,
+    mcpEntryPath,
+    packageVersion
+  } = deps;
+  let studyWorkspaceBinding: ResolvedStudyWorkspaceManifest | null = null;
+
+  const effectiveDiscovery = async (): Promise<DiscoveredWorkingFolder> => {
+    const discovered = await discoverWorkingFolder();
+    if (!studyWorkspaceBinding) return discovered;
+    return {
+      folder: studyWorkspaceBinding.workspace.path,
+      source: "study_manifest",
+      roots: discovered.roots
+    };
+  };
 
   const resumeDiscoveredWorkspace = async () => {
-    const discovered = await discoverWorkingFolder();
+    const discovered = await effectiveDiscovery();
     if (!isHostAuthoritativeWorkspace(discovered)) {
       return { discovered, activation: null };
     }
     const activation = await activateExistingProjectCommand(discovered.folder);
     return { discovered, activation };
   };
+
+  if (deps.studyMode) {
+    mcp.registerTool(
+      "activate_study_workspace",
+      {
+        description:
+          "Activate the exact preloaded Study Kit workspace without relying on MCP Roots, the task cwd, folder names, or a previously active same-version Study Kit. Pass the absolute path to STUDY-KIT-MANIFEST.json and the assigned stable workspace ID from START-HERE. The tool validates the manifest host, installed Ikran plugin version, unique workspace ID, package-contained workspace path, and existing portable Ikran project before moving the disposable active-project pointer. On success this manifest binding remains authoritative for open_workbench in this MCP task. Study mode only; never substitute a guessed workspace path.",
+        inputSchema: activateStudyWorkspaceInputShape
+      },
+      async (args) => {
+        const rt = await ensureRuntime();
+        if (!packageVersion) {
+          return failureResult(
+            "activate_study_workspace",
+            "study_runtime_version_unavailable",
+            rt
+          );
+        }
+        const resolved = await resolveStudyWorkspaceManifest({
+          manifestPath: args.manifestPath,
+          workspaceId: args.workspaceId,
+          runtimePluginVersion: packageVersion
+        });
+        if (!resolved.ok) {
+          return failureResult(
+            "activate_study_workspace",
+            resolved.reason,
+            rt,
+            resolved
+          );
+        }
+        const activation = await activateExistingProjectCommand(
+          resolved.workspace.path
+        );
+        if (!activation.ok) {
+          return failureResult(
+            "activate_study_workspace",
+            "study_workspace_activation_failed",
+            rt,
+            {
+              reason: activation.reason,
+              workspace_id: resolved.workspace.id,
+              workspace_path: resolved.workspace.path
+            }
+          );
+        }
+        const active = requireActiveProjectCommand();
+        if (
+          !active.ok ||
+          !projectPathsMatch(active.project.path, resolved.workspace.path)
+        ) {
+          return failureResult(
+            "activate_study_workspace",
+            "study_workspace_activation_mismatch",
+            rt,
+            {
+              expected: resolved.workspace.path,
+              active: active.ok ? active.project.path : null
+            }
+          );
+        }
+        studyWorkspaceBinding = resolved;
+        return successResult(rt, {
+          ok: true,
+          study_package: resolved.packageName,
+          plugin_version: resolved.pluginVersion,
+          manifest_path: resolved.manifestPath,
+          workspace_id: resolved.workspace.id,
+          workspace_number: resolved.workspace.workspaceNumber,
+          workspace_display_name: resolved.workspace.displayName,
+          workspace_path: resolved.workspace.path,
+          figma_file_key: resolved.workspace.frame.fileKey,
+          figma_node_id: resolved.workspace.frame.nodeId,
+          active_project: active.project.path,
+          previous_active_project: activation.previous,
+          changed: activation.changed,
+          bootstrapped: activation.bootstrapped,
+          project_phase: getProjectPhase(active.project.path),
+          next_action: { tool: "open_workbench" }
+        });
+      }
+    );
+  }
 
   mcp.registerTool(
     "open_workbench",
@@ -106,9 +215,27 @@ export function registerProjectWorkspaceTools(
     },
     async () => {
       const rt = await ensureRuntime();
-      // The installed plugin process runs from its cache directory, so the
-      // current MCP Roots/IKRAN_CWD — not a persisted global pointer — decide
-      // which already-initialized project this host task resumes.
+      if (deps.studyMode && !studyWorkspaceBinding) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Study workspace is not activated for this MCP task. Call activate_study_workspace with the absolute STUDY-KIT-MANIFEST.json path and assigned stable workspace ID before opening the Workbench."
+            }
+          ],
+          structuredContent: {
+            ok: false,
+            error: "study_workspace_not_activated",
+            detail:
+              "A Study Workbench never trusts a persisted pointer, cwd, or MCP Root before manifest activation.",
+            session: rt.token,
+            next_action: { tool: "activate_study_workspace" }
+          }
+        };
+      }
+      // A verified Study manifest binding outranks stale/absent host Roots.
+      // Outside Study bootstrap, current MCP Roots/IKRAN_CWD select which
+      // already-initialized project this host task resumes.
       const binding = await resumeDiscoveredWorkspace();
       const baseText = `Ikran Workbench URL:\n${rt.url}\n\nLocal-only. This tool did not open a browser. Open the URL in this Agent host's embedded browser, then post that exact URL as a user-visible chat message before waiting so the designer can open it manually if it did not open automatically.`;
       const activeProject = requireActiveProjectCommand();
@@ -442,7 +569,7 @@ export function registerProjectWorkspaceTools(
     async () => {
       try {
         const rt = await ensureRuntime();
-        const d = await discoverWorkingFolder();
+        const d = await effectiveDiscovery();
         return {
           content: [
             {

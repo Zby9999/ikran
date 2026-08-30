@@ -23,6 +23,11 @@ export const setupWorkspaceInputShape = {
   path: z.string()
 } as const;
 
+export const activateStudyWorkspaceInputShape = {
+  manifestPath: z.string(),
+  workspaceId: z.string()
+} as const;
+
 const frameBoundsShape = z.object({
   x: z.number(),
   y: z.number(),
