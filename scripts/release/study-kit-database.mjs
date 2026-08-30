@@ -5,6 +5,32 @@ function sourceDigest(value) {
 }
 
 export function ensureStudyKitAlignmentCheckpoint(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS alignment_semantic_state (
+      alignment_attempt_id TEXT PRIMARY KEY REFERENCES alignment_attempts(id) ON DELETE RESTRICT,
+      current_revision INTEGER NOT NULL DEFAULT 0,
+      frozen_revision INTEGER,
+      frozen_digest TEXT,
+      monitoring_status TEXT NOT NULL DEFAULT 'paused'
+        CHECK (monitoring_status IN ('active', 'paused', 'completed')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS alignment_semantic_changes (
+      alignment_attempt_id TEXT NOT NULL REFERENCES alignment_attempts(id) ON DELETE RESTRICT,
+      revision INTEGER NOT NULL,
+      source_kind TEXT NOT NULL
+        CHECK (source_kind IN ('question', 'agent-annotation', 'designer-annotation')),
+      source_id TEXT NOT NULL,
+      section TEXT NOT NULL,
+      source_digest TEXT NOT NULL,
+      operation TEXT NOT NULL CHECK (operation IN ('upsert', 'delete')),
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (alignment_attempt_id, revision, source_kind, source_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_alignment_semantic_changes_cursor
+      ON alignment_semantic_changes(alignment_attempt_id, revision, section);
+  `);
   const active = db.prepare(`
     SELECT w.current_alignment_attempt_id AS alignment_attempt_id
     FROM project_workflow w

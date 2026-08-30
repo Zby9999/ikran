@@ -23,26 +23,6 @@ describe("Study Kit database sanitization", () => {
           current_alignment_attempt_id TEXT
         );
         CREATE TABLE alignment_attempts (id TEXT PRIMARY KEY, status TEXT NOT NULL);
-        CREATE TABLE alignment_semantic_state (
-          alignment_attempt_id TEXT PRIMARY KEY,
-          current_revision INTEGER NOT NULL,
-          frozen_revision INTEGER,
-          frozen_digest TEXT,
-          monitoring_status TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL
-        );
-        CREATE TABLE alignment_semantic_changes (
-          alignment_attempt_id TEXT NOT NULL,
-          revision INTEGER NOT NULL,
-          source_kind TEXT NOT NULL,
-          source_id TEXT NOT NULL,
-          section TEXT NOT NULL,
-          source_digest TEXT NOT NULL,
-          operation TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          PRIMARY KEY (alignment_attempt_id, revision, source_kind, source_id)
-        );
         CREATE TABLE alignment_question_cards (
           id TEXT PRIMARY KEY,
           alignment_attempt_id TEXT NOT NULL,
