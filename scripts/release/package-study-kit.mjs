@@ -11,7 +11,8 @@ import { DatabaseSync } from "node:sqlite";
 import { buildStudyRuntime, findNativeMachO } from "./build-study-runtime.mjs";
 import {
   applyCuratedStudyKitQuestionCards,
-  clearPrefilledAlignmentAnswers
+  clearPrefilledAlignmentAnswers,
+  ensureStudyKitAlignmentCheckpoint
 } from "./study-kit-database.mjs";
 import { questionCardsForStudyKit } from "./study-kit-question-cards.mjs";
 import {
@@ -387,6 +388,14 @@ function packageWorkspace(source, destination, label, relativePath) {
   ) {
     fail(`${label} must contain 16 optimized multi-option Question cards with no prefilled or final answers`);
   }
+  if (
+    state.semanticStateCount !== 1 ||
+    state.semanticCurrentRevision !== 1 ||
+    state.semanticMonitoringStatus !== "paused" ||
+    state.semanticChangeCount !== state.expectedSemanticSourceCount
+  ) {
+    fail(`${label} does not contain a resumable Alignment planning checkpoint`);
+  }
 
   const screenshot = path.join(destination, state.screenshotArtifactPath);
   if (!fs.statSync(screenshot, { throwIfNoEntry: false })?.isFile()) {
@@ -458,6 +467,7 @@ function sanitizeDatabase(databasePath, sourceWorkspace, label) {
       label,
       questionCardsForStudyKit(label)
     );
+    ensureStudyKitAlignmentCheckpoint(db);
     for (const trigger of immutableSnapshotTriggers) {
       db.exec(String(trigger.sql));
     }
@@ -517,6 +527,13 @@ function inspectDatabase(databasePath) {
        LIMIT 1`
     ).get();
     if (!workflow || !evidence) fail(`Incomplete Ikran state: ${databasePath}`);
+    const semanticState = db.prepare(
+      `SELECT current_revision, monitoring_status
+       FROM alignment_semantic_state
+       WHERE alignment_attempt_id = (
+         SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1
+       )`
+    ).get();
     return {
       stage: String(workflow.stage),
       attemptStatus: String(workflow.attempt_status),
@@ -526,6 +543,11 @@ function inspectDatabase(databasePath) {
       proposedAnswerCount: scalar("SELECT count(*) FROM alignment_question_cards WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1) AND proposed_answer IS NOT NULL"),
       allProposedAnswerCount: scalar("SELECT count(*) FROM alignment_question_cards WHERE proposed_answer IS NOT NULL"),
       finalAnswerCount: scalar("SELECT count(*) FROM alignment_question_cards WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1) AND final_answer IS NOT NULL AND trim(final_answer) <> ''"),
+      semanticStateCount: scalar("SELECT count(*) FROM alignment_semantic_state WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1)"),
+      semanticCurrentRevision: Number(semanticState?.current_revision ?? -1),
+      semanticMonitoringStatus: String(semanticState?.monitoring_status ?? "missing"),
+      semanticChangeCount: scalar("SELECT count(*) FROM alignment_semantic_changes WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1)"),
+      expectedSemanticSourceCount: scalar("SELECT count(*) FROM agent_alignment_annotations WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1)") + scalar("SELECT count(*) FROM alignment_question_cards WHERE alignment_attempt_id = (SELECT current_alignment_attempt_id FROM project_workflow WHERE singleton = 1) AND final_answer IS NOT NULL AND trim(final_answer) <> ''") + scalar("SELECT count(*) FROM region_annotations WHERE author = 'designer' AND section IS NOT NULL"),
       designSystemEntries: scalar("SELECT count(*) FROM design_system_entries"),
       sourceArtifacts: scalar("SELECT count(*) FROM source_artifacts"),
       prototypeRuns: scalar("SELECT count(*) FROM prototype_runs"),

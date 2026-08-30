@@ -3,13 +3,14 @@
 // `PRAGMA user_version` is the source of truth. Existing DBs without an
 // explicit version are treated as v0. New databases land at CURRENT_SCHEMA_VERSION.
 
+import { createHash } from "node:crypto";
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
 import {
   parseFigmaSeedIdentity,
   figmaSeedIdentityKey
 } from "./figma-identity";
 
-export const CURRENT_SCHEMA_VERSION = 46;
+export const CURRENT_SCHEMA_VERSION = 47;
 
 export type Migration = {
   /** Schema version after this migration successfully applies. */
@@ -2149,6 +2150,155 @@ CREATE TABLE IF NOT EXISTS alignment_incremental_plan_requests (
       if (!columns.has("existing_rule_entry_id")) {
         db.exec(`ALTER TABLE designer_feedback_dismissals
           ADD COLUMN existing_rule_entry_id TEXT;`);
+      }
+    }
+  },
+  {
+    version: 47,
+    up(db) {
+      // Study Kits created before incremental planning can already be frozen
+      // at Alignment answering with a completed preparation command. Migration
+      // v44 created the checkpoint tables but could not replay the finalize
+      // transition that normally seeds them. Reconstruct one snapshot revision
+      // for the active answering attempt so both fresh kits and partially
+      // answered participant workspaces can resume through the public tools.
+      const requiredTables = new Set([
+        "project_workflow",
+        "alignment_attempts",
+        "alignment_semantic_state",
+        "alignment_semantic_changes",
+        "alignment_question_cards",
+        "agent_alignment_annotations",
+        "region_annotations"
+      ]);
+      const presentTables = new Set((db.prepare(
+        `SELECT name FROM sqlite_master WHERE type = 'table'`
+      ).all() as Array<{ name: string }>).map((row) => row.name));
+      if ([...requiredTables].some((table) => !presentTables.has(table))) return;
+
+      const active = db.prepare(
+        `SELECT w.current_alignment_attempt_id AS alignment_attempt_id
+         FROM project_workflow w
+         JOIN alignment_attempts a
+           ON a.id = w.current_alignment_attempt_id
+         WHERE w.singleton = 1
+           AND w.stage = 'alignment-answering'
+           AND a.status = 'answering'`
+      ).get() as { alignment_attempt_id: string } | undefined;
+      if (!active) return;
+      const existing = db.prepare(
+        `SELECT 1 AS present FROM alignment_semantic_state
+         WHERE alignment_attempt_id = ?`
+      ).get(active.alignment_attempt_id) as { present: number } | undefined;
+      if (existing) return;
+
+      const now = new Date().toISOString();
+      db.prepare(
+        `INSERT INTO alignment_semantic_state
+           (alignment_attempt_id, current_revision, frozen_revision,
+            frozen_digest, monitoring_status, created_at, updated_at)
+         VALUES (?, 1, NULL, NULL, 'paused', ?, ?)`
+      ).run(active.alignment_attempt_id, now, now);
+      const insert = db.prepare(
+        `INSERT INTO alignment_semantic_changes
+           (alignment_attempt_id, revision, source_kind, source_id, section,
+            source_digest, operation, created_at)
+         VALUES (?, 1, ?, ?, ?, ?, 'upsert', ?)`
+      );
+      const sourceDigest = (value: unknown) =>
+        createHash("sha256").update(JSON.stringify(value)).digest("hex");
+
+      const questions = db.prepare(
+        `SELECT id, section, observation, question, final_answer, answer_source,
+                selected_option_id
+         FROM alignment_question_cards
+         WHERE alignment_attempt_id = ?
+           AND final_answer IS NOT NULL AND TRIM(final_answer) <> ''
+         ORDER BY created_at ASC, id ASC`
+      ).all(active.alignment_attempt_id) as Array<{
+        id: string;
+        section: string;
+        observation: string;
+        question: string;
+        final_answer: string;
+        answer_source: string | null;
+        selected_option_id: string | null;
+      }>;
+      for (const row of questions) {
+        const value = {
+          sourceId: row.id,
+          kind: "question",
+          section: row.section,
+          title: row.observation,
+          question: row.question,
+          answer: row.final_answer,
+          answerSource: row.answer_source,
+          selectedOptionId: row.selected_option_id
+        };
+        insert.run(
+          active.alignment_attempt_id,
+          value.kind,
+          value.sourceId,
+          value.section,
+          sourceDigest(value),
+          now
+        );
+      }
+
+      const agentAnnotations = db.prepare(
+        `SELECT id, section, title, body, inference, additional_information_json
+         FROM agent_alignment_annotations
+         WHERE alignment_attempt_id = ?
+         ORDER BY created_at ASC, id ASC`
+      ).all(active.alignment_attempt_id) as Array<{
+        id: string;
+        section: string;
+        title: string;
+        body: string;
+        inference: string;
+        additional_information_json: string;
+      }>;
+      for (const row of agentAnnotations) {
+        const value = {
+          sourceId: row.id,
+          kind: "agent-annotation",
+          section: row.section,
+          title: row.title,
+          statement: row.body,
+          confidence: row.inference,
+          additionalInformation: JSON.parse(row.additional_information_json) as string[]
+        };
+        insert.run(
+          active.alignment_attempt_id,
+          value.kind,
+          value.sourceId,
+          value.section,
+          sourceDigest(value),
+          now
+        );
+      }
+
+      const designerAnnotations = db.prepare(
+        `SELECT id, section, body
+         FROM region_annotations
+         WHERE author = 'designer' AND section IS NOT NULL
+         ORDER BY created_at ASC, id ASC`
+      ).all() as Array<{ id: string; section: string; body: string }>;
+      for (const row of designerAnnotations) {
+        const value = {
+          sourceId: row.id,
+          kind: "designer-annotation",
+          section: row.section,
+          statement: row.body
+        };
+        insert.run(
+          active.alignment_attempt_id,
+          value.kind,
+          value.sourceId,
+          value.section,
+          sourceDigest(value),
+          now
+        );
       }
     }
   }

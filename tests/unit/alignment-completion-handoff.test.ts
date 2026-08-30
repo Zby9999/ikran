@@ -12,6 +12,7 @@ import { waitForAgentCommand } from "../../lib/runtime/adaptive-agent-wait";
 import { prepareDesignIntentAlignment } from "../../lib/runtime/alignment-preparation";
 import {
   closeProjectDb,
+  CURRENT_SCHEMA_VERSION,
   initializeProjectDb,
   openProjectDb
 } from "../../lib/runtime/db";
@@ -142,6 +143,61 @@ function removeFixture(fixture: Fixture): void {
 }
 
 describe("Alignment completion handoff", () => {
+  test("migrates an answering attempt that predates incremental planning", () => {
+    const fixture = createAnsweringFixture();
+    try {
+      const legacy = openProjectDb(fixture.projectPath);
+      try {
+        legacy.prepare(
+          "DELETE FROM alignment_semantic_changes WHERE alignment_attempt_id = ?"
+        ).run(fixture.attemptId);
+        legacy.prepare(
+          "DELETE FROM alignment_semantic_state WHERE alignment_attempt_id = ?"
+        ).run(fixture.attemptId);
+        legacy.exec("PRAGMA user_version = 46");
+      } finally {
+        closeProjectDb(legacy);
+      }
+
+      const migrated = openProjectDb(fixture.projectPath);
+      try {
+        expect(CURRENT_SCHEMA_VERSION).toBe(47);
+        expect(
+          migrated.prepare(
+            `SELECT current_revision, monitoring_status
+             FROM alignment_semantic_state
+             WHERE alignment_attempt_id = ?`
+          ).get(fixture.attemptId)
+        ).toEqual({ current_revision: 1, monitoring_status: "paused" });
+        expect(
+          migrated.prepare(
+            `SELECT COUNT(*) AS count
+             FROM alignment_semantic_changes
+             WHERE alignment_attempt_id = ?`
+          ).get(fixture.attemptId)
+        ).toEqual({ count: 18 });
+      } finally {
+        closeProjectDb(migrated);
+      }
+
+      expect(readAlignmentSemanticDelta(fixture.projectPath, {
+        alignmentAttemptId: fixture.attemptId,
+        afterRevision: 0
+      })).toMatchObject({
+        ok: true,
+        currentRevision: 1,
+        delta: { section: "design-concept", toRevision: 1 }
+      });
+      expect(completeDesignIntentAlignment(fixture.projectPath)).toMatchObject({
+        ok: true,
+        alignment: { status: "completed" },
+        workflow: { stage: "initial-design-system-preparing" }
+      });
+    } finally {
+      removeFixture(fixture);
+    }
+  });
+
   test("rejects preparing and abandoned attempts without creating handoff state", () => {
     const fixture = createAnsweringFixture(false);
     try {
