@@ -13,6 +13,8 @@ import { initializeProjectDb } from "../../lib/runtime/db";
 import { declareComponentLiveHeroes } from "../../lib/runtime/design-system-live-hero";
 import {
   firstValidLiveHeroReport,
+  liveHeroStabilityPredicate,
+  stableLiveHeroReport,
   verifyComponentLiveHeroes,
   type LiveHeroVerifyBrowser,
   type LiveHeroVerifyDeps
@@ -158,6 +160,51 @@ test("a transient zero-size report does not win over the first valid geometry", 
       href
     )
   ).toEqual({ href, x: 0, y: 0, width: 84, height: 24 });
+});
+
+test("verification requires two stable accepted reports instead of one transient valid frame", () => {
+  const href = "http://127.0.0.1:4300/ikran/component-preview/text";
+  expect(
+    stableLiveHeroReport(
+      [
+        { href, x: 0, y: 0, width: 84, height: 24 },
+        { href, x: 0, y: -0.5, width: 84, height: 24.5 }
+      ],
+      href
+    )
+  ).toBeNull();
+  expect(
+    stableLiveHeroReport(
+      [
+        { href, x: 0, y: 0, width: 0, height: 0 },
+        { href, x: 0, y: 0, width: 84, height: 24 },
+        { href, x: 0, y: 0, width: 84, height: 24 }
+      ],
+      href
+    )
+  ).toEqual({ href, x: 0, y: 0, width: 84, height: 24 });
+});
+
+test("the browser stability predicate is self-contained after serialization", () => {
+  const href = "http://127.0.0.1:4300/ikran/component-preview/text";
+  const previous = (globalThis as { __ikranReports?: unknown }).__ikranReports;
+  (globalThis as { __ikranReports?: unknown }).__ikranReports = [
+    { href, x: 8, y: 8, width: 84, height: 40 },
+    { href, x: 8, y: 8, width: 84, height: 40 }
+  ];
+  try {
+    expect(
+      liveHeroStabilityPredicate({
+        expected: href,
+        maxWidth: 1280,
+        maxExtent: 16_384,
+        tolerance: 0.25
+      })
+    ).toBe(true);
+    expect(liveHeroStabilityPredicate.toString()).not.toContain("__name");
+  } finally {
+    (globalThis as { __ikranReports?: unknown }).__ikranReports = previous;
+  }
 });
 
 type Script = Record<

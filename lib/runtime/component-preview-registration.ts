@@ -20,6 +20,8 @@ import { canonicalizeArtifactPath } from "./source-artifact";
 // Next App Router treats every leading-underscore directory as private and
 // excludes it from routing. Keep the Runtime namespace explicit but routable.
 export const SHARED_COMPONENT_PREVIEW_ROUTE = "/ikran/component-preview";
+export const COMPONENT_PREVIEW_SAFE_INSET_PX = 8;
+export const COMPONENT_PREVIEW_ORIGIN_EPSILON_PX = 1;
 
 export interface RegisterComponentPreviewInput {
   runId: string;
@@ -240,6 +242,8 @@ export default function IkranComponentPreview() {
   useEffect(() => {
     if (!root.current || !registration) return;
     const href = window.location.href;
+    const normalizePreviewOrigin = (value: number) =>
+      value < 0 && value >= -${COMPONENT_PREVIEW_ORIGIN_EPSILON_PX} ? 0 : value;
     const bounds = () => {
       const elements = [root.current!, ...root.current!.querySelectorAll("*")];
       const rects = elements
@@ -248,8 +252,8 @@ export default function IkranComponentPreview() {
       if (rects.length === 0) {
         const rect = root.current!.getBoundingClientRect();
         return {
-          x: rect.left,
-          y: rect.top,
+          x: normalizePreviewOrigin(rect.left),
+          y: normalizePreviewOrigin(rect.top),
           width: Math.max(root.current!.scrollWidth, rect.width),
           height: Math.max(root.current!.scrollHeight, rect.height)
         };
@@ -258,7 +262,12 @@ export default function IkranComponentPreview() {
       const top = Math.min(...rects.map((rect) => rect.top));
       const right = Math.max(...rects.map((rect) => rect.right));
       const bottom = Math.max(...rects.map((rect) => rect.bottom));
-      return { x: left, y: top, width: right - left, height: bottom - top };
+      return {
+        x: normalizePreviewOrigin(left),
+        y: normalizePreviewOrigin(top),
+        width: right - left,
+        height: bottom - top
+      };
     };
     const report = () => {
       const rect = bounds();
@@ -267,24 +276,41 @@ export default function IkranComponentPreview() {
         x: rect.x, y: rect.y, width: rect.width, height: rect.height
       }, "*");
     };
-    const observer = new ResizeObserver(report);
+    let frame = 0;
+    let settledFrame = 0;
+    const reportSettled = () => {
+      report();
+      settledFrame = requestAnimationFrame(report);
+    };
+    const scheduleReports = () => {
+      cancelAnimationFrame(frame);
+      cancelAnimationFrame(settledFrame);
+      frame = requestAnimationFrame(reportSettled);
+    };
+    const observer = new ResizeObserver(scheduleReports);
     const observeRenderedElements = () => {
       observer.observe(root.current!);
       root.current!.querySelectorAll("*").forEach((element) => observer.observe(element));
     };
     const mutations = new MutationObserver(() => {
       observeRenderedElements();
-      report();
+      scheduleReports();
     });
     observeRenderedElements();
     mutations.observe(root.current, { childList: true, subtree: true, attributes: true });
-    const frame = requestAnimationFrame(report);
-    window.addEventListener("resize", report);
-    return () => { cancelAnimationFrame(frame); observer.disconnect(); mutations.disconnect(); window.removeEventListener("resize", report); };
+    scheduleReports();
+    window.addEventListener("resize", scheduleReports);
+    return () => {
+      cancelAnimationFrame(frame);
+      cancelAnimationFrame(settledFrame);
+      observer.disconnect();
+      mutations.disconnect();
+      window.removeEventListener("resize", scheduleReports);
+    };
   }, [registration, state]);
   if (!registration) return <div data-ikran-preview-error="registration-not-found" />;
   const stateArgs = registration.stateArgs[state as keyof typeof registration.stateArgs] ?? {};
-  return <div ref={root} data-ikran-component-root style={{ display: "inline-block" }}>
+  return <div ref={root} data-ikran-component-root style={{ display: "inline-block", boxSizing: "content-box", padding: "${COMPONENT_PREVIEW_SAFE_INSET_PX}px" }}>
     {createElement(registration.Component, { ...registration.defaultArgs, ...stateArgs })}
   </div>;
 }
@@ -295,7 +321,7 @@ const VITE_ADAPTER_SOURCE = `<!doctype html>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <style>html, body { margin: 0; overflow: hidden; } #ikran-root { display: inline-block; }</style>
+    <style>html, body { margin: 0; overflow: hidden; } #ikran-root { display: inline-block; box-sizing: content-box; padding: ${COMPONENT_PREVIEW_SAFE_INSET_PX}px; }</style>
   </head>
   <body>
     <div id="ikran-root"></div>
@@ -317,6 +343,8 @@ const VITE_ADAPTER_SOURCE = `<!doctype html>
           ...registration.defaultArgs,
           ...stateArgs
         }));
+        const normalizePreviewOrigin = (value) =>
+          value < 0 && value >= -${COMPONENT_PREVIEW_ORIGIN_EPSILON_PX} ? 0 : value;
         const bounds = () => {
           const elements = [mount, ...mount.querySelectorAll("*")];
           const rects = elements
@@ -325,8 +353,8 @@ const VITE_ADAPTER_SOURCE = `<!doctype html>
           if (rects.length === 0) {
             const rect = mount.getBoundingClientRect();
             return {
-              x: rect.left,
-              y: rect.top,
+              x: normalizePreviewOrigin(rect.left),
+              y: normalizePreviewOrigin(rect.top),
               width: Math.max(mount.scrollWidth, rect.width),
               height: Math.max(mount.scrollHeight, rect.height)
             };
@@ -335,7 +363,12 @@ const VITE_ADAPTER_SOURCE = `<!doctype html>
           const top = Math.min(...rects.map((rect) => rect.top));
           const right = Math.max(...rects.map((rect) => rect.right));
           const bottom = Math.max(...rects.map((rect) => rect.bottom));
-          return { x: left, y: top, width: right - left, height: bottom - top };
+          return {
+            x: normalizePreviewOrigin(left),
+            y: normalizePreviewOrigin(top),
+            width: right - left,
+            height: bottom - top
+          };
         };
         const report = () => {
           const rect = bounds();
@@ -344,19 +377,30 @@ const VITE_ADAPTER_SOURCE = `<!doctype html>
             x: rect.x, y: rect.y, width: rect.width, height: rect.height
           }, "*");
         };
-        const observer = new ResizeObserver(report);
+        let frame = 0;
+        let settledFrame = 0;
+        const reportSettled = () => {
+          report();
+          settledFrame = requestAnimationFrame(report);
+        };
+        const scheduleReports = () => {
+          cancelAnimationFrame(frame);
+          cancelAnimationFrame(settledFrame);
+          frame = requestAnimationFrame(reportSettled);
+        };
+        const observer = new ResizeObserver(scheduleReports);
         const observeRenderedElements = () => {
           observer.observe(mount);
           mount.querySelectorAll("*").forEach((element) => observer.observe(element));
         };
         const mutations = new MutationObserver(() => {
           observeRenderedElements();
-          report();
+          scheduleReports();
         });
         observeRenderedElements();
         mutations.observe(mount, { childList: true, subtree: true, attributes: true });
-        requestAnimationFrame(report);
-        window.addEventListener("resize", report);
+        scheduleReports();
+        window.addEventListener("resize", scheduleReports);
       }
     </script>
   </body>

@@ -42,6 +42,52 @@ export const LIVE_HERO_VERIFY_MIN_TIMEOUT_MS = 1_000;
 export const LIVE_HERO_VERIFY_MAX_TIMEOUT_MS = 60_000;
 const LIVE_HERO_MAX_REPORTED_EXTENT = 16_384;
 const HTTP_PREFLIGHT_TIMEOUT_MS = 10_000;
+const LIVE_HERO_STABILITY_TOLERANCE_PX = 0.25;
+
+// Keep this browser predicate free of nested helpers. Transpilers may
+// decorate nested functions with module-local symbols (for example `__name`)
+// that do not exist after Playwright serializes the predicate into the page.
+export function liveHeroStabilityPredicate(input: {
+  expected: string;
+  maxWidth: number;
+  maxExtent: number;
+  tolerance: number;
+}): boolean {
+  const allReports = (
+    globalThis as unknown as { __ikranReports?: Array<Record<string, unknown>> }
+  ).__ikranReports ?? [];
+  const reports: Array<Record<string, unknown>> = [];
+  for (let index = 0; index < allReports.length; index += 1) {
+    const report = allReports[index]!;
+    if (report.href === input.expected) reports.push(report);
+  }
+  if (reports.length < 2) return false;
+  const previous = reports[reports.length - 2]!;
+  const current = reports[reports.length - 1]!;
+  const previousValid =
+    typeof previous.x === "number" && Number.isFinite(previous.x) &&
+    typeof previous.y === "number" && Number.isFinite(previous.y) &&
+    typeof previous.width === "number" && Number.isFinite(previous.width) &&
+    typeof previous.height === "number" && Number.isFinite(previous.height) &&
+    previous.x >= 0 && previous.y >= 0 &&
+    previous.width > 0 && previous.height > 0 &&
+    previous.x + previous.width <= input.maxWidth &&
+    previous.y + previous.height <= input.maxExtent;
+  const currentValid =
+    typeof current.x === "number" && Number.isFinite(current.x) &&
+    typeof current.y === "number" && Number.isFinite(current.y) &&
+    typeof current.width === "number" && Number.isFinite(current.width) &&
+    typeof current.height === "number" && Number.isFinite(current.height) &&
+    current.x >= 0 && current.y >= 0 &&
+    current.width > 0 && current.height > 0 &&
+    current.x + current.width <= input.maxWidth &&
+    current.y + current.height <= input.maxExtent;
+  return previousValid && currentValid &&
+    Math.abs(Number(previous.x) - Number(current.x)) <= input.tolerance &&
+    Math.abs(Number(previous.y) - Number(current.y)) <= input.tolerance &&
+    Math.abs(Number(previous.width) - Number(current.width)) <= input.tolerance &&
+    Math.abs(Number(previous.height) - Number(current.height)) <= input.tolerance;
+}
 
 export interface LiveHeroVerifyBounds {
   x: number;
@@ -144,71 +190,20 @@ function playwrightVerifyPage(page: PlaywrightPageLike): LiveHeroVerifyPage {
         const frame = document.getElementById("harness");
         if (frame !== null) frame.setAttribute("src", target);
       }, url);
-      const startedAt = Date.now();
+      let stable = true;
       try {
         await page.waitForFunction(
-          (expected: string) => {
-            const w = window as unknown as {
-              __ikranReports?: Array<{ href?: unknown }>;
-            };
-            return (w.__ikranReports ?? []).some(
-              (report) => report.href === expected
-            );
-          },
-          url,
-          { timeout: timeoutMs }
-        );
-      } catch {
-        return pageErrors.length > 0
-          ? { __ikranFailure: "render_exception", errors: [...pageErrors] }
-          : null;
-      }
-      try {
-        await page.waitForFunction(
-          (input: { expected: string; maxWidth: number; maxExtent: number }) => {
-            const w = window as unknown as {
-              __ikranReports?: Array<{
-                href?: unknown;
-                x?: unknown;
-                y?: unknown;
-                width?: unknown;
-                height?: unknown;
-              }>;
-            };
-            return (w.__ikranReports ?? []).some(
-              (report) =>
-                report.href === input.expected &&
-                typeof report.x === "number" &&
-                Number.isFinite(report.x) &&
-                typeof report.y === "number" &&
-                Number.isFinite(report.y) &&
-                typeof report.width === "number" &&
-                Number.isFinite(report.width) &&
-                typeof report.height === "number" &&
-                Number.isFinite(report.height) &&
-                report.x >= 0 &&
-                report.y >= 0 &&
-                report.width > 0 &&
-                report.height > 0 &&
-                report.x + report.width <= input.maxWidth &&
-                report.y + report.height <= input.maxExtent
-            );
-          },
+          liveHeroStabilityPredicate,
           {
             expected: url,
             maxWidth: PROTOTYPE_PRESENTATION_VIEWPORT_WIDTH,
-            maxExtent: LIVE_HERO_MAX_REPORTED_EXTENT
+            maxExtent: LIVE_HERO_MAX_REPORTED_EXTENT,
+            tolerance: LIVE_HERO_STABILITY_TOLERANCE_PX
           },
-          {
-            timeout: Math.max(
-              1,
-              Math.min(400, timeoutMs - (Date.now() - startedAt))
-            )
-          }
+          { timeout: timeoutMs }
         );
       } catch {
-        // A report arrived, but it did not settle into valid geometry. Return
-        // the observed report below so callers can name the actual defect.
+        stable = false;
       }
       const reports = (await page.evaluate((expected: string) => {
         const w = window as unknown as {
@@ -218,7 +213,18 @@ function playwrightVerifyPage(page: PlaywrightPageLike): LiveHeroVerifyPage {
           (report) => report.href === expected
         );
       }, url)) as Array<Record<string, unknown>>;
-      return firstValidLiveHeroReport(reports, url) ?? reports.at(-1) ?? null;
+      if (!stable) {
+        if (pageErrors.length > 0) {
+          return { __ikranFailure: "render_exception", errors: [...pageErrors] };
+        }
+        const latest = reports.at(-1);
+        // Preserve precise diagnostics for an invalid report. A lone or
+        // unstable valid report is deliberately a timeout, not verification.
+        return latest !== undefined && toValidBounds(latest) === null
+          ? latest
+          : null;
+      }
+      return stableLiveHeroReport(reports, url);
     }
   };
 }
@@ -342,6 +348,34 @@ export function firstValidLiveHeroReport(
     if (toValidBounds(report) !== null) return report;
   }
   return null;
+}
+
+/** The latest two reports must both satisfy the Workbench bounds contract and
+ * agree within subpixel noise. This prevents a transient first frame from
+ * being persisted as verified when the settled component is invalid. */
+export function stableLiveHeroReport(
+  reports: readonly unknown[],
+  expectedHref: string
+): Record<string, unknown> | null {
+  const matching = reports.filter(
+    (report): report is Record<string, unknown> =>
+      isPlainObject(report) && report.href === expectedHref
+  );
+  if (matching.length < 2) return null;
+  const previous = matching[matching.length - 2]!;
+  const current = matching[matching.length - 1]!;
+  const previousBounds = toValidBounds(previous);
+  const currentBounds = toValidBounds(current);
+  if (previousBounds === null || currentBounds === null) return null;
+  for (const key of ["x", "y", "width", "height"] as const) {
+    if (
+      Math.abs(previousBounds[key] - currentBounds[key]) >
+      LIVE_HERO_STABILITY_TOLERANCE_PX
+    ) {
+      return null;
+    }
+  }
+  return current;
 }
 
 type LiveHeroDeclaration = {

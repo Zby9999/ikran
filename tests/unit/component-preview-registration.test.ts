@@ -228,9 +228,16 @@ test("registers exact exports into one shared Storybook-free adapter", () => {
   expect(readdirSync(adapterRoot).sort()).toEqual(["[registrationId]", "registry.tsx"]);
   expect(readdirSync(path.join(adapterRoot, "[registrationId]"))).toEqual(["page.tsx"]);
   const registry = readFileSync(path.join(adapterRoot, "registry.tsx"), "utf8");
+  const adapter = readFileSync(
+    path.join(adapterRoot, "[registrationId]", "page.tsx"),
+    "utf8"
+  );
   expect(registry).toContain("TextLink as IkranComponent");
   expect(registry).toMatch(/import IkranComponent\d from/);
   expect(registry).not.toContain("@storybook");
+  expect(adapter).toContain('padding: "8px"');
+  expect(adapter).toContain("normalizePreviewOrigin");
+  expect(adapter).toContain("requestAnimationFrame(reportSettled)");
   expect(readFileSync(path.join(dir, "prototype/package.json"), "utf8")).not.toContain("storybook");
 
   if (!first.ok || !second.ok) throw new Error("registration failed");
@@ -297,6 +304,9 @@ test("registers Vite React exports into one shared adapter and carries entry CSS
   );
   expect(html).toContain("createRoot");
   expect(html).toContain("registrationId");
+  expect(html).toContain("padding: 8px");
+  expect(html).toContain("normalizePreviewOrigin");
+  expect(html).toContain("requestAnimationFrame(reportSettled)");
   expect(registry).toContain('import "../styles.css";');
   expect(registry).toContain("TextLink as IkranComponent");
   expect(html + registry).not.toContain("@storybook");
