@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
@@ -24,6 +24,7 @@ import { completeRuleUpdateApplyOnArtifactDeclaration } from "../../lib/runtime/
 import { logEventOnDb } from "../../lib/runtime/events";
 import { prepareDesignSystemIngestOnDb } from "../../lib/runtime/design-system-ingest";
 import { checkDesignSystemDeclarationLinksOnDb } from "../../lib/runtime/design-system-status";
+import { recordSourceArtifact } from "../../lib/runtime/source-artifact";
 
 const cleanup: string[] = [];
 
@@ -1339,6 +1340,96 @@ test("accepted component ingest normalizes nested source captures before semanti
     }
   } finally {
     closeProjectDb(checked);
+  }
+});
+
+test("accepted component Rule Update binds only source-write evidence during artifact declaration", () => {
+  const projectPath = createProject();
+  seedComponentTarget(projectPath);
+  const feedbackId = "feedback-component-mixed-evidence";
+  const seedId = "seed-component-mixed-evidence";
+  const surfaceId = "surface-component-mixed-evidence";
+  const db = openProjectDb(projectPath);
+  try {
+    db.prepare(
+      `INSERT INTO designer_feedback
+         (id, summary, run_id, session_id, created_at)
+       VALUES (?, 'Keep the verified component', 'run-1', 'session-1', ?)`
+    ).run(feedbackId, "2026-09-02T00:00:01.000Z");
+    db.prepare(
+      `INSERT INTO seed_references
+         (id, figma_seed_reference, original_design_intent, created_at,
+          registered_via, file_key, node_id)
+       VALUES (?, 'https://www.figma.com/design/test?node-id=2-1729',
+               'Preserve the verified Project item', ?, 'agent', 'test', '2:1729')`
+    ).run(seedId, "2026-09-02T00:00:01.000Z");
+    db.prepare(
+      `INSERT INTO figma_evidence_surfaces
+         (id, seed_reference_id, figma_seed_reference, frame_node_id,
+          frame_name, evidence_views_json, created_at)
+       VALUES (?, ?, 'https://www.figma.com/design/test?node-id=2-1729',
+               '2:1729', 'Project item', '{}', ?)`
+    ).run(surfaceId, seedId, "2026-09-02T00:00:01.000Z");
+    db.prepare(
+      "UPDATE project_phase SET phase = 'prototype_validation' WHERE singleton = 1"
+    ).run();
+  } finally {
+    closeProjectDb(db);
+  }
+
+  const review = createRuleUpdateReview(projectPath, {
+    context: "Component with mixed provenance evidence"
+  });
+  if (!review.ok) throw new Error(review.reason);
+  const fullRuleBody = componentSpecBodyWithLinks([feedbackId, surfaceId]);
+  const proposal = draftRuleUpdateProposal(projectPath, {
+    reviewId: review.review.id,
+    kind: "update",
+    classification: "reusable_candidate",
+    title: "Keep verified Project item",
+    fullRuleBody,
+    reason: "The verified component carries source and positional evidence.",
+    affectedItems: ["Project item"],
+    evidenceRecordIds: [feedbackId, surfaceId],
+    target: {
+      category: "component:component-project-item",
+      sourceArtifactPath: "design-system/components/project-item.json",
+      entryId: "component-project-item"
+    }
+  });
+  if (!proposal.ok) throw new Error(proposal.reason);
+  expect(publishRuleUpdateReview(projectPath, review.review.id)).toMatchObject({
+    ok: true
+  });
+  expect(decideRuleUpdateProposal(projectPath, {
+    proposalId: proposal.proposal.id,
+    decision: "accepted"
+  })).toMatchObject({ ok: true });
+  expect(claimRuleUpdateDecision(projectPath)).toMatchObject({
+    ok: true,
+    completed: false
+  });
+
+  const artifactPath = path.join(
+    projectPath,
+    "design-system/components/project-item.json"
+  );
+  mkdirSync(path.dirname(artifactPath), { recursive: true });
+  writeFileSync(artifactPath, fullRuleBody, "utf8");
+
+  const declared = recordSourceArtifact(projectPath, {
+    path: "design-system/components/project-item.json",
+    artifactType: "component-spec",
+    semanticPurpose: "Apply the accepted Project item Rule Update",
+    proposalId: proposal.proposal.id,
+    relatedRecordIds: []
+  });
+
+  expect(declared).toMatchObject({ ok: true });
+  if (declared.ok) {
+    expect(JSON.parse(declared.record.related_record_ids_json)).toEqual([
+      feedbackId
+    ]);
   }
 });
 

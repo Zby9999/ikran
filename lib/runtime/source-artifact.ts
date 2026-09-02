@@ -78,6 +78,7 @@ import {
   completeRuleUpdateApplyOnArtifactDeclaration,
   markRuleUpdateDeclarationConflict
 } from "./rule-update-apply";
+import { canonicalRuleUpdateSourceEvidenceOnDb } from "./rule-update-evidence";
 
 // ---------------------------------------------------------------------------
 // Artifact type registry (data-driven; add new types as entries below)
@@ -583,9 +584,15 @@ export function recordSourceArtifact(
             proposalEvidence?.evidence_record_ids_json ?? "[]"
           ) as unknown;
           if (Array.isArray(parsed)) {
+            const proposalSourceEvidence = canonicalRuleUpdateSourceEvidenceOnDb(
+              db,
+              parsed.filter(
+                (value): value is string => typeof value === "string"
+              )
+            );
             effectiveRelatedRecordIds = [...new Set([
               ...effectiveRelatedRecordIds,
-              ...parsed.filter((value): value is string => typeof value === "string")
+              ...proposalSourceEvidence
             ])];
           }
         } catch {
