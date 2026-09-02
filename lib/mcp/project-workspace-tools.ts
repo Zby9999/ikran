@@ -24,6 +24,7 @@ import {
 import { getProjectPhase } from "../runtime/project-phase";
 import { readAgentCommandWaitEligibility } from "../runtime/adaptive-agent-wait";
 import { readCurrentIncrementalPlanningStatus } from "../runtime/alignment-incremental-planning";
+import { probeIkranChromium } from "../runtime/chromium-runtime";
 
 const OPEN_PROJECT_ACTION = {
   tool: "create_or_open_project"
@@ -154,6 +155,20 @@ export function registerProjectWorkspaceTools(
             resolved
           );
         }
+        const browserHealth = await probeIkranChromium();
+        if (!browserHealth.ok) {
+          return failureResult(
+            "activate_study_workspace",
+            "study_browser_unavailable",
+            rt,
+            {
+              reason: browserHealth.reason,
+              ...browserHealth.details,
+              next_action:
+                "Reinstall this exact Study Kit release. Do not start Alignment or edit component code."
+            }
+          );
+        }
         const activation = await activateExistingProjectCommand(
           resolved.workspace.path
         );
@@ -189,6 +204,10 @@ export function registerProjectWorkspaceTools(
           ok: true,
           study_package: resolved.packageName,
           plugin_version: resolved.pluginVersion,
+          browser_preflight: {
+            ok: true,
+            executable_path: browserHealth.executablePath
+          },
           manifest_path: resolved.manifestPath,
           workspace_id: resolved.workspace.id,
           workspace_number: resolved.workspace.workspaceNumber,

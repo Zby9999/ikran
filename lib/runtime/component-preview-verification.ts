@@ -244,7 +244,7 @@ async function executeTask(
   task: VerificationTask,
   timeoutMs: number | undefined,
   deps: LiveHeroVerifyDeps
-): Promise<boolean> {
+): Promise<{ ok: boolean; infrastructureFailure?: string }> {
   const startedAt = new Date().toISOString();
   withProjectTransaction(projectPath, (db) => {
     db.prepare(
@@ -278,7 +278,38 @@ async function executeTask(
       task.workId
     );
   });
-  return result.ok;
+  return result;
+}
+
+function cachedPass(
+  projectPath: string,
+  registration: Registration,
+  identity: string,
+  state: string
+): boolean {
+  const db = openProjectDb(projectPath);
+  try {
+    const prior = db.prepare(
+      `SELECT bounds_json FROM component_preview_verification_results
+       WHERE verification_identity = ? AND state = ? AND status = 'passed'
+       ORDER BY updated_at DESC LIMIT 1`
+    ).get(identity, state) as { bounds_json: string | null } | undefined;
+    if (!prior) return false;
+    const now = new Date().toISOString();
+    const id = hash(`${registration.id}:${identity}:${state}`);
+    db.prepare(
+      `INSERT INTO component_preview_verification_results
+       (id, registration_id, verification_identity, state, status,
+        failure_reason, bounds_json, attempt, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'passed', NULL, ?, 1, ?, ?)
+       ON CONFLICT(registration_id, verification_identity, state) DO UPDATE SET
+         status = 'passed', failure_reason = NULL,
+         bounds_json = excluded.bounds_json, updated_at = excluded.updated_at`
+    ).run(id, registration.id, identity, state, prior.bounds_json, now, now);
+    return true;
+  } finally {
+    closeProjectDb(db);
+  }
 }
 
 function passed(
@@ -289,16 +320,42 @@ function passed(
 ): boolean {
   const db = openProjectDb(projectPath);
   try {
-    return Boolean(
-      db.prepare(
-        `SELECT 1 FROM component_preview_verification_results
-         WHERE registration_id = ? AND verification_identity = ?
-           AND state = ? AND status = 'passed'`
-      ).get(registrationId, identity, state)
-    );
+    return Boolean(db.prepare(
+      `SELECT 1 FROM component_preview_verification_results
+       WHERE registration_id = ? AND verification_identity = ?
+         AND state = ? AND status = 'passed'`
+    ).get(registrationId, identity, state));
   } finally {
     closeProjectDb(db);
   }
+}
+
+function pooledBrowserDeps(base: LiveHeroVerifyDeps): {
+  deps: LiveHeroVerifyDeps;
+  close(): Promise<void>;
+} {
+  let browserPromise: ReturnType<LiveHeroVerifyDeps["launchBrowser"]> | null = null;
+  const browser = () => browserPromise ??= base.launchBrowser();
+  return {
+    deps: {
+      async launchBrowser() {
+        const shared = await browser();
+        return {
+          newPage: () => shared.newPage(),
+          close: async () => undefined
+        };
+      },
+      fetchStatus: (url) => base.fetchStatus(url)
+    },
+    async close() {
+      if (!browserPromise) return;
+      try {
+        await (await browserPromise).close();
+      } catch {
+        // A failed launch or already-closed browser needs no cleanup.
+      }
+    }
+  };
 }
 
 function persistResult(
@@ -445,7 +502,7 @@ export async function startComponentPreviewVerification(
         state,
         priority: priority.has(registration.entry_id) ? 1 : 0,
         queuePosition: tasks.length,
-        cached: passed(projectPath, registration.id, identity, state),
+        cached: cachedPass(projectPath, registration, identity, state),
         workId: randomUUID()
       });
     }
@@ -458,18 +515,22 @@ export async function startComponentPreviewVerification(
   for (const task of tasks.filter((candidate) => candidate.state === "default" && candidate.cached)) {
     defaultPassed.set(task.registration.id, true);
   }
+  const defaultPool = pooledBrowserDeps(deps);
+  let defaultInfrastructureFailure: string | null = null;
   try {
     await runPool(defaultTasks, concurrency, async (task) => {
-      defaultPassed.set(
-        task.registration.id,
-        await executeTask(
-          projectPath,
-          batch.startedAt,
-          task,
-          input.timeoutMs,
-          deps
-        )
+      if (defaultInfrastructureFailure) return;
+      const outcome = await executeTask(
+        projectPath,
+        batch.startedAt,
+        task,
+        input.timeoutMs,
+        defaultPool.deps
       );
+      defaultPassed.set(task.registration.id, outcome.ok);
+      if (outcome.infrastructureFailure) {
+        defaultInfrastructureFailure = outcome.infrastructureFailure;
+      }
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : "verification_interrupted";
@@ -480,6 +541,17 @@ export async function startComponentPreviewVerification(
       });
     }
     return { ok: false, reason: "verification_interrupted", details: { reason } };
+  } finally {
+    await defaultPool.close();
+  }
+  if (defaultInfrastructureFailure) {
+    failBatch(projectPath, batch.id, batch.startedAt, defaultInfrastructureFailure);
+    for (const task of defaultTasks) {
+      setRegistrationStatus(projectPath, task.registration.id, task.identity, {
+        verification: "failed"
+      });
+    }
+    return { ok: false, reason: defaultInfrastructureFailure };
   }
   let defaultAllPassed = true;
   for (const registration of rows) {
@@ -510,6 +582,7 @@ export async function startComponentPreviewVerification(
   }
   if (background.length > 0) {
     schedule(async () => {
+      const backgroundPool = pooledBrowserDeps(deps);
       try {
         for (const registration of rows.filter((row) =>
           background.some((task) => task.registration.id === row.id)
@@ -527,7 +600,7 @@ export async function startComponentPreviewVerification(
             batch.startedAt,
             task,
             input.timeoutMs,
-            deps
+            backgroundPool.deps
           );
         });
         for (const registration of rows.filter((row) => defaultPassed.get(row.id))) {
@@ -552,6 +625,8 @@ export async function startComponentPreviewVerification(
           });
         }
         throw error;
+      } finally {
+        await backgroundPool.close();
       }
     });
   } else {

@@ -23,6 +23,7 @@
 // throws: failures resolve with typed reasons.
 
 import { closeProjectDb, openProjectDb } from "./db";
+import { launchIkranChromium } from "./chromium-runtime";
 import { getPrototypeSurface } from "./prototype-surface";
 import { PROTOTYPE_PRESENTATION_VIEWPORT_WIDTH } from "./prototype-screenshot-shared";
 
@@ -241,8 +242,7 @@ export interface LiveHeroVerifyDeps {
 
 export const defaultLiveHeroVerifyDeps: LiveHeroVerifyDeps = {
   async launchBrowser() {
-    const { chromium } = await import("playwright-core");
-    const browser = await chromium.launch({ headless: true });
+    const browser = await launchIkranChromium();
     return {
       newPage: async () => playwrightVerifyPage(await browser.newPage()),
       close: () => browser.close()

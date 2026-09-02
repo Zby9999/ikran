@@ -19,9 +19,9 @@ export async function writeDraftReleaseNotes({ outDir, version, outputPath }) {
   const notes = `# Ikran v${safeVersion}\n\n` +
     `Alpha evaluation build for macOS on Apple Silicon. Download one product Kit: the Agent Plugin Kit (Cursor, Codex, Agent Plugin 1.0) or the Claude Plugin Kit (Claude Code beta, 2KB MCP contract). They are not interchangeable.\n\n` +
     `## What's new\n\n` +
-    `- Resolves the npm CLI installed beside the active Node runtime instead of assuming the Agent host exposes npm on PATH.\n` +
-    `- Runs dependency installation and package scripts through the current Node executable, covering npm, pnpm, yarn, bun, and npx-shaped preview commands without changing the MCP lifecycle or release size.\n` +
-    `- Prevents a missing host package manager from cascading into manual shims, Runtime restarts, preview timeouts, or MCP disconnects.\n` +
+    `- Bundles the Playwright-matched Chromium runtime in both Study Kits and launches it during workspace activation, so a fresh machine fails before Alignment instead of during component registration.\n` +
+    `- Preserves exact browser infrastructure errors, retries unchanged component declarations after transient infrastructure recovery, reuses a browser pool and verification results across runs, and invalidates verification when imported or global styles and fonts change.\n` +
+    `- Makes an accepted Rule Update revision authoritative for its exact target, automatically binds canonical proposal evidence to the source declaration, and rejects semantic apply drift before ingest without forcing a new acceptance for provenance-only repair.\n` +
     `- Retains the optimized 16-card, multi-option Alignment checkpoint and canonical Figma reference in both Codex Study Kits.\n\n` +
     `## Download one Kit\n\n` +
     `- **Agent Plugin Kit** — production Runtime plus Agent Plugin 1.0 (\`plugin.json\`, \`mcp.json\`, \`skills/\`) and host-native Cursor/Codex adapters (\`.cursor-plugin/plugin.json\`, \`.codex-plugin/plugin.json\`). Does not include the Claude Code adapter.\n` +
@@ -46,7 +46,7 @@ export async function writeDraftReleaseNotes({ outDir, version, outputPath }) {
     "  ikran -- node /absolute/path/to/extracted-ikran/bin/ikran-mcp.mjs --prod\n\n" +
     "claude mcp get ikran\n" +
     "```\n\n" +
-    `Do not publish this repository as a Claude marketplace plugin yet. The Runtime still needs \`npm run setup:product\` (production build and Chromium).\n\n` +
+    `Do not publish this repository as a Claude marketplace plugin yet. The Runtime still needs \`npm run setup:product\` for its production build; Study Kits include their own matched Chromium runtime.\n\n` +
     `## Cursor\n\n` +
     `Download the **Agent Plugin Kit**. After \`npm run setup:product\`, symlink the extracted Kit into Cursor's local plugin directory and reload Cursor from the designer's project:\n\n` +
     "```bash\n" +

@@ -22,6 +22,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { launchIkranChromium } from "./chromium-runtime";
 import { getPrototypeSurface } from "./prototype-surface";
 
 const RULE_CAPTURE_DIR = path.posix.join("design-system", "captures");
@@ -99,10 +100,7 @@ export type CaptureRuleScreenshotResult =
 
 export const defaultRuleCaptureDeps: RuleCaptureDeps = {
   async launchBrowser() {
-    const { chromium } = await import("playwright-core");
-    return (await chromium.launch({
-      headless: true
-    })) as unknown as RuleCaptureBrowser;
+    return (await launchIkranChromium()) as unknown as RuleCaptureBrowser;
   },
   resolveSurface(projectPath, surfaceId) {
     const surface = getPrototypeSurface(projectPath, surfaceId);

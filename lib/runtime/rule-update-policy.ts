@@ -99,19 +99,129 @@ export function validateRuleUpdateIngestPlanOnDb(
   plan: DesignSystemIngestPlan
 ):
   | { ok: true }
-  | { ok: false; reason: "retire_semantic_diff_mismatch"; details: unknown } {
+  | {
+      ok: false;
+      reason: "retire_semantic_diff_mismatch" | "rule_update_semantic_diff_mismatch";
+      details: unknown;
+    } {
   const proposal = db
     .prepare(
-      `SELECT p.kind, r.source_artifact_path, r.entry_id
+      `SELECT p.kind, p.evidence_record_ids_json, r.full_rule_body,
+              r.target_category, r.source_artifact_path, r.proposed_target_path,
+              r.entry_id
        FROM rule_update_proposals p
        JOIN rule_update_proposal_revisions r
          ON r.proposal_id = p.id AND r.revision = p.current_revision
        WHERE p.id = ?`
     )
     .get(proposalId) as
-    | { kind: string; source_artifact_path: string | null; entry_id: string | null }
+    | {
+        kind: string;
+        evidence_record_ids_json: string;
+        full_rule_body: string;
+        target_category: string;
+        source_artifact_path: string | null;
+        proposed_target_path: string | null;
+        entry_id: string | null;
+      }
     | undefined;
-  if (!proposal || proposal.kind !== "retire") return { ok: true };
+  if (!proposal) return { ok: true };
+
+  if (proposal.kind !== "retire") {
+    const destination = proposal.proposed_target_path ?? proposal.source_artifact_path;
+    const semanticFail = (details: unknown) => ({
+      ok: false as const,
+      reason: "rule_update_semantic_diff_mismatch" as const,
+      details
+    });
+    if (destination !== plan.sourcePath) {
+      return semanticFail({ expected_source: destination, observed_source: plan.sourcePath });
+    }
+    const currentIds = new Set(
+      (db.prepare(
+        "SELECT entry_id FROM design_system_entries WHERE source_artifact_path = ?"
+      ).all(plan.sourcePath) as Array<{ entry_id: string }>).map((row) => row.entry_id)
+    );
+    const targetRows = proposal.target_category.startsWith("component:")
+      ? plan.rows
+      : proposal.entry_id
+        ? plan.rows.filter((row) => row.entry_id === proposal.entry_id)
+        : proposal.kind === "new"
+          ? plan.rows.filter((row) => !currentIds.has(row.entry_id))
+          : [];
+    if (targetRows.length !== 1) {
+      return semanticFail({
+        expected_entry_id: proposal.entry_id,
+        observed_entry_ids: targetRows.map((row) => row.entry_id)
+      });
+    }
+    const target = targetRows[0]!;
+    let bodyMatches = false;
+    try {
+      const parsed = JSON.parse(proposal.full_rule_body) as unknown;
+      if (
+        proposal.target_category.startsWith("component:") &&
+        parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ) {
+        const record = parsed as Record<string, unknown>;
+        bodyMatches =
+          record.id === target.entry_id &&
+          JSON.stringify(sortKeysDeep(record.value)) ===
+            JSON.stringify(sortKeysDeep(target.value)) &&
+          record.status === target.status &&
+          JSON.stringify(sortKeysDeep(record.links)) ===
+            JSON.stringify(sortKeysDeep(target.links));
+      } else {
+        bodyMatches =
+          JSON.stringify(sortKeysDeep(parsed)) ===
+          JSON.stringify(sortKeysDeep(target.value));
+      }
+    } catch {
+      bodyMatches =
+        (typeof target.value === "string" && target.value === proposal.full_rule_body) ||
+        target.meaning === proposal.full_rule_body ||
+        (target.value !== null && typeof target.value === "object" &&
+          !Array.isArray(target.value) &&
+          (target.value as { description?: unknown }).description === proposal.full_rule_body);
+    }
+    if (!bodyMatches) {
+      return semanticFail({
+        entry_id: target.entry_id,
+        expected_full_rule_body: proposal.full_rule_body
+      });
+    }
+    let evidenceIds: string[] = [];
+    try {
+      const parsed = JSON.parse(proposal.evidence_record_ids_json) as unknown;
+      if (Array.isArray(parsed)) {
+        evidenceIds = parsed.filter((value): value is string => typeof value === "string");
+      }
+    } catch {
+      return semanticFail({ invalid_proposal_evidence: true });
+    }
+    const sourceEvidence = evidenceIds.filter((id) =>
+      db.prepare(
+        `SELECT 1 FROM designer_feedback WHERE id = ?
+         UNION ALL
+         SELECT 1 FROM agent_alignment_annotations WHERE id = ?
+         UNION ALL
+         SELECT 1 FROM alignment_question_cards
+          WHERE id = ? AND final_answer IS NOT NULL AND TRIM(final_answer) <> ''
+         LIMIT 1`
+      ).get(id, id, id) !== undefined
+    );
+    if (
+      sourceEvidence.length === 0 ||
+      !sourceEvidence.some((id) => target.links.includes(id))
+    ) {
+      return semanticFail({
+        entry_id: target.entry_id,
+        required_evidence_record_ids: sourceEvidence,
+        observed_links: target.links
+      });
+    }
+    return { ok: true };
+  }
 
   const fail = (details: unknown) => ({
     ok: false as const,

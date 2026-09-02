@@ -436,7 +436,7 @@ test("09A design system browser: declare → render → approve write-back", asy
         fullRuleBody: "Feedback stays immediate without demanding attention.",
         reason: "The validated prototype clarified the existing feedback rule.",
         affectedItems: ["Feedback"],
-        evidenceRecordIds: [],
+        evidenceRecordIds: [designerEditedCardId],
         targetCategory: "foundations.interaction",
         sourceArtifactPath: "design-system/interaction-rules.json",
         entryId: "interaction-calm-feedback"
@@ -454,7 +454,7 @@ test("09A design system browser: declare → render → approve write-back", asy
         fullRuleBody: "Reveal secondary controls only when their context becomes relevant.",
         reason: "The validated prototype established a reusable disclosure pattern.",
         affectedItems: ["Secondary controls"],
-        evidenceRecordIds: [],
+        evidenceRecordIds: [designerEditedCardId],
         targetCategory: "foundations.interaction",
         sourceArtifactPath: "design-system/interaction-rules.json"
       }
@@ -879,7 +879,7 @@ test("09A design system browser: declare → render → approve write-back", asy
         }
       ]
     });
-    expect(structuredContent(await client.callTool({
+    const appliedNewProposal = structuredContent(await client.callTool({
       name: "record_artifact_written",
       arguments: {
         path: "design-system/interaction-rules.json",
@@ -888,7 +888,11 @@ test("09A design system browser: declare → render → approve write-back", asy
         relatedRecordIds: [designerEditedCardId],
         proposalId: newProposalId
       }
-    }))).toMatchObject({ ok: true, record: { status: "ingested" } });
+    }));
+    expect(appliedNewProposal, JSON.stringify(appliedNewProposal)).toMatchObject({
+      ok: true,
+      record: { status: "ingested" }
+    });
     await expect(newProposalCard).toHaveCount(0);
     await expect(interactionNav.locator(".dsb-navrow-rule-update-dot")).toHaveCount(0);
     await expect(page.getByText("Purposeful progressive disclosure", { exact: true })).toBeVisible();

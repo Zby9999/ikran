@@ -34,6 +34,7 @@ import {
 import { resolveComponentPreviewException } from "../../lib/runtime/component-preview-exception";
 import { applyDesignSystemIngestOnDb } from "../../lib/runtime/design-system-ingest";
 import { confirmPrototype } from "../../lib/runtime/project-phase";
+import { componentPreviewVerificationIdentity } from "../../lib/runtime/component-preview-identity";
 
 const projects: string[] = [];
 
@@ -179,6 +180,28 @@ function fixture(options: {
   }
   return dir;
 }
+
+test("verification identity changes when an imported stylesheet changes", () => {
+  const dir = fixture();
+  write(
+    dir,
+    "prototype/components/TextLink.tsx",
+    "import './TextLink.css'; export function TextLink() { return <a>Open</a>; }"
+  );
+  write(dir, "prototype/components/TextLink.css", "a { min-height: 27px; }");
+  write(dir, "prototype/.ikran/component-preview-adapter.tsx", "export {};");
+  write(dir, "prototype/.ikran/component-preview-manifest.json", "{}");
+  const input = {
+    modulePath: "prototype/components/TextLink.tsx",
+    registrationDigest: "registration",
+    prototypeRoot: "prototype",
+    adapterArtifactPath: "prototype/.ikran/component-preview-adapter.tsx",
+    manifestArtifactPath: "prototype/.ikran/component-preview-manifest.json"
+  };
+  const before = componentPreviewVerificationIdentity(dir, input);
+  write(dir, "prototype/components/TextLink.css", "a { min-height: 99px; }");
+  expect(componentPreviewVerificationIdentity(dir, input)).not.toBe(before);
+});
 
 afterEach(() => {
   resetAutomaticComponentPreviewOrchestrationHostForTests();
@@ -1111,6 +1134,85 @@ test("uses digest cache and priority-ordered bounded parallel verification", asy
   }
 });
 
+test("reuses a verified render identity across Prototype runs", async () => {
+  const dir = fixture();
+  const firstRegistration = registerComponentPreview(dir, {
+    runId: "run-1",
+    surfaceId: "surface-1",
+    entryId: "component.text-link",
+    modulePath: "prototype/components/TextLink.tsx",
+    exportName: "TextLink"
+  });
+  if (!firstRegistration.ok) throw new Error(firstRegistration.reason);
+  let launches = 0;
+  const deps: LiveHeroVerifyDeps = {
+    launchBrowser: async () => {
+      launches += 1;
+      return {
+        newPage: async () => ({
+          setContent: async () => undefined,
+          loadHarnessAndAwaitReport: async () => ({ x: 0, y: 0, width: 100, height: 30 })
+        }),
+        close: async () => undefined
+      };
+    },
+    fetchStatus: async () => ({ ok: true, status: 200 })
+  };
+  expect(await startComponentPreviewVerification(
+    dir,
+    { entryIds: ["component.text-link"] },
+    { deps }
+  )).toMatchObject({ ok: true, cache_hits: 0 });
+  expect(launches).toBe(1);
+
+  const db = new DatabaseSync(getProjectDbPath(dir));
+  try {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO prototype_runs
+       (id, run_id, source_artifact_path, prototype_root, dev_command,
+        seed_reference_ids_json, evidence_version_ids_json,
+        design_system_version, created_at, updated_at, kind, intent,
+        used_candidate_ids_json)
+       VALUES ('prototype-run-2', 'run-2', 'prototype/components/TextLink.tsx',
+               'prototype', 'npm run dev', '[]', '[]', 'ds-v1', ?, ?,
+               'new_design', 'cache reuse', '[]')`
+    ).run(now, now);
+    db.prepare(
+      `INSERT INTO prototype_surfaces
+       (id, prototype_run_id, surface_key, name, preview_url, preview_port,
+        readiness, readiness_reason, stale, stale_reason, created_at, updated_at)
+       VALUES ('surface-2', 'prototype-run-2', 'default', 'Default 2',
+               'http://127.0.0.1:4300', 4300, 'ready', NULL, 0, NULL, ?, ?)`
+    ).run(now, now);
+  } finally {
+    db.close();
+  }
+  const secondRegistration = registerComponentPreview(dir, {
+    runId: "run-2",
+    surfaceId: "surface-2",
+    entryId: "component.text-link",
+    modulePath: "prototype/components/TextLink.tsx",
+    exportName: "TextLink"
+  });
+  if (!secondRegistration.ok) throw new Error(secondRegistration.reason);
+  expect(await startComponentPreviewVerification(
+    dir,
+    { entryIds: ["component.text-link"] },
+    { deps }
+  )).toMatchObject({ ok: true, cache_hits: 2, background_queued: false });
+  expect(launches).toBe(1);
+  const verified = new DatabaseSync(getProjectDbPath(dir));
+  try {
+    expect(verified.prepare(
+      `SELECT COUNT(*) AS count FROM component_preview_verification_results
+       WHERE registration_id = ? AND status = 'passed'`
+    ).get(secondRegistration.registration.id)).toEqual({ count: 1 });
+  } finally {
+    verified.close();
+  }
+});
+
 test("an old verification identity cannot revive availability or sign a newer source edit", async () => {
   const dir = fixture();
   const registered = registerComponentPreview(dir, {
@@ -1444,6 +1546,87 @@ test("an unchanged failed verification is returned without repeating browser wor
   });
   expect(scheduled).toEqual([]);
   expect(browserLoads).toBe(1);
+});
+
+test("automatic orchestration preserves browser_unavailable without requesting component edits", async () => {
+  const dir = fixture({ linked: false });
+  const scheduled: Array<() => Promise<void>> = [];
+  setAutomaticComponentPreviewOrchestrationHostForTests({
+    deps: {
+      launchBrowser: async () => {
+        throw new Error("Executable does not exist");
+      },
+      fetchStatus: async () => ({ ok: true, status: 200 })
+    },
+    schedule: (work) => scheduled.push(work)
+  });
+  expect(recordArtifactWrittenCommand(dir, {
+    path: "prototype/components/TextLink.tsx",
+    artifactType: "code",
+    semanticPurpose: "Text Link implementation",
+    componentPreview: {
+      runId: "run-1",
+      surfaceId: "surface-1",
+      entryId: "component.text-link",
+      modulePath: "prototype/components/TextLink.tsx",
+      exportName: "TextLink",
+      semanticImpact: "none",
+      defaultArgs: {},
+      stateArgs: {}
+    }
+  })).toMatchObject({ ok: true });
+  await scheduled.shift()!();
+  const db = new DatabaseSync(getProjectDbPath(dir));
+  try {
+    expect(db.prepare(
+      `SELECT status, failure_code FROM component_preview_orchestrations`
+    ).get()).toEqual({ status: "failed", failure_code: "browser_unavailable" });
+  } finally {
+    db.close();
+  }
+
+  const recovered: Array<() => Promise<void>> = [];
+  setAutomaticComponentPreviewOrchestrationHostForTests({
+    deps: {
+      launchBrowser: async () => ({
+        newPage: async () => ({
+          setContent: async () => undefined,
+          loadHarnessAndAwaitReport: async () => ({ x: 0, y: 0, width: 100, height: 30 })
+        }),
+        close: async () => undefined
+      }),
+      fetchStatus: async () => ({ ok: true, status: 200 })
+    },
+    schedule: (work) => recovered.push(work)
+  });
+  expect(recordArtifactWrittenCommand(dir, {
+    path: "prototype/components/TextLink.tsx",
+    artifactType: "code",
+    semanticPurpose: "Retry unchanged Text Link after browser recovery",
+    componentPreview: {
+      runId: "run-1",
+      surfaceId: "surface-1",
+      entryId: "component.text-link",
+      modulePath: "prototype/components/TextLink.tsx",
+      exportName: "TextLink",
+      semanticImpact: "none",
+      defaultArgs: {},
+      stateArgs: {}
+    }
+  })).toMatchObject({
+    ok: true,
+    component_preview: { idempotent: true, orchestration: { status: "pending" } }
+  });
+  expect(recovered).toHaveLength(1);
+  await recovered.shift()!();
+  const afterRecovery = new DatabaseSync(getProjectDbPath(dir));
+  try {
+    expect(afterRecovery.prepare(
+      `SELECT status, failure_code FROM component_preview_orchestrations`
+    ).get()).toEqual({ status: "verified_candidate", failure_code: null });
+  } finally {
+    afterRecovery.close();
+  }
 });
 
 test("direct orchestration uncertainty produces one bounded semantic exception", () => {

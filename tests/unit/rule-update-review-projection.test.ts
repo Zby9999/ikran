@@ -38,6 +38,12 @@ test("Interaction records project the frozen transcript, revisions and decisions
       { id: "m1", role: "designer", content: "Keep feedback quiet." },
       { id: "m2", role: "agent", content: "I will propose the reusable rule." }
     ]));
+    db.prepare(
+      `INSERT INTO designer_feedback
+         (id, summary, run_id, session_id, created_at)
+       VALUES ('feedback-history', 'Keep feedback quiet.', 'run-1',
+               'session-1', '2026-08-12T00:00:00.000Z')`
+    ).run();
   } finally {
     closeProjectDb(db);
   }
@@ -58,7 +64,7 @@ test("Interaction records project the frozen transcript, revisions and decisions
     fullRuleBody: "Feedback remains quiet.",
     reason: "Designer confirmed it.",
     affectedItems: ["Feedback"],
-    evidenceRecordIds: [],
+    evidenceRecordIds: ["feedback-history"],
     target: {
       category: "foundations.interaction",
       sourceArtifactPath: "design-system/interaction-rules.json"

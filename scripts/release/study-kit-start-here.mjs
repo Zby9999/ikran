@@ -54,7 +54,7 @@ Run this step when the participant returns to **Ikran Installation and Setup** a
 
 1. Re-run \`node --version\`, \`codex plugin marketplace list\`, and \`codex plugin list\`. Require the same compatible Node.js runtime, exact installed plugin version, and package source.
 2. Confirm \`activate_study_workspace\`, \`list_working_folders\`, and \`open_workbench\` are now native Ikran tools in this resumed task. Tool names inferred from documentation do not count.
-3. Prove Ikran availability with a real call: call \`activate_study_workspace\` using the concrete absolute \`MANIFEST_PATH\` and stable \`workspaceId\`. Require \`ok: true\` and verify package, plugin version, workspace ID and number, Figma fileKey/nodeId, and \`active_project\` against the manifest. Then call \`list_working_folders\` and require the assigned folder with source \`study_manifest\`.
+3. Prove Ikran and its bundled browser availability with a real call: call \`activate_study_workspace\` using the concrete absolute \`MANIFEST_PATH\` and stable \`workspaceId\`. Require \`ok: true\` and \`browser_preflight.ok: true\`; verify package, plugin version, workspace ID and number, Figma fileKey/nodeId, and \`active_project\` against the manifest. This preflight launches the packaged Playwright Chromium before Alignment, so never repair component code when it reports \`study_browser_unavailable\`. Then call \`list_working_folders\` and require the assigned folder with source \`study_manifest\`.
 
 If any native Ikran tool is absent, stop with \`STUDY_SETUP_HOST_NOT_REFRESHED\` and give this recovery guidance:
 
@@ -83,7 +83,7 @@ Use this continuation instruction in the new task:
 The new task must confirm the three native Ikran tools and then:
 
 - Call \`activate_study_workspace\` with the concrete absolute \`MANIFEST_PATH\` and assigned stable \`workspaceId\`.
-- Require \`ok: true\` and verify package, plugin version, \`workspace_id\`, workspace number, Figma fileKey/nodeId, and \`active_project\` against the manifest.
+- Require \`ok: true\` and \`browser_preflight.ok: true\`; verify package, plugin version, \`workspace_id\`, workspace number, Figma fileKey/nodeId, and \`active_project\` against the manifest.
 - Call \`list_working_folders\`; require the assigned folder with source \`study_manifest\`.
 - Call \`open_workbench\`; require \`workspace_source: study_manifest\` and the activated project identity.
 

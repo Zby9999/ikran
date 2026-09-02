@@ -24,6 +24,7 @@ import {
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
+import { launchIkranChromium } from "./chromium-runtime";
 import { getArtifactsDir } from "./paths";
 import { setPrototypeSurfaceScreenshot } from "./prototype-surface";
 import {
@@ -97,10 +98,7 @@ export type PrototypeScreenshotOptions = {
 
 export const defaultPrototypeScreenshotDeps: PrototypeScreenshotDeps = {
   async launchBrowser() {
-    const { chromium } = await import("playwright-core");
-    return (await chromium.launch({
-      headless: true
-    })) as unknown as PrototypeScreenshotBrowser;
+    return (await launchIkranChromium()) as unknown as PrototypeScreenshotBrowser;
   },
   async fetchStatus(url) {
     try {

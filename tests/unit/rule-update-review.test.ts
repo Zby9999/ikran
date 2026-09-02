@@ -22,6 +22,8 @@ import { authorizeRuleUpdateProposalPathOnDb } from "../../lib/runtime/rule-upda
 import { validateRuleUpdateIngestPlanOnDb } from "../../lib/runtime/rule-update-policy";
 import { completeRuleUpdateApplyOnArtifactDeclaration } from "../../lib/runtime/rule-update-apply";
 import { logEventOnDb } from "../../lib/runtime/events";
+import { prepareDesignSystemIngestOnDb } from "../../lib/runtime/design-system-ingest";
+import { checkDesignSystemDeclarationLinksOnDb } from "../../lib/runtime/design-system-status";
 
 const cleanup: string[] = [];
 
@@ -591,6 +593,80 @@ test("Reject records the linked feedback disposition instead of blocking formali
         )
         .get()
     ).toEqual({ proposal_id: proposal.proposal.id });
+  } finally {
+    closeProjectDb(checked);
+  }
+});
+
+test("accepted feedback-backed Rule Update preflights and authorizes one exact formalized write", () => {
+  const projectPath = createProject();
+  seedExistingInteractionRule(projectPath);
+  const db = openProjectDb(projectPath);
+  try {
+    db.prepare(
+      `INSERT INTO designer_feedback
+         (id, summary, run_id, session_id, created_at)
+       VALUES ('feedback-accepted', 'Delay feedback until state changes',
+               'run-1', 'session-1', ?)`
+    ).run(new Date().toISOString());
+  } finally {
+    closeProjectDb(db);
+  }
+  const review = createRuleUpdateReview(projectPath, { context: "Accepted feedback" });
+  if (!review.ok) throw new Error(review.reason);
+  const body = "Show feedback immediately after the visible state changes.";
+  const proposal = draftRuleUpdateProposal(projectPath, {
+    reviewId: review.review.id,
+    kind: "update",
+    classification: "proposed_update",
+    title: "Selection feedback timing",
+    fullRuleBody: body,
+    reason: "The designer confirmed the timing in Prototype review.",
+    affectedItems: ["interaction.selection-feedback"],
+    evidenceRecordIds: ["feedback-accepted"],
+    target: {
+      category: "foundations.interaction",
+      sourceArtifactPath: "design-system/interaction-rules.json",
+      entryId: "interaction.selection-feedback"
+    }
+  });
+  if (!proposal.ok) throw new Error(proposal.reason);
+  expect(publishRuleUpdateReview(projectPath, review.review.id).ok).toBe(true);
+  expect(decideRuleUpdateProposal(projectPath, {
+    proposalId: proposal.proposal.id,
+    decision: "accepted"
+  }).ok).toBe(true);
+  expect(claimRuleUpdateDecision(projectPath)).toMatchObject({ ok: true, completed: false });
+
+  const checked = openProjectDb(projectPath);
+  try {
+    expect(
+      checkDesignSystemDeclarationLinksOnDb(checked, ["feedback-accepted"])
+    ).toEqual({ ok: true });
+    const prepared = prepareDesignSystemIngestOnDb(checked, {
+      fileKind: "interaction-rules.json",
+      sourcePath: "design-system/interaction-rules.json",
+      now: new Date().toISOString(),
+      json: {
+        rules: [{
+          id: "interaction.selection-feedback",
+          value: body,
+          meaning: body,
+          status: "formalized",
+          links: ["feedback-accepted"]
+        }]
+      }
+    });
+    expect(prepared).toMatchObject({ ok: true });
+    if (prepared.ok) {
+      expect(
+        validateRuleUpdateIngestPlanOnDb(
+          checked,
+          proposal.proposal.id,
+          prepared.plan
+        )
+      ).toEqual({ ok: true });
+    }
   } finally {
     closeProjectDb(checked);
   }

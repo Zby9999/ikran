@@ -95,7 +95,7 @@ export function registerRuleUpdateTools(
     "claim_rule_update_decision",
     {
       description:
-        "Claim the earliest durable designer decision across published Rule Update Reviews. The payload freezes the exact proposal revision, semantic target, and base digest. Rejected decisions complete on claim without a source write. Accepted decisions must be applied to the authorized source, declared with record_artifact_written(proposalId), or failed explicitly.",
+        "Claim the earliest durable designer decision across published Rule Update Reviews. The payload freezes the exact proposal revision, semantic target, base digest, and source_write_evidence_record_ids. Rejected decisions complete on claim without a source write. For accepted decisions, apply only full_rule_body to the authorized target, copy source_write_evidence_record_ids into the changed entry links, and call record_artifact_written(proposalId); Runtime automatically binds the same evidence to the declaration, so never search old Alignment records or invent message ids. A provenance-only declaration error is repaired and redeclared against the same claimed revision; it does not require designer re-acceptance. Fail explicitly only when the accepted semantic body itself is wrong or cannot be applied.",
       inputSchema: {}
     },
     async () => {

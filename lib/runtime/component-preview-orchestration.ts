@@ -181,8 +181,18 @@ export function beginAutomaticComponentPreviewOrchestration(
     recipeStates.some((state) => !contract.states.includes(state));
   const semanticStatus = uncertain ? "uncertain" : "no_delta";
   const existing = readOrchestration(projectPath, registrationId);
+  const retryableInfrastructureFailure =
+    existing?.status === "failed" &&
+    new Set([
+      "browser_unavailable",
+      "surface_not_ready",
+      "surface_stale",
+      "preview_unavailable",
+      "verification_interrupted"
+    ]).has(existing.failure_code ?? "");
   if (
-    (existing?.status === "verified_candidate" || existing?.status === "failed") &&
+    (existing?.status === "verified_candidate" ||
+      (existing?.status === "failed" && !retryableInfrastructureFailure)) &&
     existing.registration_digest === registration.registration_digest &&
     existing.semantic_digest === contract.digest
   ) {

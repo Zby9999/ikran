@@ -545,6 +545,7 @@ export function recordSourceArtifact(
         readFileSync(absolutePath, "utf8")
       );
       let ruleUpdateClaim: { commandId: string; revision: number } | null = null;
+      let effectiveRelatedRecordIds = [...declaration.relatedRecordIds];
 
       // Issue 29 proposal-first gate: a rule-update write may only be
       // declared against a proposal the designer already confirmed. Runtime
@@ -572,6 +573,24 @@ export function recordSourceArtifact(
           declaration.proposalId,
           relativePath
         );
+        const proposalEvidence = db.prepare(
+          "SELECT evidence_record_ids_json FROM rule_update_proposals WHERE id = ?"
+        ).get(declaration.proposalId) as
+          | { evidence_record_ids_json: string }
+          | undefined;
+        try {
+          const parsed = JSON.parse(
+            proposalEvidence?.evidence_record_ids_json ?? "[]"
+          ) as unknown;
+          if (Array.isArray(parsed)) {
+            effectiveRelatedRecordIds = [...new Set([
+              ...effectiveRelatedRecordIds,
+              ...parsed.filter((value): value is string => typeof value === "string")
+            ])];
+          }
+        } catch {
+          return { ok: false as const, reason: "invalid_proposal_evidence" as const };
+        }
       }
 
       let usedCandidateIds: string[] = [];
@@ -593,7 +612,7 @@ export function recordSourceArtifact(
       if (spec.validationClass === "design-system") {
         const linkCheck = checkDesignSystemDeclarationLinksOnDb(
           db,
-          declaration.relatedRecordIds
+          effectiveRelatedRecordIds
         );
         if (!linkCheck.ok) return linkCheck;
 
@@ -649,7 +668,7 @@ export function recordSourceArtifact(
         path: relativePath,
         artifact_type: declaration.artifactType,
         semantic_purpose: declaration.semanticPurpose,
-        related_record_ids_json: JSON.stringify(declaration.relatedRecordIds),
+        related_record_ids_json: JSON.stringify(effectiveRelatedRecordIds),
         readiness: declaration.readiness ?? null,
         declaration_version: (existing?.declaration_version ?? 0) + 1,
         status: ingestPlan ? "ingested" : "declared",
@@ -700,7 +719,7 @@ export function recordSourceArtifact(
         path: record.path,
         artifact_type: record.artifact_type,
         semantic_purpose: record.semantic_purpose,
-        related_record_ids: declaration.relatedRecordIds,
+        related_record_ids: effectiveRelatedRecordIds,
         declaration_version: record.declaration_version,
         ...(declaration.proposalId === undefined
           ? {}

@@ -160,7 +160,8 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
     );
     if (
       projectBinding?.active_project !== projectDir ||
-      projectBinding?.workspace_id !== "kit-2"
+      projectBinding?.workspace_id !== "kit-2" ||
+      projectBinding?.browser_preflight?.ok !== true
     ) {
       throw new Error(
         `Packaged MCP did not activate the manifest workspace: ${JSON.stringify(projectBinding)}`
@@ -237,6 +238,7 @@ export async function smokeStudyPlugin({ root, timeoutMs = 30_000 }) {
       aliases: portability.aliases,
       route: "/api/project",
       toolCount: toolNames.size,
+      browserPreflight: "launched",
       figmaConnectionRoute: "unavailable"
     });
   } finally {

@@ -45,6 +45,7 @@ const WORKSPACE_JSON_FILES = [
 
 const STUDY_PLUGIN_TOP_LEVEL = new Set([
   ".codex-plugin",
+  ".playwright-browsers",
   ".next",
   ".node-version",
   "LICENSE",
@@ -90,6 +91,7 @@ try {
 
   const pluginDestination = path.join(staging, "plugins", "ikran");
   const studyRuntime = copyCodexPlugin(pluginSource, pluginDestination, pluginVersion);
+  const browserBundle = await bundleChromium(pluginDestination);
   const pluginSmoke = await smokeStudyPlugin({ root: pluginDestination });
 
   const packagedWorkspaces = workspaceSpecs.map((workspace) =>
@@ -115,6 +117,7 @@ try {
       path: "plugins/ikran",
       marketplace: ".agents/plugins/marketplace.json",
       studyRuntime,
+      browserBundle,
       smoke: pluginSmoke
     },
     evidencePolicy: "preloaded-frozen",
@@ -340,6 +343,50 @@ function readPluginVersion(source) {
     fail(`Plugin package.json has an invalid version: ${String(version)}`);
   }
   return version;
+}
+
+async function bundleChromium(destination) {
+  const { chromium } = await import("playwright-core");
+  const executable = chromium.executablePath();
+  if (!fs.statSync(executable, { throwIfNoEntry: false })?.isFile()) {
+    fail(
+      `Matched Playwright Chromium is not installed: ${executable}. Run npx playwright-core install chromium before packaging.`
+    );
+  }
+  let browserRoot = path.dirname(executable);
+  while (
+    browserRoot !== path.dirname(browserRoot) &&
+    !/^chromium(?:_headless_shell)?-\d+$/.test(path.basename(browserRoot))
+  ) {
+    browserRoot = path.dirname(browserRoot);
+  }
+  if (!/^chromium(?:_headless_shell)?-\d+$/.test(path.basename(browserRoot))) {
+    fail(`Unable to resolve the Playwright browser root for ${executable}`);
+  }
+  const browsersRoot = path.join(destination, ".playwright-browsers");
+  const bundledRoot = path.join(browsersRoot, path.basename(browserRoot));
+  fs.mkdirSync(browsersRoot, { recursive: true });
+  fs.cpSync(browserRoot, bundledRoot, {
+    recursive: true,
+    preserveTimestamps: true,
+    verbatimSymlinks: true
+  });
+  const bundledExecutable = path.join(
+    bundledRoot,
+    path.relative(browserRoot, executable)
+  );
+  if (!fs.statSync(bundledExecutable, { throwIfNoEntry: false })?.isFile()) {
+    fail(`Bundled Chromium executable is missing: ${bundledExecutable}`);
+  }
+  return Object.freeze({
+    revision: path.basename(browserRoot),
+    executable: slash(path.relative(destination, bundledExecutable)),
+    bytes: directoryBytes(bundledRoot)
+  });
+}
+
+function directoryBytes(root) {
+  return walkFiles(root).reduce((total, file) => total + fs.statSync(file).size, 0);
 }
 
 function packageWorkspace(source, destination, label, relativePath, workspaceNumber, displayName) {
@@ -593,7 +640,13 @@ function marketplaceManifest() {
 
 function scanPackage(root, { forbiddenLiterals }) {
   const forbiddenFiles = [];
-  const nativeRuntimeFiles = findNativeMachO(path.join(root, "plugins", "ikran"));
+  const nativeFiles = findNativeMachO(path.join(root, "plugins", "ikran"));
+  const bundledBrowserFiles = nativeFiles.filter((file) =>
+    file.startsWith(".playwright-browsers/")
+  );
+  const nativeRuntimeFiles = nativeFiles.filter((file) =>
+    !file.startsWith(".playwright-browsers/")
+  );
   const localInformationHits = [];
   const secretHits = [];
   const figmaQueryTokenHits = [];
@@ -606,6 +659,13 @@ function scanPackage(root, { forbiddenLiterals }) {
     const base = path.basename(file);
     if (EPHEMERAL_NAMES.has(base) || relative.includes("/.cursor/") || relative.startsWith(".cursor/")) {
       forbiddenFiles.push(relative);
+    }
+    const isBundledBrowser = relative.startsWith(
+      "plugins/ikran/.playwright-browsers/"
+    );
+    if (isBundledBrowser) {
+      bytesScanned += fs.statSync(file).size;
+      continue;
     }
     const content = fs.readFileSync(file);
     bytesScanned += content.length;
@@ -642,6 +702,7 @@ function scanPackage(root, { forbiddenLiterals }) {
     filesScanned,
     bytesScanned,
     forbiddenRuntimeFiles: nativeRuntimeFiles.length,
+    bundledBrowserExecutables: bundledBrowserFiles.length,
     localInformationHits: 0,
     credentialHits: 0,
     figmaQueryTokenHits: 0
@@ -654,6 +715,7 @@ function criticalChecksums(root, manifest) {
     "STUDY-KIT-MANIFEST.json",
     "plugins/ikran/.codex-plugin/plugin.json",
     "plugins/ikran/bin/ikran-runtime.mjs",
+    `plugins/ikran/${manifest.plugin.browserBundle.executable}`,
     `plugins/ikran/${manifest.plugin.studyRuntime.bundle}`
   ];
   for (const workspace of manifest.workspaces) {

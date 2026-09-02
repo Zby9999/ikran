@@ -274,6 +274,23 @@ function validateRuleUpdateProposalBody(
   };
 }
 
+function canonicalSourceEvidenceOnDb(
+  db: DatabaseType,
+  evidenceRecordIds: readonly string[]
+): string[] {
+  const card = db.prepare(
+    `SELECT 1 FROM alignment_question_cards
+     WHERE id = ? AND final_answer IS NOT NULL AND TRIM(final_answer) <> ''`
+  );
+  const annotation = db.prepare(
+    "SELECT 1 FROM agent_alignment_annotations WHERE id = ?"
+  );
+  const feedback = db.prepare("SELECT 1 FROM designer_feedback WHERE id = ?");
+  return evidenceRecordIds.filter(
+    (id) => card.get(id) || annotation.get(id) || feedback.get(id)
+  );
+}
+
 function canonicalTarget(
   projectPath: string,
   target: RevisionInput["target"]
@@ -612,6 +629,27 @@ export function draftRuleUpdateProposal(
         ) {
           return { ok: false as const, reason: "evidence_record_not_found" };
         }
+      }
+      const sourceEvidenceRecordIds = canonicalSourceEvidenceOnDb(
+        db,
+        evidenceRecordIds
+      );
+      if (
+        review.reconciliation_id !== null &&
+        kind !== "retire" &&
+        sourceEvidenceRecordIds.length === 0
+      ) {
+        return {
+          ok: false as const,
+          reason: "proposal_source_evidence_required",
+          details: {
+            accepted_sources: [
+              "answered_alignment_question",
+              "agent_alignment_annotation",
+              "designer_feedback"
+            ]
+          }
+        };
       }
       const baseDigest = baseDigestOnDb(db, target);
       const baseDigests = baseDigestsOnDb(db, target);
@@ -1006,6 +1044,11 @@ export function decideRuleUpdateProposal(
         reason: current.reason,
         base_digest: current.base_digest,
         base_digests: current.base_digests,
+        evidence_record_ids: current.evidence_record_ids,
+        source_write_evidence_record_ids: canonicalSourceEvidenceOnDb(
+          db,
+          current.evidence_record_ids
+        ),
         target: current.target
       };
       const published = publishAgentCommandOnDb(db, {

@@ -55,6 +55,9 @@ export function checkDesignSystemDeclarationLinksOnDb(
   const annotationStmt = db.prepare(
     "SELECT 1 AS ok FROM agent_alignment_annotations WHERE id = ?"
   );
+  const feedbackStmt = db.prepare(
+    "SELECT 1 AS ok FROM designer_feedback WHERE id = ?"
+  );
   for (const id of relatedRecordIds) {
     const card = cardStmt.get(id) as { final_answer: string | null } | undefined;
     const answeredCard =
@@ -62,6 +65,7 @@ export function checkDesignSystemDeclarationLinksOnDb(
       card.final_answer.trim().length > 0;
     if (answeredCard) continue;
     if (annotationStmt.get(id) !== undefined) continue;
+    if (feedbackStmt.get(id) !== undefined) continue;
     return {
       ok: false,
       reason: "link_not_answered_card_or_annotation",
@@ -80,6 +84,14 @@ export interface DesignSystemLinkIndex {
   answeredCards: ReadonlyMap<string, AnswerSource>;
   /** Agent alignment annotations: id → inference. */
   annotations: ReadonlyMap<string, "confirmed" | "reasonable">;
+  /** Canonical designer-authored feedback captured from the frozen review. */
+  designerFeedback?: ReadonlySet<string>;
+  /** Accepted current Rule Update targets and the evidence bound to them. */
+  acceptedRuleUpdateTargets?: readonly {
+    sourceArtifactPath: string;
+    entryId: string | null;
+    evidenceRecordIds: readonly string[];
+  }[];
   /** Direct designer edits are durable candidate-grade provenance. */
   designerEditEvents?: ReadonlySet<string>;
   /** Latest designer-authored Formalized content for each entry identity. */
@@ -114,6 +126,28 @@ export function loadDesignSystemLinkIndex(
        WHERE inference IN ('reasonable', 'confirmed')`
     )
     .all() as Array<{ id: string; inference: string }>;
+  const designerFeedback = db
+    .prepare("SELECT id FROM designer_feedback")
+    .all() as Array<{ id: string }>;
+  const acceptedRuleUpdateTargets = db.prepare(
+    `SELECT r.source_artifact_path, r.proposed_target_path, r.entry_id,
+            r.target_category,
+            p.evidence_record_ids_json
+     FROM rule_update_proposals p
+     JOIN rule_update_proposal_revisions r
+       ON r.proposal_id = p.id AND r.revision = p.current_revision
+     JOIN rule_update_designer_decisions d
+       ON d.proposal_id = p.id AND d.revision = p.current_revision
+     JOIN rule_update_apply_attempts a
+       ON a.proposal_id = p.id AND a.revision = p.current_revision
+     WHERE d.decision = 'accepted' AND a.status IN ('claimed', 'applied')`
+  ).all() as Array<{
+    source_artifact_path: string | null;
+    proposed_target_path: string | null;
+    entry_id: string | null;
+    target_category: string;
+    evidence_record_ids_json: string;
+  }>;
   const designerEditEvents = db
     .prepare(
       "SELECT event_id, payload FROM events WHERE type = 'design_system_entry_edited'"
@@ -189,6 +223,27 @@ export function loadDesignSystemLinkIndex(
         a.inference as "confirmed" | "reasonable"
       ])
     ),
+    designerFeedback: new Set(designerFeedback.map((row) => row.id)),
+    acceptedRuleUpdateTargets: acceptedRuleUpdateTargets.flatMap((row) => {
+      const sourceArtifactPath = row.proposed_target_path ?? row.source_artifact_path;
+      if (!sourceArtifactPath) return [];
+      let evidenceRecordIds: string[] = [];
+      try {
+        const parsed = JSON.parse(row.evidence_record_ids_json) as unknown;
+        if (Array.isArray(parsed)) {
+          evidenceRecordIds = parsed.filter(
+            (value): value is string => typeof value === "string"
+          );
+        }
+      } catch {
+        // Malformed historical evidence grants no authority.
+      }
+      return [{
+        sourceArtifactPath,
+        entryId: row.target_category.startsWith("component:") ? null : row.entry_id,
+        evidenceRecordIds
+      }];
+    }),
     designerEditEvents: new Set(designerEditEvents.map((event) => event.event_id)),
     designerApprovedEntries: new Set(
       [...currentApprovals]
@@ -265,7 +320,15 @@ export function checkDesignSystemEntryStatus(
           entry.contentDigest
         )
       ) === true;
-    const backed = backedByAnswer || backedByDirectApproval;
+    const backedByAcceptedRuleUpdate =
+      entry.sourceArtifactPath !== undefined &&
+      entry.entryId !== undefined &&
+      index.acceptedRuleUpdateTargets?.some((target) =>
+        target.sourceArtifactPath === entry.sourceArtifactPath &&
+        (target.entryId === null || target.entryId === entry.entryId) &&
+        target.evidenceRecordIds.some((recordId) => entry.links.includes(recordId))
+      ) === true;
+    const backed = backedByAnswer || backedByDirectApproval || backedByAcceptedRuleUpdate;
     return backed
       ? { ok: true }
       : {
@@ -279,6 +342,7 @@ export function checkDesignSystemEntryStatus(
     (link) =>
       index.answeredCards.has(link) ||
       index.annotations.has(link) ||
+      index.designerFeedback?.has(link) === true ||
       index.designerEditEvents?.has(link) === true
   );
   return backed

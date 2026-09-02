@@ -23,6 +23,7 @@ import { resolveRuntimeSocketPath } from "../lib/runtime/runtime-socket-path.mjs
 const argv = process.argv.slice(2);
 if (argv.includes("--study")) process.env.IKRAN_STUDY_MODE = "1";
 const prod = argv.includes("--prod");
+process.env.IKRAN_RUNTIME_PROD = prod ? "1" : "0";
 const option = (name, fallback) => {
   const index = argv.indexOf(name);
   return index >= 0 ? argv[index + 1] : fallback;
@@ -31,6 +32,7 @@ const host = option("--host", process.env.IKRAN_HOST || "127.0.0.1");
 const requestedPort = Number(option("--port", process.env.IKRAN_PORT || ""));
 const port = Number.isFinite(requestedPort) && requestedPort > 0 ? requestedPort : undefined;
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+process.env.IKRAN_APP_DIR = appDir;
 const packageVersion = readIkranPackageVersion(appDir);
 const stateDir = resolveRuntimeStateDir({ appDir });
 // Runtime modules read this during dynamic import. Make the resolved default
