@@ -98,6 +98,12 @@ function componentSpecBody(axis: "style" | "context"): string {
   });
 }
 
+function componentSpecBodyWithLinks(links: string[]): string {
+  const body = JSON.parse(componentSpecBody("style")) as Record<string, unknown>;
+  body.links = links;
+  return JSON.stringify(body);
+}
+
 function seedExistingInteractionRule(projectPath: string): void {
   const db = openProjectDb(projectPath);
   try {
@@ -1074,6 +1080,182 @@ test("publishing revalidates persisted component proposal bodies", () => {
       schema_reason: "invalid_field_type"
     }
   });
+});
+
+test("drafting blocks a component body that omits its Rule Update evidence", () => {
+  const projectPath = createProject();
+  seedComponentTarget(projectPath);
+  const db = openProjectDb(projectPath);
+  try {
+    db.prepare(
+      `INSERT INTO designer_feedback
+         (id, summary, run_id, session_id, created_at)
+       VALUES ('feedback-project-unit-radius', 'Use 8px media radius',
+               'run-1', 'session-1', ?)`
+    ).run("2026-09-02T00:00:01.000Z");
+  } finally {
+    closeProjectDb(db);
+  }
+
+  const review = createRuleUpdateReview(projectPath, {
+    context: "Project Unit media radius"
+  });
+  if (!review.ok) throw new Error(review.reason);
+  expect(draftRuleUpdateProposal(projectPath, {
+    reviewId: review.review.id,
+    kind: "update",
+    classification: "proposed_update",
+    title: "Use 8px media radius",
+    fullRuleBody: componentSpecBody("style"),
+    reason: "The designer confirmed the reusable radius.",
+    affectedItems: ["Project Unit"],
+    evidenceRecordIds: ["feedback-project-unit-radius"],
+    target: {
+      category: "component:component-project-item",
+      sourceArtifactPath: "design-system/components/project-item.json",
+      proposedTargetPath: "design-system/components/project-item.json",
+      entryId: "component-project-item"
+    }
+  })).toEqual({
+    ok: false,
+    reason: "proposal_body_evidence_mismatch",
+    details: {
+      target_category: "component:component-project-item",
+      required_evidence_record_ids: ["feedback-project-unit-radius"],
+      observed_links: ["designer-feedback"]
+    }
+  });
+  expect(readActiveRuleUpdateReviewWaitScope(projectPath)).toBeNull();
+});
+
+test("publishing blocks a persisted component body that omits its Rule Update evidence", () => {
+  const projectPath = createProject();
+  seedComponentTarget(projectPath);
+  const db = openProjectDb(projectPath);
+  try {
+    db.prepare(
+      `INSERT INTO designer_feedback
+         (id, summary, run_id, session_id, created_at)
+       VALUES ('feedback-project-unit-radius', 'Use 8px media radius',
+               'run-1', 'session-1', ?)`
+    ).run("2026-09-02T00:00:01.000Z");
+  } finally {
+    closeProjectDb(db);
+  }
+  const review = createRuleUpdateReview(projectPath, {
+    context: "Persisted Project Unit media radius"
+  });
+  if (!review.ok) throw new Error(review.reason);
+  const proposal = draftRuleUpdateProposal(projectPath, {
+    reviewId: review.review.id,
+    kind: "update",
+    classification: "proposed_update",
+    title: "Use 8px media radius",
+    fullRuleBody: componentSpecBodyWithLinks(["feedback-project-unit-radius"]),
+    reason: "The designer confirmed the reusable radius.",
+    affectedItems: ["Project Unit"],
+    evidenceRecordIds: ["feedback-project-unit-radius"],
+    target: {
+      category: "component:component-project-item",
+      sourceArtifactPath: "design-system/components/project-item.json",
+      proposedTargetPath: "design-system/components/project-item.json",
+      entryId: "component-project-item"
+    }
+  });
+  if (!proposal.ok) throw new Error(proposal.reason);
+  const legacyDb = openProjectDb(projectPath);
+  try {
+    legacyDb.prepare(
+      `UPDATE rule_update_proposal_revisions SET full_rule_body = ?
+       WHERE proposal_id = ? AND revision = 1`
+    ).run(componentSpecBody("style"), proposal.proposal.id);
+  } finally {
+    closeProjectDb(legacyDb);
+  }
+
+  expect(publishRuleUpdateReview(projectPath, review.review.id)).toEqual({
+    ok: false,
+    reason: "proposal_body_evidence_mismatch",
+    details: {
+      proposal_id: proposal.proposal.id,
+      target_category: "component:component-project-item",
+      required_evidence_record_ids: ["feedback-project-unit-radius"],
+      observed_links: ["designer-feedback"]
+    }
+  });
+  expect(readActiveRuleUpdateReviewWaitScope(projectPath)).toBeNull();
+});
+
+test("revision and acceptance revalidate component Rule Update evidence", () => {
+  const projectPath = createProject();
+  seedComponentTarget(projectPath);
+  const db = openProjectDb(projectPath);
+  try {
+    db.prepare(
+      `INSERT INTO designer_feedback
+         (id, summary, run_id, session_id, created_at)
+       VALUES ('feedback-project-unit-radius', 'Use 8px media radius',
+               'run-1', 'session-1', ?)`
+    ).run("2026-09-02T00:00:01.000Z");
+  } finally {
+    closeProjectDb(db);
+  }
+  const review = createRuleUpdateReview(projectPath, {
+    context: "Component evidence revalidation"
+  });
+  if (!review.ok) throw new Error(review.reason);
+  const proposal = draftRuleUpdateProposal(projectPath, {
+    reviewId: review.review.id,
+    kind: "update",
+    classification: "proposed_update",
+    title: "Use 8px media radius",
+    fullRuleBody: componentSpecBodyWithLinks(["feedback-project-unit-radius"]),
+    reason: "The designer confirmed the reusable radius.",
+    affectedItems: ["Project Unit"],
+    evidenceRecordIds: ["feedback-project-unit-radius"],
+    target: {
+      category: "component:component-project-item",
+      sourceArtifactPath: "design-system/components/project-item.json",
+      proposedTargetPath: "design-system/components/project-item.json",
+      entryId: "component-project-item"
+    }
+  });
+  if (!proposal.ok) throw new Error(proposal.reason);
+  expect(publishRuleUpdateReview(projectPath, review.review.id).ok).toBe(true);
+
+  expect(reviseRuleUpdateProposal(projectPath, {
+    proposalId: proposal.proposal.id,
+    title: "Use 8px media radius",
+    fullRuleBody: componentSpecBody("style"),
+    author: "designer",
+    target: {
+      category: "component:component-project-item",
+      sourceArtifactPath: "design-system/components/project-item.json",
+      proposedTargetPath: "design-system/components/project-item.json",
+      entryId: "component-project-item"
+    }
+  })).toMatchObject({
+    ok: false,
+    reason: "proposal_body_evidence_mismatch"
+  });
+
+  const legacyDb = openProjectDb(projectPath);
+  try {
+    legacyDb.prepare(
+      `UPDATE rule_update_proposal_revisions SET full_rule_body = ?
+       WHERE proposal_id = ? AND revision = 1`
+    ).run(componentSpecBody("style"), proposal.proposal.id);
+  } finally {
+    closeProjectDb(legacyDb);
+  }
+  expect(decideRuleUpdateProposal(projectPath, {
+    proposalId: proposal.proposal.id,
+    decision: "accepted"
+  })).toMatchObject({
+    ok: false,
+    reason: "proposal_body_evidence_mismatch"
+  });
+  expect(findEarliestPendingAgentCommand(projectPath)).toBeNull();
 });
 
 test("component proposals reject non-browsable ids with actionable inventory ids", () => {

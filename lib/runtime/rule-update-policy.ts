@@ -1,6 +1,7 @@
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
 import type { DesignSystemIngestPlan } from "./design-system-ingest";
 import { sortKeysDeep } from "./design-system-entry-provenance";
+import { checkRuleUpdateEvidenceLinksOnDb } from "./rule-update-evidence";
 
 const RULE_UPDATE_PROTECTED_PHASES: ReadonlySet<string> = new Set([
   "prototype_validation",
@@ -199,25 +200,15 @@ export function validateRuleUpdateIngestPlanOnDb(
     } catch {
       return semanticFail({ invalid_proposal_evidence: true });
     }
-    const sourceEvidence = evidenceIds.filter((id) =>
-      db.prepare(
-        `SELECT 1 FROM designer_feedback WHERE id = ?
-         UNION ALL
-         SELECT 1 FROM agent_alignment_annotations WHERE id = ?
-         UNION ALL
-         SELECT 1 FROM alignment_question_cards
-          WHERE id = ? AND final_answer IS NOT NULL AND TRIM(final_answer) <> ''
-         LIMIT 1`
-      ).get(id, id, id) !== undefined
+    const evidenceLinks = checkRuleUpdateEvidenceLinksOnDb(
+      db,
+      evidenceIds,
+      target.links
     );
-    if (
-      sourceEvidence.length === 0 ||
-      !sourceEvidence.some((id) => target.links.includes(id))
-    ) {
+    if (!evidenceLinks.ok) {
       return semanticFail({
         entry_id: target.entry_id,
-        required_evidence_record_ids: sourceEvidence,
-        observed_links: target.links
+        ...evidenceLinks.details
       });
     }
     return { ok: true };

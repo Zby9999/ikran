@@ -21,7 +21,8 @@ export async function writeDraftReleaseNotes({ outDir, version, outputPath }) {
     `## What's new\n\n` +
     `- Bundles the Playwright-matched Chromium runtime in both Study Kits and launches it during workspace activation, so a fresh machine fails before Alignment instead of during component registration.\n` +
     `- Preserves exact browser infrastructure errors, retries unchanged component declarations after transient infrastructure recovery, reuses a browser pool and verification results across runs, and invalidates verification when imported or global styles and fonts change.\n` +
-    `- Makes an accepted Rule Update revision authoritative for its exact target, automatically binds canonical proposal evidence to the source declaration, and rejects semantic apply drift before ingest without forcing a new acceptance for provenance-only repair.\n` +
+    `- Keeps an accepted Rule Update revision authoritative for its exact target and rejects semantic apply drift before ingest.\n` +
+    `- Rejects component Rule Update bodies whose frozen top-level links omit canonical proposal evidence at draft, revision, publish, and legacy acceptance boundaries, so an accepted proposal is directly applicable without a provenance-only recovery round.\n` +
     `- Retains the optimized 16-card, multi-option Alignment checkpoint and canonical Figma reference in both Codex Study Kits.\n\n` +
     `## Download one Kit\n\n` +
     `- **Agent Plugin Kit** — production Runtime plus Agent Plugin 1.0 (\`plugin.json\`, \`mcp.json\`, \`skills/\`) and host-native Cursor/Codex adapters (\`.cursor-plugin/plugin.json\`, \`.codex-plugin/plugin.json\`). Does not include the Claude Code adapter.\n` +

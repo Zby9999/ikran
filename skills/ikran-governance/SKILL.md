@@ -123,6 +123,12 @@ Before publishing the review, account for:
 - the keep, revise, merge, retire, or add disposition;
 - the net effect on Rule count.
 
+For a component proposal, keep approval and application byte-consistent:
+serialize at least one canonical proposal evidence id into the component-spec
+body's top-level `links`, and include that same id in `evidenceRecordIds`.
+Do this before publishing; never add provenance to the frozen body after the
+designer accepts it.
+
 Every proposed formal Rule must pass the quality conditions, and every affected
 existing Rule must have an explicit disposition. Remaining uncertainty stays
 local, candidate, or open.

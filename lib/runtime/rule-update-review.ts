@@ -13,6 +13,10 @@ import { validateDesignSystemJson } from "./design-system-schema";
 import { canonicalizeArtifactPath } from "./source-artifact";
 import { settleOrRewaitReviewOnDb } from "./rule-update-apply";
 import {
+  canonicalRuleUpdateSourceEvidenceOnDb,
+  checkRuleUpdateEvidenceLinksOnDb
+} from "./rule-update-evidence";
+import {
   RULE_UPDATE_CLASSIFICATIONS,
   RULE_UPDATE_PROPOSAL_KINDS,
   type RuleUpdateClassification,
@@ -274,21 +278,53 @@ function validateRuleUpdateProposalBody(
   };
 }
 
-function canonicalSourceEvidenceOnDb(
+function componentBodyLinks(fullRuleBody: string): string[] {
+  try {
+    const parsed = JSON.parse(fullRuleBody) as { links?: unknown };
+    return Array.isArray(parsed.links)
+      ? parsed.links.filter((link): link is string => typeof link === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function validateComponentProposalEvidenceOnDb(
   db: DatabaseType,
-  evidenceRecordIds: readonly string[]
-): string[] {
-  const card = db.prepare(
-    `SELECT 1 FROM alignment_question_cards
-     WHERE id = ? AND final_answer IS NOT NULL AND TRIM(final_answer) <> ''`
+  proposal: {
+    targetCategory: RuleUpdateCategory;
+    fullRuleBody: string;
+    evidenceRecordIds: readonly string[];
+  },
+  options: { allowNoSourceEvidence?: boolean } = {}
+):
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "proposal_body_evidence_mismatch";
+      details: {
+        target_category: RuleUpdateCategory;
+        required_evidence_record_ids: string[];
+        observed_links: string[];
+      };
+    } {
+  if (!proposal.targetCategory.startsWith("component:")) return { ok: true };
+  const checked = checkRuleUpdateEvidenceLinksOnDb(
+    db,
+    proposal.evidenceRecordIds,
+    componentBodyLinks(proposal.fullRuleBody),
+    options
   );
-  const annotation = db.prepare(
-    "SELECT 1 FROM agent_alignment_annotations WHERE id = ?"
-  );
-  const feedback = db.prepare("SELECT 1 FROM designer_feedback WHERE id = ?");
-  return evidenceRecordIds.filter(
-    (id) => card.get(id) || annotation.get(id) || feedback.get(id)
-  );
+  return checked.ok
+    ? { ok: true }
+    : {
+        ok: false,
+        reason: "proposal_body_evidence_mismatch",
+        details: {
+          target_category: proposal.targetCategory,
+          ...checked.details
+        }
+      };
 }
 
 function canonicalTarget(
@@ -630,7 +666,7 @@ export function draftRuleUpdateProposal(
           return { ok: false as const, reason: "evidence_record_not_found" };
         }
       }
-      const sourceEvidenceRecordIds = canonicalSourceEvidenceOnDb(
+      const sourceEvidenceRecordIds = canonicalRuleUpdateSourceEvidenceOnDb(
         db,
         evidenceRecordIds
       );
@@ -650,6 +686,18 @@ export function draftRuleUpdateProposal(
             ]
           }
         };
+      }
+      if (kind !== "retire") {
+        const evidenceValidation = validateComponentProposalEvidenceOnDb(
+          db,
+          {
+            targetCategory: target.category,
+            fullRuleBody,
+            evidenceRecordIds
+          },
+          { allowNoSourceEvidence: true }
+        );
+        if (!evidenceValidation.ok) return evidenceValidation;
       }
       const baseDigest = baseDigestOnDb(db, target);
       const baseDigests = baseDigestsOnDb(db, target);
@@ -910,6 +958,16 @@ export function reviseRuleUpdateProposal(
           fullRuleBody
         );
         if (!bodyValidation.ok) return bodyValidation;
+        const evidenceValidation = validateComponentProposalEvidenceOnDb(
+          db,
+          {
+            targetCategory: target.category,
+            fullRuleBody,
+            evidenceRecordIds: current.evidence_record_ids
+          },
+          { allowNoSourceEvidence: true }
+        );
+        if (!evidenceValidation.ok) return evidenceValidation;
       }
       const previousNeedsRevision =
         current.status === "needs_revision" ||
@@ -1021,6 +1079,18 @@ export function decideRuleUpdateProposal(
       if (!review || review.status !== "published") {
         return { ok: false as const, reason: "review_not_published" };
       }
+      if (input.decision === "accepted" && current.kind !== "retire") {
+        const evidenceValidation = validateComponentProposalEvidenceOnDb(
+          db,
+          {
+            targetCategory: current.target.category,
+            fullRuleBody: current.full_rule_body,
+            evidenceRecordIds: current.evidence_record_ids
+          },
+          { allowNoSourceEvidence: true }
+        );
+        if (!evidenceValidation.ok) return evidenceValidation;
+      }
       const existing = db
         .prepare(
           `SELECT id, decision FROM rule_update_designer_decisions
@@ -1045,7 +1115,7 @@ export function decideRuleUpdateProposal(
         base_digest: current.base_digest,
         base_digests: current.base_digests,
         evidence_record_ids: current.evidence_record_ids,
-        source_write_evidence_record_ids: canonicalSourceEvidenceOnDb(
+        source_write_evidence_record_ids: canonicalRuleUpdateSourceEvidenceOnDb(
           db,
           current.evidence_record_ids
         ),
@@ -1596,7 +1666,8 @@ export function publishRuleUpdateReview(
       }
       const targets = db
         .prepare(
-          `SELECT p.id AS proposal_id, p.kind, r.full_rule_body,
+          `SELECT p.id AS proposal_id, p.kind, p.evidence_record_ids_json,
+                  r.full_rule_body,
                   r.target_category, r.source_category, r.source_artifact_path,
                   r.entry_id, r.proposed_target_path
            FROM rule_update_proposals p
@@ -1607,6 +1678,7 @@ export function publishRuleUpdateReview(
         .all(reviewId) as Array<{
           proposal_id: string;
           kind: RuleUpdateProposalKind;
+          evidence_record_ids_json: string;
           full_rule_body: string;
           target_category: RuleUpdateCategory;
           source_category: RuleUpdateCategory | null;
@@ -1634,6 +1706,24 @@ export function publishRuleUpdateReview(
               details: {
                 proposal_id: target.proposal_id,
                 ...bodyValidation.details
+              }
+            };
+          }
+          const evidenceValidation = validateComponentProposalEvidenceOnDb(
+            db,
+            {
+              targetCategory: canonicalized.target.category,
+              fullRuleBody: target.full_rule_body,
+              evidenceRecordIds: stringArray(target.evidence_record_ids_json)
+            },
+            { allowNoSourceEvidence: true }
+          );
+          if (!evidenceValidation.ok) {
+            return {
+              ...evidenceValidation,
+              details: {
+                proposal_id: target.proposal_id,
+                ...evidenceValidation.details
               }
             };
           }
