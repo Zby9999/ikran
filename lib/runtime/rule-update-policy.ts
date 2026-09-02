@@ -1,5 +1,8 @@
 import type { DatabaseSync as DatabaseType } from "node:sqlite";
-import type { DesignSystemIngestPlan } from "./design-system-ingest";
+import {
+  collectDesignSystemEntryRows,
+  type DesignSystemIngestPlan
+} from "./design-system-ingest";
 import { sortKeysDeep } from "./design-system-entry-provenance";
 import { checkRuleUpdateEvidenceLinksOnDb } from "./rule-update-evidence";
 
@@ -164,14 +167,39 @@ export function validateRuleUpdateIngestPlanOnDb(
         proposal.target_category.startsWith("component:") &&
         parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
       ) {
-        const record = parsed as Record<string, unknown>;
-        bodyMatches =
-          record.id === target.entry_id &&
-          JSON.stringify(sortKeysDeep(record.value)) ===
-            JSON.stringify(sortKeysDeep(target.value)) &&
-          record.status === target.status &&
-          JSON.stringify(sortKeysDeep(record.links)) ===
-            JSON.stringify(sortKeysDeep(target.links));
+        // Component source files keep captures under value.sourceCaptures,
+        // while the ingest plan normalizes them into source_captures. Compare
+        // the proposal through that same normalization path so a byte-faithful
+        // accepted component does not fail merely because it carries evidence.
+        const proposedRows = collectDesignSystemEntryRows(
+          "component-spec",
+          parsed
+        );
+        const proposed = proposedRows.length === 1 ? proposedRows[0] : null;
+        bodyMatches = proposed !== null &&
+          JSON.stringify(sortKeysDeep({
+            entry_id: proposed.entry_id,
+            section: proposed.section,
+            name: proposed.name,
+            kind: proposed.kind,
+            domain: proposed.domain,
+            value: proposed.value,
+            source_captures: proposed.source_captures,
+            meaning: proposed.meaning,
+            status: proposed.status,
+            links: proposed.links
+          })) === JSON.stringify(sortKeysDeep({
+            entry_id: target.entry_id,
+            section: target.section,
+            name: target.name,
+            kind: target.kind,
+            domain: target.domain,
+            value: target.value,
+            source_captures: target.source_captures,
+            meaning: target.meaning,
+            status: target.status,
+            links: target.links
+          }));
       } else {
         bodyMatches =
           JSON.stringify(sortKeysDeep(parsed)) ===

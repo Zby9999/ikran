@@ -104,6 +104,22 @@ function componentSpecBodyWithLinks(links: string[]): string {
   return JSON.stringify(body);
 }
 
+function componentSpecBodyWithNestedCaptures(links: string[]): string {
+  const body = JSON.parse(componentSpecBodyWithLinks(links)) as {
+    value: Record<string, unknown>;
+  };
+  body.value.sourceCaptures = [{
+    artifactPath: ".ikran/artifacts/evidence-media/component.png",
+    capturedAt: "2026-09-02T00:00:00.000Z",
+    nodeId: "2:1729",
+    nodeName: "button",
+    origin: "source",
+    stale: false,
+    surfaceId: "surface-component"
+  }];
+  return JSON.stringify(body);
+}
+
 function seedExistingInteractionRule(projectPath: string): void {
   const db = openProjectDb(projectPath);
   try {
@@ -1256,6 +1272,74 @@ test("revision and acceptance revalidate component Rule Update evidence", () => 
     reason: "proposal_body_evidence_mismatch"
   });
   expect(findEarliestPendingAgentCommand(projectPath)).toBeNull();
+});
+
+test("accepted component ingest normalizes nested source captures before semantic comparison", () => {
+  const projectPath = createProject();
+  seedComponentTarget(projectPath);
+  const db = openProjectDb(projectPath);
+  try {
+    db.prepare(
+      `INSERT INTO designer_feedback
+         (id, summary, run_id, session_id, created_at)
+       VALUES ('feedback-component-capture', 'Keep the verified component',
+               'run-1', 'session-1', ?)`
+    ).run("2026-09-02T00:00:01.000Z");
+  } finally {
+    closeProjectDb(db);
+  }
+  const review = createRuleUpdateReview(projectPath, {
+    context: "Component with nested source evidence"
+  });
+  if (!review.ok) throw new Error(review.reason);
+  const fullRuleBody = componentSpecBodyWithNestedCaptures([
+    "feedback-component-capture"
+  ]);
+  const proposal = draftRuleUpdateProposal(projectPath, {
+    reviewId: review.review.id,
+    kind: "update",
+    classification: "reusable_candidate",
+    title: "Keep verified Project item",
+    fullRuleBody,
+    reason: "The verified component carries source evidence.",
+    affectedItems: ["Project item"],
+    evidenceRecordIds: ["feedback-component-capture"],
+    target: {
+      category: "component:component-project-item",
+      sourceArtifactPath: "design-system/components/project-item.json",
+      entryId: "component-project-item"
+    }
+  });
+  if (!proposal.ok) throw new Error(proposal.reason);
+
+  const checked = openProjectDb(projectPath);
+  try {
+    const parsed = JSON.parse(fullRuleBody) as Record<string, unknown>;
+    const prepared = prepareDesignSystemIngestOnDb(checked, {
+      fileKind: "component-spec",
+      sourcePath: "design-system/components/project-item.json",
+      now: "2026-09-02T00:00:02.000Z",
+      json: parsed
+    });
+    expect(prepared).toMatchObject({ ok: true });
+    if (prepared.ok) {
+      expect(prepared.plan.rows[0]).toMatchObject({
+        value: expect.not.objectContaining({ sourceCaptures: expect.anything() }),
+        source_captures: [expect.objectContaining({
+          artifactPath: ".ikran/artifacts/evidence-media/component.png"
+        })]
+      });
+      expect(
+        validateRuleUpdateIngestPlanOnDb(
+          checked,
+          proposal.proposal.id,
+          prepared.plan
+        )
+      ).toEqual({ ok: true });
+    }
+  } finally {
+    closeProjectDb(checked);
+  }
 });
 
 test("component proposals reject non-browsable ids with actionable inventory ids", () => {
