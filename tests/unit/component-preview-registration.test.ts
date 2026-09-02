@@ -330,6 +330,9 @@ test("registers Vite React exports into one shared adapter and carries entry CSS
   expect(html).toContain("padding: 8px");
   expect(html).toContain("normalizePreviewOrigin");
   expect(html).toContain("requestAnimationFrame(reportSettled)");
+  expect(html).toContain("document.fonts.ready");
+  expect(html).toContain("image.decode()");
+  expect(html).toContain("assetsReady = true");
   expect(registry).toContain('import "../styles.css";');
   expect(registry).toContain("TextLink as IkranComponent");
   expect(html + registry).not.toContain("@storybook");

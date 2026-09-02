@@ -276,6 +276,8 @@ export default function IkranComponentPreview() {
         x: rect.x, y: rect.y, width: rect.width, height: rect.height
       }, "*");
     };
+    let assetsReady = false;
+    let cancelled = false;
     let frame = 0;
     let settledFrame = 0;
     const reportSettled = () => {
@@ -283,6 +285,7 @@ export default function IkranComponentPreview() {
       settledFrame = requestAnimationFrame(report);
     };
     const scheduleReports = () => {
+      if (!assetsReady) return;
       cancelAnimationFrame(frame);
       cancelAnimationFrame(settledFrame);
       frame = requestAnimationFrame(reportSettled);
@@ -298,9 +301,26 @@ export default function IkranComponentPreview() {
     });
     observeRenderedElements();
     mutations.observe(root.current, { childList: true, subtree: true, attributes: true });
-    scheduleReports();
+    const waitForRenderedAssets = async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const images = Array.from(root.current!.querySelectorAll("img"));
+      await Promise.all([
+        document.fonts.ready,
+        ...images.map((image) => image.complete
+          ? image.decode().catch(() => undefined)
+          : new Promise<void>((resolve) => {
+              image.addEventListener("load", () => resolve(), { once: true });
+              image.addEventListener("error", () => resolve(), { once: true });
+            }))
+      ]);
+      if (cancelled) return;
+      assetsReady = true;
+      scheduleReports();
+    };
+    void waitForRenderedAssets();
     window.addEventListener("resize", scheduleReports);
     return () => {
+      cancelled = true;
       cancelAnimationFrame(frame);
       cancelAnimationFrame(settledFrame);
       observer.disconnect();
@@ -377,6 +397,7 @@ const VITE_ADAPTER_SOURCE = `<!doctype html>
             x: rect.x, y: rect.y, width: rect.width, height: rect.height
           }, "*");
         };
+        let assetsReady = false;
         let frame = 0;
         let settledFrame = 0;
         const reportSettled = () => {
@@ -384,6 +405,7 @@ const VITE_ADAPTER_SOURCE = `<!doctype html>
           settledFrame = requestAnimationFrame(report);
         };
         const scheduleReports = () => {
+          if (!assetsReady) return;
           cancelAnimationFrame(frame);
           cancelAnimationFrame(settledFrame);
           frame = requestAnimationFrame(reportSettled);
@@ -399,7 +421,22 @@ const VITE_ADAPTER_SOURCE = `<!doctype html>
         });
         observeRenderedElements();
         mutations.observe(mount, { childList: true, subtree: true, attributes: true });
-        scheduleReports();
+        const waitForRenderedAssets = async () => {
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          const images = Array.from(mount.querySelectorAll("img"));
+          await Promise.all([
+            document.fonts.ready,
+            ...images.map((image) => image.complete
+              ? image.decode().catch(() => undefined)
+              : new Promise((resolve) => {
+                  image.addEventListener("load", () => resolve(), { once: true });
+                  image.addEventListener("error", () => resolve(), { once: true });
+                }))
+          ]);
+          assetsReady = true;
+          scheduleReports();
+        };
+        void waitForRenderedAssets();
         window.addEventListener("resize", scheduleReports);
       }
     </script>

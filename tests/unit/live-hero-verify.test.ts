@@ -187,10 +187,11 @@ test("verification requires two stable accepted reports instead of one transient
 
 test("the browser stability predicate is self-contained after serialization", () => {
   const href = "http://127.0.0.1:4300/ikran/component-preview/text";
+  const receivedAt = performance.now() - 200;
   const previous = (globalThis as { __ikranReports?: unknown }).__ikranReports;
   (globalThis as { __ikranReports?: unknown }).__ikranReports = [
-    { href, x: 8, y: 8, width: 84, height: 40 },
-    { href, x: 8, y: 8, width: 84, height: 40 }
+    { href, x: 8, y: 8, width: 84, height: 40, receivedAt },
+    { href, x: 8, y: 8, width: 84, height: 40, receivedAt }
   ];
   try {
     expect(
@@ -198,10 +199,34 @@ test("the browser stability predicate is self-contained after serialization", ()
         expected: href,
         maxWidth: 1280,
         maxExtent: 16_384,
-        tolerance: 0.25
+        tolerance: 0.25,
+        quietMs: 100
       })
     ).toBe(true);
     expect(liveHeroStabilityPredicate.toString()).not.toContain("__name");
+  } finally {
+    (globalThis as { __ikranReports?: unknown }).__ikranReports = previous;
+  }
+});
+
+test("the browser stability predicate waits for a quiet window after async layout", () => {
+  const href = "http://127.0.0.1:4300/ikran/component-preview/project-unit";
+  const previous = (globalThis as { __ikranReports?: unknown }).__ikranReports;
+  const recent = performance.now();
+  (globalThis as { __ikranReports?: unknown }).__ikranReports = [
+    { href, x: 8, y: 8, width: 1117, height: 240, receivedAt: recent },
+    { href, x: 8, y: 8, width: 1117, height: 240, receivedAt: recent }
+  ];
+  try {
+    expect(
+      liveHeroStabilityPredicate({
+        expected: href,
+        maxWidth: 1133,
+        maxExtent: 16_384,
+        tolerance: 0.25,
+        quietMs: 100
+      })
+    ).toBe(false);
   } finally {
     (globalThis as { __ikranReports?: unknown }).__ikranReports = previous;
   }

@@ -41,6 +41,7 @@ export interface VerifyComponentLiveHeroesInput {
 export const LIVE_HERO_VERIFY_DEFAULT_TIMEOUT_MS = 10_000;
 export const LIVE_HERO_VERIFY_MIN_TIMEOUT_MS = 1_000;
 export const LIVE_HERO_VERIFY_MAX_TIMEOUT_MS = 60_000;
+export const LIVE_HERO_SETTLE_QUIET_MS = 100;
 const LIVE_HERO_MAX_REPORTED_EXTENT = 16_384;
 const HTTP_PREFLIGHT_TIMEOUT_MS = 10_000;
 const LIVE_HERO_STABILITY_TOLERANCE_PX = 0.25;
@@ -53,6 +54,7 @@ export function liveHeroStabilityPredicate(input: {
   maxWidth: number;
   maxExtent: number;
   tolerance: number;
+  quietMs: number;
 }): boolean {
   const allReports = (
     globalThis as unknown as { __ikranReports?: Array<Record<string, unknown>> }
@@ -83,11 +85,22 @@ export function liveHeroStabilityPredicate(input: {
     current.width > 0 && current.height > 0 &&
     current.x + current.width <= input.maxWidth &&
     current.y + current.height <= input.maxExtent;
-  return previousValid && currentValid &&
+  const stable = previousValid && currentValid &&
     Math.abs(Number(previous.x) - Number(current.x)) <= input.tolerance &&
     Math.abs(Number(previous.y) - Number(current.y)) <= input.tolerance &&
     Math.abs(Number(previous.width) - Number(current.width)) <= input.tolerance &&
     Math.abs(Number(previous.height) - Number(current.height)) <= input.tolerance;
+  if (
+    !stable ||
+    typeof current.receivedAt !== "number" ||
+    !Number.isFinite(current.receivedAt) ||
+    performance.now() - current.receivedAt < input.quietMs
+  ) {
+    return false;
+  }
+  (globalThis as unknown as { __ikranAcceptedReport?: Record<string, unknown> })
+    .__ikranAcceptedReport = current;
+  return true;
 }
 
 export interface LiveHeroVerifyBounds {
@@ -186,8 +199,12 @@ function playwrightVerifyPage(page: PlaywrightPageLike): LiveHeroVerifyPage {
     async loadHarnessAndAwaitReport(url, timeoutMs) {
       pageErrors = [];
       await page.evaluate((target: string) => {
-        const w = window as unknown as { __ikranReports?: unknown[] };
+        const w = window as unknown as {
+          __ikranReports?: unknown[];
+          __ikranAcceptedReport?: unknown;
+        };
         w.__ikranReports = [];
+        w.__ikranAcceptedReport = undefined;
         const frame = document.getElementById("harness");
         if (frame !== null) frame.setAttribute("src", target);
       }, url);
@@ -199,7 +216,8 @@ function playwrightVerifyPage(page: PlaywrightPageLike): LiveHeroVerifyPage {
             expected: url,
             maxWidth: PROTOTYPE_PRESENTATION_VIEWPORT_WIDTH,
             maxExtent: LIVE_HERO_MAX_REPORTED_EXTENT,
-            tolerance: LIVE_HERO_STABILITY_TOLERANCE_PX
+            tolerance: LIVE_HERO_STABILITY_TOLERANCE_PX,
+            quietMs: LIVE_HERO_SETTLE_QUIET_MS
           },
           { timeout: timeoutMs }
         );
@@ -225,7 +243,10 @@ function playwrightVerifyPage(page: PlaywrightPageLike): LiveHeroVerifyPage {
           ? latest
           : null;
       }
-      return stableLiveHeroReport(reports, url);
+      return await page.evaluate(() => {
+        const w = window as unknown as { __ikranAcceptedReport?: unknown };
+        return w.__ikranAcceptedReport ?? null;
+      });
     }
   };
 }
@@ -273,7 +294,7 @@ const VERIFIER_HTML = `<!doctype html>
   window.addEventListener("message", function (event) {
     var d = event.data;
     if (d && d.type === "ikran:component-size" && d.version === 2 && typeof d.href === "string") {
-      window.__ikranReports.push({ href: d.href, x: d.x, y: d.y, width: d.width, height: d.height });
+      window.__ikranReports.push({ href: d.href, x: d.x, y: d.y, width: d.width, height: d.height, receivedAt: performance.now() });
     }
   });
 </script>
